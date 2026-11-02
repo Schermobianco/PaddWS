@@ -1,7 +1,8 @@
 # PADD WS
 
-Pong da tavolo per due giocatori seduti ai lati opposti dello schermo, con attract anni '80,
-partite a gettoni e tre modalità di gioco. Esiste in quattro versioni che giocano la stessa partita:
+Pong da tavolo per due giocatori seduti ai lati opposti dello schermo, con l'attract dei cabinati
+anni '80, le partite a gettoni e quattro modalità di gioco. Esiste in quattro versioni che giocano
+la stessa identica partita:
 
 | versione | dove gira | cartella |
 |---|---|---|
@@ -11,8 +12,8 @@ partite a gettoni e tre modalità di gioco. Esiste in quattro versioni che gioca
 | **Commodore 64** (anteprima, PAL), assembly 6502 | C64, C64 Ultimate, emulatori (VICE) | [c64/](c64/README.md) |
 
 La logica di gioco di riferimento è il core Rust: deterministico, solo interi, nessuna divisione.
-Il core MiSTer ne riproduce lo stato tick per tick, verificato bit per bit con vettori di test;
-la versione C64 anche, verificata in un emulatore 6502.
+Il core MiSTer ne riproduce lo stato tick per tick, verificato bit per bit con vettori di test, e
+lo stesso fa la versione C64, verificata in un emulatore 6502.
 
 ## Schermate
 
@@ -61,18 +62,17 @@ Per la versione Rust vedi [rust/README.md](rust/README.md), per il MiSTer [miste
 ## Come si gioca
 
 All'accensione parte l'attract: auto-test, strisce, logo e titolo con la pallina che rimbalza su
-tutto ciò che è nero, la classifica di CHALLENGE e una partita dimostrativa CPU contro CPU nella
-modalità scelta (nel menu sul PC, nell'OSD sul MiSTer): CLASSIC, EVO, NEXT con bonus e racchette a
-caso, CHALLENGE contro l'avversario di un livello a caso, con il nome della modalità al centro
-(versione Rust e MiSTer; sul C64 la demo è sempre EVO, in Python non c'è). Con un gettone, o in
-Free Play,
-Start apre il menu (sul MiSTer avvia subito la partita con le opzioni dell'OSD); ogni partita costa
-un credito, anche in due. La partita comincia dopo un conto
-alla rovescia di 3 secondi.
+tutto ciò che è nero, la classifica di CHALLENGE e una partita dimostrativa, CPU contro CPU, nella
+modalità scelta (nel menu sul PC, nell'OSD sul MiSTer). La demo mostra CLASSIC, EVO, NEXT con bonus
+e racchette a caso, oppure CHALLENGE contro l'avversario di un livello a caso, con il nome della
+modalità al centro; sul C64 la demo è sempre EVO, nella versione Python non c'è. Con un gettone, o
+in Free Play, Start apre il menu (sul MiSTer avvia subito la partita con le opzioni dell'OSD); ogni
+partita costa un credito, anche in due. La partita comincia dopo un conto alla rovescia di 3
+secondi.
 
-Nella versione Rust si può giocare anche da soli contro il computer in tutte le modalità
-(menu: **PLAYERS: VS CPU**); la bravura della CPU segue la difficoltà. Da soli c'è anche la
-scalata **CHALLENGE** (vedi sotto).
+Nelle versioni Rust, MiSTer e C64 si può giocare anche da soli contro il computer, in tutte le
+modalità (menu: **PLAYERS: VS CPU**); la bravura della CPU segue la difficoltà. Da soli c'è anche
+la scalata **CHALLENGE** (vedi sotto).
 
 - **CLASSIC** – Pong classico, 1 o 2 giocatori. In due vince chi arriva per primo a 11; in singolo
   si gioca contro un muro con 3 palle, ogni rimbalzo vale un punto e `TOP` è il record.
@@ -85,21 +85,21 @@ scalata **CHALLENGE** (vedi sotto).
 
 | bonus | effetto |
 |:---:|---|
-| <img src="docs/icons/teleport.png" alt="" width="40" height="40"><br>**TELEPORT** | quando la palla in arrivo passa la metà campo la racchetta entra in un portale ed esce da un altro dove arriverà la palla, tutta fuori prima che arrivi |
-| <img src="docs/icons/smash.png" alt="" width="40" height="40"><br>**SMASH** | il prossimo tiro parte più veloce e angolato lontano dall'avversario |
+| <img src="docs/icons/teleport.png" alt="" width="40" height="40"><br>**TELEPORT** | quando la palla in arrivo supera la metà campo, la racchetta entra in un portale ed esce da un altro nel punto in cui arriverà la palla, in tempo per prenderla |
+| <img src="docs/icons/smash.png" alt="" width="40" height="40"><br>**SMASH** | il prossimo tiro parte più veloce e angolato, lontano dall'avversario |
 | <img src="docs/icons/slow.png" alt="" width="40" height="40"><br>**SLOW** | la palla perde un terzo della velocità finché chi l'ha usato non la colpisce: allora riparte alla velocità di prima |
 | <img src="docs/icons/curve.png" alt="" width="40" height="40"><br>**CURVE** | il prossimo tiro curva, e la curva si inverte a ogni rimbalzo |
 | <img src="docs/icons/ghost.png" alt="" width="40" height="40"><br>**GHOST** | dopo il prossimo tiro la palla si vede solo a lampi |
-| <img src="docs/icons/steer.png" alt="" width="40" height="40"><br>**STEER** | dopo il prossimo tiro su e giù guidano la palla, con una sterzata limitata, fino a 3/4 del campo (segnati in giallo sui bordi); intanto la racchetta resta ferma |
+| <img src="docs/icons/steer.png" alt="" width="40" height="40"><br>**STEER** | dopo il prossimo tiro i comandi su e giù guidano la palla, con una sterzata limitata, fino a 3/4 del campo (segnati in giallo sui bordi); intanto la racchetta resta ferma |
 | <img src="docs/icons/super.png" alt="" width="40" height="40"><br>**SUPER** | raro, solo dalle capsule: tiro velocissimo, con un'animazione a caso tra racchetta che ruota, hit-stop e cometa che spacca la rete |
-| <img src="docs/icons/bullet.png" alt="" width="40" height="40"><br>**BULLET** | raro, solo dalle capsule (circa una su 16): bullet time difensivo. Attivato resta armato (il bordo giallo della racchetta lampeggia) finché la palla entra nella propria metà campo venendo verso di sé; allora, con un'entrata graduale, tutto va a metà velocità (palla con CURVE e STEER, racchetta avversaria, capsule, colpi del BLASTER avversario) tranne la propria racchetta, fino alla ribattuta o al punto. Il resto del gioco diventa grigio e sfocato (sul MiSTer con bordi sfumati, sul C64 solo grigio) e la palla lascia una scia di immagini. Un punto prima che scatti non lo consuma; uno alla volta |
+| <img src="docs/icons/bullet.png" alt="" width="40" height="40"><br>**BULLET** | raro, solo dalle capsule (circa una su 16): bullet time difensivo. Una volta attivato resta armato (il bordo giallo della racchetta lampeggia) finché la palla non entra nella propria metà campo, diretta verso di sé; allora, con un'entrata graduale, tutto va a metà velocità (palla con CURVE e STEER, racchetta avversaria, capsule, colpi del BLASTER avversario) tranne la propria racchetta, fino alla ribattuta o al punto. Il resto del gioco diventa grigio e sfocato (sul MiSTer con bordi sfumati, sul C64 solo grigio) e la palla lascia una scia di immagini. Se si subisce un punto prima che scatti, il bonus non si consuma; se ne usa uno alla volta |
 
 ### Tipi di racchetta (NEXT)
 
 Dopo i bonus ognuno sceglie la sua racchetta (la CPU a caso; in CHALLENGE ogni avversario ha la
-sua). Ogni tipo ha un vantaggio e un piccolo prezzo, e un segno che lo riconosce in partita (in
-giallo nelle immagini, a grandezza proporzionale);
-bilanciati perché ciascuno vinca circa metà dei punti contro la racchetta normale.
+sua). Ogni tipo ha un vantaggio, un piccolo prezzo e un segno che lo fa riconoscere in partita (in
+giallo nell'immagine, con le racchette in proporzione). I tipi sono bilanciati perché ognuno vinca
+circa metà dei punti contro la racchetta normale.
 
 ![I sette tipi di racchetta, in proporzione, con i loro segni](docs/icons/paddles.png)
 
@@ -109,26 +109,26 @@ bilanciati perché ciascuno vinca circa metà dei punti contro la racchetta norm
 | **TITAN** | più alta (1,2) | più lenta (0,8) |
 | **HAMMER** | i tiri partono più veloci (×1,25, se la palla non ha già un boost) | lenta (0,75) |
 | **TWIST** | passa alla palla metà della sua velocità verticale: colpendo in movimento si dà angolo; si inclina con la velocità | — |
-| **BLASTER** | spara: caricatore di 4 colpi veloci da sparare di fila, mostrati come rettangolini gialli dietro la racchetta (pieno di nuovo 3 s dopo il primo); i colpi raccolgono le capsule, anche quelle dirette all'avversario | niente scatto in avanti: spara con quel tasto |
+| **BLASTER** | spara: caricatore di 4 colpi veloci da sparare di fila, mostrati come rettangolini gialli dietro la racchetta (si ricarica 3 s dopo il primo colpo); i colpi raccolgono le capsule, anche quelle dirette all'avversario | niente scatto in avanti: spara con quel tasto |
 | **RUSH** | scatto in avanti più lungo (×1,5), che prende la palla più spesso; dalla posizione avanzata i tiri partono più veloci (×1,15, anche lo scatto che intercetta la palla) e più vicini all'avversario; la racchetta avanzata è anche più rapida (×1,15) | più corta (0,85) |
 | **GUARDIAN** | un muro a 5 settori dietro la racchetta, uno per partita: ogni palla mancata rimbalza sul settore all'altezza della palla, che poi sparisce | più corta (0,8) |
 
-Con l'encoder (o paddle e spinner sul MiSTer) i tipi più lenti seguono la manopola con una velocità
-massima. I valori sono nella sezione `next.paddles` della configurazione.
+Con l'encoder (o con paddle e spinner sul MiSTer) i tipi più lenti seguono la manopola, ma con una
+velocità massima. I valori sono nella sezione `next.paddles` della configurazione.
 
 ### Mosse speciali (NEXT)
 
-Mosse da picchiaduro con il comando a gesto, versione Rust, MiSTer e C64. Si accendono
-con **SUPER MOVES: ON** nel menu (sul MiSTer OSD *Super moves*) e valgono per le partite NEXT, per
-la CHALLENGE e per la demo dell'attract; sono le stesse per tutti i tipi di racchetta. Prima della
-partita la schermata **HOW TO PLAY**, in pixel art come nei giochi Neo Geo, le presenta con il
-comando del controllo in uso (tastiera, gamepad o stick arcade, spinner del cabinato, mouse o
-touch) che si accende passo
-dopo passo, la palla che parte con l'effetto della mossa, il costo e i comandi dei bonus; Start
-(o il click, o un tocco) la salta (in CHALLENGE compare solo prima del primo livello).
+Mosse da picchiaduro che si fanno con un gesto del controllo (versioni Rust, MiSTer e C64). Si
+accendono con **SUPER MOVES: ON** nel menu (sul MiSTer, OSD *Super moves*) e valgono per le partite
+NEXT, per la CHALLENGE e per la demo dell'attract; sono le stesse per tutti i tipi di racchetta.
+Prima della partita la schermata **HOW TO PLAY**, in pixel art come nei giochi Neo Geo, le
+presenta: il comando del controllo in uso (tastiera, gamepad o stick arcade, spinner del cabinato,
+mouse o touch) si accende passo dopo passo, la palla parte con l'effetto della mossa, e sotto ci
+sono il costo e i comandi dei bonus. Start (o il clic, o un tocco) la salta; in CHALLENGE compare
+solo prima del primo livello.
 
 La barra accanto alla riserva si riempie giocando: un po' a ogni colpo, il doppio con lo scatto
-che intercetta la palla, di più quando si subisce un punto; resta da un punto all'altro. La barra
+che intercetta la palla, di più quando si subisce un punto; non si svuota tra un punto e l'altro. La barra
 ha due settori e una mossa ne spende quanti ne sono pieni: con mezza barra parte la mossa normale,
 con la barra piena la **MAX**, più forte. Si può usare subito o aspettare la MAX, rischiando che la
 palla giusta non torni. Quando una mossa è pronta la barra diventa gialla. Una mossa alla volta,
@@ -137,7 +137,7 @@ bonus).
 
 | mossa | effetto |
 |---|---|
-| **STRAIGHT SHOT** | il prossimo tiro parte dritto, senza angolo, a una volta e mezza la spinta del colpo (il doppio la MAX); vale un tiro solo, e si perde se l'avversario la intercetta con lo scatto |
+| **STRAIGHT SHOT** | il prossimo tiro parte dritto, senza angolo, a una volta e mezza la spinta del colpo (il doppio la MAX); vale un tiro solo, e si perde se l'avversario lo intercetta con lo scatto |
 | **RISING STRIKE** | il prossimo tiro parte dritto e, passati i 5/8 del campo (i 7/8 la MAX), s'impenna di colpo a 45° lontano dalla racchetta avversaria: inganna chi si era già messo sulla traiettoria |
 
 | comando | STRAIGHT SHOT | RISING STRIKE |
@@ -152,7 +152,7 @@ bonus).
 Le direzioni vanno date entro 0,3 s l'una dall'altra e lo scatto entro 0,25 s dall'ultima. Lo
 scatto che chiude il gesto diventa la mossa solo se la mossa può partire; altrimenti resta uno
 scatto normale. Anche la CPU usa le mosse, quando è già sulla palla, e di solito aspetta la MAX;
-quando un RISING STRIKE s'impenna ci mette il suo tempo di reazione ad accorgersene, come una
+quando un RISING STRIKE s'impenna, le serve il suo tempo di reazione per accorgersene, come a una
 persona.
 
 Sul C64 il fuoco che chiude la mezzaluna usa la mossa se può partire, altrimenti il bonus
@@ -181,11 +181,12 @@ dall'ARCADE del primo livello al GUARDIAN del boss finale. Le partite sono NEXT 
   bonus e racchetta e si gioca una sfida a 5 punti: chi vince riprende il livello contro la CPU
   dal suo lato, con un premio pari a quello del livello (il campione lo aggiunge ai suoi punti,
   lo sfidante parte da lì); chi perde scrive le iniziali se entra in classifica.
-- **Finale** (PC, Raspberry e web): battuto l'ultimo avversario, CONGRATULATIONS e la voce
-  "YOU WIN!", la sfilata dei sette avversari con il timbro DEFEATED, il punteggio finale con il
-  premio del campione (la vittoria dell'ultimo livello, più la partita perfetta), "YOU ARE THE PADD
-  WS CHAMPION" con i fuochi d'artificio, i titoli di coda e THE END, in circa un minuto; poi le
-  iniziali. Start lo salta. La voce "YOU WIN!" si sente anche a ogni partita vinta contro la CPU.
+- **Finale**: battuto l'ultimo avversario arrivano CONGRATULATIONS e la voce "YOU WIN!", la
+  sfilata dei sette avversari con il timbro DEFEATED, il punteggio finale con il premio del
+  campione (la vittoria dell'ultimo livello, più la partita perfetta), "YOU ARE THE PADD WS
+  CHAMPION" con i fuochi d'artificio, i titoli di coda e THE END, in circa un minuto, con una
+  musica tutta sua; poi le iniziali. Start lo salta. La voce "YOU WIN!" si sente anche a ogni
+  partita vinta contro la CPU.
 - **Voce**: nella presentazione una voce digitalizzata "da SID" annuncia il nome dell'avversario
   (su C64 e MiSTer con il trucco del registro del volume del SID; sul C64 dalla cartuccia).
 - **Musiche degli avversari**: in partita contro la CPU ogni avversario ha il suo tema, sulle prime
@@ -204,12 +205,12 @@ Suoni e musiche passano per un **SID** (il chip del Commodore 64): sul MiSTer è
 Raspberry e web (menu **MUSIC: ON / OFF**, che spegne tutte le musiche e lascia gli effetti) le
 musiche le suona in tempo reale un SID scritto in Rust con lo stesso player (`rust/sid`), gli
 effetti sono registrati dal core simulato. **ATTRACT SOUND: OFF** rende muto l'attract, musica
-compresa: lì la musica suona solo con tutte e due le voci accese. Musiche
-originali per il titolo, la presentazione dei livelli, il livello superato, il continue, il game
-over e il campione; in partita solo gli effetti, tranne in CHALLENGE, dove ogni avversario ha il suo
-tema. Su PC, Raspberry e web il tema accelera al match point (×1,25, stesse note) e nel bullet time
-rallenta di un'ottava come un nastro a metà velocità. Alcune musiche usano il filtro del SID (il
-basso di HAMMER, il titolo, TITAN), pensate per l'8580.
+compresa: nell'attract la musica si sente solo se sono accesi sia ATTRACT SOUND sia MUSIC. Le
+musiche sono originali: il titolo, la presentazione dei livelli, il livello superato, il continue,
+il game over, il campione e il finale; in partita solo gli effetti, tranne in CHALLENGE, dove ogni
+avversario ha il suo tema. Il tema accelera al match point (×1,25, stesse note) e nel bullet time
+rallenta di un'ottava, come un nastro a metà velocità. Alcune musiche usano il filtro del SID (il
+basso di HAMMER, il titolo, TITAN, il finale) e sono pensate per l'8580.
 
 ### Comandi su PC
 
@@ -229,12 +230,13 @@ cambiano il valore, `Invio` conferma; con l'encoder o il mouse come spinner la g
 sul touch il dito (un tocco sulla voce al centro la usa, su un'altra la porta al centro).
 
 **Gamepad e stick arcade** (PC, Raspberry e web): il primo collegato è del giocatore di sinistra,
-il secondo di quello di destra; da soli con un gamepad solo è di chi gioca. Levetta o croce per
-muovere (la levetta analogica con le diagonali, per le mosse), **A** scatto e mosse speciali,
-**B** seleziona e **C** (X o Y) usa il bonus, come nella HOW TO PLAY; **Start** pausa e Start,
-**Select** gettone. Nei menu le direzioni, **A** conferma e **B** torna indietro; in pausa **A**
-riprende e **B** torna al menu. Anche gli stick arcade USB e le schede encoder dei cabinati
-senza levetta analogica (vedi [rust/README.md](rust/README.md#gamepad-e-stick-arcade)).
+il secondo di quello di destra; se si gioca da soli con un solo gamepad, è di chi gioca. Levetta o
+croce per muovere (la levetta analogica con le diagonali, per le mosse), **A** scatto e mosse
+speciali, **B** seleziona e **C** (X o Y) usa il bonus, come nella HOW TO PLAY; **Start** pausa e
+Start, **Select** gettone. Nei menu si usano le direzioni, **A** conferma e **B** torna indietro;
+in pausa **A** riprende e **B** torna al menu. Funzionano anche gli stick arcade USB e le schede
+encoder dei cabinati, che non hanno la levetta analogica (vedi
+[rust/README.md](rust/README.md#gamepad-e-stick-arcade)).
 
 **Mouse come spinner** (PC e web, menu **MOUSE SPINNER: ON** o `mouse.spinner` nella
 configurazione, spento di default): il mouse diventa la manopola del giocatore di sinistra, come
@@ -248,7 +250,7 @@ Pointer Lock dopo il primo clic sulla pagina; `Esc` lo rilascia e un altro clic 
 
 Sul MiSTer: joystick su/giù (oppure paddle o spinner), **A** scatto in avanti, **B** rapido,
 **X** / **Y** seleziona e usa il bonus (NEXT), **Start**, **Select** gettone; da tastiera `5` e `1`.
-Le mosse speciali si fanno con mezzelune del joystick + **A** (vedi sopra). Le opzioni (modalità,
+Le mosse speciali si fanno con le mezzelune del joystick + **A** (vedi sopra). Le opzioni (modalità,
 giocatori, Free Play, difficoltà, punteggi verso i giocatori o dritti, suoni dell'attract,
 luminosità del bianco, paddle o spinner, mosse speciali) sono nell'OSD.
 
@@ -366,7 +368,7 @@ paddws/          versione Python
 rust/            versione Rust: core deterministico, gioco, generatore di tracce per il MiSTer
 mister/          core MiSTer: RTL Verilog, simulazione, progetto Quartus (framework Template_MiSTer)
 c64/             versione Commodore 64 in 6502 (anteprima), verificata contro il core Rust
-assets/          font, immagini, suoni, icone, bitmap e tempi dell'attract (comuni alle tre versioni)
+assets/          font, immagini, suoni, icone, bitmap e tempi dell'attract (comuni a tutte le versioni)
 deploy/raspberry servizio systemd e configurazione di boot
 tools/           rilascio, ambiente Rust portable, generatori di icone, attract, suoni e ROM MiSTer,
                  musiche del SID (gen_sid_music.py, suonate dal SID Rust di rust/sid) e scritte di
@@ -386,8 +388,8 @@ cd rust && cargo run --release -p paddws-c64 -- game   # versione C64 contro il 
 Le GitHub Action `Python`, `Rust`, `MiSTer` e `C64` eseguono gli stessi controlli; la `MiSTer`
 sintetizza anche il core con Quartus 17.0.2, la `C64` assembla il programma con cc65 e lo prova nel
 banco di prova (vedi [c64/README.md](c64/README.md)). Partono solo a mano (*Run workflow*, `gh
-workflow run` o `build_ongithub.bat`): il repository è privato e i minuti delle Action si pagano.
-Gli stessi controlli girano in locale con `build.bat -CheckOnly`.
+workflow run` o `build_ongithub.bat`). Gli stessi controlli girano in locale con
+`build.bat -CheckOnly`.
 
 ## Raspberry Pi
 
@@ -412,8 +414,8 @@ telefono sulla stessa rete con `-Serve` (il firewall di Windows deve lasciar pas
 Versione in assembly 6502 (anteprima, solo PAL) che gioca la stessa partita del core Rust, bit per
 bit: aritmetica Q16.16 a 32 bit, un tick per frame a 50 Hz, campo di 320×200 pixel. Ha tutto
 quello delle altre versioni: attract, gettoni e menu, Classic, EVO e singolo, la CPU (la stessa del
-core, comando per comando), NEXT con tipi di racchetta, effetti e mosse speciali, CHALLENGE con la classifica
-salvata nella flash della cartuccia, musiche ed effetti sul SID vero.
+core, comando per comando), NEXT con tipi di racchetta, effetti e mosse speciali, CHALLENGE con il
+finale e la classifica salvata nella flash della cartuccia, musiche ed effetti sul SID vero.
 
 - **Avvio:** dal pacchetto `paddws-X.Y.Z-c64.zip`, la cartuccia EasyFlash `paddws.crt` (C64
   Ultimate, EasyFlash vera scritta con EasyProg, VICE): tutto in un file, avvio immediato e voce
@@ -434,21 +436,20 @@ le prove sull'hardware vero (finora provata in VICE).
 
 Numerazione [Semantic Versioning](https://semver.org/lang/it/), una sola per tutto il progetto:
 Python (`paddws/__init__.py`), Rust (`rust/Cargo.toml`), core MiSTer e versione C64 escono insieme
-con lo stesso numero (un test controlla che quelli di Python e Rust coincidano). La versione compare nel menu, nel log all'avvio e con
-`--version`. Le modifiche sono descritte in [CHANGELOG.md](CHANGELOG.md).
+con lo stesso numero (un test controlla che quelli di Python e Rust coincidano). La versione
+compare nel menu, nel log all'avvio e con `--version`. Le modifiche sono descritte in
+[CHANGELOG.md](CHANGELOG.md).
 
 Per rilasciare: aggiungere le voci sotto **Non rilasciato** nel changelog, poi
 
 ```sh
-python tools/release.py minor      # oppure patch / major / X.Y.Z / X.Y.Z-alpha.N, --dry-run per provare
+python tools/release.py minor      # oppure patch / major / X.Y.Z / X.Y.Z-beta.N, --dry-run per provare
 git push --follow-tags
 ```
 
-Lo script aggiorna la versione di Python e Rust e il changelog (le anteprime `-alpha.N` lasciano le
-voci in **Non rilasciato**), crea il commit e il tag `vX.Y.Z`; i pacchetti si costruiscono poi
-in uno dei due modi qui sotto.
-
-Due modi di costruire i pacchetti:
+Lo script aggiorna la versione di Python e Rust e il changelog (le anteprime `-alpha.N` e
+`-beta.N` lasciano le voci in **Non rilasciato**), crea il commit e il tag `vX.Y.Z`. I pacchetti
+si costruiscono poi in uno di questi due modi:
 - `build_ongithub.bat VERSIONE` fa tutto online: controlli, `tools/release.py`, push, avvia le
   GitHub Action sul tag e le segue fino alla release (core MiSTer compreso); senza versione rilancia
   le Action del tag già presente sul commit (per esempio dopo un blocco dei minuti di GitHub).
