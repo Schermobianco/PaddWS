@@ -69,6 +69,7 @@ jobs:
           # licenze accanto al core: GPL v2 (framework MiSTer), CERN-OHL-S v2 (SID), componenti di terzi
           mkdir -p sd/_Arcade/cores/PaddWS_licenses
           cp mister/LICENSE sd/_Arcade/cores/PaddWS_licenses/LICENSE-GPL-2.0.txt
+          cp LICENSE sd/_Arcade/cores/PaddWS_licenses/LICENSE-GPL-3.0.txt
           cp mister/rtl/sid/LICENSE-CERN-OHL-S-2.0.txt THIRD_PARTY.md assets/fonts/OFL-Munro.txt sd/_Arcade/cores/PaddWS_licenses/
           cp mister/rtl/vexriscv/LICENSE sd/_Arcade/cores/PaddWS_licenses/LICENSE-VexRiscv-MIT.txt
           # un solo zip con le cartelle della SD: si scompatta nella radice (/media/fat)

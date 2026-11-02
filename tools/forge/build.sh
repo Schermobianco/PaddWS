@@ -61,6 +61,7 @@ if [ -z "$checkonly" ] && [ -z "$nomister" ]; then
     cp "$src/mister/output_files/PaddWS.rbf" "$sd/_Arcade/cores/PaddWS_$day.rbf"
     cp "$src/mister/PaddWS.mra" "$sd/_Arcade/"
     cp "$src/mister/LICENSE" "$lic/LICENSE-GPL-2.0.txt"
+    cp "$src/LICENSE" "$lic/LICENSE-GPL-3.0.txt"          # il firmware Rust dentro il core
     cp "$src/mister/rtl/sid/LICENSE-CERN-OHL-S-2.0.txt" "$src/THIRD_PARTY.md" "$src/assets/fonts/OFL-Munro.txt" "$lic/"
     cp "$src/mister/rtl/vexriscv/LICENSE" "$lic/LICENSE-VexRiscv-MIT.txt"
     docker run --rm -v "$sd:/sd" -v "$out:/out" -w /sd paddws-build zip -qr -X "/out/PaddWS_MiSTer_$day.zip" _Arcade
