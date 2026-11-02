@@ -1,0 +1,33 @@
+[package]
+name = "paddws"
+description = "PADD WS - Pong da tavolo a due giocatori per Windows, Linux e Raspberry Pi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+paddws-core = { path = "../core" }
+# musica del SID sintetizzata in tempo reale
+paddws-sid = { path = "../sid" }
+macroquad = { version = "0.4.16", default-features = false, features = ["audio"] }
+# stessa versione usata da macroquad: serve solo per le metriche dei glifi
+fontdue = "0.9.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+# la stessa quad-snd di macroquad (vendor/quad-snd): la sorgente continua del mixer per la musica
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+quad-snd = "0.2.8"
+# gamepad e stick arcade USB (Windows, Linux, Raspberry Pi); nel browser la Gamepad API (web/gamepad.js)
+gilrs = "0.11"
+
+# encoder del cabinato Raspberry Pi: GPIO dal dispositivo a caratteri del kernel (Pi 4 e Pi 5)
+[target.'cfg(target_os = "linux")'.dependencies]
+gpiocdev = "0.8"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Graphics_Gdi", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
+
+[build-dependencies]
+embed-resource = "3.0.12"

@@ -1,0 +1,21 @@
+# Servizio systemd per avviare PADD WS all'accensione del cabinato.
+# Copiare in /etc/systemd/system/paddws.service e adattare User e percorsi.
+# pyglet richiede una sessione grafica X11: il Pi deve fare il login automatico nel desktop.
+
+[Unit]
+Description=PADD WS
+After=graphical.target pigpiod.service
+Wants=pigpiod.service
+
+[Service]
+Type=simple
+User=pi
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/pi/.Xauthority
+WorkingDirectory=/home/pi/PaddWS
+ExecStart=/home/pi/PaddWS/.venv/bin/python -m paddws --fullscreen
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical.target

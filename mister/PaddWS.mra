@@ -1,0 +1,17 @@
+<!-- PADD WS per MiSTer: va in /media/fat/_Arcade/, il core PaddWS_AAAAMMGG.rbf in
+     /media/fat/_Arcade/cores/. Il gioco non usa ROM: tutto è dentro il core. La classifica di
+     CHALLENGE si salva nella NVRAM, come negli altri core arcade. -->
+<misterromdescription>
+    <name>PADD WS</name>
+    <setname>paddws</setname>
+    <rbf>PaddWS</rbf>
+    <year>2026</year>
+    <manufacturer>Schermobianco</manufacturer>
+    <category>Sports</category>
+    <players>2</players>
+    <joystick>2-way vertical</joystick>
+    <rotation>horizontal</rotation>
+    <buttons names="Forward,Fast,Select bonus,Use bonus,Start,Coin" default="A,B,X,Y,Start,Select"/>
+    <!-- classifica di CHALLENGE: /media/fat/config/nvram/PaddWS.nvm (rtl/ch_nvram.v) -->
+    <nvram index="4" size="192"/>
+</misterromdescription>

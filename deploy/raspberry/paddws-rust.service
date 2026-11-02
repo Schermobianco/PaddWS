@@ -1,0 +1,23 @@
+# Servizio systemd per avviare la versione Rust di PADD WS all'accensione del cabinato.
+# Copiare in /etc/systemd/system/paddws-rust.service e adattare User e percorsi.
+# Si alterna con paddws.service (la versione Python): ne gira uno solo, quello abilitato.
+# Come la versione Python usa la sessione grafica X11 (o XWayland): login automatico nel desktop.
+# Gli encoder si leggono da /dev/gpiochip*: l'utente deve essere nel gruppo gpio (pi lo è già).
+
+[Unit]
+Description=PADD WS (versione Rust)
+After=graphical.target
+Conflicts=paddws.service
+
+[Service]
+Type=simple
+User=pi
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/pi/.Xauthority
+WorkingDirectory=/home/pi/paddws-rust
+ExecStart=/home/pi/paddws-rust/paddws --fullscreen
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical.target

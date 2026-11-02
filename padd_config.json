@@ -1,0 +1,93 @@
+{
+    "resolution": {
+        "width": 0,
+        "height": 480
+    },
+    "game": {
+        "title_bar": true,
+        "fps": 60,
+        "game_name": "PADD WS",
+        "fullscreen": true,
+        "vsync": true,
+        "keep_aspect": true,
+        "serve_delay": 0.5,
+        "splash_time": 3.0,
+        "difficulty": 1
+    },
+    "ball": {
+        "radius": 5,
+        "radius_boost": 8,
+        "radius_boost_fwd": 6
+    },
+    "paddle": {
+        "width": 10,
+        "height": 80,
+        "start_pos": 50,
+        "forward_pos": 200,
+        "base_speed": 2,
+        "max_speed": 15,
+        "acceleration": 0.3,
+        "fast_acceleration": 1,
+        "deceleration": 2,
+        "double_click_time": 300
+    },
+    "boost": {
+        "multiplier": 2,
+        "area_ratio": 4,
+        "forward_multiplier": 1.5,
+        "enable_area_decay": true,
+        "decay_rate": 0.8,
+        "min_area_ratio": 20
+    },
+    "encoder": {
+        "enabled": false,
+        "e1_clock_pin": 5,
+        "e1_data_pin": 6,
+        "e1_switch_pin": 13,
+        "e2_clock_pin": 16,
+        "e2_data_pin": 20,
+        "e2_switch_pin": 21
+    },
+    "colors": {
+        "white": [
+            255,
+            255,
+            255
+        ],
+        "red": [
+            255,
+            0,
+            0
+        ],
+        "green": [
+            0,
+            255,
+            0
+        ],
+        "black": [
+            0,
+            0,
+            0
+        ],
+        "gray": [
+            50,
+            50,
+            50
+        ],
+        "lgray": [
+            100,
+            100,
+            100
+        ]
+    },
+    "crt_effects": {
+        "enabled": true,
+        "resolution_scale": 6.0,
+        "hard_scan": -8.0,
+        "hard_pix": -3.0,
+        "warp_x": 0.02,
+        "warp_y": 0.03,
+        "mask_dark": 0.5,
+        "mask_light": 1.5
+    }
+}

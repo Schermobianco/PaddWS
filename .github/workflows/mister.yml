@@ -1,0 +1,92 @@
+# Core MiSTer: verifica il firmware della logica contro il core Rust a ogni push; sui tag (e a mano, da
+# "Run workflow") sintetizza anche con Quartus 17.0.2 (la versione richiesta da Template_MiSTer)
+# dentro l'immagine Docker theypsilon/quartus-lite-c5, fissata per digest in
+# mister/quartus-image.txt (la stessa di mister/synth.sh e synth.ps1 per la sintesi in locale).
+# La sintesi dura circa mezz'ora: a ogni push consumerebbe gran parte dei minuti gratuiti.
+# Il core .rbf e il PaddWS.mra, già nelle cartelle della SD del MiSTer (_Arcade/ e _Arcade/cores/),
+# sono allegati alla run; su un tag vX.Y.Z uguale alla versione in rust/Cargo.toml finiscono anche
+# nella release, accanto agli eseguibili Rust, in un unico zip da scompattare nella radice della SD.
+
+name: MiSTer
+
+# Solo a mano (gh workflow run, build_ongithub.bat): il repository è privato e i minuti delle
+# Action si pagano; le release si costruiscono in locale con build.bat
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  simulate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Firmware della logica contro le tracce del core Rust
+        run: bash mister/sim/run.sh
+
+  synthesize:
+    needs: simulate
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Sintesi con Quartus 17.0.2 Lite
+        run: |
+          docker run --rm -v "$PWD/mister:/project" -w /project "$(cat mister/quartus-image.txt)" \
+            quartus_sh --flow compile PaddWS
+
+      - name: Risorse e tempi
+        working-directory: mister/output_files
+        run: |
+          {
+            echo "## Sintesi PADD WS"
+            echo '```'
+            grep -E "Logic utilization|Total registers|Total block memory bits|Total DSP Blocks|Total pins" PaddWS.fit.summary || true
+            echo '```'
+            echo "### Timing"
+            echo '```'
+            grep -E "^(Type|Slack|TNS)" PaddWS.sta.summary || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$GITHUB_STEP_SUMMARY"
+          if grep -qE "^Slack\s*:\s*-" PaddWS.sta.summary; then
+            echo "::error::Timing non rispettato (slack negativo): vedi PaddWS.sta.summary"
+            exit 1
+          fi
+
+      - name: Pacchetto
+        id: package
+        run: |
+          day=$(date -u +%Y%m%d)
+          mkdir -p sd/_Arcade/cores dist
+          cp mister/output_files/PaddWS.rbf "sd/_Arcade/cores/PaddWS_$day.rbf"   # nome standard dei core MiSTer
+          cp mister/PaddWS.mra sd/_Arcade/
+          # licenze accanto al core: GPL v2 (framework MiSTer), CERN-OHL-S v2 (SID), componenti di terzi
+          mkdir -p sd/_Arcade/cores/PaddWS_licenses
+          cp mister/LICENSE sd/_Arcade/cores/PaddWS_licenses/LICENSE-GPL-2.0.txt
+          cp mister/rtl/sid/LICENSE-CERN-OHL-S-2.0.txt THIRD_PARTY.md assets/fonts/OFL-Munro.txt sd/_Arcade/cores/PaddWS_licenses/
+          cp mister/rtl/vexriscv/LICENSE sd/_Arcade/cores/PaddWS_licenses/LICENSE-VexRiscv-MIT.txt
+          # un solo zip con le cartelle della SD: si scompatta nella radice (/media/fat)
+          zip="dist/PaddWS_MiSTer_$day.zip"
+          (cd sd && zip -r -X "../$zip" _Arcade)
+          cp mister/output_files/PaddWS.fit.summary mister/output_files/PaddWS.sta.summary dist/
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' rust/Cargo.toml | head -1)
+          echo "zip=$zip" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: PaddWS-mister
+          path: dist
+
+      - name: Release
+        if: github.ref_type == 'tag' && github.ref_name == steps.package.outputs.tag
+        uses: softprops/action-gh-release@v3
+        with:
+          files: ${{ steps.package.outputs.zip }}
+          prerelease: ${{ contains(github.ref_name, '-') }}

@@ -1,0 +1,52 @@
+# Versione Python: test con pytest, poi un pacchetto zip pronto da avviare (sorgenti, asset,
+# configurazione e file per il cabinato Raspberry). Su un tag vX.Y.Z uguale alla versione del
+# progetto finisce nella release, accanto agli eseguibili Rust e al core MiSTer.
+
+name: Python
+
+# Solo a mano (gh workflow run, build_ongithub.bat): il repository è privato e i minuti delle
+# Action si pagano; le release si costruiscono in locale con build.bat
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Dipendenze
+        run: pip install -r requirements.txt pytest
+
+      - name: Test
+        run: python -m pytest -q
+
+      - name: Pacchetto
+        id: package
+        run: |
+          version=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' paddws/__init__.py)
+          dir="paddws-$version-python"
+          # solo i file del repository: niente cache, ambienti virtuali o file di sviluppo
+          git archive --format=zip --prefix="$dir/" -o "$dir.zip" HEAD \
+            paddws assets deploy main.py padd_config.json requirements.txt pyproject.toml README.md CHANGELOG.md             LICENSE THIRD_PARTY.md
+          echo "archive=$dir.zip" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: paddws-python
+          path: ${{ steps.package.outputs.archive }}
+
+      - name: Release
+        if: github.ref_type == 'tag' && github.ref_name == steps.package.outputs.tag
+        uses: softprops/action-gh-release@v3
+        with:
+          files: ${{ steps.package.outputs.archive }}
+          prerelease: ${{ contains(github.ref_name, '-') }}

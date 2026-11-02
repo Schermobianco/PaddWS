@@ -1,0 +1,9 @@
+[package]
+name = "paddws-core"
+description = "Logica di gioco di PADD WS: deterministica, solo interi, modello di riferimento per il core FPGA"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

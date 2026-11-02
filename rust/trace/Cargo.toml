@@ -1,0 +1,11 @@
+[package]
+name = "paddws-trace"
+description = "Genera parametri Verilog e vettori di test dal core di PADD WS, per il core MiSTer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+paddws-core = { path = "../core" }
+paddws-mister-fw = { path = "../mister-fw" }

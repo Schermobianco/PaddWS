@@ -1,0 +1,22 @@
+PADD WS - versione web (browser, telefoni e tablet Android e iOS)
+
+Il gioco va aperto da un server web: con un doppio clic su index.html il browser non carica
+paddws.wasm. Il modo più semplice, con Python installato, dentro questa cartella:
+
+    python -m http.server 8080
+
+poi nel browser http://localhost:8080 (dal PC) oppure http://<indirizzo del PC>:8080 dal
+telefono collegato alla stessa rete Wi-Fi (il firewall deve lasciar passare la porta 8080).
+Per fermare il server: Ctrl+C.
+
+La cartella si può anche caricare così com'è su un qualunque hosting di siti statici (GitHub
+Pages, Netlify, il proprio spazio web): non serve nient'altro.
+
+Sul telefono si gioca in orizzontale: la racchetta segue il dito, un secondo dito fa lo scatto
+in avanti, in NEXT un tocco su una capsula della riserva usa il bonus, al centro in alto la
+pausa. Su iPhone lo schermo intero si ottiene con Condividi -> Aggiungi a Home.
+
+Sul computer funzionano anche i gamepad e gli stick arcade USB (il primo a sinistra, il secondo a
+destra): il browser li mostra dopo la pressione di un loro pulsante e solo nelle pagine sicure
+(https, oppure http://localhost dal PC stesso). Le preferenze del menu e la classifica restano
+nel browser (localStorage).

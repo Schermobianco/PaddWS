@@ -1,0 +1,9 @@
+[package]
+name = "paddws-sid"
+description = "SID di PADD WS in Rust: il player della musica e un SID semplificato, per suonare le musiche in tempo reale"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paddws"
+dynamic = ["version"]
+description = "PADD WS - two player table Pong for desktop and Raspberry Pi cabinets"
+requires-python = ">=3.10"
+license = { text = "GPL-3.0-or-later" }
+dependencies = ["arcade>=3.3,<4"]
+
+[project.optional-dependencies]
+pi = ["pigpio"]
+dev = ["pytest"]
+
+[project.scripts]
+paddws = "paddws.__main__:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "paddws.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["paddws*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

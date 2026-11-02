@@ -1,0 +1,122 @@
+# Compila e verifica la versione Rust su Windows, Linux x86_64 e Linux ARM64 (Raspberry Pi), più la
+# versione web (WebAssembly, pacchetto da servire con un server web).
+# Linux su Ubuntu 22.04 (glibc 2.35): l'eseguibile gira anche su Raspberry Pi OS Bookworm (2.36).
+# Su un tag vX.Y.Z uguale alla versione in rust/Cargo.toml allega gli eseguibili alla release.
+
+name: Rust
+
+# Solo a mano (gh workflow run, build_ongithub.bat): il repository è privato e i minuti delle
+# Action si pagano; le release si costruiscono in locale con build.bat
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, name: windows-x86_64, exe: paddws.exe }
+          - { os: ubuntu-22.04, name: linux-x86_64, exe: paddws }
+          - { os: ubuntu-22.04-arm, name: linux-aarch64, exe: paddws }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Dipendenze di sistema (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxi-dev libgl1-mesa-dev libasound2-dev libudev-dev
+
+      - name: Clippy
+        run: cargo clippy --all-targets --release -- -D warnings
+
+      - name: Test
+        run: cargo test --release
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Versione di glibc (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          # la più recente richiesta dall'eseguibile: al massimo quella di Raspberry Pi OS Bookworm
+          need=$(objdump -T target/release/paddws | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
+          echo "glibc richiesta: $need"
+          [ "$(printf '%s\n' "$need" GLIBC_2.36 | sort -V | tail -1)" = GLIBC_2.36 ]
+
+      - name: Pacchetto
+        id: package
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          dir="paddws-$version-${{ matrix.name }}"
+          mkdir -p "$dir"
+          cp "target/release/${{ matrix.exe }}" "$dir/"
+          cp ../padd_config.json README.md ../LICENSE ../THIRD_PARTY.md ../assets/fonts/OFL-Munro.txt "$dir/"
+          if [ "$RUNNER_OS" = "Windows" ]; then 7z a "$dir.zip" "$dir" > /dev/null; archive="$dir.zip"
+          else tar czf "$dir.tar.gz" "$dir"; archive="$dir.tar.gz"; fi
+          echo "archive=rust/$archive" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: paddws-${{ matrix.name }}
+          path: ${{ steps.package.outputs.archive }}
+
+      - name: Release
+        if: github.ref_type == 'tag' && github.ref_name == steps.package.outputs.tag
+        uses: softprops/action-gh-release@v3
+        with:
+          files: ${{ steps.package.outputs.archive }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
+  web:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+
+      - name: Clippy (web)
+        working-directory: rust
+        run: cargo clippy --release -p paddws --target wasm32-unknown-unknown -- -D warnings
+
+      - name: Build
+        shell: pwsh
+        run: ./tools/build-web.ps1
+
+      - name: Pacchetto
+        id: package
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' rust/Cargo.toml | head -1)
+          dir="paddws-$version-web"
+          cp -r rust/target/web "$dir"
+          cp LICENSE THIRD_PARTY.md assets/fonts/OFL-Munro.txt "$dir/"
+          zip -qr "$dir.zip" "$dir"
+          echo "archive=$dir.zip" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: paddws-web
+          path: ${{ steps.package.outputs.archive }}
+
+      - name: Release
+        if: github.ref_type == 'tag' && github.ref_name == steps.package.outputs.tag
+        uses: softprops/action-gh-release@v3
+        with:
+          files: ${{ steps.package.outputs.archive }}
+          prerelease: ${{ contains(github.ref_name, '-') }}

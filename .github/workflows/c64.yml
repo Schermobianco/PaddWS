@@ -1,0 +1,79 @@
+# Versione C64: assembla il programma con cc65 e lo verifica nel banco di prova (paddws-c64),
+# che lo esegue in un emulatore 6502 e lo confronta con il core Rust. La cartuccia EasyFlash .crt
+# (programma, voci di CHALLENGE, classifica salvata nella flash) è allegata alla run; su un tag
+# vX.Y.Z uguale alla versione in rust/Cargo.toml finisce anche nella release, in
+# paddws-X.Y.Z-c64.zip.
+
+name: C64
+
+# Solo a mano (gh workflow run, build_ongithub.bat): il repository è privato e i minuti delle
+# Action si pagano; le release si costruiscono in locale con build.bat
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: cc65
+        run: sudo apt-get update && sudo apt-get install -y cc65
+
+      - name: Parametri generati aggiornati
+        working-directory: rust
+        run: cargo run --release -p paddws-c64 -- params --check
+
+      - name: Assembla
+        run: sh c64/build.sh
+
+      - name: Aritmetica contro il core Rust
+        working-directory: rust
+        run: cargo run --release -p paddws-c64 -- math
+
+      - name: Partite tick per tick contro il core Rust
+        working-directory: rust
+        run: cargo run --release -p paddws-c64 -- game
+
+      - name: Player del SID contro quello Verilog
+        working-directory: rust
+        run: cargo run --release -p paddws-c64 -- sid
+
+      - name: Scene e menu senza cicli infiniti
+        working-directory: rust
+        run: cargo run --release -p paddws-c64 -- ui
+
+      - name: Cicli per frame
+        working-directory: rust
+        run: cargo run --release -p paddws-c64 -- frames
+
+      - name: Pacchetto
+        id: package
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' rust/Cargo.toml | head -1)
+          dir="paddws-$version-c64"
+          mkdir -p "$dir"
+          cp c64/build/paddws.crt "$dir/"
+          cp c64/README.md LICENSE THIRD_PARTY.md assets/fonts/OFL-Munro.txt "$dir/"
+          zip -r -X "$dir.zip" "$dir"
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          echo "zip=$dir.zip" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Cartuccia per il C64
+        uses: actions/upload-artifact@v7
+        with:
+          name: paddws-c64
+          path: ${{ steps.package.outputs.dir }}
+
+      - name: Release
+        if: github.ref_type == 'tag' && github.ref_name == steps.package.outputs.tag
+        uses: softprops/action-gh-release@v3
+        with:
+          files: ${{ steps.package.outputs.zip }}
+          prerelease: ${{ contains(github.ref_name, '-') }}

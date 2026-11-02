@@ -1,0 +1,137 @@
+﻿# Release in locale sulla macchina forge (tools\forge): questo PC manda i sorgenti del commit attuale,
+# forge fa nei suoi container gli stessi controlli e gli stessi pacchetti delle GitHub Action (core
+# MiSTer compreso) e questo PC li riprende in dist\. Sul PC servono solo git, ssh e, per pubblicare, gh.
+# Se forge è spenta la accende (VMware, senza finestra) e alla fine la rispegne.
+#
+# Uso:  build.bat [-Publish] [-NoCheck] [-CheckOnly] [-SkipMister] [-KeepVm] [-WorkingTree [-Synth]]
+#   -Publish     pubblica la release vX.Y.Z su GitHub con gh (anteprima se la versione ha un "-"):
+#                serve il tag vX.Y.Z sul commit attuale, già inviato (tools/release.py e git push)
+#   -NoCheck     senza i controlli; -CheckOnly solo i controlli (build_ongithub.bat)
+#   -SkipMister  senza la sintesi del core MiSTer (circa 16 minuti)
+#   -KeepVm      lascia forge accesa anche se l'ha accesa questo script
+#   -WorkingTree i file come sono ora, modifiche e file nuovi compresi, senza commit: solo i
+#                controlli (forge-check.bat), lontano dall'antivirus di questo PC
+#   -Synth       con -WorkingTree anche la sintesi del core MiSTer (ALM e slack), senza pacchetti
+# Configurazione in forge.local.psd1 (non versionato), per esempio:
+#   @{ Host = 'forge'; Vmx = 'D:\VM\forge\forge.vmx' }
+# Host è il nome ssh di forge (~/.ssh/config); senza Vmx forge va accesa a mano.
+
+param([switch]$Publish, [switch]$NoCheck, [switch]$CheckOnly, [switch]$SkipMister, [switch]$KeepVm,
+      [switch]$WorkingTree, [switch]$Synth)
+
+$ErrorActionPreference = "Continue"   # git, ssh e gh scrivono su stderr anche quando va tutto bene
+$root = (Resolve-Path "$PSScriptRoot\..").Path
+$dist = Join-Path $root "dist"
+$compilers = if ($env:PADDWS_COMPILERS) { $env:PADDWS_COMPILERS } else { "C:\DEV\@Compiler" }
+$gh = Join-Path $compilers "gh\bin\gh.exe"
+$vmrun = "C:\Program Files\VMware\VMware Workstation\vmrun.exe"
+function Fail($msg) { Write-Host "ERRORE: $msg" -ForegroundColor Red; exit 1 }
+function Step($msg) { Write-Host "`n== $msg" -ForegroundColor Cyan }
+
+Set-Location $root
+$cfg = @{ Host = "forge" }
+$cfgFile = Join-Path $root "forge.local.psd1"
+if (Test-Path $cfgFile) { $cfg = Import-PowerShellDataFile $cfgFile }
+$vm = $cfg.Host
+$version = (Select-String -Path "$root\rust\Cargo.toml" -Pattern '^version = "(.*)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+$tag = "v$version"
+$commit = (git rev-parse --short HEAD).Trim()
+$source = "HEAD"
+if ($WorkingTree) {
+    if ($Publish) { Fail "-WorkingTree non pubblica: la release parte da un commit" }
+    $CheckOnly = $true
+    # albero dei file di adesso (anche quelli nuovi non ignorati), con i fine riga del repository,
+    # da un indice temporaneo: l'indice vero e il ramo non cambiano
+    $index = Join-Path $env:TEMP "paddws-forge.index"
+    Copy-Item (Join-Path $root ".git\index") $index -Force
+    $env:GIT_INDEX_FILE = $index
+    git add -A 2>$null
+    $source = (git write-tree).Trim()
+    Remove-Item Env:GIT_INDEX_FILE
+    Remove-Item $index
+    $commit = "$commit+" + $source.Substring(0, 7)
+} elseif ($Synth) {
+    Fail "-Synth va con -WorkingTree (la release fa sempre la sintesi)"
+}
+Write-Host "PADD WS $version (commit $commit) su $vm"
+if (-not $WorkingTree -and (git status --porcelain)) { Fail "il repository ha modifiche non committate: forge riceve il commit, non i file modificati (per provarle: forge-check.bat)" }
+if ($Publish) {
+    $at = git rev-list -n 1 $tag 2>$null
+    if (-not $at -or $at.Trim() -ne (git rev-parse HEAD).Trim()) { Fail "il tag $tag non è sul commit attuale (python tools/release.py ...)" }
+    if (-not (git ls-remote --tags origin $tag)) { Fail "il tag $tag non è su GitHub (git push --follow-tags)" }
+}
+
+function Reachable { ssh -o BatchMode=yes -o ConnectTimeout=5 $vm true 2>$null; return $LASTEXITCODE -eq 0 }
+$started = $false
+if (-not (Reachable)) {
+    if (-not $cfg.Vmx) { Fail "forge ($vm) non risponde e forge.local.psd1 non dice dov'è la VM (Vmx): va accesa a mano" }
+    Step "accensione di forge ($($cfg.Vmx))"
+    & $vmrun -T ws start $cfg.Vmx nogui
+    if ($LASTEXITCODE -ne 0) { Fail "vmrun non ha acceso la VM" }
+    $started = $true
+    $t = 0
+    while (-not (Reachable)) {
+        Start-Sleep -Seconds 5
+        $t += 5
+        if ($t -ge 180) { Fail "forge accesa ma ssh non risponde dopo 3 minuti" }
+    }
+    Write-Host "  pronta in circa $t s"
+}
+
+$ok = $false
+try {
+    Step "sorgenti del commit $commit su forge"
+    # con i fine riga del repository (LF), come il checkout della CI; in un file e non in una pipe:
+    # PowerShell 5 rovinerebbe i byte del tar
+    $tar = Join-Path $env:TEMP "paddws-forge-$commit.tar"
+    git -c core.autocrlf=false archive --format=tar -o $tar $source
+    scp -q $tar "${vm}:forge/src.tar"
+    if ($LASTEXITCODE -ne 0) { throw "copia dei sorgenti" }
+    Remove-Item $tar
+    # cartella nuova e scambio alla fine: la vista della console legge status.sh da lì
+    ssh $vm "set -e; cd ~/forge; rm -rf src.new; mkdir src.new; tar -xf src.tar -C src.new; rm src.tar; echo 'commit $commit ($version)' > src.new/.source; rm -rf src; mv src.new src"
+    if ($LASTEXITCODE -ne 0) { throw "estrazione dei sorgenti su forge" }
+
+    $opts = @()
+    if ($NoCheck) { $opts += "--no-check" }
+    if ($CheckOnly) { $opts += "--check-only" }
+    if ($SkipMister) { $opts += "--no-mister" }
+    if ($Synth) { $opts += "--synth" }
+    ssh $vm "sh ~/forge/src/tools/forge/build.sh $($opts -join ' ')"
+    if ($LASTEXITCODE -ne 0) { throw "build su forge (forge-stato sulla VM per lo stato)" }
+
+    if (-not $CheckOnly) {
+        Step "pacchetti in $dist"
+        if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
+        New-Item -ItemType Directory $dist | Out-Null
+        scp -q "${vm}:forge/out/*.zip" "${vm}:forge/out/*.tar.gz" $dist
+        if ($LASTEXITCODE -ne 0) { throw "copia dei pacchetti da forge" }
+        Get-ChildItem $dist | ForEach-Object { "  {0,-45} {1,10:N0} byte" -f $_.Name, $_.Length }
+    }
+    $ok = $true
+} catch {
+    Write-Host "ERRORE: $_" -ForegroundColor Red
+} finally {
+    if ($started -and -not $KeepVm) {
+        Step "spegnimento di forge"
+        & $vmrun -T ws stop $cfg.Vmx soft
+    }
+}
+if (-not $ok) { exit 1 }
+
+if ($Publish) {
+    Step "release $tag su GitHub"
+    $files = (Get-ChildItem $dist).FullName
+    & $gh release view $tag *> $null
+    if ($LASTEXITCODE -eq 0) {
+        & $gh release upload $tag @files --clobber
+    } else {
+        # @(...): un if che restituisce un array di un elemento lo srotola in una stringa, che @pre
+        # passerebbe a gh un carattere alla volta. Note vuote con "--notes=": PowerShell 5.1 non
+        # passa a gh un argomento ""
+        $pre = @(if ($version.Contains("-")) { "--prerelease" })
+        & $gh release create $tag @files --title $tag "--notes=" @pre
+    }
+    if ($LASTEXITCODE -ne 0) { Fail "pubblicazione della release" }
+    & $gh release view $tag --json url --jq .url
+}

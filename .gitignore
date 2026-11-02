@@ -1,0 +1,27 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+.idea/
+target/
+# vecchie versioni, solo in locale
+archive/
+# vettori di test generati da paddws-trace
+mister/sim/trace*/
+mister/sim/frames/*
+!mister/sim/frames/frames.cpp
+!mister/sim/frames/public.vlt
+!mister/sim/frames/frames.ps1
+mister/sim/sid/obj/
+# banco di prova di pong_logic_rv: modelli Verilator e risultati
+mister/sim/rv/*
+!mister/sim/rv/tb_rv.cpp
+!mister/sim/rv/tb_rv_top.v
+!mister/sim/rv/rv.ps1
+mister/sim/sid/obj_writes/
+
+# configurazione locale della macchina forge (build.bat)
+forge.local.psd1

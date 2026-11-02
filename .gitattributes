@@ -1,0 +1,13 @@
+# pixel grezzi delle icone: mai convertire i fine riga
+*.rgba binary
+*.ico binary
+*.sh text eol=lf
+*.bat text eol=crlf
+# dati binari (tracce del SID, voci, suoni, dischi del C64): mai convertire i fine riga
+*.bin binary
+*.raw4 binary
+*.wav binary
+*.ogg binary
+*.prg binary
+*.d64 binary
+*.crt binary

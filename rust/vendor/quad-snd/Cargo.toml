@@ -1,0 +1,27 @@
+# quad-snd 0.2.8 (https://github.com/not-fl3/quad-snd, Fedor Logachev, MIT o Apache-2.0), usato da
+# macroquad per l'audio. Copia con due modifiche di PADD WS (rust/Cargo.toml, [patch.crates-io]):
+# - src/mixer.rs: `set_stream`, una sorgente continua che il mixer nativo somma ai suoni (la musica
+#   del SID sintetizzata in tempo reale dal gioco);
+# - audrey solo con i WAV: il gioco non carica più OGG.
+# Il resto è invariato, compreso js/audio.js per la versione web.
+
+[package]
+name = "quad-snd"
+version = "0.2.8"
+authors = ["Fedor Logachev <not.fl3@gmail.com>"]
+edition = "2018"
+license = "MIT/Apache-2.0"
+description = "High level and cross platform audio library"
+
+[target.'cfg(target_os = "android")'.dependencies]
+audir-sles = "0.1.0"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+audrey = { version = "0.3", default-features = false, features = ["wav"] }
+
+[target.'cfg(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd"))'.dependencies]
+quad-alsa-sys = "0.3.2"
+libc = "0.2"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+winapi = { version = "0.3.8", features = ["debug", "ksmedia", "audioclient", "combaseapi", "coml2api", "devpkey", "handleapi", "mmdeviceapi", "objbase", "unknwnbase", "winerror", "synchapi", "winbase"] }

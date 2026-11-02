@@ -1,0 +1,1 @@
+https://scribles.net/silent-boot-on-raspbian-stretch-in-console-mode/

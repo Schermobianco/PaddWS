@@ -1,0 +1,27 @@
+[workspace]
+resolver = "3"
+members = ["core", "game", "trace", "c64", "mister-fw", "sid"]
+# copie di crate esterni con modifiche nostre: non fanno parte del workspace (né di test e clippy)
+exclude = ["vendor"]
+
+[workspace.package]
+# La versione Rust sarà la prossima major del progetto (vedi CHANGELOG.md)
+version = "4.0.0-beta.16"
+edition = "2024"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/Schermobianco/PaddWS"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+
+# firmware RISC-V del core MiSTer (tools/gen_mister_fw.py): come release, con i simboli per
+# l'emulatore di paddws-fw-sim (nel .hex vanno solo codice e costanti)
+[profile.fw]
+inherits = "release"
+strip = false
+
+# quad-snd (l'audio di macroquad) con la sorgente continua per la musica del SID: vendor/quad-snd
+[patch.crates-io]
+quad-snd = { path = "vendor/quad-snd" }

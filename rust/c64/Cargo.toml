@@ -1,0 +1,11 @@
+[package]
+name = "paddws-c64"
+description = "Banco di prova della versione C64 di PADD WS: esegue la logica 6502 e la confronta con il core Rust"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+paddws-core = { path = "../core" }
+paddws-sid = { path = "../sid" }

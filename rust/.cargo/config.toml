@@ -1,0 +1,4 @@
+# Versione web: le funzioni fornite dal JavaScript di macroquad (gl.js, audio) restano
+# importazioni del modulo WebAssembly invece di errori di link.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=--import-undefined"]

@@ -1,0 +1,29 @@
+[package]
+name = "paddws-mister-fw"
+description = "Firmware RISC-V (VexRiscv, RV32IM) del core MiSTer di PADD WS: esegue il core Rust al posto della logica in Verilog"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# La libreria (no_std) contiene la mappa dei registri, la codifica delle parole di stato (la stessa
+# delle tracce di paddws-trace) e il ciclo del firmware, generico sul bus: la usano il firmware vero
+# (src/main.rs, solo per riscv32im-unknown-none-elf) e il banco di prova paddws-fw-sim.
+[lib]
+name = "paddws_mister_fw"
+
+[[bin]]
+name = "paddws-mister-fw"
+path = "src/main.rs"
+test = false
+bench = false
+
+# emulatore RV32IM: esegue il firmware contro le tracce di mister/sim (solo sul PC)
+[[bin]]
+name = "paddws-fw-sim"
+path = "src/bin/fw_sim.rs"
+test = false
+bench = false
+
+[dependencies]
+paddws-core = { path = "../core" }
