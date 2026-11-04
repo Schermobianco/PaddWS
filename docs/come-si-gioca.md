@@ -291,10 +291,12 @@ menu. Solo PAL; finora provata in VICE. Dettagli in [c64/README.md](../c64/READM
 | NEXT: ognuno sceglie 3 bonus su 6 | NEXT: riserve in alto, capsule in volo, racchetta che ruota con il SUPER |
 | ![NEXT: presentazione delle mosse speciali](screenshots/next-howto.png) | ![NEXT: STRAIGHT SHOT in volo](screenshots/next-supers.png) |
 | NEXT: HOW TO PLAY, le mosse speciali prima della partita | NEXT: barre delle mosse accanto alle riserve, STRAIGHT SHOT in volo |
+| ![CHALLENGE: presentazione dell'avversario](screenshots/challenge-intro.png) | ![CHALLENGE: nuovo sfidante](screenshots/challenge-challenger.png) |
+| CHALLENGE: presentazione del sesto avversario, RUSH | CHALLENGE: entra un secondo giocatore |
 | ![Core MiSTer: titolo](screenshots/mister-title.png) | ![Core MiSTer: demo NEXT](screenshots/mister-demo.png) |
 | Core MiSTer a 320×240: titolo dopo il gettone | Core MiSTer: demo CPU contro CPU della modalità scelta (qui NEXT) |
 | ![Commodore 64: titolo](screenshots/c64-title.png) | ![Commodore 64: partita NEXT](screenshots/c64-next.png) |
-| Commodore 64: titolo dopo il gettone | Commodore 64: NEXT contro la CPU (BLASTER, capsula del SUPER) |
+| Commodore 64: titolo in Free Play | Commodore 64: NEXT contro la CPU, con la capsula di CURVE |
 | ![Commodore 64: scelta dei bonus](screenshots/c64-pick.png) | ![Commodore 64: CHALLENGE](screenshots/c64-challenge.png) |
 | Commodore 64: scelta dei bonus (la CPU ha già scelto) | Commodore 64: presentazione del primo avversario di CHALLENGE |
 

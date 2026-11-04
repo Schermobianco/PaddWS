@@ -17,10 +17,10 @@ gamepad o mouse.
 |---|---|
 | ![Titolo dell'attract con il filtro CRT](docs/screenshots/attract-crt.jpg) | ![NEXT: riserve, capsule e SUPER armato](docs/screenshots/next-game.png) |
 | Titolo dell'attract, con il filtro CRT | NEXT: bonus nelle riserve in alto e capsule in volo |
-| ![NEXT: STRAIGHT SHOT in volo](docs/screenshots/next-supers.png) | ![Core MiSTer: demo NEXT](docs/screenshots/mister-demo.png) |
-| Mosse speciali: STRAIGHT SHOT in volo | Core MiSTer a 320×240 |
-| ![Commodore 64: partita NEXT](docs/screenshots/c64-next.png) | ![Commodore 64: CHALLENGE](docs/screenshots/c64-challenge.png) |
-| Commodore 64: NEXT contro la CPU | Commodore 64: il primo avversario di CHALLENGE |
+| ![NEXT: STRAIGHT SHOT in volo](docs/screenshots/next-supers.png) | ![CHALLENGE: nuovo sfidante](docs/screenshots/challenge-challenger.png) |
+| Mosse speciali: MAX STRAIGHT SHOT in volo | CHALLENGE: entra un secondo giocatore |
+| ![Core MiSTer: demo NEXT](docs/screenshots/mister-demo.png) | ![Commodore 64: partita NEXT](docs/screenshots/c64-next.png) |
+| Core MiSTer a 320×240 | Commodore 64: NEXT contro la CPU |
 
 Altre schermate in [Come si gioca](docs/come-si-gioca.md#schermate).
 

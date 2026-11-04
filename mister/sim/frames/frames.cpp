@@ -68,6 +68,8 @@
 // titolo con l'easter egg acceso).
 // Dopo lo scenario si possono indicare i frame da salvare al posto di quelli predefiniti, singoli o
 // a intervalli ("1300 1400-1420"): la simulazione si ferma all'ultimo. "-f" ignora il checkpoint.
+// "-u" mette le scritte dritte (OSD "Scores: Upright", il default del core) in qualunque scenario:
+// per le schermate del README.
 //
 // Checkpoint: al primo frame di partita (modo M_GAME, dopo la scelta dei bonus in NEXT) lo stato
 // del modello e di questo programma va in ckpt_<scenario>.bin. Le esecuzioni seguenti ripartono da
@@ -194,12 +196,14 @@ int main(int argc, char** argv) {
 
     std::string arg;
     std::set<int> requested;
-    bool fresh = false;
+    bool fresh = false, upright = false;
     for (int i = 1; i < argc; i++) {
         const std::string a = argv[i];
         int lo, hi;
         if (a == "-f")
             fresh = true;
+        else if (a == "-u")
+            upright = true;
         else if (!std::isdigit(static_cast<unsigned char>(a[0])))
             arg = a;
         else if (std::sscanf(a.c_str(), "%d-%d", &lo, &hi) == 2)
@@ -274,7 +278,7 @@ int main(int argc, char** argv) {
     top.game_type = (ch_test || chal_test || end_test || egg_test) ? 3 : (next_test || howto_test) ? 2 : 0;
     top.free_play = 0;
     top.difficulty = 1;
-    top.upright = arg == "up" || arg == "cdup" || arg == "winup";
+    top.upright = upright || arg == "up" || arg == "cdup" || arg == "winup";
     top.joy0 = top.joy1 = 0;
     top.ps2_key = 0;
     top.control = paddle_test ? 1 : spin_test ? 2 : 0;
@@ -332,7 +336,8 @@ int main(int argc, char** argv) {
         io(frame.data(), frame.size());
     };
     const std::string ckpt = "ckpt_" + (arg.empty() ? std::string("base") : arg) +
-                             (kinds_test ? "_" + std::to_string(kind_l) + std::to_string(kind_r) : std::string());
+                             (kinds_test ? "_" + std::to_string(kind_l) + std::to_string(kind_r) : std::string()) +
+                             (upright ? "_u" : "");
     uint64_t key = hash_file(argv[0], 0xcbf29ce484222325ULL);
     if (!key) key = hash_file(std::string(argv[0]) + ".exe", 0xcbf29ce484222325ULL);
     key = key ? hash_file("../../rtl/gen/sid_music.hex", key) : 0;

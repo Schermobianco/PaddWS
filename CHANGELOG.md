@@ -427,6 +427,8 @@ crea il commit e il tag `vX.Y.Z`.
   bonus. Quando è acceso il mouse non fa più da dito nel browser.
 
 ### Corretto
+- PC, Raspberry e web: con i punteggi dritti (il default) il titolo delle mosse speciali di NEXT,
+  per esempio MAX STRAIGHT SHOT, copriva il punteggio del suo lato; ora sta sotto i punteggi.
 - Web, Android: **"glBindTexture called with an already deleted texture"** nel riquadro degli
   errori. I titoli delle mosse speciali di NEXT si ingrandiscono e a ogni frame mettevano nell'atlante
   dei caratteri di macroquad le lettere a una dimensione nuova: l'atlante cresceva senza fine e,

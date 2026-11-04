@@ -1296,7 +1296,13 @@ impl NextFx {
         if game.next.as_ref().is_some_and(|n| n.super_moves) {
             let p = &game.params;
             let font = &app.assets.font_text;
-            let y = to_f32(p.capsule_margin_top) + 16.0 * s;
+            // sotto le riserve; con i punteggi dritti (che stanno proprio lì, a 42 righe su 480) sotto
+            // di loro, così il titolo, anche nella sua dimensione più grande, non li copre
+            let y = if app.cfg.game.scores_upright {
+                42.0 * h / 480.0 + 50.0 * s
+            } else {
+                to_f32(p.capsule_margin_top) + 16.0 * s
+            };
             for (side, label) in self.special_label.iter().enumerate() {
                 let Some((special, level, hit, t)) = *label else { continue };
                 // entra grande e si stringe; nell'ultima parte lampeggia come le altre scritte
