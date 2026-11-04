@@ -15,6 +15,25 @@ crea il commit e il tag `vX.Y.Z`.
 ## [Non rilasciato]
 
 ### Aggiunto
+- Web, **schermo intero sui dispositivi touch** (`rust/web/fullscreen.js`): il primo tocco porta
+  la pagina a schermo intero (il browser lo concede solo dentro un gesto) e su Android blocca
+  l'orientamento in orizzontale; quel tocco non arriva al gioco. Se si esce, il tocco dopo ci
+  rientra. Lo schermo resta acceso (Screen Wake Lock, in https). La voce FULLSCREEN del menu
+  mostra lo stato vero della pagina e lo cambia; con OFF il tocco non lo richiede più. Su iPhone
+  Safari non lo concede: resta "Aggiungi a Home". Con mouse e tastiera non cambia niente.
+- Touch, **dove si mette in pausa**: un simbolo ❚❚ in cima alla linea centrale, appena visibile
+  in partita, e durante il conto alla rovescia la scritta TAP TO / PAUSE sotto di lui (solo PAUSE
+  nei campi 4:3 con i punteggi girati, dove TAP TO non ci sta). La zona sensibile scende un po'
+  per contenerla (fino a 72 righe su 480).
+- **RESUME** nel menu: dalla partita, MENU in pausa (touch o B del gamepad), Esc o il click
+  dell'encoder lasciano la partita da parte invece di buttarla; RESUME, già al centro, la
+  riprende in pausa (in CHALLENGE con livello e punti). PLAY, Esc verso l'attract o un cambio di
+  GAME TYPE, PLAYERS, DIFFICULTY o SUPER MOVES la scartano.
+- Touch, CHALLENGE: **lo sfidante entra anche in partita**, tenendo il dito per un secondo dietro
+  la racchetta della CPU, tra lei e il bordo (anche nella fascia nera fuori dal campo), dove c'è
+  la scritta P2 HOLD HERE in verticale; quel dito non muove la racchetta di P1.
+- GAME TYPE e PLAYERS del menu si salvano con le altre preferenze (`game.game_type`,
+  `game.players`; nel browser nel localStorage) e tornano all'accensione, anche per la demo.
 - Web, **menu con il mouse**: la rotella gira la ruota del menu, una voce per scatto (al più
   una ogni 60 ms, così un trackpad non la fa correre), e il click usa sempre la voce attiva, in
   qualunque punto dello schermo; vale anche con MOUSE SPINNER acceso. Il tocco resta com'era.
@@ -408,6 +427,12 @@ crea il commit e il tag `vX.Y.Z`.
   bonus. Quando è acceso il mouse non fa più da dito nel browser.
 
 ### Corretto
+- Web, Android: **"glBindTexture called with an already deleted texture"** nel riquadro degli
+  errori. I titoli delle mosse speciali di NEXT si ingrandiscono e a ogni frame mettevano nell'atlante
+  dei caratteri di macroquad le lettere a una dimensione nuova: l'atlante cresceva senza fine e,
+  raddoppiando, cancellava la texture già usata nel frame. Ora durante lo zoom le lettere si
+  rasterizzano una volta e si scalano (`Renderer::text_centered_zoom`); il messaggio, innocuo
+  quando l'atlante cresce per una nuova dimensione dello schermo, non compare più nel riquadro.
 - C64: la **coda della palla** a volte compariva davanti alla palla invece che dietro. Dopo un
   rimbalzo, o quando un effetto ripartiva, si riusava l'immagine della coda di prima, con la palla
   nell'angolo della direzione vecchia, finché il frame non aveva il tempo di disegnare quella
@@ -557,6 +582,15 @@ crea il commit e il tag `vX.Y.Z`.
   Ora si vede solo a lampi come su PC e MiSTer, senza effetti né coda, che la tradirebbero.
 
 ### Modificato
+- Web, **campo più largo sui telefoni**: la larghezza segue la tela finché si è nell'attract
+  (rotazione del telefono, barre di Safari) invece di restare quella dell'apertura della pagina,
+  spesso ancora in verticale; sui telefoni restano ai lati due fasce per le dita del 7% ciascuna,
+  tra il 4:3 e il 2,2:1.
+- Web, **volumi sui telefoni e sui tablet** (puntatore principale il dito): effetti a 0,08, voci
+  a un quarto degli effetti (i loro WAV sono circa 5 volte più forti), musica a 0,04 con ogni
+  canzone portata al livello medio dei temi della partita (tabella in `rust/game/src/music.rs`,
+  controllata da un test sulla ROM). Il browser del PC suona come la versione nativa.
+- ATTRACT SOUND: OFF spegne anche il titolo nel menu e nelle scelte di bonus e racchetta.
 - PC, Raspberry e web, **filtro CRT**: `crt_effects.resolution_scale` passa da 6.0 a 1.0 (righe
   emulate 3 × altezza del campo / valore: da 240 a 1.440, scanline molto più fitte) e la
   bombatura scende di un quarto (0,01172 e 0,015625; in `padd_config.json` 0,015 e 0,0225). Chi

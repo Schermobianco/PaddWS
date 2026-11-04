@@ -61,6 +61,10 @@ pub struct Game {
     /// punteggi dritti in alto, per un cabinato o un monitor normale, invece che rivolti ai
     /// giocatori seduti ai lati di un tavolo (come l'opzione Scores del MiSTer)
     pub scores_upright: bool,
+    /// GAME TYPE dell'ultima scelta nel menu: "classic", "evo" o "next"
+    pub game_type: String,
+    /// PLAYERS dell'ultima scelta nel menu: "two", "cpu", "challenge" o "one"
+    pub players: String,
 }
 
 impl Default for Game {
@@ -82,6 +86,8 @@ impl Default for Game {
             music: true,
             white_level: 100,
             scores_upright: true,
+            game_type: "classic".into(),
+            players: "two".into(),
         }
     }
 }
@@ -539,6 +545,21 @@ pub fn auto_width(height: u32, screen_w: u32, screen_h: u32) -> u32 {
     ((height as f64 * screen_w as f64 / screen_h as f64).round() as u32).max(1)
 }
 
+/// Fascia per le dita lasciata ai lati del campo sui telefoni, per lato, in frazione della tela.
+const WEB_FINGER_BAND: f32 = 0.07;
+/// Lato corto della tela (in punti CSS) sotto il quale si è su un telefono.
+const WEB_PHONE_SHORT_SIDE: f32 = 500.0;
+
+/// Larghezza del campo nel browser, dalla tela di `screen_w` x `screen_h` punti presa in
+/// orizzontale (anche se il telefono è ancora in verticale): le sue proporzioni, tra il 4:3 e il
+/// 2,2:1. Sui telefoni restano ai lati due fasce nere per le dita (`WEB_FINGER_BAND`).
+pub fn web_field_width(height: u32, screen_w: f32, screen_h: f32) -> u32 {
+    let (long, short) = (screen_w.max(screen_h), screen_w.min(screen_h).max(1.0));
+    let band = if short < WEB_PHONE_SHORT_SIDE { WEB_FINGER_BAND } else { 0.0 };
+    let aspect = (long * (1.0 - 2.0 * band) / short).clamp(4.0 / 3.0, 2.2);
+    (height as f32 * aspect).round() as u32
+}
+
 /// Dove cercare il file se non è indicato: accanto all'eseguibile, nella cartella
 /// corrente e (per `cargo run` dentro `rust/`) nella cartella superiore.
 pub fn default_path() -> PathBuf {
@@ -704,6 +725,8 @@ pub fn save_preferences(path: &Path, cfg: &Config) {
     set(&mut data, "game", "music", cfg.game.music);
     set(&mut data, "game", "white_level", cfg.game.white_level);
     set(&mut data, "game", "scores_upright", cfg.game.scores_upright);
+    set(&mut data, "game", "game_type", cfg.game.game_type.as_str());
+    set(&mut data, "game", "players", cfg.game.players.as_str());
     set(&mut data, "crt_effects", "enabled", cfg.crt_effects.enabled);
     set(&mut data, "next", "super_moves", cfg.next.super_moves);
     set(&mut data, "mouse", "spinner", cfg.mouse.spinner);
@@ -744,6 +767,25 @@ mod tests {
             ((1280, 1024), 600),
         ] {
             assert_eq!(auto_width(480, w, h), expected);
+        }
+    }
+
+    #[test]
+    fn web_field_leaves_room_for_fingers_on_phones() {
+        for ((w, h), expected) in [
+            // iPhone in Safari con le barre: si arriva al 2,2:1 e le fasce restano larghe
+            ((734.0, 268.0), 1056),
+            // iPhone da Home (schermo intero): proporzioni della tela meno le fasce
+            ((740.0, 372.0), 821),
+            // lo stesso telefono ancora in verticale
+            ((372.0, 740.0), 821),
+            // tablet e computer: tutta la tela
+            ((1180.0, 820.0), 691),
+            ((1920.0, 950.0), 970),
+            // mai sotto il 4:3
+            ((500.0, 480.0), 640),
+        ] {
+            assert_eq!(web_field_width(480, w, h), expected, "tela {w}x{h}");
         }
     }
 

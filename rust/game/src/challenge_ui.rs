@@ -36,7 +36,7 @@ const INITIALS_SECONDS: f64 = 30.0;
 const SCORES_SECONDS: f64 = 8.0;
 const CHALLENGER_SECONDS: f64 = 3.0;
 /// touch: tocco prolungato nella metà libera con cui entra uno sfidante
-const HOLD_SECONDS: f64 = 1.0;
+pub(crate) const HOLD_SECONDS: f64 = 1.0;
 /// le schermate si possono saltare solo dopo questo tempo (non si salta per sbaglio)
 const SKIP_AFTER: f64 = 1.0;
 /// la voce dice il nome dell'avversario dopo questo tempo dall'inizio della presentazione
@@ -160,12 +160,13 @@ fn challenger(app: &mut App, free: Side, held: bool) -> bool {
     true
 }
 
-/// Partita contro la CPU in corso (`total`: punti arcade fin qui): se entra uno sfidante la
+/// Partita contro la CPU in corso (`total`: punti arcade fin qui; `held`: sul touch un dito tenuto
+/// per `HOLD_SECONDS` nella zona dello sfidante, `Play::read_join`): se entra uno sfidante la
 /// partita si interrompe e i punti fatti restano.
-pub fn challenger_during_play(app: &mut App, total: u32) -> Option<Scene> {
+pub fn challenger_during_play(app: &mut App, total: u32, held: bool) -> Option<Scene> {
     insert_coin(app);
     let free = free_side(app)?;
-    if !challenger(app, free, false) {
+    if !challenger(app, free, held) {
         return None;
     }
     let run = app.run.as_mut()?;

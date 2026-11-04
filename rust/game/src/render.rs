@@ -170,6 +170,12 @@ impl Renderer {
         )
     }
 
+    /// Nuova larghezza del campo: il prossimo `update_layout` rifà letterbox e buffer.
+    pub fn set_world_width(&mut self, width: u32) {
+        self.world_w = width as f32;
+        self.screen_px = (0, 0);
+    }
+
     /// Da chiamare a ogni frame: ricalcola il letterbox se la finestra è cambiata.
     pub fn update_layout(&mut self, crt: &Crt) {
         let dpi = screen_dpi_scale();
@@ -406,7 +412,31 @@ impl Renderer {
     /// reale dello schermo, così il testo resta nitido a ogni scala.
     #[allow(clippy::too_many_arguments)] // posizione, dimensione, rotazione e colore sono tutti necessari
     pub fn text_centered(&self, text: &str, font: &GameFont, size: f32, cx: f32, cy: f32, rotation: f32, color: Color) {
-        let (font_size, font_scale) = self.font_params(size);
+        self.draw_centered(text, font, self.font_params(size), cx, cy, rotation, color);
+    }
+
+    /// Come `text_centered`, per le scritte che cambiano dimensione a ogni frame: i caratteri si
+    /// rasterizzano una volta sola alla dimensione `raster` e si scalano a `size`. Rasterizzati a
+    /// ogni dimensione, finirebbero tutti nell'atlante di macroquad, che cresce senza fine (fino a
+    /// superare le texture che un telefono regge) e, quando raddoppia, cancella la texture già
+    /// usata dai disegni del frame ("glBindTexture called with an already deleted texture").
+    #[allow(clippy::too_many_arguments)]
+    pub fn text_centered_zoom(&self, text: &str, font: &GameFont, size: f32, raster: f32, cx: f32, cy: f32, color: Color) {
+        let font_size = self.font_params(raster).0;
+        self.draw_centered(text, font, (font_size, size / font_size as f32), cx, cy, 0.0, color);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn draw_centered(
+        &self,
+        text: &str,
+        font: &GameFont,
+        (font_size, font_scale): (u16, f32),
+        cx: f32,
+        cy: f32,
+        rotation: f32,
+        color: Color,
+    ) {
         let dims = measure_text(text, Some(&font.font), font_size, font_scale);
         // centro dell'inchiostro rispetto all'origine (inizio della linea di base), poi ruotato
         let dpi = screen_dpi_scale();

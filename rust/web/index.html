@@ -5,7 +5,8 @@
      L'audio parte al primo tocco: lo sblocca audio.js di macroquad, come chiede Safari; senza
      audio si gioca muti. Gli errori compaiono in un riquadro rosso in basso.
      La musica del SID la suona il gioco in tempo reale: sid_audio.js. I gamepad li legge
-     gamepad.js; preferenze e classifica restano nel localStorage: storage.js. -->
+     gamepad.js; preferenze e classifica restano nel localStorage: storage.js. Sui
+     dispositivi touch il primo tocco porta a schermo intero e lo schermo resta acceso: fullscreen.js. -->
 <html lang="it">
 <head>
 <meta charset="utf-8">
@@ -76,7 +77,12 @@
         box.addEventListener("click", () => { box.hidden = true; box.textContent = ""; });
         const error = console.error;
         console.error = function (...args) {
-            show(args.map(String).join(" "));
+            const msg = args.map(String).join(" ");
+            // innocuo: l'atlante dei caratteri di macroquad cresce (nuova dimensione dello schermo)
+            // e per un frame le scritte già disegnate puntano alla texture vecchia; resta in console
+            if (!msg.includes("called with an already deleted texture")) {
+                show(msg);
+            }
             error.apply(console, args);
         };
         window.addEventListener("error", (e) => show(e.message || String(e.error)));
@@ -90,6 +96,7 @@
 <script src="sid_audio.js"></script>
 <script src="gamepad.js"></script>
 <script src="storage.js"></script>
+<script src="fullscreen.js"></script>
 <script>
     load("paddws.wasm");
     document.getElementById("glcanvas").focus();

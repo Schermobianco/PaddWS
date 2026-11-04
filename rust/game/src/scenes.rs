@@ -163,6 +163,8 @@ pub struct App {
     /// easter egg (iniziali "WS!", `challenge_ui::egg_after`): fino allo spegnimento, mai nella
     /// configurazione
     pub egg: bool,
+    /// partita lasciata per il menu (pausa, Esc, encoder): la voce RESUME la riprende
+    pub suspended: Option<Box<Play>>,
 }
 
 impl App {
@@ -176,6 +178,61 @@ impl App {
     pub fn set_egg(&mut self, on: bool) {
         self.egg = on;
         self.renderer.set_color_swap(on);
+    }
+
+    /// Cambia la larghezza del campo (nel browser, quando cambia la tela): parametri del core e
+    /// coordinate del disegno. Solo fuori dalla partita: chi ha uno stato del campo va rifatto.
+    pub fn set_field_width(&mut self, width: u32) {
+        self.cfg.resolution.width = width;
+        self.params = Params::new(&self.cfg.tuning());
+        self.renderer.set_world_width(width);
+    }
+
+    /// GAME TYPE e PLAYERS della configurazione (`Game::game_type`, `Game::players`), con gli
+    /// stessi vincoli del menu: EVO e NEXT sono a due, la CHALLENGE è in NEXT.
+    pub fn load_mode(&mut self) {
+        let g = &self.cfg.game;
+        (self.evo, self.next) = match g.game_type.as_str() {
+            "evo" => (true, false),
+            "next" => (false, true),
+            _ => (false, false),
+        };
+        (self.players, self.cpu, self.challenge) = match g.players.as_str() {
+            "cpu" => (2, true, false),
+            "challenge" => (2, true, true),
+            "one" if !self.evo && !self.next => (1, false, false),
+            _ => (2, false, false),
+        };
+        if self.challenge {
+            (self.evo, self.next) = (false, true);
+        }
+    }
+
+    /// Salva GAME TYPE e PLAYERS scelti nel menu (nel browser nel localStorage), per ritrovarli
+    /// alla prossima accensione.
+    fn save_mode(&mut self) {
+        let g = &mut self.cfg.game;
+        g.game_type = match (self.evo, self.next) {
+            (true, _) => "evo",
+            (_, true) => "next",
+            _ => "classic",
+        }
+        .into();
+        g.players = match (self.players, self.cpu, self.challenge) {
+            (1, _, _) => "one",
+            (_, _, true) => "challenge",
+            (_, true, _) => "cpu",
+            _ => "two",
+        }
+        .into();
+        config::save_preferences(&self.config_path, &self.cfg);
+    }
+
+    /// La partita lasciata per il menu non si riprende più (se ne sceglie un'altra o si esce).
+    pub fn drop_suspended(&mut self) {
+        if self.suspended.take().is_some() {
+            self.run = None;
+        }
     }
 
     /// Click di un encoder in questo frame.
@@ -245,7 +302,7 @@ impl App {
             &self.assets.sid[4],
             PlaySoundParams {
                 looped: false,
-                volume: 1.0,
+                volume: platform::volume(),
             },
         );
     }
@@ -265,7 +322,7 @@ impl App {
             voice,
             PlaySoundParams {
                 looped: false,
-                volume: 1.0,
+                volume: platform::voice_volume(),
             },
         );
     }
@@ -304,12 +361,22 @@ impl App {
             sound,
             PlaySoundParams {
                 looped: false,
-                volume: 1.0,
+                volume: platform::volume(),
             },
         );
     }
 
+    /// Schermo intero, come lo mostra la voce del menu: nel browser quello vero della pagina.
+    pub fn fullscreen(&self) -> bool {
+        if platform::WEB { platform::web_fullscreen() } else { self.cfg.game.fullscreen }
+    }
+
     pub fn toggle_fullscreen(&mut self) {
+        if platform::WEB {
+            // nel browser decide la pagina (`rust/web/fullscreen.js`): niente preferenza salvata
+            platform::set_web_fullscreen(!platform::web_fullscreen());
+            return;
+        }
         self.cfg.game.fullscreen = !self.cfg.game.fullscreen;
         set_fullscreen(self.cfg.game.fullscreen);
         config::save_preferences(&self.config_path, &self.cfg);
@@ -381,7 +448,11 @@ impl Scene {
     fn scene_music(&self, app: &App) -> Option<Song> {
         match self {
             Scene::Attract(_) | Scene::Scores(_) => app.cfg.game.attract_sound.then_some(Song::Title),
-            Scene::Menu(_) | Scene::Pick(_) | Scene::Paddles(_) | Scene::HowTo(_) => Some(Song::Title),
+            // il menu e le scelte che seguono suonano il titolo come l'attract: ATTRACT SOUND
+            // spegne anche loro
+            Scene::Menu(_) | Scene::Pick(_) | Scene::Paddles(_) | Scene::HowTo(_) => {
+                app.cfg.game.attract_sound.then_some(Song::Title)
+            }
             Scene::Game(s) => match (s.game_over, &s.challenge) {
                 (Some(_), None) => Some(Song::GameOver),
                 (None, Some((level, _))) => Some(Song::Theme(RUNGS[*level].kind)),
@@ -525,6 +596,28 @@ const DIFFICULTY_NAMES: [&str; DIFFICULTY_LEVELS as usize] = ["EASY", "NORMAL", 
 /// Livelli del bianco proposti dal menu, in percento (gli stessi dell'OSD del MiSTer).
 const WHITE_LEVELS: [u8; 4] = [100, 87, 75, 62];
 
+/// Simbolo della pausa per il touch: dove finisce sotto la cima del campo (unità a 480 righe,
+/// scalate con `App::scale`) e luminosità in partita rispetto al grigio chiaro.
+const PAUSE_ICON_BOTTOM: f32 = 26.0;
+const PAUSE_ICON_DIM: f32 = 0.3;
+/// Fondo della zona che mette in pausa (`in_pause_zone`), sotto la scritta TAP TO / PAUSE.
+const PAUSE_ZONE_BOTTOM: f32 = 72.0;
+
+/// Zona del touch che mette in pausa: in cima al centro, intorno al simbolo e alla scritta di
+/// `Play::draw_pause_hint` (punto in coordinate di disegno).
+fn in_pause_zone(app: &App, p: Vec2) -> bool {
+    let (w, s) = (app.renderer.world_w, app.scale());
+    (p.x - w / 2.0).abs() < w * 0.08 && p.y < PAUSE_ZONE_BOTTOM * s
+}
+
+/// Simbolo della pausa (due barrette) centrato in orizzontale su `cx`, da `top` alto `height`.
+fn pause_icon(cx: f32, top: f32, height: f32, s: f32, color: Color) {
+    let (bar_w, gap) = ((4.0 * s).round().max(1.0), (4.0 * s).round().max(1.0));
+    for x in [cx - gap / 2.0 - bar_w, cx + gap / 2.0] {
+        draw_rectangle(x, top, bar_w, height, color);
+    }
+}
+
 /// Ruota del menu: angolo sul rullo tra una voce e la successiva (rad), raggio del rullo e altezza
 /// del suo centro (in unità del campo a 480 righe, scalate con `App::scale`).
 const WHEEL_STEP: f32 = 0.30;
@@ -556,6 +649,8 @@ enum Item {
     Scores,
     /// il mouse come spinner del giocatore 1: non con il touch né con gli encoder del cabinato
     MouseSpinner,
+    /// riprende la partita lasciata per il menu (`App::suspended`)
+    Resume,
     Play,
     Quit,
     Shutdown,
@@ -591,8 +686,15 @@ pub struct Menu {
 
 impl Menu {
     pub fn new(app: &App) -> Self {
-        let items = Self::items(app);
-        let selected = items.iter().position(|i| *i == Item::Play).unwrap_or(0);
+        Self::with_resume(app, app.suspended.is_some())
+    }
+
+    /// Menu con o senza la voce RESUME (`resume`: la partita che si lascia ora, non ancora in
+    /// `App::suspended`); la voce al centro è RESUME se c'è, altrimenti PLAY.
+    fn with_resume(app: &App, resume: bool) -> Self {
+        let items = Self::items(app, resume);
+        let start = if resume { Item::Resume } else { Item::Play };
+        let selected = items.iter().position(|i| *i == start).unwrap_or(0);
         Self {
             items,
             selected,
@@ -606,7 +708,7 @@ impl Menu {
     }
 
     /// Voci del menu: le opzioni di NEXT compaiono solo con GAME TYPE: NEXT.
-    fn items(app: &App) -> Vec<Item> {
+    fn items(app: &App, resume: bool) -> Vec<Item> {
         let mut items = vec![Item::GameType, Item::Players, Item::Difficulty];
         if app.next {
             items.push(Item::SuperMoves);
@@ -621,6 +723,9 @@ impl Menu {
         ]);
         if !app.touch && (app.encoders.is_none() || app.mouse_spinner()) {
             items.push(Item::MouseSpinner);
+        }
+        if resume {
+            items.push(Item::Resume);
         }
         items.push(Item::Play);
         if !platform::WEB {
@@ -640,7 +745,7 @@ impl Menu {
 
     /// Dopo un cambio di modalità le voci possono cambiare: la ruota resta sulla stessa voce.
     fn refresh_items(&mut self, app: &App) {
-        let items = Self::items(app);
+        let items = Self::items(app, app.suspended.is_some());
         if items != self.items {
             let item = self.items[self.selected];
             let selected = items.iter().position(|i| *i == item).unwrap_or(0);
@@ -774,10 +879,11 @@ impl Menu {
             Item::Music => format!("MUSIC : {}", on_off(app.cfg.game.music)),
             Item::AttractSound => format!("ATTRACT SOUND : {}", on_off(app.cfg.game.attract_sound)),
             Item::WhiteLevel => format!("WHITE LEVEL : {}%", app.cfg.game.white_level),
-            Item::Fullscreen => format!("FULLSCREEN : {}", on_off(app.cfg.game.fullscreen)),
+            Item::Fullscreen => format!("FULLSCREEN : {}", on_off(app.fullscreen())),
             Item::Crt => format!("CRT FILTER : {}", on_off(app.cfg.crt_effects.enabled)),
             Item::Scores => format!("SCORES : {}", if app.cfg.game.scores_upright { "UPRIGHT" } else { "FACING" }),
             Item::MouseSpinner => format!("MOUSE SPINNER : {}", on_off(app.mouse_spinner())),
+            Item::Resume => "RESUME".into(),
             Item::Play => "PLAY".into(),
             Item::Quit => "QUIT".into(),
             Item::Shutdown => "SHUTDOWN".into(),
@@ -786,6 +892,10 @@ impl Menu {
 
     /// Cambia il valore di una voce di opzione; false se la voce è un'azione.
     fn change(app: &mut App, item: Item) -> bool {
+        // con un'altra partita scelta quella lasciata non si riprende più
+        if matches!(item, Item::GameType | Item::Players | Item::Difficulty | Item::SuperMoves) {
+            app.drop_suspended();
+        }
         match item {
             Item::GameType => {
                 // CLASSIC -> EVO -> NEXT -> CLASSIC
@@ -798,6 +908,7 @@ impl Menu {
                     app.players = 2; // EVO e NEXT sono modalità a due giocatori
                 }
                 app.challenge &= app.next; // CHALLENGE si gioca in NEXT
+                app.save_mode();
             }
             Item::Players => {
                 // TWO -> VS CPU -> CHALLENGE -> ONE -> TWO
@@ -814,6 +925,7 @@ impl Menu {
                 if app.challenge {
                     (app.evo, app.next) = (false, true);
                 }
+                app.save_mode();
             }
             Item::Difficulty => app.next_difficulty(),
             Item::SuperMoves => {
@@ -856,7 +968,16 @@ impl Menu {
         if Self::change(app, item) {
             return None;
         }
+        if item == Item::Play {
+            app.drop_suspended();
+        }
         match item {
+            Item::Resume => app.suspended.take().map(|mut play| {
+                // si torna in pausa: si riprende con un tocco (o Start), quando si è pronti
+                play.suspend = false;
+                play.paused = true;
+                Scene::Game(play)
+            }),
             Item::Play if app.next => {
                 app.run = app.challenge.then(Run::new);
                 Some(Scene::Pick(Pick::new(app)))
@@ -927,6 +1048,7 @@ impl Menu {
         self.refresh_items(app);
         self.scroll(dt);
         if input::pressed(KeyCode::Escape) {
+            app.drop_suspended();
             return Some(Scene::Attract(Attract::new(&app.attract, false)));
         }
         None
@@ -1087,6 +1209,10 @@ impl Controls {
 }
 
 pub struct Play {
+    /// si va al menu lasciando la partita da riprendere (`App::suspended`)
+    pub suspend: bool,
+    /// touch in CHALLENGE: il dito tenuto nella zona dello sfidante (`read_join`) e da quanto
+    join: Option<(u64, f64)>,
     game: Match,
     controls: [Controls; 2],
     accumulator: f64,
@@ -1155,6 +1281,8 @@ impl Play {
     fn with_match(app: &App, game: Match, cpus: Vec<Cpu>) -> Self {
         let next = game.next.is_some();
         let mut play = Self {
+            suspend: false,
+            join: None,
             game,
             controls: Default::default(),
             accumulator: 0.0,
@@ -1396,15 +1524,19 @@ impl Play {
         if fingers.is_empty() {
             return false;
         }
-        let (w, h) = (app.renderer.world_w, app.renderer.world_h);
+        let w = app.renderer.world_w;
         let alone = self.active_sides().len() == 1;
         let now = get_time();
         let moves = self.game.super_moves();
         for f in fingers {
+            // il dito dello sfidante (`read_join`) non muove la racchetta
+            if self.join.is_some_and(|(id, _)| id == f.id) {
+                continue;
+            }
             let held = self.controls.iter().position(|c| c.finger == Some(f.id));
             match f.phase {
                 TouchPhase::Started => {
-                    if (f.pos.x - w / 2.0).abs() < w * 0.08 && f.pos.y < h * 0.12 {
+                    if in_pause_zone(app, f.pos) {
                         return true; // pausa
                     }
                     let side = if alone {
@@ -1447,6 +1579,52 @@ impl Play {
             }
         }
         false
+    }
+
+    /// Lato dello sfidante se in questo momento può entrare (CHALLENGE contro la CPU, non durante
+    /// la sfida né nella demo).
+    fn join_side(&self) -> Option<Side> {
+        (self.challenge.is_some() && self.duel.is_none() && !self.demo && self.game_over.is_none())
+            .then(|| self.solo.opponent())
+    }
+
+    /// Zona del touch in cui lo sfidante tiene il dito per entrare: dietro la racchetta della CPU,
+    /// tra lei e il bordo (e oltre, nella fascia nera per le dita), dove c'è la scritta di
+    /// `draw_join_hint`.
+    fn in_join_zone(&self, app: &App, p: Vec2) -> bool {
+        let Some(free) = self.join_side() else { return false };
+        let back = self.join_strip();
+        let w = app.renderer.world_w;
+        if free == Side::Right { p.x > w - back } else { p.x < back }
+    }
+
+    /// Larghezza della striscia dietro la racchetta della CPU, dal bordo del campo fin quasi al
+    /// dorso della racchetta nella posizione di partenza.
+    fn join_strip(&self) -> f32 {
+        let p = &self.game.params;
+        to_f32(p.pad_start_pos) - to_f32(p.pad_width)
+    }
+
+    /// Touch in CHALLENGE: un dito appoggiato nella zona dello sfidante (`in_join_zone`) e tenuto
+    /// lì è suo, non della racchetta; true quando è stato tenuto per `HOLD_SECONDS`.
+    fn read_join(&mut self, app: &App, dt: f64) -> bool {
+        for f in touch::fingers() {
+            let mine = self.join.is_some_and(|(id, _)| id == f.id);
+            match f.phase {
+                TouchPhase::Started if self.join.is_none() && self.in_join_zone(app, f.pos) => {
+                    self.join = Some((f.id, 0.0));
+                }
+                TouchPhase::Ended | TouchPhase::Cancelled if mine => self.join = None,
+                _ => {}
+            }
+        }
+        match &mut self.join {
+            Some((_, t)) => {
+                *t += dt;
+                *t >= challenge_ui::HOLD_SECONDS
+            }
+            None => false,
+        }
     }
 
     /// Encoder del cabinato (o il mouse come spinner del giocatore 1), come nella versione Python:
@@ -1579,16 +1757,16 @@ impl Play {
         // nella demo comandano le CPU: tasti, gettone e Start li legge la scena Demo
         if !self.demo {
             if input::pressed(KeyCode::Escape) {
-                app.run = None;
-                return Some(Scene::Menu(Menu::new(app)));
+                return Some(self.leave_for_menu(app));
             }
             if input::pressed(KeyCode::P) || input::pressed(KeyCode::Pause) {
                 self.paused = !self.paused;
             }
             // CHALLENGE contro la CPU: può entrare un nuovo sfidante (non durante la sfida)
+            let held = !self.paused && self.read_join(app, dt);
             if !self.paused
                 && let Some((_, score)) = self.challenge
-                && let Some(scene) = challenge_ui::challenger_during_play(app, score.total)
+                && let Some(scene) = challenge_ui::challenger_during_play(app, score.total, held)
             {
                 return Some(scene);
             }
@@ -1597,7 +1775,7 @@ impl Play {
                 let (h, s) = (app.renderer.world_h, app.scale());
                 for p in touch::taps() {
                     if (p.y - (h / 2.0 + 90.0 * s)).abs() < 30.0 * s {
-                        return Some(Scene::Menu(Menu::new(app)));
+                        return Some(self.leave_for_menu(app));
                     }
                     self.paused = false;
                     for c in &mut self.controls {
@@ -1630,7 +1808,7 @@ impl Play {
             self.read_keys(app);
             self.read_pads(app);
             if self.read_knobs(app) {
-                return Some(Scene::Menu(Menu::new(app)));
+                return Some(self.leave_for_menu(app));
             }
             if self.read_touch(app) {
                 self.paused = true;
@@ -1776,11 +1954,15 @@ impl Play {
         // linea tratteggiata centrale (in NEXT la COMETA ne spazza i trattini)
         let dash = (10.0 * s).floor().max(1.0);
         let line_w = ((to_f32(p.pad_width) / 2.0).floor() * w / 800.0).floor().max(1.0);
+        // touch: in cima alla linea il simbolo della pausa (`draw_pause_hint`) al posto dei trattini
+        let pause_hint = self.pause_hint(app);
         let mut y = 0.0;
         let mut i = 0;
         while y < h {
             let dx = self.fx.as_ref().map_or(0.0, |fx| fx.dash_offset(i));
-            draw_rectangle(w / 2.0 - line_w / 2.0 + dx, y, line_w, dash.min(h - y), white);
+            if !(pause_hint && y < PAUSE_ICON_BOTTOM * s) {
+                draw_rectangle(w / 2.0 - line_w / 2.0 + dx, y, line_w, dash.min(h - y), white);
+            }
             y += dash * 2.0;
             i += 1;
         }
@@ -1897,6 +2079,10 @@ impl Play {
             }
             fx.draw_labels(app, &self.game);
         }
+        if pause_hint {
+            self.draw_pause_hint(app);
+            self.draw_join_hint(app);
+        }
         if self.countdown > 0.0 {
             let size = 110.0 * s;
             draw_rectangle(
@@ -1932,6 +2118,75 @@ impl Play {
             let game_over = winner != Some("you_win") && !lost_level;
             attract::draw_game_over(&app.attract, r, game_over, winner, App::color(winner_color));
         }
+    }
+
+    /// Touch: si mostra dove toccare per la pausa (non nella demo, in pausa né a partita finita).
+    fn pause_hint(&self, app: &App) -> bool {
+        app.touch && !self.demo && !self.paused && self.game_over.is_none()
+    }
+
+    /// Simbolo della pausa in cima alla linea centrale, dentro la zona che mette in pausa
+    /// (`in_pause_zone`): in partita appena visibile; durante il conto alla rovescia in grigio
+    /// chiaro, con sotto TAP TO / PAUSE su due righe brevi, che restano nella zona e tra i punteggi
+    /// (nei campi stretti, dove TAP TO non ci sta, solo PAUSE).
+    fn draw_pause_hint(&self, app: &App) {
+        let r = &app.renderer;
+        let (w, s) = (r.world_w, app.scale());
+        let gray = App::color(app.cfg.colors.lgray);
+        let counting = self.countdown > 0.0;
+        let k = if counting { 1.0 } else { PAUSE_ICON_DIM };
+        let color = Color::new(gray.r * k, gray.g * k, gray.b * k, 1.0);
+        let top = 8.0 * s;
+        pause_icon(w / 2.0, top, PAUSE_ICON_BOTTOM * s - top, s, color);
+        if counting {
+            let font = &app.assets.font_text;
+            let size = 18.0 * s;
+            // dove comincia, dal centro, il punteggio più vicino in cima (vedi `draw`)
+            let ox = 60.0 * w / 800.0;
+            let inner = if app.cfg.game.scores_upright {
+                2.0 * ox - r.text_width("00", &app.assets.font_score, 50.0 * s) / 2.0
+            } else {
+                ox - 25.0 * s
+            };
+            // nei campi stretti (4:3) TAP TO non ci sta tra i punteggi: resta solo PAUSE
+            let full = r.text_width("TAP TO", font, size) / 2.0 + 6.0 * s < inner;
+            let lines: &[&str] = if full { &["TAP TO", "PAUSE"] } else { &["PAUSE"] };
+            let half = lines.iter().map(|l| r.text_width(l, font, size)).fold(0.0, f32::max) / 2.0;
+            let y = (PAUSE_ICON_BOTTOM + 13.0) * s;
+            // fondo nero: la linea tratteggiata passa sotto la scritta
+            let box_h = (lines.len() as f32 * 19.0 + 4.0) * s;
+            draw_rectangle(w / 2.0 - half - 3.0 * s, y - 11.0 * s, 2.0 * half + 6.0 * s, box_h, BLACK);
+            for (i, line) in lines.iter().enumerate() {
+                r.text_centered(line, font, size, w / 2.0, y + i as f32 * 19.0 * s, 0.0, color);
+            }
+        }
+    }
+
+    /// Al menu: se la partita non è finita resta da riprendere con RESUME (il ciclo principale la
+    /// mette in `App::suspended`, vedi `suspend`).
+    fn leave_for_menu(&mut self, app: &mut App) -> Scene {
+        self.suspend = self.game_over.is_none();
+        if !self.suspend {
+            app.run = None;
+        }
+        Scene::Menu(Menu::with_resume(app, self.suspend))
+    }
+
+    /// Touch in CHALLENGE: P2 HOLD HERE nella zona dello sfidante (`in_join_zone`), dietro la
+    /// racchetta della CPU, in verticale lungo il bordo e girata verso chi sta da quel lato del
+    /// tavolo (come il suo punteggio). Come il simbolo della pausa: appena visibile in partita, in
+    /// grigio chiaro nel conto alla rovescia e mentre lo sfidante tiene il dito.
+    fn draw_join_hint(&self, app: &App) {
+        let Some(free) = self.join_side() else { return };
+        let r = &app.renderer;
+        let (w, h, s) = (r.world_w, r.world_h, app.scale());
+        let gray = App::color(app.cfg.colors.lgray);
+        let k = if self.countdown > 0.0 || self.join.is_some() { 1.0 } else { PAUSE_ICON_DIM };
+        let color = Color::new(gray.r * k, gray.g * k, gray.b * k, 1.0);
+        let half = self.join_strip() / 2.0;
+        let (x, rotation) = if free == Side::Right { (w - half, -FRAC_PI_2) } else { (half, FRAC_PI_2) };
+        let text = format!("P{} HOLD HERE", free as usize + 1);
+        r.text_centered(&text, &app.assets.font_text, 18.0 * s, x, h / 2.0, rotation, color);
     }
 
     /// Chi ha vinto, per la scritta sotto GAME OVER: in singolo nessuno; contro la CPU il

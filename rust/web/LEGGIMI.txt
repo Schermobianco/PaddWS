@@ -14,7 +14,9 @@ Pages, Netlify, il proprio spazio web): non serve nient'altro.
 
 Sul telefono si gioca in orizzontale: la racchetta segue il dito, un secondo dito fa lo scatto
 in avanti, in NEXT un tocco su una capsula della riserva usa il bonus, al centro in alto la
-pausa. Su iPhone lo schermo intero si ottiene con Condividi -> Aggiungi a Home.
+pausa (il simbolo in cima alla linea), in CHALLENGE un dito tenuto dietro la racchetta della CPU
+fa entrare lo sfidante. Su Android e iPad il primo tocco porta a schermo intero; su iPhone lo
+schermo intero si ottiene con Condividi -> Aggiungi a Home.
 
 Sul computer funzionano anche i gamepad e gli stick arcade USB (il primo a sinistra, il secondo a
 destra): il browser li mostra dopo la pressione di un loro pulsante e solo nelle pagine sicure

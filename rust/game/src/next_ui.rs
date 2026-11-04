@@ -1304,7 +1304,11 @@ impl NextFx {
                     continue;
                 }
                 let zoom = ((t - (LABEL_SECONDS - SPECIAL_ZOOM_SECONDS)) / SPECIAL_ZOOM_SECONDS).clamp(0.0, 1.0) as f32;
-                let size = (if hit { 34.0 } else { 28.0 }) * s * (1.0 + 0.6 * zoom);
+                let base = (if hit { 34.0 } else { 28.0 }) * s;
+                let size = base * (1.0 + 0.6 * zoom);
+                // durante lo zoom i caratteri sono quelli grandi, scalati (`text_centered_zoom`);
+                // fermi, quelli alla dimensione giusta, nitidi
+                let raster = if zoom > 0.0 { base * 1.6 } else { base };
                 // al colpo la scritta alterna accento e bianco
                 let color = if hit && (get_time() * 12.0) as i64 % 2 == 0 {
                     white
@@ -1312,7 +1316,7 @@ impl NextFx {
                     accent
                 };
                 let cx = if side == 0 { w / 4.0 } else { 3.0 * w / 4.0 };
-                r.text_centered(&special_title(special, level), font, size, cx, y, 0.0, color);
+                r.text_centered_zoom(&special_title(special, level), font, size, raster, cx, y, color);
             }
         }
 

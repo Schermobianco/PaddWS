@@ -243,11 +243,8 @@ fn gl_renderer() -> String {
 async fn run(args: Args, mut cfg: Config, config_path: PathBuf) {
     println!("GPU: {}", gl_renderer());
     if platform::WEB {
-        // nel browser il campo prende le proporzioni dello schermo in orizzontale (anche se il
-        // telefono è ancora in verticale), tra il 4:3 e il 2,2:1 dei telefoni più lunghi
-        let (sw, sh) = (screen_width(), screen_height());
-        let aspect = (sw.max(sh) / sw.min(sh).max(1.0)).clamp(4.0 / 3.0, 2.2);
-        cfg.resolution.width = (cfg.resolution.height as f32 * aspect).round() as u32;
+        // nel browser il campo prende le proporzioni della tela (vedi anche il ciclo qui sotto)
+        cfg.resolution.width = config::web_field_width(cfg.resolution.height, screen_width(), screen_height());
     }
     touch::init();
     platform::boost_priority();
@@ -293,9 +290,12 @@ async fn run(args: Args, mut cfg: Config, config_path: PathBuf) {
         music: None,
         sid_music: music::SidMusic::start(),
         egg: false,
+        suspended: None,
         config_path,
         cfg,
     };
+    // GAME TYPE e PLAYERS dell'ultima volta (anche per la demo dell'attract)
+    app.load_mode();
 
     if let Some(dir) = &args.paddle_gallery {
         let _ = std::fs::create_dir_all(dir);
@@ -368,8 +368,23 @@ async fn run(args: Args, mut cfg: Config, config_path: PathBuf) {
         }
         // telefono in verticale: il gioco si ferma finché non lo si ruota
         let portrait = touch::portrait();
+        // nel browser, finché si è nell'attract, il campo segue la tela: quando si ruota il
+        // telefono (la pagina aperta in verticale) o Safari mostra o nasconde le sue barre, prende
+        // le nuove proporzioni e l'attract riparte; in partita e nei menu resta com'è
+        if platform::WEB && !portrait && matches!(scene, Scene::Attract(_)) {
+            let width = config::web_field_width(app.cfg.resolution.height, screen_width(), screen_height());
+            if width != app.cfg.resolution.width {
+                app.set_field_width(width);
+                scene = Scene::Attract(Attract::new(&app.attract, false));
+            }
+        }
         if !portrait && let Some(next) = scene.update(&mut app, dt) {
-            scene = next;
+            // una partita lasciata per il menu resta da riprendere (RESUME)
+            if let Scene::Game(play) = std::mem::replace(&mut scene, next)
+                && play.suspend
+            {
+                app.suspended = Some(play);
+            }
         }
         let music = scene.music(&app);
         app.set_music(music);
@@ -499,7 +514,7 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         app.set_egg(true);
         scene
     }
-    let shots: [(&str, MakeScene); 59] = [
+    let shots: [(&str, MakeScene); 62] = [
         ("1_demo_classic", |app| demo_at(app, DemoMode::Classic)),
         ("1_demo_evo", |app| demo_at(app, DemoMode::Evo)),
         ("1_demo_next", |app| demo_at(app, DemoMode::Next)),
@@ -514,6 +529,12 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
             play.skip_countdown();
             play.fill_challenge_demo();
             Scene::Game(Box::new(play))
+        }),
+        // touch: P2 HOLD HERE nella metà della CPU, con la scritta del conto alla rovescia
+        ("8_challenge_countdown_touch", |app| {
+            challenge(app, 2);
+            app.touch = true;
+            Scene::Game(Box::new(Play::challenge(app)))
         }),
         ("8_challenge_challenger", |app| {
             challenge(app, 2);
@@ -614,6 +635,22 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
             app.players = 2;
             app.evo = false;
             Scene::Game(Box::new(Play::new(app)))
+        }),
+        // touch: il simbolo della pausa in cima alla linea, con la scritta nel conto alla rovescia
+        ("5_countdown_touch", |app| {
+            app.players = 2;
+            app.evo = false;
+            app.touch = true;
+            Scene::Game(Box::new(Play::new(app)))
+        }),
+        ("4_game_touch", |app| {
+            app.players = 2;
+            app.evo = false;
+            app.touch = true;
+            let mut play = Play::new(app);
+            play.skip_countdown();
+            play.set_scores([3, 5], 0);
+            Scene::Game(Box::new(play))
         }),
         ("2_menu_challenge", |app| {
             app.players = 2;

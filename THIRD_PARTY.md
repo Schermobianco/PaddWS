@@ -41,6 +41,6 @@ I due font sono anche nelle ROM del core MiSTer, come bitmap generate dai file T
   `rust/vendor/quad-snd/` con una piccola modifica al mixer per la musica del SID
   ([testo MIT](rust/vendor/quad-snd/LICENSE-MIT), modifiche in testa al suo `Cargo.toml`).
 - Versione web: il JavaScript di miniquad e quad-snd, MIT o Apache-2.0; i plugin di `rust/web/`
-  (`sid_audio.js`, `gamepad.js`, `storage.js`) sono di PADD WS (GPL v3 o successiva).
+  (`sid_audio.js`, `gamepad.js`, `storage.js`, `fullscreen.js`) sono di PADD WS (GPL v3 o successiva).
 - Versione Python: [Arcade](https://github.com/pythonarcade/arcade) (MIT) e, sul Raspberry Pi,
   [pigpio](https://github.com/joan2937/pigpio) (Unlicense).

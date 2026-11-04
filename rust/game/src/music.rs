@@ -25,9 +25,58 @@ enum Cmd {
     Slow(bool),
 }
 
+/// Livello di ogni canzone della ROM a volume 1: RMS delle parti che suonano (`song_level`, sui
+/// primi `LEVEL_SECONDS` secondi). Il test `song_levels_match_the_rom` avvisa se la ROM cambia.
+const SONG_LEVELS: [(&str, f32); 14] = [
+    ("title", 0.223),
+    ("intro", 0.189),
+    ("clear", 0.185),
+    ("continue", 0.171),
+    ("game_over", 0.107),
+    ("champion", 0.223),
+    ("theme_arcade", 0.202),
+    ("theme_titan", 0.121),
+    ("theme_hammer", 0.200),
+    ("theme_twist", 0.159),
+    ("theme_blaster", 0.196),
+    ("theme_rush", 0.168),
+    ("theme_guardian", 0.161),
+    ("ending", 0.189),
+];
+/// Sui telefoni ogni canzone si porta a questo livello: la media dei temi della partita.
+const GAME_LEVEL: f32 = 0.172;
+/// Secondi di musica misurati per `SONG_LEVELS`.
+#[cfg(test)]
+const LEVEL_SECONDS: usize = 30;
+
+/// Guadagno della canzone `song` (da 1): sui telefoni la porta a `GAME_LEVEL` (il titolo copriva
+/// il resto), altrove 1 (come sul MiSTer e sul C64).
+fn song_gain(song: u8) -> f32 {
+    if !crate::platform::touch_device() || song == 0 {
+        return 1.0;
+    }
+    static ROM: std::sync::OnceLock<paddws_sid::Rom> = std::sync::OnceLock::new();
+    let rom = ROM.get_or_init(paddws_sid::Rom::builtin);
+    rom.names
+        .get(song as usize - 1)
+        .and_then(|name| SONG_LEVELS.iter().find(|(n, _)| n == name))
+        .map_or(1.0, |(_, level)| GAME_LEVEL / level)
+}
+
+/// Volume della musica per la canzone `song`.
+fn music_volume(song: u8) -> f32 {
+    VOLUME * crate::platform::music_volume() * song_gain(song)
+}
+
 fn apply(m: &mut Music, cmd: Cmd) {
     match cmd {
-        Cmd::Song(n) => m.set_song(n),
+        // con 0 (silenzio) le note rilasciano al volume della canzone di prima
+        Cmd::Song(n) => {
+            m.set_song(n);
+            if n != 0 {
+                m.set_volume(music_volume(n));
+            }
+        }
         Cmd::Fast(on) => m.set_fast(on),
         Cmd::Slow(on) => m.set_slow(on),
     }
@@ -49,7 +98,7 @@ impl SidMusic {
         let tx = {
             let (tx, rx) = std::sync::mpsc::channel::<Cmd>();
             let mut music = Music::new(NATIVE_RATE);
-            music.set_volume(VOLUME);
+            music.set_volume(music_volume(0));
             quad_snd::set_stream(Some(Box::new(move |buffer: &mut [f32]| {
                 while let Ok(cmd) = rx.try_recv() {
                     apply(&mut music, cmd);
@@ -102,7 +151,7 @@ impl SidMusic {
 mod web {
     use std::cell::RefCell;
 
-    use super::{Cmd, Music, VOLUME, apply};
+    use super::{Cmd, Music, apply, music_volume};
 
     unsafe extern "C" {
         /// Crea lo ScriptProcessor (`rust/web/sid_audio.js`) e restituisce la frequenza del
@@ -119,7 +168,7 @@ mod web {
         let rate = unsafe { paddws_music_init() };
         if rate > 0 {
             let mut music = Music::new(rate);
-            music.set_volume(VOLUME);
+            music.set_volume(music_volume(0));
             MUSIC.with(|m| *m.borrow_mut() = Some((music, Vec::new())));
         }
     }
@@ -149,5 +198,48 @@ mod web {
     #[unsafe(no_mangle)]
     pub extern "C" fn paddws_sid_crate_version() -> u32 {
         1
+    }
+}
+
+/// RMS della canzone `song` nei primi `seconds` secondi, solo sulle finestre da 50 ms che suonano.
+#[cfg(test)]
+fn song_level(song: u8, seconds: usize) -> f32 {
+    let mut m = Music::new(48_000);
+    m.set_song(song);
+    let mut buf = vec![0.0f32; 48_000 * seconds];
+    m.render(&mut buf);
+    let (mut acc, mut n) = (0.0f64, 0usize);
+    for w in buf.chunks(2400) {
+        let e = w.iter().map(|v| (*v as f64).powi(2)).sum::<f64>();
+        if (e / w.len() as f64).sqrt() > 0.005 {
+            acc += e;
+            n += w.len();
+        }
+    }
+    if n == 0 { 0.0 } else { (acc / n as f64).sqrt() as f32 }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// La tabella dei livelli copre tutte le canzoni della ROM, con i valori misurati: se la ROM
+    /// cambia, i nuovi valori si leggono nel messaggio dell'errore.
+    #[test]
+    fn song_levels_match_the_rom() {
+        let rom = paddws_sid::Rom::builtin();
+        assert_eq!(rom.names.len(), SONG_LEVELS.len(), "canzoni della ROM: {:?}", rom.names);
+        for (i, name) in rom.names.iter().enumerate() {
+            let level = song_level(i as u8 + 1, LEVEL_SECONDS);
+            let (_, table) = SONG_LEVELS.iter().find(|(n, _)| n == name).expect("canzone senza livello");
+            assert!((level - table).abs() < 0.002, "{name}: misurato {level:.3}, in tabella {table:.3}");
+        }
+    }
+
+    #[test]
+    fn game_level_is_the_mean_of_the_themes() {
+        let themes: Vec<f32> = SONG_LEVELS.iter().filter(|(n, _)| n.starts_with("theme_")).map(|(_, l)| *l).collect();
+        let mean = themes.iter().sum::<f32>() / themes.len() as f32;
+        assert!((mean - GAME_LEVEL).abs() < 0.001, "media dei temi {mean:.3}");
     }
 }

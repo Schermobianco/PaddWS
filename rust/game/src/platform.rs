@@ -5,6 +5,39 @@ use std::fs;
 /// Versione web (WebAssembly nel browser): niente file, processi né orologio di sistema.
 pub const WEB: bool = cfg!(target_arch = "wasm32");
 
+/// Nel browser su un telefono o un tablet (il puntatore principale è il dito, `rust/web/
+/// fullscreen.js`): lì i volumi sono molto più bassi. Il browser del PC suona come la versione
+/// nativa.
+#[cfg(target_arch = "wasm32")]
+pub fn touch_device() -> bool {
+    static TOUCH: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *TOUCH.get_or_init(|| unsafe { web_screen::paddws_touch_device() })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn touch_device() -> bool {
+    false
+}
+
+/// Volume degli effetti. Sui telefoni molto più basso: il volume dei media è spesso alto e le onde
+/// quadre del SID, a tutto volume, escono fortissime.
+pub fn volume() -> f32 {
+    if touch_device() { 0.08 } else { 1.0 }
+}
+
+/// Volume delle voci "da SID" (nomi degli avversari, urli delle mosse, READY e GO): i loro WAV
+/// hanno un livello medio circa 5 volte quello degli effetti; sui telefoni si portano vicino a loro.
+pub fn voice_volume() -> f32 {
+    if touch_device() { volume() * 0.25 } else { volume() }
+}
+
+/// Volume della musica. Sui telefoni deciso a parte: a pari volume il SID della musica ha un
+/// livello medio circa 4 volte quello dei WAV degli effetti e suona di continuo; in più ogni
+/// canzone si porta al livello dei temi della partita (`music::song_gain`).
+pub fn music_volume() -> f32 {
+    if touch_device() { 0.04 } else { 1.0 }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub use std::time::Instant;
 
@@ -102,6 +135,43 @@ mod web_storage {
     /// Versione del plugin JavaScript che si aspetta il gioco (controllata da miniquad).
     #[unsafe(no_mangle)]
     pub extern "C" fn paddws_storage_crate_version() -> u32 {
+        1
+    }
+}
+
+/// Nel browser: la pagina è a schermo intero (anche aperta da "Aggiungi a Home"). Fuori dal
+/// browser non serve: vale l'impostazione della configurazione.
+#[cfg(target_arch = "wasm32")]
+pub fn web_fullscreen() -> bool {
+    unsafe { web_screen::paddws_is_fullscreen() }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn web_fullscreen() -> bool {
+    false
+}
+
+/// Nel browser: chiede o lascia lo schermo intero (`rust/web/fullscreen.js`); con OFF il tocco
+/// non lo richiede più da sé.
+#[cfg(target_arch = "wasm32")]
+pub fn set_web_fullscreen(on: bool) {
+    unsafe { web_screen::paddws_set_fullscreen(on) }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn set_web_fullscreen(_on: bool) {}
+
+#[cfg(target_arch = "wasm32")]
+mod web_screen {
+    unsafe extern "C" {
+        pub fn paddws_is_fullscreen() -> bool;
+        pub fn paddws_touch_device() -> bool;
+        pub fn paddws_set_fullscreen(on: bool);
+    }
+
+    /// Versione del plugin JavaScript che si aspetta il gioco (controllata da miniquad).
+    #[unsafe(no_mangle)]
+    pub extern "C" fn paddws_screen_crate_version() -> u32 {
         1
     }
 }
