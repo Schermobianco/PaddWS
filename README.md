@@ -11,6 +11,10 @@ la stessa identica partita:
 | **Core MiSTer FPGA**, 320×240 a 15 kHz | DE10-Nano con MiSTer | [mister/](mister/README.md) |
 | **Commodore 64** (anteprima, PAL), assembly 6502 | C64, C64 Ultimate, emulatori (VICE) | [c64/](c64/README.md) |
 
+**Si gioca anche nel browser**, dal computer, dal telefono o dal tablet:
+<https://schermobianco.github.io/PaddWS/> (la versione Rust in WebAssembly, aggiornata a ogni
+release).
+
 La logica di gioco di riferimento è il core Rust: deterministico, solo interi, nessuna divisione.
 Il core MiSTer ne riproduce lo stato tick per tick, verificato bit per bit con vettori di test, e
 lo stesso fa la versione C64, verificata in un emulatore 6502.
@@ -270,12 +274,17 @@ giocatore; in due ognuno ha la sua metà.
 - scelta dei bonus: si toccano i tre bonus (un altro tocco li toglie), poi OK in cima alla colonna;
 - scelta della racchetta: un tocco la mostra, un secondo tocco sulla stessa riga la sceglie;
 - nell'attract un tocco vale come Start;
-- pausa: un tocco al centro in alto; in pausa si tocca per riprendere o su MENU.
+- pausa: un tocco sul simbolo ❚❚ in cima alla linea centrale; in pausa si tocca per riprendere o
+  su MENU (RESUME, nel menu, riprende la partita);
+- CHALLENGE: lo sfidante entra tenendo il dito per un secondo dietro la racchetta della CPU (P2
+  HOLD HERE).
 
 Nel browser del computer il mouse fa da dito (o da spinner, con **MOUSE SPINNER: ON** nel menu)
 e la tastiera e i gamepad funzionano come su PC. Le preferenze del menu e la classifica della
-CHALLENGE restano nel browser (`localStorage`). Su iPhone lo schermo intero si ottiene con *Condividi →
-Aggiungi a Home* (su Android anche con *Installa app*); l'audio parte al primo tocco.
+CHALLENGE restano nel browser (`localStorage`). Sui dispositivi touch il primo tocco porta a
+schermo intero (Android, iPad) e lo schermo resta acceso; su iPhone lo schermo intero si ottiene
+con *Condividi → Aggiungi a Home* (su Android anche con *Installa app*). L'audio parte al primo
+tocco.
 
 ## Configurazione (PC)
 
@@ -409,8 +418,12 @@ schema di collegamento di encoder e pulsanti: [deploy/raspberry/README.md](deplo
 
 La prima volta serve il target WebAssembly: `rustup target add wasm32-unknown-unknown` (dopo
 `. .\tools\rust-env.ps1`). La pagina è in [`rust/web/`](rust/web/); il JavaScript è quello di
-miniquad e quad-snd nelle versioni di `Cargo.lock`. Per ora non è pubblicata online: si prova dal
-telefono sulla stessa rete con `-Serve` (il firewall di Windows deve lasciar passare la porta 8080).
+miniquad e quad-snd nelle versioni di `Cargo.lock`. Dal telefono sulla stessa rete si prova con
+`-Serve` (il firewall di Windows deve lasciar passare la porta 8080).
+
+Online è su GitHub Pages, <https://schermobianco.github.io/PaddWS/>, dal ramo `gh-pages`:
+`build.bat -Publish` ci mette, dopo la release, il contenuto dello zip web
+([`tools/publish-pages.ps1`](tools/publish-pages.ps1), lanciabile anche da solo).
 
 ## Commodore 64
 

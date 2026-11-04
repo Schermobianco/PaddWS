@@ -5,7 +5,8 @@
 #
 # Uso:  build.bat [-Publish] [-NoCheck] [-CheckOnly] [-SkipMister] [-KeepVm] [-WorkingTree [-Synth]]
 #   -Publish     pubblica la release vX.Y.Z su GitHub con gh (anteprima se la versione ha un "-"):
-#                serve il tag vX.Y.Z sul commit attuale, già inviato (tools/release.py e git push)
+#                serve il tag vX.Y.Z sul commit attuale, già inviato (tools/release.py e git push);
+#                poi la versione web su GitHub Pages (tools\publish-pages.ps1)
 #   -NoCheck     senza i controlli; -CheckOnly solo i controlli (build_ongithub.bat)
 #   -SkipMister  senza la sintesi del core MiSTer (circa 16 minuti)
 #   -KeepVm      lascia forge accesa anche se l'ha accesa questo script
@@ -134,4 +135,8 @@ if ($Publish) {
     }
     if ($LASTEXITCODE -ne 0) { Fail "pubblicazione della release" }
     & $gh release view $tag --json url --jq .url
+    # la versione web anche su GitHub Pages (tools\publish-pages.ps1)
+    Step "versione web su GitHub Pages"
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "publish-pages.ps1")
+    if ($LASTEXITCODE -ne 0) { Fail "pubblicazione su GitHub Pages" }
 }
