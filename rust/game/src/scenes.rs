@@ -391,7 +391,7 @@ impl Scene {
             // nuovo sfidante: il jingle della presentazione, da capo
             Scene::Intro(_) | Scene::Challenger(_) => Some(Song::Intro),
             Scene::Clear(s) => Some(if s.last() { Song::Champion } else { Song::Clear }),
-            Scene::Continue(_) => Some(Song::Continue),
+            Scene::Continue(s) => Some(if s.game_over() { Song::GameOver } else { Song::Continue }),
             Scene::Initials(_) => Some(Song::Champion),
             Scene::Ending(_) => Some(Song::Ending),
         }
@@ -502,7 +502,7 @@ pub(crate) fn coin_and_start(app: &mut App) -> Option<Scene> {
         app.play_coin();
     }
     // un tocco o il click di un encoder valgono come Start
-    let tapped = !touch::taps(&app.renderer).is_empty() || app.knob_clicked();
+    let tapped = !touch::taps().is_empty() || app.knob_clicked();
     if tapped && !app.cfg.game.free_play && app.credits == 0 {
         app.credits = 1; // touch: il primo tocco è il gettone, il secondo lo Start
         app.play_coin();
@@ -535,7 +535,7 @@ const WHEEL_EDGE: f32 = FRAC_PI_2 * 0.95;
 /// Durata dello scorrimento da una voce all'altra (s).
 const WHEEL_SCROLL: f32 = 0.18;
 /// Touch: corsa del dito oltre la quale trascina la ruota invece di toccare una voce.
-const DRAG_START: f32 = 12.0;
+const DRAG_START: f32 = 16.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Item {
@@ -550,6 +550,8 @@ enum Item {
     WhiteLevel,
     Fullscreen,
     Crt,
+    /// punteggi dritti o rivolti ai giocatori (tavolo)
+    Scores,
     /// il mouse come spinner del giocatore 1: non con il touch né con gli encoder del cabinato
     MouseSpinner,
     Play,
@@ -610,6 +612,7 @@ impl Menu {
             Item::WhiteLevel,
             Item::Fullscreen,
             Item::Crt,
+            Item::Scores,
         ]);
         if !app.touch && (app.encoders.is_none() || app.mouse_spinner()) {
             items.push(Item::MouseSpinner);
@@ -688,7 +691,7 @@ impl Menu {
         let s = app.scale();
         let last = (self.items.len() - 1) as f32;
         let mut used = false;
-        for f in touch::fingers(&app.renderer) {
+        for f in touch::fingers() {
             let mine = self.drag.filter(|d| d.id == f.id);
             match f.phase {
                 TouchPhase::Started if self.drag.is_none() => {
@@ -765,6 +768,7 @@ impl Menu {
             Item::WhiteLevel => format!("WHITE LEVEL : {}%", app.cfg.game.white_level),
             Item::Fullscreen => format!("FULLSCREEN : {}", on_off(app.cfg.game.fullscreen)),
             Item::Crt => format!("CRT FILTER : {}", on_off(app.cfg.crt_effects.enabled)),
+            Item::Scores => format!("SCORES : {}", if app.cfg.game.scores_upright { "UPRIGHT" } else { "FACING" }),
             Item::MouseSpinner => format!("MOUSE SPINNER : {}", on_off(app.mouse_spinner())),
             Item::Play => "PLAY".into(),
             Item::Quit => "QUIT".into(),
@@ -828,6 +832,10 @@ impl Menu {
             }
             Item::Fullscreen => app.toggle_fullscreen(),
             Item::Crt => app.toggle_crt(),
+            Item::Scores => {
+                app.cfg.game.scores_upright = !app.cfg.game.scores_upright;
+                config::save_preferences(&app.config_path, &app.cfg);
+            }
             Item::MouseSpinner => app.set_mouse_spinner(!app.mouse_spinner()),
             _ => return false,
         }
@@ -1363,7 +1371,7 @@ impl Play {
     /// uno scorrimento rapido del dito della racchetta (giù e su, o su e giù) seguito dallo scatto
     /// è una mossa.
     fn read_touch(&mut self, app: &mut App) -> bool {
-        let fingers = touch::fingers(&app.renderer);
+        let fingers = touch::fingers();
         if fingers.is_empty() {
             return false;
         }
@@ -1566,7 +1574,7 @@ impl Play {
             if self.paused {
                 // touch: MENU in basso torna al menu, un tocco altrove riprende
                 let (h, s) = (app.renderer.world_h, app.scale());
-                for p in touch::taps(&app.renderer) {
+                for p in touch::taps() {
                     if (p.y - (h / 2.0 + 90.0 * s)).abs() < 30.0 * s {
                         return Some(Scene::Menu(Menu::new(app)));
                     }
@@ -1779,51 +1787,66 @@ impl Play {
             r.rect_centered(pos[2].0, pos[2].1, d, d, white);
         }
 
-        // punteggi rivolti ai giocatori, seduti ai lati sinistro e destro del tavolo
+        // punteggi rivolti ai giocatori, seduti ai lati sinistro e destro del tavolo, oppure (SCORES:
+        // UPRIGHT) dritti in alto ai lati della linea centrale, record e palle del singolo a destra,
+        // come sul MiSTer
         let (ox, oy) = (60.0 * w / 800.0, 60.0 * h / 480.0);
         let font = &app.assets.font_score;
         let score = self.game.score;
-        r.text_centered(
-            &format!("{:02}", score[0]),
-            font,
-            50.0 * s,
-            w / 2.0 - ox,
-            h - oy,
-            FRAC_PI_2,
-            white,
-        );
-        if self.game.players == 2 {
+        if app.cfg.game.scores_upright {
+            let y = 42.0 * h / 480.0;
+            r.text_centered(&format!("{:02}", score[0]), font, 50.0 * s, w / 2.0 - 2.0 * ox, y, 0.0, white);
+            if self.game.players == 2 {
+                r.text_centered(&format!("{:02}", score[1]), font, 50.0 * s, w / 2.0 + 2.0 * ox, y, 0.0, white);
+            } else {
+                let text = &app.assets.font_text;
+                let x = w / 2.0 + 2.0 * ox;
+                r.text_centered(&format!("TOP {:02}", self.game.best), text, 32.0 * s, x, 30.0 * h / 480.0, 0.0, white);
+                r.text_centered(&format!("BALLS {}", self.lives), text, 32.0 * s, x, 30.0 * h / 480.0 + 32.0 * s, 0.0, white);
+            }
+        } else {
             r.text_centered(
-                &format!("{:02}", score[1]),
+                &format!("{:02}", score[0]),
                 font,
                 50.0 * s,
-                w / 2.0 + ox,
-                oy,
-                -FRAC_PI_2,
-                white,
-            );
-        } else {
-            // record in singolo, centrato sul punteggio
-            let text = format!("TOP {:02}", self.game.best);
-            r.text_centered(
-                &text,
-                &app.assets.font_text,
-                32.0 * s,
-                w / 2.0 - ox - 55.0 * s,
+                w / 2.0 - ox,
                 h - oy,
                 FRAC_PI_2,
                 white,
             );
-            // palle rimaste, accanto al record
-            r.text_centered(
-                &format!("BALLS {}", self.lives),
-                &app.assets.font_text,
-                32.0 * s,
-                w / 2.0 - ox - 85.0 * s,
-                h - oy,
-                FRAC_PI_2,
-                white,
-            );
+            if self.game.players == 2 {
+                r.text_centered(
+                    &format!("{:02}", score[1]),
+                    font,
+                    50.0 * s,
+                    w / 2.0 + ox,
+                    oy,
+                    -FRAC_PI_2,
+                    white,
+                );
+            } else {
+                // record in singolo, centrato sul punteggio
+                let text = format!("TOP {:02}", self.game.best);
+                r.text_centered(
+                    &text,
+                    &app.assets.font_text,
+                    32.0 * s,
+                    w / 2.0 - ox - 55.0 * s,
+                    h - oy,
+                    FRAC_PI_2,
+                    white,
+                );
+                // palle rimaste, accanto al record
+                r.text_centered(
+                    &format!("BALLS {}", self.lives),
+                    &app.assets.font_text,
+                    32.0 * s,
+                    w / 2.0 - ox - 85.0 * s,
+                    h - oy,
+                    FRAC_PI_2,
+                    white,
+                );
+            }
         }
         if let Some(fx) = &self.fx {
             fx.draw_hud(app, &self.game);
@@ -1881,7 +1904,12 @@ impl Play {
             // in NEXT chi ha vinto prende il colore di accento
             let colors = &app.cfg.colors;
             let winner_color = if self.fx.is_some() { colors.accent } else { colors.white };
-            attract::draw_game_over(&app.attract, r, self.winner(), App::color(winner_color));
+            let winner = self.winner();
+            // solo chi ha vinto: YOU WIN, o CPU WINS a un livello perso della CHALLENGE (il GAME
+            // OVER viene dopo, se il CONTINUE scade)
+            let lost_level = self.challenge.is_some() && self.duel.is_none() && winner == Some("cpu_wins");
+            let game_over = winner != Some("you_win") && !lost_level;
+            attract::draw_game_over(&app.attract, r, game_over, winner, App::color(winner_color));
         }
     }
 

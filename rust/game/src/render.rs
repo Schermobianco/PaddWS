@@ -509,8 +509,8 @@ impl CrtPass {
         // il CRT campiona solo ~240 righe: il campo basta disegnarlo alla risoluzione d'uscita
         let world = render_target(out.0 as u32, out.1 as u32);
         world.texture.set_filter(FilterMode::Linear);
-        // righe emulate fisse rispetto al campo (3 * altezza / resolution_scale: 240 con i
-        // default), così l'aspetto è lo stesso in finestra e a schermo intero
+        // righe emulate fisse rispetto al campo (3 * altezza / resolution_scale: 1.440 con il
+        // default 1.0, 240 con 6.0), così l'aspetto è lo stesso in finestra e a schermo intero
         let down_scale = out.1 * cfg.resolution_scale / (3.0 * world_h);
         let source_size = vec2((out.0 / down_scale).round().max(1.0), (out.1 / down_scale).round().max(1.0));
         let source = render_target(source_size.x as u32, source_size.y as u32);

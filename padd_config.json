@@ -82,11 +82,11 @@
     },
     "crt_effects": {
         "enabled": true,
-        "resolution_scale": 6.0,
+        "resolution_scale": 1.0,
         "hard_scan": -8.0,
         "hard_pix": -3.0,
-        "warp_x": 0.02,
-        "warp_y": 0.03,
+        "warp_x": 0.015,
+        "warp_y": 0.0225,
         "mask_dark": 0.5,
         "mask_light": 1.5
     }

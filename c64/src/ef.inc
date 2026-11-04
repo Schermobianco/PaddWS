@@ -23,3 +23,5 @@ WIN_BANK    = 13                ; "YOU WIN!" con il player delle voci (voice.inc
 END_BANK    = 14                ; 14-15: il finale di CHALLENGE (src/ending.s)
 HI_BANK     = 16                ; la classifica di CHALLENGE: settore 2 della ROML (banchi 16-23),
                                 ; solo per lei; nella ROMH dello stesso banco i vettori (un RTI)
+HOWTO_BANK  = 24                ; 24-25: la HOW TO PLAY delle mosse speciali (gen/howto.bin): nel
+                                ; primo la bitmap, nel secondo i colori e quelli dell'easter egg

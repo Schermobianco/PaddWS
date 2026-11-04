@@ -43,6 +43,7 @@ COL_GRAY   = 15                 ; grigio chiaro: area boost (il grigio del MiSTe
 MODE_TEXT   = 0                 ; caratteri, schermo $C000
 MODE_BITMAP = 1                 ; bitmap hires $E000, colori in $C400
 MODE_OFF    = 2                 ; schermo spento: tutto del colore del bordo
+MODE_HOWTO  = 3                 ; bitmap hires $E000, colori in $C000 (HOW TO PLAY, pick.s)
 SCREEN2  = $C400                ; colori della bitmap
 BITMAP   = $E000
 SP_LINE24 = SP_BALL4 + 4        ; linea di 24 pixel (raster dell'attract)
@@ -819,7 +820,7 @@ armed:
     bcs show
     lda nx_armed,x
     cmp #B_NONE
-    jeq next_side
+    beq next_side
 show:
     clc
     adc #SP_ICON0
@@ -858,7 +859,7 @@ show:
 next_side:
     iny
     cpy #2
-    jne armed
+    bne armed
     ; capsule: 5, 6, 7 e il primo tra 1 e 2 rimasto libero
     ldy #0
 cap:
@@ -874,7 +875,7 @@ cap:
     jmp have
 :   lda ns_icons
     and #bit_of_icon2
-    jne cap_next                ; nessuno sprite libero: questa non si vede
+    bne cap_next                ; nessuno sprite libero: questa non si vede
     lda #SPN_ICON + 1
 have:
     sta ns_n
@@ -1150,7 +1151,7 @@ done:
     sta pd_r1
     ; area boost (EVO): metà altezza dell'area (byte 0-2 di pad_bh / 2)
     lda m_evo
-    jeq image
+    beq image
     lda pad_bh+3,x
     lsr a
     lda pad_bh+2,x
@@ -1334,17 +1335,17 @@ done:
 ; del frame, centrata sulla racchetta (sprite hires espanso).
 .proc pad_spin
     lda m_next
-    jeq no
+    beq no
     ldy pi_side
     ldx side
     lda nx_armed,x
     cmp #B_SUPER
-    jne no
+    bne no
     lda nx_anim,x
-    jne no
+    bne no
     lda sp_k
     cmp #16
-    jcc no                      ; immagini non ancora pronte
+    bcc no                      ; immagini non ancora pronte
     tya
     asl a
     asl a
@@ -1780,7 +1781,7 @@ body2:
     cmp #K_TITAN
     beq titan
     cmp #K_BLASTER
-    jeq blaster
+    beq blaster
     rts
 titan:
     ; TITAN: estremità gialle sul retro (un ottavo dell'altezza)
@@ -1792,13 +1793,13 @@ titan:
     sbc pi_eighth
     cmp pi_k
     beq mark
-    jcs store
+    bcs store
 mark:
     lda #COLOR_YELLOW
     sta pi_c
     lda #PAD_FAT
     jsr plot
-    jmp store
+    rts
 blaster:
     ; BLASTER: spigoli del davanti smussati
     lda pi_k
@@ -2027,8 +2028,8 @@ done:
 
 ; $D011 e $D018 dei modi video: testo ($C000, caratteri $C800), bitmap ($E000, colori $C400),
 ; schermo spento
-mode_d011: .byte $1b, $3b, $0b
-mode_d018: .byte $02, $18, $02
+mode_d011: .byte $1b, $3b, $0b, $3b
+mode_d018: .byte $02, $18, $02, $08
 
 ; ------------------------------------------------------------------------------------ effetti
 
@@ -2151,24 +2152,24 @@ end:
     lda #0
     sta tr_cm                   ; coda grigia
     lda nx_super
-    jeq slow
+    beq slow
     lda egg_yel
     sta sh_col
     lda nx_super_a
     cmp #2
-    jne trail
+    bne trail
     inc tr_cm                   ; cometa: coda gialla più piena, nello sprite espanso
     jmp trail
 slow:
     lda nx_slow
     ora nx_slow+1
-    jeq plain
+    beq plain
     lda tick
     and #4
-    jeq trail
+    beq trail
     lda fx_pages
     cmp #FX_SPRITES
-    jcc trail
+    bcc trail
     ; alone: sprite normale, palla nel pixel (FX_RING_X, FX_RING_Y)
     lda fx_size
     lsr a
@@ -2191,14 +2192,19 @@ plain:
     beq32 ball_boost, {#ONE}, none
 trail:
     ; coda dalle posizioni vere, ridisegnata a fine frame (trail_end); intanto l'immagine di prima
-    ; se è dello stesso tipo, o la palla semplice
+    ; se è dello stesso tipo e con la palla nello stesso angolo, o la palla semplice: dopo un
+    ; rimbalzo l'immagine di prima avrebbe la coda davanti alla palla (e trail_end, nei frame
+    ; carichi, può non fare in tempo a sostituirla)
     lda #1
     sta tr_want
     lda tr_ready
-    jeq none
+    beq none
     lda tr_cm
     cmp tr_shcm
-    jne none
+    bne none
+    jsr trail_dir
+    cmp tr_shdir
+    bne none
     jsr trail_attr
     lda tr_buf
     clc
@@ -2228,6 +2234,29 @@ shift:
     sta sh_y
 none:
     rts
+.endproc
+
+; A = angolo dello sprite della coda in cui sta la palla, dal moto (come trail_layout): bit 7 il
+; segno di vx, bit 0-1 vy (0 sale, 1 orizzontale, 2 scende). Cambia Y.
+.proc trail_dir
+    lda ball_vy+3
+    bmi fall
+    ora ball_vy+2
+    ora ball_vy+1
+    ora ball_vy
+    beq level
+    lda #0
+    beq vx
+fall:
+    lda #2
+    bne vx
+level:
+    lda #1
+vx:
+    ldy ball_vx+3
+    bpl :+
+    ora #$80
+:   rts
 .endproc
 
 ; Sprite della palla per la coda: multicolore, oppure (cometa) hires espanso.
@@ -2338,7 +2367,7 @@ layout:
     ; nella cache? Prima lo sprite che si vede, quasi sempre quello giusto
     ldx tr_shown
     jsr trail_match
-    jcs show
+    bcs show
     lda #TRAIL_BUFS - 1
     sta tr_b
 find:
@@ -2346,7 +2375,7 @@ find:
     cpx tr_shown
     beq other
     jsr trail_match
-    jcs show
+    bcs show
 other:
     dec tr_b
     bpl find
@@ -2399,6 +2428,8 @@ aged:
     jsr trail_attr
     lda tr_cm
     sta tr_shcm
+    lda tr_dir
+    sta tr_shdir
     ; palla nello sprite: dalla firma (posizione di adesso + 16), nella cometa in pixel doppi
     lda tr_qxk
     sec
@@ -2467,6 +2498,10 @@ more:
 ; La firma della coda di adesso: lato della palla, palla nell'angolo dalla parte del moto, posizioni
 ; nello sprite + 16 in tr_qxk e tr_qyk ($FF tutte e due se fuori dalla portata delle tabelle).
 .proc trail_layout
+    jsr trail_dir
+    sta tr_dir
+    and #3
+    sta tr_t                    ; 0 sale, 1 orizzontale, 2 scende
     lda tr_cm
     jne comet
     ; palla di 4 o 6 pixel: tabelle dal primo o dal secondo gruppo
@@ -2480,34 +2515,29 @@ more:
     sta tr_so
     ; x pari (pixel doppi)
     lda #16
-    ldy ball_vx+3
+    bit tr_dir
     bmi set_x
     lda #24 + 16
     sec
     sbc tr_s
 set_x:
     sta tr_axo
-    ; y del core verso l'alto: la palla che sale sta in alto, con la coda sotto
-    lda ball_vy+3
-    bmi falling
-    ora ball_vy+2
-    ora ball_vy+1
-    ora ball_vy
-    beq level
-    lda #16
-    bne set_y
-falling:
-    lda #21 + 16
-    sec
-    sbc tr_s
-    bne set_y
-level:
+    ; y del core verso l'alto: la palla che sale sta in alto, con la coda sotto; in orizzontale a
+    ; metà, (21 - lato) / 2; quella che scende in basso, 21 - lato
     lda #21
     sec
     sbc tr_s
+    ldy tr_t
+    beq rising
+    dey
+    bne set_y16
     lsr a
+set_y16:
     clc
     adc #16
+    bne set_y
+rising:
+    lda #16
 set_y:
     sta tr_ayo
     ; dalla firma del frame prima, se è di quel frame e la palla ha ancora lo stesso angolo e lato:
@@ -2519,10 +2549,10 @@ set_y:
     jne full
     lda tr_axo
     cmp tr_qxk
-    jne full
+    bne full
     lda tr_ayo
     cmp tr_qyk
-    jne full
+    bne full
     lda tr_x+1                  ; x di un frame fa - x di adesso, tra -47 e 47
     sec
     sbc tr_x
@@ -2531,14 +2561,14 @@ set_y:
     sbc tr_xh
     beq :+
     cmp #$ff
-    jne full
+    bne full
     lda tr_bx
     cmp #256 - TRAIL_SPAN + 1
-    jcc full
+    bcc full
     bcs dy
 :   lda tr_bx
     cmp #TRAIL_SPAN
-    jcs full
+    bcs full
 dy:
     lda tr_y+1                  ; y di un frame fa - y di adesso
     sec
@@ -2546,10 +2576,10 @@ dy:
     sta tr_by
     bcc :+
     cmp #TRAIL_SPAN
-    jcs full
+    bcs full
     bcc shift
 :   cmp #256 - TRAIL_SPAN + 1
-    jcc full
+    bcc full
 shift:
     ldx #TRAIL_N
 moved:
@@ -2646,24 +2676,12 @@ comet:
     lda #COMET_S
     sta tr_s
     lda #1 + 16
-    ldy ball_vx+3
+    bit tr_dir
     bmi :+
     lda #24 - COMET_S - 1 + 16
 :   sta tr_axo
-    lda ball_vy+3
-    bmi c_fall
-    ora ball_vy+2
-    ora ball_vy+1
-    ora ball_vy
-    beq c_level
-    lda #1 + 16
-    bne c_set
-c_fall:
-    lda #21 - COMET_S - 1 + 16
-    bne c_set
-c_level:
-    lda #(21 - COMET_S) / 2 + 16
-c_set:
+    ldy tr_t
+    lda comet_y,y
     sta tr_ayo
     jmp full                    ; sempre da capo: le metà non si sommano
 .endproc
@@ -2744,7 +2762,7 @@ mid:
 next:
     ldx tr_k
     dex
-    jne age
+    bne age
     ; la palla, sopra la coda
     lda tr_qxk
     sta tr_qx
@@ -2774,7 +2792,7 @@ next:
 ; Quadrato della coda o della cometa, secondo tr_cm.
 .proc tr_square
     lda tr_cm
-    jne comet_square
+    bne comet_square
     jmp trail_square
 .endproc
 
@@ -2824,7 +2842,7 @@ draw:
     adc tr_n
     sec
     sbc #16 + 1
-    jcc out
+    bcc out
     cmp #21
     bcc :+
     lda #20
@@ -2835,7 +2853,7 @@ draw:
     bcs :+
     lda #0
 :   cmp #21
-    jcs out
+    bcs out
     sta tr_qy
     eor #$ff                    ; righe: y1 - y0 + 1
     sec
@@ -3005,6 +3023,7 @@ trail_y_base: .byte TRAIL_Y_BASE
 trail_y_rows: .byte TRAIL_Y_ROWS
 trail_y_r0:   .byte TRAIL_Y_R0
 trail_age:    .byte TRAIL_AGE
+comet_y:      .byte 1 + 16, (21 - COMET_S) / 2 + 16, 21 - COMET_S - 1 + 16 ; riga della testa per vy
 comet_side:   .byte 4, 4, 4, 3, 3, 3, 2, 2, 1, 1   ; cometa: lato per età (0 - 2 * TRAIL_N - 1)
 comet_from:   .byte $FF, $7F, $3F, $1F, $0F, $07, $03, $01
 comet_to:     .byte $80, $C0, $E0, $F0, $F8, $FC, $FE, $FF
@@ -3032,6 +3051,8 @@ tr_by:   .res 1
 tr_want: .res 1                 ; coda chiesta in questo frame
 tr_cm:   .res 1                 ; 1: la coda chiesta è la cometa del SUPER
 tr_shcm: .res 1                 ; 1: lo sprite della coda che si vede è una cometa
+tr_shdir: .res 1                ; angolo della palla nello sprite della coda che si vede (trail_dir)
+tr_dir:  .res 1                 ; angolo della firma di adesso (trail_layout)
 tr_ready: .res 1                ; coda già preparata in questa partita
 tr_buf:  .res 1                 ; sprite della coda che si vede (0 - TRAIL_BUFS-1)
 tr_ax:   .res 1                 ; palla nello sprite della coda, pixel dello schermo dall'angolo
@@ -3181,7 +3202,11 @@ LATE_SPIN  = 5000 / 58          ; un'immagine della rotazione del SUPER costa fi
 .proc frame_late_small
     lda #LATE_SMALL
 .endproc
-; C = 1 se sono passate almeno A righe dall'interrupt.
+; C = 1 se sono passate almeno A righe dall'interrupt. Un frame oltre il suo tempo trova il raster
+; di nuovo alle righe 250-311, come appena dopo l'interrupt: lo distingue frame_flag, che
+; l'interrupt della riga 250 ha rialzato (play_main lo azzera prima del frame), e allora è tardi,
+; così un frame già sforato non accetta altro lavoro; sid_time fa lo stesso. (Il banco di prova
+; non esegue l'interrupt: lì un frame così lo segnala come oltre il budget.)
 .proc frame_after
     sta late_lines
     lda $d011
@@ -3195,6 +3220,8 @@ LATE_SPIN  = 5000 / 58          ; un'immagine della rotazione del SUPER costa fi
     cmp late_lines
     rts
 early:
+    lda frame_flag              ; di nuovo l'interrupt: il raster ha fatto il giro, tardi
+    bne late
     clc
     rts
 late:
@@ -3414,7 +3441,7 @@ WARP_LATE = (16000 - WARP_COST) / 58
 .proc warp_fx
     ; inizio: evento del TELEPORT (salta chi riceve la palla)
     lda wp_on
-    jne running
+    bne running
     lda events
     and #EV_TELEPORT
     jeq remember
@@ -3434,7 +3461,7 @@ running:
     ; fine: colpo, punto, o racchetta tutta fuori (palla a 64 pixel dal bordo)
     lda events
     and #EV_HIT | EV_BOOST | EV_SCORE
-    jne stop
+    bne stop
     jsr warp_d                  ; A = distanza della palla dal bordo di chi salta
     cmp #WARP_RISE - WARP_STEP + 1
     bcs :+
@@ -3478,7 +3505,7 @@ stop:
     sta m_t
     lda wp_to
     cmp wp_from
-    jcc en_up
+    bcc en_up
     ; giù: linea sotto, la racchetta scende dentro
     lda wp_ph
     lsr a
@@ -3516,7 +3543,7 @@ en_up:
     sta wp_hi
     lda wp_lo
     cmp wp_edge
-    jcs en_draw
+    bcs en_draw
     lda wp_edge
     sta wp_lo
 en_draw:
@@ -3536,7 +3563,7 @@ exit:
     sta wp_ex
     lda wp_sunk
     cmp #WARP_STEP / 2
-    jcc place
+    bcc place
     inc wp_ex
     lda wp_out
     jsr warp_shift
@@ -3550,7 +3577,7 @@ exit:
     sta m_lo
     lda wp_to
     cmp wp_from
-    jcc ex_up
+    bcc ex_up
     ; giù: linea sopra il punto d'arrivo, la racchetta esce in giù
     lda wp_to
     sec
@@ -3564,7 +3591,7 @@ exit:
     sta wp_hi
     lda wp_lo
     cmp wp_edge
-    jcs ex_draw
+    bcs ex_draw
     lda wp_edge
     sta wp_lo
     jmp ex_draw
@@ -3614,7 +3641,7 @@ place:
     sta sh_enable
 icon:
     lda wp_ex
-    jeq no_icon
+    beq no_icon
     lda #SP_WARP
     sta sh_ptr+SPN_ICON,y
     lda #COL_WHITE

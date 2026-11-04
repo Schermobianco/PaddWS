@@ -566,14 +566,17 @@ impl Attract {
     }
 }
 
-/// "GAME OVER" al centro, su un riquadro nero sopra la partita.
-/// GAME OVER su un riquadro nero e, sotto, chi ha vinto (`p1_wins`, `p2_wins`, `you_win`,
-/// `cpu_wins`; nessuno in singolo) nel colore `winner_color`.
-pub fn draw_game_over(art: &AttractArt, r: &Renderer, winner: Option<&str>, winner_color: Color) {
+/// Fine partita al centro, su un riquadro nero sopra la partita: con `game_over` GAME OVER e,
+/// sotto, chi ha vinto (`p1_wins`, `p2_wins`, `cpu_wins`; nessuno in singolo) nel colore
+/// `winner_color`; senza, solo chi ha vinto, al posto di GAME OVER e nel colore `winner_color`
+/// (YOU WIN, o CPU WINS a un livello perso della CHALLENGE, dove si può ancora continuare).
+pub fn draw_game_over(art: &AttractArt, r: &Renderer, game_over: bool, winner: Option<&str>, winner_color: Color) {
     let s = &art.spec;
     let view = View::of(r);
-    let bm = art.bm("game_over");
-    let win = winner.map(|name| art.bm(name));
+    let (bm, label_color, win) = match (game_over, winner) {
+        (false, Some(name)) => (art.bm(name), winner_color, None),
+        _ => (art.bm("game_over"), rgb(s.colors.white), winner.map(|name| art.bm(name))),
+    };
     let text_w = win.map_or(bm.width(), |b| b.width().max(bm.width()));
     let bottom = if win.is_some() {
         s.game_over.winner_y
@@ -591,7 +594,7 @@ pub fn draw_game_over(art: &AttractArt, r: &Renderer, winner: Option<&str>, winn
         h,
         rgb(s.colors.black),
     );
-    draw_centered(&view, bm, 2.0, s.game_over.label_y, rgb(s.colors.white));
+    draw_centered(&view, bm, 2.0, s.game_over.label_y, label_color);
     if let Some(b) = win {
         draw_centered(&view, b, 2.0, s.game_over.winner_y, winner_color);
     }

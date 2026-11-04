@@ -31,6 +31,10 @@ Uscite in c64/gen/ (vanno nel repository, così l'assemblaggio non richiede Pyth
   ending_chars.bin, ending.inc  set di caratteri del finale di CHALLENGE (src/ending.s): il font
                 monospazio ai suoi codici, le lettere a scala 2, il timbro DEFEATED e i punti
                 multicolore dei fuochi d'artificio
+  howto.bin     la schermata HOW TO PLAY delle mosse speciali in bitmap hires (banchi HOWTO_BANK
+                della cartuccia, tools/make_crt.py): 31 pagine di bitmap ($E000-$FEFF) e una
+                vuota, poi i colori (1.000 byte, 4 pagine) e gli stessi con giallo e rosso
+                scambiati per l'easter egg; disegnata con le figure di tools/gen_howto_assets.py
 
 Le cifre del punteggio vengono da assets/fonts/pong-score.ttf a 22 px come sul MiSTer; le scritte
 grandi sono le bitmap dell'attract (assets/attract/*.png, Munro 10 px) ingrandite a scala 2, come
@@ -46,6 +50,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
+import gen_howto_assets as howto
 from gen_next_assets import ICONS
 from gen_voices import NAMES as VOICE_NAMES
 
@@ -1030,6 +1035,136 @@ def voice_files() -> dict[str, bytes]:
     return files
 
 
+# ------------------------------------------------------------------ HOW TO PLAY
+
+# palette del C64 (Pepto) per scegliere i due colori di ogni cella
+C64_RGB = [(0, 0, 0), (255, 255, 255), (104, 55, 43), (112, 164, 178), (111, 61, 134), (88, 141, 67),
+           (53, 40, 121), (184, 199, 111), (111, 79, 37), (67, 57, 0), (154, 103, 89), (68, 68, 68),
+           (108, 108, 108), (154, 210, 132), (108, 94, 181), (149, 149, 149)]
+C_BLACK, C_WHITE, C_RED, C_YELLOW, C_BROWN, C_LRED, C_DGRAY, C_GRAY, C_LGRAY = 0, 1, 2, 7, 9, 10, 11, 12, 15
+# disposizione a 320x200 (quella del MiSTer è a 240 righe): riquadri delle mosse da y0 - 4 a
+# y0 + 58, comando sulla riga y0 + 42
+HT_BOX_Y0 = [34, 98]
+HT_BARS_Y = 166
+HT_LEGEND_Y = 181
+HT_SKIP_Y = 193
+HT_SHOT_X = 214                  # riquadro del tiro, fino a x = 300
+
+
+def howto_image() -> list[list[int]]:
+    """La schermata a 320x200 in colori del C64 (un indice per pixel), prima della conversione."""
+    w, h = 320, 200
+    text = Image.new("L", (w, h), 0)      # codici howto.T_*
+    figs = Image.new("L", (w, h), 0)      # codici howto.S_*
+    lines = Image.new("L", (w, h), 0)     # colori del C64 + 1 (0 = niente)
+    dl = ImageDraw.Draw(lines)
+    howto.paint_text(text, (w // 2, 11), "HOW TO PLAY", howto.f20, howto.T_ACCENT, "mm")
+    howto.paint_text(text, (w // 2, 24), "SUPER MOVES - JOYSTICK", howto.f10, howto.T_GRAY, "mm")
+    steps, plus_x, fire_x, label_x = howto.command_x(True)
+    for i, ((move, effect), y0) in enumerate(zip(howto.MOVES, HT_BOX_Y0)):
+        cy = y0 + 42
+        dl.rectangle((8, y0 - 4, 311, y0 + 58), outline=C_GRAY + 1)
+        howto.paint_text(text, (16, y0), move, howto.f20, howto.T_ACCENT)
+        howto.paint_text(text, (16, y0 + 18), effect, howto.f10, howto.T_WHITE)
+        for k, (x, way) in enumerate(zip(steps, howto.JOY_STEPS[i])):
+            howto.stick(figs, x, cy, way)
+            if k < len(steps) - 1:
+                ax = x + howto.PITCH // 2 - 2
+                dl.polygon([(ax, cy - 3), (ax + 4, cy), (ax, cy + 3)], fill=C_YELLOW + 1)
+        howto.paint_text(text, (plus_x, cy), "+", howto.f20, howto.T_WHITE, "mm")
+        howto.button(figs, fire_x, cy, "", False)
+        howto.paint_text(text, (label_x, cy + 1), "FIRE", howto.f10, howto.T_GRAY, "lm")
+        # il tiro: racchetta, palla gialla e la sua strada (dritta e veloce, o che poi s'impenna)
+        x0, x1 = HT_SHOT_X, 300
+        dl.rectangle((x0, y0 + 6, x1, y0 + 54), outline=C_GRAY + 1)
+        py = y0 + 30
+        dl.rectangle((x0 + 6, py - 8, x0 + 7, py + 8), fill=C_WHITE + 1)
+        if i == 0:
+            for dy in (-2, 0, 2):
+                dl.line((x0 + 14, py + dy, x0 + 50, py + dy), fill=C_YELLOW + 1)
+            dl.rectangle((x0 + 56, py - 2, x0 + 59, py + 1), fill=C_YELLOW + 1)
+        else:
+            for x in range(x0 + 14, x0 + 50, 4):
+                dl.point((x, py), fill=C_YELLOW + 1)
+            for k in range(1, 4):
+                dl.point((x0 + 50 + 4 * k, py - 4 * k), fill=C_YELLOW + 1)
+            dl.rectangle((x0 + 64, py - 15, x0 + 67, py - 12), fill=C_YELLOW + 1)
+    # costo: mezza barra = mossa, barra piena = MAX
+    y = HT_BARS_Y
+    for label_x2, x, fill, what, what_code in ((52, 58, 18, "= MOVE", howto.T_WHITE),
+                                                (190, 196, 36, "= MAX", howto.T_ACCENT)):
+        howto.paint_text(text, (label_x2, y + 3), "HALF" if fill < 36 else "FULL", howto.f10, howto.T_WHITE, "rm")
+        dl.rectangle((x, y, x + 37, y + 5), outline=C_YELLOW + 1)
+        dl.rectangle((x + 1, y + 1, x + fill, y + 4), fill=C_YELLOW + 1)
+        dl.line((x + 19, y - 1, x + 19, y + 6), fill=C_YELLOW + 1)
+        howto.paint_text(text, (x + 42, y + 3), what, howto.f10, what_code, "lm")
+    howto.paint_text(text, (w // 2, HT_LEGEND_Y), "FIRE: USE THE BONUS     FORWARD: DASH", howto.f10,
+                     howto.T_GRAY, "mm")
+    howto.paint_text(text, (w // 2, HT_SKIP_Y), "PRESS FIRE TO SKIP", howto.f10, howto.T_GRAY, "mm")
+    tcol = {howto.T_WHITE: C_WHITE, howto.T_GRAY: C_GRAY, howto.T_ACCENT: C_YELLOW}
+    scol = {howto.S_DARK: C_DGRAY, howto.S_HOLE: C_BLACK, howto.S_SHAFT: C_LGRAY, howto.S_BALL: C_RED,
+            howto.S_BASE_EDGE: C_GRAY, howto.S_WHITE: C_WHITE, howto.S_RED: C_RED, howto.S_RED_DARK: C_BROWN,
+            howto.S_RED_LIGHT: C_LRED}
+    out = [[0] * w for _ in range(h)]
+    for yy in range(h):
+        for xx in range(w):
+            if v := text.getpixel((xx, yy)):
+                out[yy][xx] = tcol[v]
+            elif v := figs.getpixel((xx, yy)):
+                out[yy][xx] = scol[v]
+            elif v := lines.getpixel((xx, yy)):
+                out[yy][xx] = v - 1
+    return out
+
+
+def howto_bitmap() -> tuple[bytes, bytes, list[list[int]]]:
+    """Bitmap hires (8.000 byte) e colori (1.000): per ogni cella 8x8 i due colori che rendono
+    meglio i suoi pixel (il nero compreso), ogni pixel al più vicino. Anche l'immagine risultante."""
+    img = howto_image()
+
+    def dist(a: int, b: int) -> int:
+        return sum((p - q) ** 2 for p, q in zip(C64_RGB[a], C64_RGB[b]))
+
+    bitmap, colors = bytearray(8000), bytearray(1000)
+    shown = [[0] * 320 for _ in range(200)]
+    for cy in range(25):
+        for cx in range(40):
+            px = [img[cy * 8 + y][cx * 8 + x] for y in range(8) for x in range(8)]
+            used = sorted(set(px) | {C_BLACK})
+            best = None
+            for i, a in enumerate(used):
+                for b in used[i:]:
+                    err = sum(min(dist(p, a), dist(p, b)) for p in px)
+                    if best is None or err < best[0]:
+                        best = (err, a, b)
+            _, a, b = best
+            fg, bg = (a, b) if a != C_BLACK else (b, a)
+            colors[cy * 40 + cx] = fg << 4 | bg
+            for y in range(8):
+                byte = 0
+                for x in range(8):
+                    p = px[y * 8 + x]
+                    on = dist(p, fg) < dist(p, bg)
+                    byte |= on << (7 - x)
+                    shown[cy * 8 + y][cx * 8 + x] = fg if on else bg
+                bitmap[(cy * 40 + cx) * 8 + y] = byte
+    return bytes(bitmap), bytes(colors), shown
+
+
+def howto_file() -> bytes:
+    """howto.bin: 31 pagine di bitmap ($E000-$FEFF) e una vuota, i colori e quelli dell'easter egg
+    (giallo e rosso scambiati), 4 pagine ciascuno. Le ultime 8 celle (da $FF00, sotto le variabili
+    a $FF40) non si copiano: devono essere vuote, con i colori a 0."""
+    bitmap, colors, _ = howto_bitmap()
+    assert not any(bitmap[0x1F00:]), "HOW TO PLAY: ultime celle non vuote"
+    colors = bytearray(colors)
+    colors[992:] = bytes(8)
+    swap = {C_YELLOW: C_RED, C_RED: C_YELLOW}
+    egg = bytes(swap.get(c >> 4, c >> 4) << 4 | swap.get(c & 15, c & 15) for c in colors)
+    pad = bytes(24)
+    return bitmap[:0x1F00] + bytes(256) + bytes(colors) + pad + egg + pad
+
+
 def main() -> None:
     cs = Charset()
     lines: list[str] = ["; Generato da tools/gen_c64_assets.py: non modificare a mano.", ""]
@@ -1152,6 +1287,7 @@ def main() -> None:
     lines += fx_lines
     lines += fx_squares()
     files |= voice_files()
+    files["howto.bin"] = howto_file()
     for name, data in files.items():
         (OUT / name).write_bytes(data)
     (OUT / "assets.inc").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")

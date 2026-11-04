@@ -357,8 +357,9 @@ impl PaddlePick {
                 _ => {}
             }
         }
-        // touch: un tocco su una riga della propria colonna sceglie quella racchetta
-        for p in touch::taps(&app.renderer) {
+        // touch: un tocco su una riga della propria colonna mostra quella racchetta, un altro tocco
+        // sulla stessa riga la sceglie (o la lascia)
+        for p in touch::taps() {
             let side = usize::from(p.x >= app.renderer.world_w / 2.0);
             if self.fixed == Some(side) {
                 continue;
@@ -367,9 +368,12 @@ impl PaddlePick {
                 let (cy, row_h) = Self::row(app, i);
                 (p.y - cy).abs() < row_h / 2.0
             }) {
-                self.cursor[side] = i;
-                self.chosen[side] = false;
-                self.toggle(app, side);
+                if i == self.cursor[side] {
+                    self.toggle(app, side);
+                } else {
+                    self.cursor[side] = i;
+                    self.chosen[side] = false;
+                }
             }
         }
         // tempo scaduto: vale la racchetta sotto il cursore
@@ -495,7 +499,14 @@ impl PaddlePick {
         }
         if self.ready.is_some() && (get_time() * 6.0) as i64 % 2 == 0 {
             r.text_centered("READY!", font, 40.0 * s, w / 2.0, h - 18.0 * s, 0.0, accent);
-        } else if self.ready.is_none() && !app.touch {
+        } else if self.ready.is_none() && app.touch {
+            for side in 0..2 {
+                if self.fixed != Some(side) && !self.chosen[side] {
+                    let x = if side == 0 { w / 4.0 } else { 3.0 * w / 4.0 };
+                    r.text_centered("TAP AGAIN TO CHOOSE", font, 20.0 * s, x, h - 16.0 * s, 0.0, gray);
+                }
+            }
+        } else if self.ready.is_none() {
             if self.fixed != Some(0) {
                 r.text_centered("W S + C", font, 20.0 * s, w / 4.0, h - 16.0 * s, 0.0, gray);
             }

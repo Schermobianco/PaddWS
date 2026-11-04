@@ -61,7 +61,7 @@ localparam CONF_STR = {
 	"O[25],Super moves,Off,On;",
 	"O[7],Free play,Off,On;",
 	"O[9:8],Difficulty,Normal,Hard,Expert,Easy;",
-	"O[10],Scores,Facing players,Upright;",
+	"O[10],Scores,Upright,Facing players;",
 	"O[11],Attract sound,On,Off;",
 	"O[23],Sound,SID 8580,SID 6581;",
 	"O[26],Music,On,Off;",
@@ -147,7 +147,7 @@ wire [1:0] game_type = status[13:12];      // 0 Classic, 1 EVO, 2 NEXT, 3 CHALLE
 wire [1:0] players_mode = status[15:14];   // 0 due, 1 uno, 2 contro la CPU (3 da un CFG vecchio: pong_top)
 wire free_play = status[7];
 wire [1:0] difficulty = status[9:8] + 2'd1;   // l'OSD parte da Normal (0): 0 facile .. 3 esperto
-wire upright = status[10];
+wire upright = !status[10];       // di default dritti: non si presume un tavolo
 wire attract_mute = status[11];
 wire music_off = status[26];                 // nessuna canzone del SID (effetti e voci sì)
 // Sound è il bit 23: un CFG di prima con Samples (bit 24:23 = 2) suona con il SID 8580. Il bit 24

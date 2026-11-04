@@ -441,6 +441,7 @@ reg        ch_side = 1'b0;            // lato del campione: 0 sinistra, 1 destra
 // del perdente comprese). Le scelte dei due restano in pick_mask e kind_cur, un lato per giocatore.
 reg        duel = 1'b0;
 reg        duel_end = 1'b0;           // impulso: la scalata riprende con il vincitore...
+reg        cont_over = 1'b0;          // continue scaduto: GAME OVER nella schermata, poi iniziali
 reg        duel_champ = 1'b0;         // ...che è il campione (altrimenti lo sfidante)
 wire       duel_w = score1 > score0;  // lato del vincitore della sfida (punteggi fermi fino alla partita dopo)
 // lo sfidante entra dal lato libero, con un credito, mentre la scalata è in corso (non nelle
@@ -659,13 +660,18 @@ always @(posedge clk) begin
         ch_scores_attract <= 1'b0;
         ch_pos <= 2'd0;
         ch_letter <= 6'd0;
-    end else if (mode == M_CONT && start_press && mframe >= CH_SKIP_FRAMES && (free_play || credits != 4'd0)) begin
+    end else if (mode == M_CONT && !cont_over && start_press && mframe >= CH_SKIP_FRAMES && (free_play || credits != 4'd0)) begin
         // continue: stesso livello, punti da zero (li azzera il conteggio qui sotto)
         if (!free_play) credits <= credits - 4'd1;
         mode <= M_INTRO;
         mframe <= 11'd0;
-    end else if (mode == M_CONT && frame_start && mframe >= CH_CONT_FRAMES) begin
-        // niente continue: iniziali se il miglior punteggio entra in classifica
+    end else if (mode == M_CONT && !cont_over && frame_start && mframe >= CH_CONT_FRAMES) begin
+        // niente continue: GAME OVER, la partita è finita davvero
+        cont_over <= 1'b1;
+        mframe <= 11'd0;
+    end else if (mode == M_CONT && cont_over && frame_start && mframe + 11'd1 >= AT_GAME_OVER_FRAMES) begin
+        // dopo il GAME OVER le iniziali, se il miglior punteggio entra in classifica
+        cont_over <= 1'b0;
         ch_active <= 1'b0;
         mframe <= 11'd0;
         mode <= (ch_rank != 4'd15) ? M_INITIALS : M_SCORES;
@@ -1672,6 +1678,10 @@ wire [23:0] game_rgb, attract_rgb, next_rgb;
 wire        next_opaque, game_top, game_bg;
 wire [1:0]  next_halo;
 wire [8:0]  game_hc = hc + shake[8:0];                    // scossa dell'hit-stop
+// GAME OVER: in due chi ha vinto, contro la CPU dal punto di vista del giocatore (in CHALLENGE
+// anche a destra): 1 P1 WINS, 2 P2 WINS, 3 YOU WIN, 4 CPU WINS
+wire [2:0]  over_winner = !two ? 3'd0 : match_cpu ? (((score0 >= score1) != ch_cpu_left) ? 3'd3 : 3'd4) :
+                          (score0 >= score1 ? 3'd1 : 3'd2);
 
 pong_render render (
     .clk(clk), .snapshot(snapshot), .hc(game_hc), .vc(vc),
@@ -1683,8 +1693,7 @@ pong_render render (
     .score0(score0), .score1(score1), .best(best),
     .lives(lives), .show_lives(!two && (mode == M_GAME || mode == M_GAME_OVER)),
     .overlay(mode == M_DEMO ? 2'd1 : mode == M_GAME_OVER ? 2'd2 : 2'd0), .demo_mode(demo_kind),
-    // in due chi ha vinto, contro la CPU dal punto di vista del giocatore (in CHALLENGE anche a destra)
-    .winner(!two ? 3'd0 : match_cpu ? (((score0 >= score1) != ch_cpu_left) ? 3'd3 : 3'd4) : (score0 >= score1 ? 3'd1 : 3'd2)),
+    .winner(over_winner), .win_solo(over_winner == 3'd3 || (ch_active && !duel && over_winner == 3'd4)),
     .winner_accent(nxt), .ball_accent(nxt && (next_flags[2] || next_flags[10:9] != 2'd0)),
     .free_play(free_play), .credits(credits), .blink(blink), .upright(upright), .countdown(countdown),
     .pad_hide(pad_spin | warp_hide | twist_kind), .pad_gray(pad_gray), .dash_off(dash_off), .field_gray(bul_on),
@@ -1812,7 +1821,7 @@ challenge_render challenge_draw (
     .side(ch_side), .join_prompt(ch_active && !duel), .level(ch_level), .kind(rung_kind(ch_level)), .loadout(rung_loadout(ch_level)),
     .score_bcd(mode == M_INITIALS ? ch_best_bcd : ch_score_bcd), .hi_bcd(tb_bcd[0]),
     .perfect(ch_perfect), .coin_prompt(!free_play && credits == 4'd0), .blink(blink),
-    .cont_digit(ch_cont_digit),
+    .cont_digit(ch_cont_digit), .cont_over(cont_over),
     .name(ch_name), .name_pos(ch_pos), .letter(letter_code(ch_letter)),
     .table_names(tb_names_bus), .table_bcd(tb_bcd_bus), .table_levels(tb_levels_bus),
     .highlight(ch_highlight), .mult(ch_mult),
@@ -1880,7 +1889,7 @@ wire [3:0] sid_song = ch_join || music_off ? 4'd0 :
                       mode == M_GAME_OVER ? (ch_active ? 4'd0 : SID_SONG_GAME_OVER) :
                       mode == M_INTRO || mode == M_CHALLENGER ? SID_SONG_INTRO :
                       mode == M_CLEAR ? (ch_level == CH_LEVELS - 1 ? SID_SONG_CHAMPION : SID_SONG_CLEAR) :
-                      mode == M_CONT ? SID_SONG_CONTINUE :
+                      mode == M_CONT ? (cont_over ? SID_SONG_GAME_OVER : SID_SONG_CONTINUE) :
                       mode == M_ENDING ? SID_SONG_ENDING :
                       mode == M_INITIALS ? SID_SONG_CHAMPION :
                       mode == M_PICK || mode == M_HOWTO || ((mode == M_STRIPES || mode == M_LOGO || mode == M_TITLE ||

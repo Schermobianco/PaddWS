@@ -201,33 +201,11 @@ win_pg:    .res 1               ; YOU WIN nel GAME OVER: 0 no, 1-16 prossima pag
 .endif
 loop:
     lda frame_flag
-    jeq loop
+    beq loop
     lda #0
     sta frame_flag
     jsr frame
     jmp loop
-.endproc
-
-; Un frame: registri ombra nel VIC (vblank), comandi, scena, sprite e musica. Il banco di prova
-; (paddws-c64 frames) lo chiama per misurare i cicli di un frame intero.
-.proc frame
-    jsr apply_shadows
-    jsr read_input
-    ; tabelle dei quadrati da rifare, fuori dalle scene in bitmap
-    lda math_ready
-    bne :+
-    lda ch_phase                ; non mentre una schermata si prepara
-    bne :+
-    lda state
-    beq step
-    cmp #ST_TITLE + 1
-    bcc :+
-step:
-    jsr math_step
-:
-    jsr next_shots              ; NEXT: colpi del BLASTER (caratteri), anche loro nel vblank
-    jsr run_scene
-    jmp scene_done
 .endproc
 
 ; Esegue la scena corrente (ognuna torna con rts).
@@ -248,26 +226,51 @@ scenes:
     .word intro_scene - 1, clear_scene - 1, cont_scene - 1, initials_scene - 1, scores_scene - 1
     .word challenger_scene - 1, end_scene - 1
 
+; Un frame: registri ombra nel VIC (vblank), comandi, scena, sprite e musica. Il banco di prova
+; (paddws-c64 frames) lo chiama per misurare i cicli di un frame intero. Prosegue in scene_done.
+.proc frame
+    jsr apply_shadows
+    jsr read_input
+    ; tabelle dei quadrati da rifare, fuori dalle scene in bitmap
+    lda math_ready
+    bne :+
+    lda ch_phase                ; non mentre una schermata si prepara
+    bne :+
+    lda state
+    beq step
+    cmp #ST_TITLE + 1
+    bcc :+
+step:
+    jsr math_step
+:
+    jsr next_shots              ; NEXT: colpi del BLASTER (caratteri), anche loro nel vblank
+    jsr run_scene
+.endproc                        ; (prosegue in scene_done)
+
 ; Dopo ogni scena: sprite e riserve di NEXT dallo stato della partita (demo e partita) e musica.
+; Segue frame senza salto.
 SID_TICK_MAX  = 2500            ; sid_tick (o sid_more) più pesante in partita, anche con il tempo
                                 ; che cambia nel bullet time e con il filtro (paddws-c64 sid: i temi
                                 ; fino a circa 2.260, al primo frame di HAMMER; fuori dalla partita il
                                 ; primo frame del titolo arriva a circa 2.930)
 SID_LATE      = 18000 - SID_TICK_MAX
 SID_LATE_LINE = RASTER_LINE + SID_LATE / 58 - 312
+KEEP_SPRITES_LINE = 14500 / 58  ; righe oltre le quali restano gli sprite del frame prima
 .assert SID_LATE_LINE >= 56 && SID_LATE_LINE < RASTER_LINE, error, "SID_LATE_LINE fuori dalle righe 56-249"
 .proc scene_done
     lda state
     cmp #ST_DEMO
-    jeq game
+    beq game
     cmp #ST_COUNT
     bcc other
     cmp #ST_OVER + 1
     bcs other
 game:
-    ; dopo un tick pesantissimo (frame già oltre circa 14.800 cicli: colpo con previsioni, capsula e
-    ; BULLET insieme) restano gli sprite del frame prima: il resto aspetta comunque (frame_after)
-    lda #255
+    ; dopo un tick pesantissimo (frame già oltre circa 14.500 cicli: colpo con previsioni, capsula e
+    ; BULLET insieme) restano gli sprite del frame prima: il resto aspetta comunque (frame_after).
+    ; Sprite, riserve e controlli costano fino a circa 3.400 cicli: con la soglia più in alto un
+    ; frame arriverebbe oltre il suo tempo e i controlli dopo troverebbero il raster "all'inizio"
+    lda #KEEP_SPRITES_LINE
     jsr frame_after
     bcs :+
     jsr compute_sprites
@@ -302,12 +305,22 @@ other:
 :   jmp sid_tick
 .endproc
 
-; C = 0 se il frame è già oltre SID_LATE cicli (righe SID_LATE_LINE-249), 1 se c'è tempo.
+; C = 0 se il frame è già oltre SID_LATE cicli (righe SID_LATE_LINE-249), 1 se c'è tempo; alle
+; righe 250-311 solo se il frame è appena cominciato e non è un giro dopo (frame_flag, come in
+; frame_after).
 .proc sid_time
+    lda $d011
+    bmi early
     lda $d012
+    cmp #RASTER_LINE
+    bcs early
     sec
     sbc #SID_LATE_LINE
     cmp #RASTER_LINE - SID_LATE_LINE
+    rts
+early:
+    lda #0
+    cmp frame_flag              ; C = 1 solo senza un nuovo interrupt
     rts
 .endproc
 
@@ -498,7 +511,7 @@ done:
 ; finisce, poi si pulisce lo schermo di testo (non si vede, a schermo c'è la bitmap), poi la demo.
 .proc title_scene
     jsr coin_and_start
-    jcs done
+    bcs done
     lda demo_prep
     beq title
     cmp #1
@@ -513,7 +526,7 @@ clear:
     rts
 title:
     jsr title_frame
-    jcc done
+    bcc done
     ; dopo il titolo la classifica di CHALLENGE (poi la demo), come sul MiSTer
     lda #$ff
     sta ch_hl
@@ -581,11 +594,11 @@ done:
     jsr at_tick
     lda at_f+1
     cmp #>AT_DEMO_FRAMES
-    jcc done
+    bcc done
     bne :+
     lda at_f
     cmp #<AT_DEMO_FRAMES
-    jcc done
+    bcc done
 :   jsr go_stripes
 done:
     rts
@@ -605,7 +618,7 @@ DEMO_BOX_W = DEMO_LABEL_W + 2
     bne :+
     ldx #1
 :   cpx demo_label
-    jeq credit
+    beq credit
     stx demo_label
     ; riquadro vuoto sopra il campo, poi la scritta; senza scritta torna la mezzeria
     lda #4
@@ -615,7 +628,7 @@ DEMO_BOX_W = DEMO_LABEL_W + 2
     ldy #10
     jsr blank_box
     lda demo_label
-    jne label
+    bne label
     lda #10
     sta v_row
 :   jsr center_line_row
@@ -626,7 +639,7 @@ DEMO_BOX_W = DEMO_LABEL_W + 2
     jmp credit
 label:
     cmp #1
-    jne press
+    bne press
     lda #<big_insert_coin
     sta ptr2
     lda #>big_insert_coin
@@ -649,7 +662,7 @@ credit:
     clc
     adc #1
     cmp demo_credit
-    jeq done
+    beq done
     sta demo_credit
     jmp print_credits
 done:
@@ -707,7 +720,7 @@ MENU_VCOL  = 25
     jsr print_at
     .byte 16, 2, "PADD WS", 0
     jsr print_at
-    .byte 6, 22, "RUN/STOP: BACK   FIRE: OK", 0
+    .byte 7, 22, "RUN/STOP: BACK   FIRE: OK", 0
     jmp draw_menu
 .endproc
 
@@ -759,7 +772,7 @@ item:
 :   ldx menu_i
     inx
     cpx #MENU_ITEMS
-    jne item
+    bne item
     rts
 .endproc
 
@@ -890,8 +903,7 @@ s_gray:     .byte "GRAY    ", 0
     lda #KEY_STOP
     jsr key_pressed
     bcc :+
-    jsr go_stripes
-    rts
+    jmp go_stripes
 :   lda joy_edge
     ora joy_edge+1
     ora fire_edge               ; anche i pulsanti dei paddle
@@ -946,17 +958,16 @@ s_gray:     .byte "GRAY    ", 0
     beq :+
     lda menu_sel
     cmp #MI_PLAY
-    jne next_value
-    jsr start_game
-    rts
+    bne next_value
+    jmp start_game
 :   lda at_tmp
     and #JOY_RIGHT
-    jne next_value
+    bne next_value
     lda at_tmp
     and #JOY_LEFT
-    jeq done
+    beq done
     lda #$ff
-    jmp change
+    bne change
 next_value:
     lda #1
 change:
@@ -1014,7 +1025,7 @@ not_game:
     cmp #OPT_CHALLENGE + 1
     bcc store_p
     lda #1
-    jmp store_p
+    bne store_p
 wrap_hi:
     lda #OPT_CHALLENGE
 store_p:
@@ -1224,7 +1235,7 @@ first:
     ldy #11
     jsr draw_digit
 :   dec timer
-    jne done
+    bne done
     lda #EV_BOOST               ; il via
     jsr sid_fx
     ; via: torna la mezzeria
@@ -1271,8 +1282,7 @@ done:
 :   lda #KEY_Q
     jsr key_pressed
     bcc :+
-    jsr enter_menu
-    rts
+    jmp enter_menu
 :   lda paused
     beq :+
     rts
@@ -1308,7 +1318,7 @@ done:
     jsr sid_fx
 :    lda events
     and #EV_SCORE
-    jeq check
+    beq check
     lda #FLASH_FRAMES
     sta flash
     lda m_players
@@ -1320,17 +1330,17 @@ check:
     ; fine partita: in due il primo a 11, in singolo le palle finite
     lda m_players
     cmp #1
-    jne two
+    bne two
     lda lives
-    jeq over
+    beq over
     rts
 two:
     ldx #0
     jsr reached
-    jcs over
+    bcs over
     ldx #4
     jsr reached
-    jcs over
+    bcs over
     rts
 over:
     inc over_next
@@ -1340,7 +1350,7 @@ over:
 ; C = 1 se il punteggio X (0 o 4) è arrivato ai punti per vincere.
 .proc reached
     lda score+1,x
-    jne yes
+    bne yes
     lda score,x
     cmp win_points
     rts
@@ -1349,7 +1359,15 @@ yes:
     rts
 .endproc
 
-; GAME OVER, e sotto chi ha vinto (in due).
+; GAME OVER, e sotto chi ha vinto (in due). Da sola, al posto di GAME OVER, la scritta di chi ha
+; vinto quando la partita non è finita davvero o è vinta: YOU WIN contro la CPU, CPU WINS a un
+; livello perso di CHALLENGE (poi il continue; il GAME OVER se scade, cont_over), come sul PC e
+; sul MiSTer. Il riquadro: 4 righe con una scritta, 7 con due.
+OV_GAME_OVER = 0                ; scritte grandi del GAME OVER (over_lo e le altre tabelle)
+OV_YOU_WIN   = 1
+OV_P1_WINS   = 2                ; da qui con GAME OVER sopra
+OV_P2_WINS   = 3
+OV_CPU_WINS  = 4
 .proc enter_over
     jsr shots_erase             ; le scritte vanno sul campo pulito
     lda #ST_OVER
@@ -1364,25 +1382,12 @@ yes:
     lda #COL_BLACK
     sta sh_bg
     sta win_pg
-    lda #7
-    sta v_n
-    lda #16
-    ldx #12
-    ldy #9
-    jsr blank_box
-    lda #<big_game_over
-    sta ptr2
-    lda #>big_game_over
-    sta ptr2+1
-    lda #BIG_GAME_OVER_W
-    ldx #(40 - BIG_GAME_OVER_W) / 2
-    ldy #10
-    jsr draw_big
+    ldx #OV_GAME_OVER           ; in singolo solo GAME OVER
     lda m_players
     cmp #2
-    jne done
-    ; vince chi ha più punti (a parità il destro): X = lato del vincitore * 4
-    ldx #0
+    bne box
+    ; vince chi ha più punti (a parità il destro): Y = lato del vincitore * 4
+    ldy #0
     lda score+5
     cmp score+1
     bcc :+
@@ -1391,13 +1396,14 @@ yes:
     cmp score
     bcc :+
 right:
-    ldx #4
+    ldy #4
 :   ; contro la CPU YOU WIN o CPU WINS (chi gioca può essere a destra), in due P1 o P2 WINS
     lda cpu_side
     bmi humans
-    stx m_t
+    sty m_t
+    ldx #OV_CPU_WINS
     cmp m_t
-    beq cpu_wins
+    beq box
     ; la voce YOU WIN, come sul PC (non all'ultimo livello di CHALLENGE: la dice il finale)
     lda cg_active
     beq :+
@@ -1405,44 +1411,73 @@ right:
     cmp #CH_LEVELS - 1
     beq :++
 :   inc win_pg
-:   lda #<big_you_win
-    sta ptr2
-    lda #>big_you_win
-    sta ptr2+1
-    lda #BIG_YOU_WIN_W
-    ldx #(40 - BIG_YOU_WIN_W) / 2
-    jmp winner
-cpu_wins:
-    lda #<big_cpu_wins
-    sta ptr2
-    lda #>big_cpu_wins
-    sta ptr2+1
-    lda #BIG_CPU_WINS_W
-    ldx #(40 - BIG_CPU_WINS_W) / 2
-    jmp winner
+:   ldx #OV_YOU_WIN
+    bne box
 humans:
+    ldx #OV_P1_WINS
+    tya
+    beq box
+    inx
+box:
+    ; Y = 1 con una scritta sola: GAME OVER in singolo, YOU WIN, CPU WINS nella scalata
+    ldy #1
+    cpx #OV_P1_WINS
+    bcc push
+    cpx #OV_CPU_WINS
+    bne pair
+    lda cg_active
+    cmp #CG_LADDER
+    beq push
+pair:
+    ldy #0
+push:
     txa
-    bne p2
-    lda #<big_p1_wins
-    sta ptr2
-    lda #>big_p1_wins
-    sta ptr2+1
-    lda #BIG_P1_WINS_W
-    ldx #(40 - BIG_P1_WINS_W) / 2
-    jmp winner
-p2:
-    lda #<big_p2_wins
-    sta ptr2
-    lda #>big_p2_wins
-    sta ptr2+1
-    lda #BIG_P2_WINS_W
-    ldx #(40 - BIG_P2_WINS_W) / 2
-winner:
-    ldy #13
-    jmp draw_big
-done:
-    rts
+    pha
+    tya
+    pha
+    lda #4
+    cpy #1
+    beq :+
+    lda #7
+:   sta v_n
+    lda #16
+    ldx #12
+    ldy #9
+    jsr blank_box
+    pla                         ; una scritta sola: quella, nella riga di GAME OVER
+    tay
+    pla
+    cpy #0
+    beq :+
+    tax
+    ldy #10
+    jmp over_big
+:   pha                         ; due: GAME OVER e sotto chi ha vinto
+    ldx #OV_GAME_OVER
+    ldy #10
+    jsr over_big
+    pla
+    tax
+    ldy #13                     ; (prosegue in over_big)
 .endproc
+; Scritta grande X del GAME OVER (OV_*), centrata nella riga Y.
+.proc over_big
+    lda over_lo,x
+    sta ptr2
+    lda over_hi,x
+    sta ptr2+1
+    lda over_w,x
+    pha
+    lda over_col,x
+    tax
+    pla
+    jmp draw_big
+.endproc
+over_lo:  .lobytes big_game_over, big_you_win, big_p1_wins, big_p2_wins, big_cpu_wins
+over_hi:  .hibytes big_game_over, big_you_win, big_p1_wins, big_p2_wins, big_cpu_wins
+over_w:   .byte BIG_GAME_OVER_W, BIG_YOU_WIN_W, BIG_P1_WINS_W, BIG_P2_WINS_W, BIG_CPU_WINS_W
+over_col: .byte (40 - BIG_GAME_OVER_W) / 2, (40 - BIG_YOU_WIN_W) / 2, (40 - BIG_P1_WINS_W) / 2
+          .byte (40 - BIG_P2_WINS_W) / 2, (40 - BIG_CPU_WINS_W) / 2
 
 ; Dopo il GAME OVER si torna all'attract. Contro la CPU, se vince chi gioca, "YOU WIN!": il banco
 ; della vittoria (voice.inc) a WIN_RUN, due pagine per frame (circa 7.700 cicli), poi la voce. I

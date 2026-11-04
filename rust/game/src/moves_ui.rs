@@ -819,7 +819,7 @@ impl HowTo {
         }
         self.t += dt;
         let start = input::any_pressed(&START_KEYS)
-            || !touch::taps(&app.renderer).is_empty()
+            || !touch::taps().is_empty()
             || app.knob_clicked();
         if self.t < HOWTO_SECONDS && !(start && self.t >= SKIP_AFTER) {
             return None;

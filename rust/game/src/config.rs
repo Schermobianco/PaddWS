@@ -58,6 +58,9 @@ pub struct Game {
     pub music: bool,
     /// luminosità del bianco in percento: tutta l'immagine scala in proporzione
     pub white_level: u8,
+    /// punteggi dritti in alto, per un cabinato o un monitor normale, invece che rivolti ai
+    /// giocatori seduti ai lati di un tavolo (come l'opzione Scores del MiSTer)
+    pub scores_upright: bool,
 }
 
 impl Default for Game {
@@ -78,6 +81,7 @@ impl Default for Game {
             attract_sound: true,
             music: true,
             white_level: 100,
+            scores_upright: true,
         }
     }
 }
@@ -243,10 +247,11 @@ impl Default for Colors {
     }
 }
 
-/// Bombatura dello schermo CRT (orizzontale e verticale). Era il doppio (`OLD_WARP`): toglieva
-/// spazio agli angoli, dove stanno le riserve dei bonus.
-const WARP: (f32, f32) = (0.015625, 0.020833);
-const OLD_WARP: (f32, f32) = (0.03125, 0.04167);
+/// Bombatura dello schermo CRT (orizzontale e verticale). Le bombature di prima (`OLD_WARPS`), se
+/// nel file nessuno le ha cambiate, passano a questa: il doppio della prima toglieva spazio agli
+/// angoli, dove stanno le riserve dei bonus; poi un quarto in meno.
+const WARP: (f32, f32) = (0.01172, 0.015625);
+const OLD_WARPS: [(f32, f32); 2] = [(0.03125, 0.04167), (0.015625, 0.020833)];
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
@@ -265,7 +270,7 @@ impl Default for Crt {
     fn default() -> Self {
         Self {
             enabled: false,
-            resolution_scale: 6.0,
+            resolution_scale: 1.0,
             hard_scan: -8.0,
             hard_pix: -3.0,
             warp_x: WARP.0,
@@ -584,9 +589,12 @@ pub fn load(path: &Path) -> Config {
     match platform::read_text(path) {
         Some(text) => match serde_json::from_str::<Config>(&text) {
             Ok(mut cfg) => {
-                // la bombatura di prima, mai cambiata a mano, passa alla nuova
+                // una bombatura di prima, mai cambiata a mano, passa alla nuova
                 let crt = &mut cfg.crt_effects;
-                if (crt.warp_x - OLD_WARP.0).abs() < 1e-5 && (crt.warp_y - OLD_WARP.1).abs() < 1e-5 {
+                if OLD_WARPS
+                    .iter()
+                    .any(|old| (crt.warp_x - old.0).abs() < 1e-5 && (crt.warp_y - old.1).abs() < 1e-5)
+                {
                     (crt.warp_x, crt.warp_y) = WARP;
                 }
                 if let Some(music) = serde_json::from_str::<Value>(&text).ok().as_ref().and_then(old_music) {
@@ -695,6 +703,7 @@ pub fn save_preferences(path: &Path, cfg: &Config) {
     set(&mut data, "game", "attract_sound", cfg.game.attract_sound);
     set(&mut data, "game", "music", cfg.game.music);
     set(&mut data, "game", "white_level", cfg.game.white_level);
+    set(&mut data, "game", "scores_upright", cfg.game.scores_upright);
     set(&mut data, "crt_effects", "enabled", cfg.crt_effects.enabled);
     set(&mut data, "next", "super_moves", cfg.next.super_moves);
     set(&mut data, "mouse", "spinner", cfg.mouse.spinner);

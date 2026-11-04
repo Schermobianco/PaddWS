@@ -117,10 +117,10 @@ at_y:       .res 1
 ; Un frame dell'auto-test; C = 1 alla fine.
 .proc boot_frame
     lda at_f+1
-    jne grid
+    bne grid
     lda at_f
     cmp #AT_BOOT_GRID_FROM
-    jcs grid
+    bcs grid
     ; righe che compaiono una alla volta, con un suono
     ldx #0
     lda at_f
@@ -134,7 +134,7 @@ at_y:       .res 1
     bcc :+
     ldx #BOOT_LINES
 :   cpx at_shown
-    jeq cursor
+    beq cursor
     ; riga nuova (at_shown è l'indice)
     stx at_tmp
     lda at_shown
@@ -144,10 +144,10 @@ at_y:       .res 1
 grid:
     ; reticolo di test, ogni 16 pixel, e una riga in fondo
     lda at_f+1
-    jne done
+    bne done
     lda at_f
     cmp #AT_BOOT_GRID_FROM
-    jne done
+    bne done
     jsr draw_grid
     lda #EV_BOOST
     jsr at_sound
@@ -202,7 +202,7 @@ done:
     asl a
     tax
     lda boot_lines+1,x
-    jeq empty
+    beq empty
     sta ptr2+1
     lda boot_lines,x
     sta ptr2
@@ -215,7 +215,7 @@ done:
     jsr print_str
     ; il cursore della riga prima si spegne
     pla
-    jeq first
+    beq first
     pha
     jsr erase_cursor
     pla
@@ -232,7 +232,7 @@ empty:
 ; Toglie il cursore dalla riga prima di at_shown (cancella le colonne dopo il testo).
 .proc erase_cursor
     lda at_shown
-    jeq done
+    beq done
     asl a
     adc #BOOT_ROW - 2
     tay
@@ -417,7 +417,7 @@ row:
     ldy v_row
     iny
     dec at_tmp
-    jne row
+    bne row
     rts
 .endproc
 
@@ -506,18 +506,18 @@ stripe:
     ldy at_tmp
 sub:
     cpy #0
-    jeq got
+    beq got
     sec
     sbc #AT_STRIPE_STEP
-    jcc waiting
+    bcc waiting
     dey
     jmp sub
 waiting:
     lda #0
 got:
     cmp #AT_SLIDE_LAST
-    jcc frame
-    jne full
+    bcc frame
+    bne full
     ; arrivata in questo frame: un colpo
     lda #EV_HIT
     jsr at_sound
@@ -531,21 +531,21 @@ frame:
     bne right
     lda slide_left,y
     cmp at_len,x
-    jeq next                    ; stessa lunghezza: niente da rifare
+    beq next                    ; stessa lunghezza: niente da rifare
     sta at_len,x
     jsr stripe_left
     jmp next
 right:
     lda slide_right,y
     cmp at_len,x
-    jeq next
+    beq next
     sta at_len,x
     jsr stripe_right
 next:
     ldx at_tmp
     inx
     cpx #6
-    jne stripe
+    bne stripe
     jsr at_tick
     lda at_f
     cmp #AT_STRIPES_FRAMES
@@ -566,13 +566,13 @@ next:
     sbc v_col
     bcc empty                   ; striscia finita prima
     cmp #8
-    jcs full
+    bcs full
     tay
     lda mask_left,y
     jmp store
 full:
     lda #$ff
-    jmp store
+    bne store
 empty:
     lda #0
 store:
@@ -581,7 +581,7 @@ store:
     cpx #11
     bne :-
     lda #0
-    jmp stripe_rows
+    beq stripe_rows
 .endproc
 
 ; Striscia destra lunga A pixel (fino al bordo destro) nella riga di at_tmp / 2.
@@ -601,16 +601,16 @@ store:
     lda v_n
     sec
     sbc v_col                   ; pixel spenti all'inizio del byte
-    jcc full
-    jeq full
+    bcc full
+    beq full
     cmp #8
-    jcs empty
+    bcs empty
     tay
     lda mask_right,y
     jmp store
 full:
     lda #$ff
-    jmp store
+    bne store
 empty:
     lda #0
 store:
@@ -619,7 +619,7 @@ store:
     cpx #11
     bne :-
     lda #29
-    jmp stripe_rows
+    bne stripe_rows
 .endproc
 
 ; Scrive at_buf (11 byte dalla colonna A) nelle 12 righe della striscia at_tmp / 2.
@@ -651,7 +651,7 @@ row:
     .endrepeat
     inc v_row
     dec v_n
-    jne row
+    bne row
     rts
 .endproc
 
@@ -751,7 +751,7 @@ logo_line_msb: .byte ((LOGO_SX >> 8) & 1) | (((LOGO_SX + 48) >> 8) & 1) << 1 | (
 .proc logo_frame
     lda at_f
     cmp #AT_WIPE_FRAMES
-    jcs after
+    bcs after
     ; righe da mostrare: floor(altezza * f / durata), senza divisioni
     lda at_acc
     clc
@@ -767,7 +767,7 @@ logo_line_msb: .byte ((LOGO_SX >> 8) & 1) | (((LOGO_SX + 48) >> 8) & 1) << 1 | (
     jmp :-
 :   stx at_target               ; (copy_rows usa at_tmp)
     cpx at_shown
-    jeq line
+    beq line
     ; righe nuove del logo
     lda #AT_LOGO_C0
     ldx #AT_LOGO_C1 - AT_LOGO_C0 + 1
@@ -893,25 +893,25 @@ done:
 .proc title_frame
     ; WS lampeggia due volte all'inizio
     lda at_f+1
-    jne ws_lit
+    bne ws_lit
     ldx #0
 :   lda at_f
     cmp ws_off,x
     bcc :+
     cmp ws_off+1,x
-    jcc ws_dark
+    bcc ws_dark
 :   inx
     inx
     cpx #4
     bne :--
 ws_lit:
     lda at_ws
-    jne label
+    bne label
     jsr ws_on
     jmp label
 ws_dark:
     lda at_ws
-    jeq label
+    beq label
     jsr ws_off_draw
 label:
     ; INSERT COIN / PRESS START lampeggia (dopo i primi frame)
@@ -920,17 +920,17 @@ label:
     bne :+
     lda at_f
     cmp #AT_LABEL_FROM + 1
-    jcc show
+    bcc show
 :   jsr blink_on
     ldx #0
-    jcc show
+    bcc show
     ldx #2                      ; PRESS START
     jsr credit_variant
-    jne show
+    bne show
     ldx #1                      ; senza crediti: INSERT COIN
 show:
     cpx at_label
-    jeq credit
+    beq credit
     stx at_label
     jsr draw_label
 credit:
@@ -938,7 +938,7 @@ credit:
     clc
     adc #1
     cmp at_credit
-    jeq ball
+    beq ball
     sta at_credit
     jsr draw_credit
 ball:
@@ -959,7 +959,7 @@ ball:
     ldx at_f+1
     ; f mod periodo con sottrazioni (f < 1000)
 :   cpx #0
-    jne sub
+    bne sub
     cmp #AT_BLINK_PERIOD
     bcc :+
 sub:
@@ -969,7 +969,7 @@ sub:
     dex
     jmp :-
 :   cmp #AT_BLINK_ON
-    jcc on
+    bcc on
     clc
     rts
 on:
@@ -995,7 +995,7 @@ on:
 ; Scritta at_label nelle sue celle (0 = vuota).
 .proc draw_label
     lda at_label
-    jeq clear
+    beq clear
     sec
     sbc #1
     tax
@@ -1076,7 +1076,7 @@ clear:
     dex
 skip:
     cpx #0
-    jeq go
+    beq go
     clc
     lda ptr2
     adc #AT_CREDIT_W * 8
@@ -1123,7 +1123,7 @@ cell_row_hi:
     sty m_lo
     ldy ball_py+1
     jsr ball_blocked
-    jcc free
+    bcc free
     clc
     lda ball_px
     adc ball_vxa
@@ -1251,7 +1251,7 @@ at_ny: .res 2
 :   lda ball_px+1
     cmp #>((W_PX - AT_BALL_SIZE) * 64)
     bcc :+
-    jne big_x
+    bne big_x
     lda ball_px
     cmp #<((W_PX - AT_BALL_SIZE) * 64)
     bcc :+
@@ -1268,7 +1268,7 @@ big_x:
 :   lda ball_py+1
     cmp #>((H_PX - AT_BALL_SIZE) * 64)
     bcc :+
-    jne big_y
+    bne big_y
     lda ball_py
     cmp #<((H_PX - AT_BALL_SIZE) * 64)
     bcc :+
@@ -1309,10 +1309,10 @@ H_PX = 200
     jmi yes
     cmp #>(W_PX - AT_BALL_SIZE)
     bcc :+
-    jne yes
+    bne yes
     lda at_x
     cmp #<(W_PX - AT_BALL_SIZE) + 1
-    jcs yes
+    bcs yes
 :   lda at_x
     sta at_bx
     lda at_x+1
@@ -1324,7 +1324,7 @@ H_PX = 200
     bne yes                     ; negativa o oltre 255
     lda at_x
     cmp #H_PX - AT_BALL_SIZE + 1
-    jcs yes
+    bcs yes
     sta at_y
     ; maschera dei 4 pixel a partire da x: byte della colonna e di quella dopo
     lda at_bx
@@ -1353,16 +1353,16 @@ row:
     ldy #0
     lda (ptr),y
     and m_t
-    jne yes
+    bne yes
     lda m_sign
     beq :+
     ldy #8
     lda (ptr),y
     and m_sign
-    jne yes
+    bne yes
 :   inc at_y
     dex
-    jne row
+    bne row
     clc
     rts
 yes:

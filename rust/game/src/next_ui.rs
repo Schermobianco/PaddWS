@@ -147,6 +147,8 @@ const DEFAULT_PICK: [Bonus; 3] = [Bonus::Smash, Bonus::Teleport, Bonus::Slow];
 /// Secondi per scegliere e pausa prima del servizio.
 pub const PICK_SECONDS: f64 = 10.0;
 pub const READY_SECONDS: f64 = 1.2;
+/// Riga dei nomi e dei conteggi sopra le colonne della scelta (unità a 480 righe).
+const HEAD_Y: f32 = 132.0;
 /// Righe di velocità del RUSH quando scatta in avanti (l'avanzamento a schermo dura meno).
 const RUSH_GHOST_SECONDS: f64 = 0.25;
 /// Nome di una mossa speciale di livello `level`: al livello massimo con "MAX" davanti.
@@ -409,6 +411,8 @@ pub struct Pick {
     duel: Option<Side>,
     cursor: [usize; 2],
     chosen: [Vec<Bonus>; 2],
+    /// scelta chiusa: con tasti ed encoder al terzo bonus, con il touch toccando OK
+    confirmed: [bool; 2],
     left: f64,
     ready: Option<f64>,
     /// encoder già impostati per la scelta
@@ -436,6 +440,7 @@ impl Pick {
             duel: None,
             cursor: [0; 2],
             chosen,
+            confirmed: [false; 2],
             left: PICK_SECONDS,
             ready: None,
             knobs_ready: false,
@@ -539,6 +544,7 @@ impl Pick {
             }
             if input::pressed(toggle) {
                 self.toggle(app, side);
+                self.confirmed[side] = self.chosen[side].len() == 3;
             }
         }
         // encoder: la rotazione sposta il cursore, il click (o USA) prende o lascia il bonus
@@ -553,25 +559,36 @@ impl Pick {
             }
             match e.action {
                 Action::Rotate(v) => self.cursor[e.player] = (v.max(0) as usize).min(n - 1),
-                Action::Click | Action::Activate => self.toggle(app, e.player),
+                Action::Click | Action::Activate => {
+                    self.toggle(app, e.player);
+                    self.confirmed[e.player] = self.chosen[e.player].len() == 3;
+                }
                 _ => {}
             }
         }
-        // touch: un tocco su una riga della propria colonna prende o lascia quel bonus
-        for p in touch::taps(&app.renderer) {
+        // touch: un tocco su una riga della propria colonna prende o lascia quel bonus; con tre
+        // bonus si conferma toccando OK in cima alla colonna (vale tutto lo spazio sopra le righe)
+        let (first, row_h) = Self::row(app, 0);
+        for p in touch::taps() {
             let side = usize::from(p.x >= app.renderer.world_w / 2.0);
             if self.fixed == Some(side) {
                 continue;
             }
-            if let Some(i) = (0..n).find(|&i| {
+            if p.y < first - row_h / 2.0 {
+                if self.chosen[side].len() == 3 && !self.confirmed[side] {
+                    self.confirmed[side] = true;
+                    app.play(Event::Hit);
+                }
+            } else if let Some(i) = (0..n).find(|&i| {
                 let (cy, row_h) = Self::row(app, i);
                 (p.y - cy).abs() < row_h / 2.0
             }) {
                 self.cursor[side] = i;
                 self.toggle(app, side);
+                self.confirmed[side] = false;
             }
         }
-        let done = self.chosen.iter().all(|c| c.len() == 3);
+        let done = (0..2).all(|i| self.fixed == Some(i) || self.confirmed[i]);
         if done || self.left <= 0.0 {
             // tempo scaduto: si completa con le scelte predefinite
             for chosen in &mut self.chosen {
@@ -621,16 +638,24 @@ impl Pick {
         for side in 0..2 {
             let col = if side == 0 { w / 4.0 } else { 3.0 * w / 4.0 };
             let chosen = &self.chosen[side];
-            r.text_centered(&self.name(side), font, 30.0 * s, col - 70.0 * s, 132.0 * s, 0.0, white);
-            r.text_centered(
-                &format!("{}/3", chosen.len()),
-                font,
-                30.0 * s,
-                col + 70.0 * s,
-                132.0 * s,
-                0.0,
-                if chosen.len() == 3 { white } else { gray },
-            );
+            let head = HEAD_Y * s;
+            r.text_centered(&self.name(side), font, 30.0 * s, col - 70.0 * s, head, 0.0, white);
+            if app.touch && chosen.len() == 3 && !self.confirmed[side] && self.fixed != Some(side) && self.ready.is_none() {
+                // touch: il pulsante con cui si chiude la scelta
+                draw_rectangle(col + 35.0 * s, head - 18.0 * s, 70.0 * s, 36.0 * s, accent);
+                let black = App::color(app.cfg.colors.black);
+                r.text_centered("OK", font, 30.0 * s, col + 70.0 * s, head, 0.0, black);
+            } else {
+                r.text_centered(
+                    &format!("{}/3", chosen.len()),
+                    font,
+                    30.0 * s,
+                    col + 70.0 * s,
+                    head,
+                    0.0,
+                    if chosen.len() == 3 { white } else { gray },
+                );
+            }
             for (i, &b) in Bonus::PICKABLE.iter().enumerate() {
                 let (cy, _) = Self::row(app, i);
                 let on = chosen.contains(&b);

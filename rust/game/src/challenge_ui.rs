@@ -89,7 +89,7 @@ impl Run {
 
 /// Start in questo frame: tasti, tocco o click di un encoder.
 fn start_pressed(app: &App) -> bool {
-    input::any_pressed(&START_KEYS) || !touch::taps(&app.renderer).is_empty() || app.knob_clicked()
+    input::any_pressed(&START_KEYS) || !touch::taps().is_empty() || app.knob_clicked()
 }
 
 // ------------------------------------------------------------- nuovo sfidante
@@ -188,7 +188,7 @@ impl Hold {
     fn update(&mut self, app: &App, free: Side, dt: f64) -> (bool, bool) {
         let half = app.renderer.world_w / 2.0;
         let mut tap = false;
-        for f in touch::fingers(&app.renderer) {
+        for f in touch::fingers() {
             let in_free = (f.pos.x >= half) == (free == Side::Right);
             let mine = self.finger.is_some_and(|(id, _)| id == f.id);
             match f.phase {
@@ -547,9 +547,12 @@ impl Clear {
 // -------------------------------------------------------------------- continue
 
 /// Partita persa: conto alla rovescia per continuare con un gettone (o Start in Free Play),
-/// dallo stesso livello con il punteggio azzerato.
+/// dallo stesso livello con il punteggio azzerato. Se scade (o con Esc) GAME OVER, poi le
+/// iniziali o la classifica.
 pub struct Continue {
     left: f64,
+    /// secondi rimasti del GAME OVER, dopo il conto alla rovescia
+    over: Option<f64>,
 }
 
 impl Continue {
@@ -559,12 +562,27 @@ impl Continue {
             run.remember(level);
         }
         app.play(Event::Score);
-        Self { left: CONTINUE_SECONDS }
+        Self { left: CONTINUE_SECONDS, over: None }
+    }
+
+    /// Il conto alla rovescia è scaduto: si vede GAME OVER.
+    pub fn game_over(&self) -> bool {
+        self.over.is_some()
+    }
+
+    /// Per la verifica automatica: il conto alla rovescia già scaduto.
+    pub fn expire(&mut self, app: &App) {
+        self.over = Some(app.attract.game_over_seconds());
     }
 
     pub fn update(&mut self, app: &mut App, dt: f64) -> Option<Scene> {
+        if let Some(left) = &mut self.over {
+            *left -= dt;
+            return (*left <= 0.0 || input::pressed(KeyCode::Escape)).then(|| finish(app));
+        }
         if input::pressed(KeyCode::Escape) {
-            return Some(finish(app));
+            self.over = Some(app.attract.game_over_seconds());
+            return None;
         }
         if input::pressed(KeyCode::Key5) && !app.cfg.game.free_play && app.credits < 9 {
             app.credits += 1;
@@ -585,7 +603,8 @@ impl Continue {
         let before = self.left.ceil();
         self.left -= dt;
         if self.left <= 0.0 {
-            return Some(finish(app));
+            self.over = Some(app.attract.game_over_seconds());
+            return None;
         }
         if self.left.ceil() < before {
             app.play(Event::Wall);
@@ -601,6 +620,10 @@ impl Continue {
             App::color(colors.accent),
         );
         app.renderer.fill(BLACK);
+        if self.over.is_some() {
+            crate::attract::draw_game_over(&app.attract, &app.renderer, true, None, white);
+            return;
+        }
         text(app, "CONTINUE?", 56.0, 120.0, accent);
         let sc = app.scale();
         let r = &app.renderer;
@@ -759,7 +782,7 @@ impl Initials {
             confirm |= input::pressed(forward);
         }
         // touch: un tocco in alto cambia lettera, in basso la conferma
-        for p in touch::taps(&app.renderer) {
+        for p in touch::taps() {
             if p.y < app.renderer.world_h / 2.0 {
                 self.letter = (self.letter + 1) % n;
             } else {

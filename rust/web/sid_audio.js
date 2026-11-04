@@ -36,7 +36,7 @@
             }
             return ctx.sampleRate;
         } catch (e) {
-            console.error("Musica del SID non disponibile", e);
+            console.warn("Musica del SID non disponibile", e); // si gioca senza musica
             return 0;
         }
     }

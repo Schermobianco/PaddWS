@@ -357,6 +357,7 @@ async fn run(args: Args, mut cfg: Config, config_path: PathBuf) {
         app.knob_events = app.encoders.as_mut().map(|e| e.poll(get_time(), mouse)).unwrap_or_default();
         // si gioca con il touch (non con il mouse): niente scritte dei tasti, comandi da toccare
         app.touch |= !touches().is_empty();
+        touch::poll(&app.renderer);
         // gamepad: i loro comandi come tasti per la scena, e quale controllo si è usato per ultimo
         app.pads.poll(get_time());
         input::set_pads(&app.pads, &scene.pad_keys(&app));
@@ -498,7 +499,7 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         app.set_egg(true);
         scene
     }
-    let shots: [(&str, MakeScene); 56] = [
+    let shots: [(&str, MakeScene); 59] = [
         ("1_demo_classic", |app| demo_at(app, DemoMode::Classic)),
         ("1_demo_evo", |app| demo_at(app, DemoMode::Evo)),
         ("1_demo_next", |app| demo_at(app, DemoMode::Next)),
@@ -543,6 +544,22 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
             app.cfg.game.free_play = false;
             app.credits = 0;
             Scene::Continue(challenge_ui::Continue::new(app))
+        }),
+        ("8_challenge_lost", |app| {
+            // livello perso: solo CPU WINS, si può ancora continuare
+            challenge(app, 2);
+            let mut play = Play::challenge(app);
+            play.skip_countdown();
+            play.set_scores([2, 5], 0);
+            play.show_game_over();
+            Scene::Game(Box::new(play))
+        }),
+        ("8_challenge_continue_over", |app| {
+            // CONTINUE scaduto: GAME OVER, poi iniziali o classifica
+            challenge(app, 4);
+            let mut cont = challenge_ui::Continue::new(app);
+            cont.expire(app);
+            Scene::Continue(cont)
         }),
         ("8_challenge_initials", |_| {
             Scene::Initials(challenge_ui::Initials::new((25_000, 6)))
@@ -707,6 +724,18 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
             play.skip_countdown();
             play.set_scores([11, 6], 0);
             play.show_game_over();
+            Scene::Game(Box::new(play))
+        }),
+        ("5_game_over_win", |app| {
+            // contro la CPU vince chi gioca: solo YOU WIN
+            app.players = 2;
+            app.cpu = true;
+            app.evo = false;
+            let mut play = Play::new(app);
+            play.skip_countdown();
+            play.set_scores([11, 6], 0);
+            play.show_game_over();
+            app.cpu = false;
             Scene::Game(Box::new(play))
         }),
         ("a_egg_scores", |app| {

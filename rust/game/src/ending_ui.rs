@@ -394,7 +394,7 @@ impl Ending {
     pub fn update(&mut self, app: &mut App, dt: f64) -> Option<Scene> {
         self.t += dt;
         let skip = self.t >= SKIP_AFTER
-            && (input::any_pressed(&START_KEYS) || !touch::taps(&app.renderer).is_empty() || app.knob_clicked());
+            && (input::any_pressed(&START_KEYS) || !touch::taps().is_empty() || app.knob_clicked());
         if input::pressed(KeyCode::Escape) || skip {
             return Some(challenge_ui::finish(app));
         }

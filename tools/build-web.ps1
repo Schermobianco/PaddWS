@@ -24,7 +24,9 @@ try {
     if (-not $gl) { throw "js/gl.js di miniquad $($Matches[1]) non trovato" }
     $js = @((Get-Content $gl.FullName -Raw), (Get-Content "$root/rust/vendor/quad-snd/js/audio.js" -Raw))
 
+    # cartella ricreata da zero: file rimasti da build vecchie finirebbero nello zip della release
     $out = "$root/rust/target/web"
+    if (Test-Path $out) { Remove-Item -Recurse -Force $out }
     New-Item -ItemType Directory -Force $out | Out-Null
     Copy-Item "$root/rust/web/*" $out
     Set-Content "$out/mq_js_bundle.js" ($js -join "`n") -Encoding utf8 -NoNewline

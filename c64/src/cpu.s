@@ -285,14 +285,14 @@ visible:
     lda #1
     sta cb_aim
     lda cpu_predict,x
-    jeq follow
+    beq follow
     ; la curva, la palla fantasma e quella guidata non si possono prevedere
     lda m_next
     beq predict
     or32 nx_curve
     ora nx_ghost
     ora nx_steer
-    jne follow
+    bne follow
 predict:
     lda #0
     sta c_tp
@@ -350,15 +350,15 @@ joystick:
     jmp fast
 :   neg32 c_a, c_a
     cmp32 c_d, c_a
-    jpl fast
+    bpl fast
     lda #$ff
     sta in_dir,x
 fast:
     lda cpu_fast,x
-    jeq blaster
+    beq blaster
     abs32 c_d, c_d
     cmp32 {pad_h,x}, c_d
-    jpl blaster
+    bpl blaster
     lda #IN_FAST
     sta c_flags
 blaster:
@@ -366,10 +366,10 @@ blaster:
     ; racchetta; niente scatto
     ldx c_side
     lda m_next
-    jeq forward
+    beq forward
     lda nx_kind,x
     cmp #K_BLASTER
-    jne forward
+    bne forward
     jsr cpu_fire
     jmp bonus
 forward:
@@ -745,19 +745,19 @@ right:
     add32 c_d, ball_x, ball_r
     sub32 c_a, {pad_fwd,x}, {#HALF_W_FLOOR}
     cmp32 c_d, c_a
-    jmi no
+    bmi no
     sub32 c_a, {pad_home,x}, {#HALF_W_FLOOR}
     cmp32 c_a, c_d
-    jmi no
+    bmi no
 odds:
     lda cpu_fwd,x
-    jeq no
+    beq no
     sta m_b
     lda #0
     sta m_b+1
     jsr rng_below               ; n < 256: il risultato sta in A
     cmp #0
-    jne no
+    bne no
     sec
     rts
 no:
@@ -865,7 +865,7 @@ compute:
 .proc arrival_y
     ; faccia: x della palla al contatto
     cpx #0
-    jne right
+    bne right
     add32 c_a, {pad_x,x}, {#P_PAD_HALF_W}
     add32 c_a, c_a, ball_r
     sub32 c_d, ball_x, c_a      ; distanza da percorrere (verso sinistra)
@@ -936,7 +936,7 @@ div:
     ror m_a+1
     ror m_a
     dey
-    jne div
+    bne div
     ; resto e passo per gli aggiornamenti del BULLET (cpu_step)
     lda c_tp
     ora c_side

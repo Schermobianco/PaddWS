@@ -2,7 +2,8 @@
 <!-- Versione web di PADD WS: pagina che carica paddws.wasm con il JavaScript di macroquad.
      Per telefoni e tablet (Android e iOS): niente zoom né scorrimento, il gioco resta dentro
      le aree sicure dello schermo (notch), schermo intero da "Aggiungi a Home" (manifest).
-     L'audio parte al primo tocco: lo sblocca audio.js di macroquad, come chiede Safari.
+     L'audio parte al primo tocco: lo sblocca audio.js di macroquad, come chiede Safari; senza
+     audio si gioca muti. Gli errori compaiono in un riquadro rosso in basso.
      La musica del SID la suona il gioco in tempo reale: sid_audio.js. I gamepad li legge
      gamepad.js; preferenze e classifica restano nel localStorage: storage.js. -->
 <html lang="it">
@@ -43,10 +44,48 @@
         outline: none;
         display: block;
     }
+    /* errori sullo schermo: su iPhone e iPad la console non si vede senza un Mac */
+    #errors {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 1;
+        max-height: 50%;
+        overflow: auto;
+        margin: 0;
+        padding: 8px;
+        background: #400;
+        color: #fcc;
+        font: 12px monospace;
+        white-space: pre-wrap;
+    }
 </style>
 </head>
 <body>
 <canvas id="glcanvas" tabindex="1"></canvas>
+<pre id="errors" hidden></pre>
+<script>
+    // errori e panic del gioco (console.error) nel riquadro in basso; un tocco lo chiude
+    (function () {
+        const box = document.getElementById("errors");
+        function show(msg) {
+            box.hidden = false;
+            box.textContent += msg + "\n";
+        }
+        box.addEventListener("click", () => { box.hidden = true; box.textContent = ""; });
+        const error = console.error;
+        console.error = function (...args) {
+            show(args.map(String).join(" "));
+            error.apply(console, args);
+        };
+        window.addEventListener("error", (e) => show(e.message || String(e.error)));
+        window.addEventListener("unhandledrejection", (e) => show("promise: " + e.reason));
+        if (typeof WebAssembly === "undefined") {
+            show("WebAssembly non disponibile in questo browser (su iPhone e iPad: modalità di isolamento?)");
+        }
+    })();
+</script>
 <script src="mq_js_bundle.js"></script>
 <script src="sid_audio.js"></script>
 <script src="gamepad.js"></script>

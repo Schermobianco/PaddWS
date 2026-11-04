@@ -67,7 +67,8 @@ ch_phase:  .res 1               ; 1: schermo da pulire, 2: da disegnare
 ch_elapsed: .res 1              ; frame dall'inizio della schermata (fino a 255)
 ch_more:   .res 1               ; il disegno continua al prossimo frame
 ch_digit:  .res 1
-ch_go:     .res 1               ; presentazione finita: la partita al prossimo frame
+ch_go:     .res 1               ; presentazione finita: la partita al prossimo frame; nel continue
+                                ; il GAME OVER dopo il conto alla rovescia
 .segment "ZEROPAGE"
 ch_tmp:    .res 4
 .segment "BSS"
@@ -487,6 +488,28 @@ none:
 .endproc
 
 ; C = 1 se il tempo è finito.
+; Niente continue: GAME OVER, la partita è finita davvero (con la sua musica e per il suo tempo,
+; come quello sopra la partita), poi iniziali o classifica (cont_scene, ch_finish).
+.proc cont_over
+    inc ch_go
+    lda #<draw_cont_over
+    sta ch_draw
+    lda #>draw_cont_over
+    sta ch_draw+1
+    lda #SID_SONG_GAME_OVER
+    jsr sid_song
+    lda #ST_CONT
+    ldx #<AT_GAME_OVER_FRAMES
+    ldy #>AT_GAME_OVER_FRAMES
+    jmp ch_screen
+.endproc
+
+.proc draw_cont_over
+    ldx #OV_GAME_OVER
+    ldy #11
+    jmp over_big
+.endproc
+
 .proc ch_timeout
     lda ch_timer
     ora ch_timer+1
@@ -576,11 +599,6 @@ next:
     jmp print_str
 .endproc
 
-; Colore A per la riga Y.
-.proc row_color
-    jmp color_row
-.endproc
-
 ; --- presentazione dell'avversario
 
 .proc enter_intro
@@ -614,27 +632,29 @@ INTRO_CAP_ROW = 13              ; capsule nelle righe 13-14, nomi nella 15
     .byte 14, 3, "FINAL LEVEL", 0
     jmp :++
 :   jsr print_at
-    .byte 13, 3, "LEVEL   OF 7", 0
+    .byte 14, 3, "LEVEL   OF 7", 0
     lda ch_level
     clc
     adc #'1'
-    ldx #19
+    ldx #20
     ldy #3
     sty v_row
     jsr put_ascii
 :   lda #COL_YELLOW
     ldy #3
     jsr color_row
-    ; racchetta, frase e bonus dell'avversario
+    ; racchetta (centrata, kind_col), frase e bonus dell'avversario
     ldx ch_level
     lda rung_kind,x
+    tax
     asl a
     tay
     lda kind_names,y
     sta ptr2
     lda kind_names+1,y
     sta ptr2+1
-    ldx #16
+    lda kind_col,x
+    tax
     ldy #8
     jsr print_str
     ldx ch_level
@@ -869,7 +889,7 @@ done:
     ldy #5
     jsr color_row
     jsr print_at
-    .byte 10, 11, "WIN BONUS  +", 0
+    .byte 12, 11, "WIN BONUS  +", 0
     lda ch_bonus
     ldx ch_bonus+1
     ldy #11
@@ -878,7 +898,7 @@ done:
     ora ch_bonus+3
     beq :+
     jsr print_at
-    .byte 10, 13, "PERFECT    +", 0
+    .byte 12, 13, "PERFECT    +", 0
     lda ch_bonus+2
     ldx ch_bonus+3
     ldy #13
@@ -887,8 +907,8 @@ done:
     ldy #13
     jsr color_row
 :   jsr print_at
-    .byte 11, 17, "SCORE", 0
-    ldx #17
+    .byte 13, 17, "SCORE", 0
+    ldx #19
     ldy #17
     jsr print_score
     jsr print_at
@@ -898,7 +918,7 @@ done:
     jmp color_row
 .endproc
 
-; Premio A:X (16 bit) senza zeri davanti dalla colonna 22, riga Y.
+; Premio A:X (16 bit) senza zeri davanti dalla colonna 24, riga Y (righe centrate con 4 cifre).
 .proc print_bonus
     sta ch_tmp
     stx ch_tmp+1
@@ -921,7 +941,7 @@ done:
     lda #>ch_txt
     adc #0
     sta ptr2+1
-    ldx #22
+    ldx #24
     ldy v_row
     jmp print_str
 .endproc
@@ -1277,6 +1297,8 @@ challenger:
     jsr remember
     lda #$ff
     sta ch_digit
+    lda #0
+    sta ch_go
     lda #<draw_cont
     sta ch_draw
     lda #>draw_cont
@@ -1312,7 +1334,12 @@ challenger:
 .proc cont_scene
     jsr ch_phases
     jcs done
-    ; gettone
+    lda ch_go                   ; GAME OVER: poi iniziali o classifica
+    beq :+
+    jsr ch_timeout
+    jcc done
+    jmp ch_finish
+:   ; gettone
     lda #KEY_5
     jsr key_pressed
     bcc :+
@@ -1338,7 +1365,7 @@ go:
 wait:
     jsr ch_timeout
     bcc :+
-    jmp ch_finish
+    jmp cont_over
 :   ; secondi rimasti (cifra grande al centro), con un colpo a ogni secondo
     lda ch_timer
     sta ch_tmp
@@ -1417,14 +1444,14 @@ done:
     ldy #4
     jsr color_row
     jsr print_at
-    .byte 12, 7, "SCORE", 0
+    .byte 13, 7, "SCORE", 0
     ldx #0
 :   lda ch_best,x
     sta ch_tmp,x
     inx
     cpx #4
     bne :-
-    ldx #18
+    ldx #19
     ldy #7
     jsr print_tmp
     lda ch_loser
@@ -1517,10 +1544,13 @@ draw:
     cpx ch_pos
     bcc chosen
     bne put
+    ; a tratti: spenta 8 frame ogni 32 (0,16 s su 0,64), accesa il resto, come il cursore del PC
+    ; e del MiSTer (prima il bit 7 del contatore: 2,5 s accesa e 2,5 s spenta)
     ldy ch_letter
-    lda letters,y
-    ldy frame_count
-    cpy #$80
+    lda frame_count
+    and #$18
+    cmp #$18                    ; C = 1 negli 8 frame spenti
+    lda letters,y               ; (C resta)
     bcc put
     lda #' '
     jmp put
@@ -1637,10 +1667,10 @@ egg_flip: .byte COL_YELLOW ^ COL_RED, COL_YELLOW ^ COL_RED, COL_YELLOW ^ COL_RED
 
 ; --- classifica
 
-; Il codice della classifica (disegno della tabella, scena) e le barre del bordo stanno nella
+; Il codice della classifica (disegno della tabella, scena) sta nella
 ; cartuccia (segmento HSCODE, nel .prg da HS_IMG, dopo le mosse speciali) e girano a HS_RUN, nella
 ; bitmap dell'attract: nella classifica lo schermo è a caratteri, e dopo la classifica la bitmap si
-; rifà sempre da capo (strisce). Li copia hs_load nel primo frame di disegno, quando a schermo c'è
+; rifà sempre da capo (strisce). Lo copia hs_load nel primo frame di disegno, quando a schermo c'è
 ; già il testo pulito: la copia non si vede. Nel programma restano enter_scores, hs_load e l'inizio
 ; di scores_scene (le fasi comuni, prima della copia).
 HS_RUN   = $E000                ; dove gira (paddws.cfg, HSRAM)
@@ -1651,60 +1681,6 @@ HS_PAGES = >(__HSCODE_SIZE__ + 255)
 .import __HSCODE_LOAD__, __HSCODE_RUN__, __HSCODE_SIZE__
 .assert __HSCODE_LOAD__ = HS_IMG .and __HSCODE_RUN__ = HS_RUN, lderror, "classifica fuori posto"
 .assert ((HS_IMG - $0800) .mod $4000) + $0400 <= $2000, error, "classifica oltre la ROML del banco"
-
-; Barre del bordo (hs_bars): colori riga per riga da HS_TAB (BAR_COPIES volte bar_colors, preparate
-; da hs_init dopo il codice, a inizio pagina), a coppie di righe che cominciano da una pari
-BAR_PERIOD = 64                 ; righe del disegno, che scende di due righe ogni due frame
-BAR_COPIES = 5                  ; indice fino a BAR_END + BAR_PERIOD
-BAR_SYNC   = 20                 ; riga in cui il raster si stabilizza al ciclo (sei righe)
-BAR_TOP    = BAR_SYNC + 8       ; prima riga colorata, nel bordo in alto
-BAR_MID    = 52                 ; prima riga colorata a metà riga (nella finestra dello schermo)
-BAR_END    = 240                ; ultima; il frame finisce prima dell'interrupt della riga 250
-BAR_PAIRS  = (BAR_MID - BAR_TOP) / 2
-BAR_CYCLE  = 7                  ; ciclo della riga delle scritte nel bordo in alto (ritorno orizzontale)
-BAR_MIDDLE = 18                 ; ritardo della scritta a metà riga: ciclo 26-34
-HS_TAB     = HS_RUN + $400
-.assert BAR_END + BAR_PERIOD <= BAR_COPIES * BAR_PERIOD, error, "tabella delle barre corta"
-.assert BAR_MID - 2 + BAR_PERIOD <= 256, error, "barre in alto: indice oltre la pagina"
-.assert HS_TAB + BAR_COPIES * BAR_PERIOD <= $f000, error, "barre sopra le tabelle dei quadrati"
-.assert (HS_TAB & $ff) = 0, error, "barre: tabella a inizio pagina"
-.assert ((BAR_TOP | BAR_MID | BAR_END) & 1) = 0, error, "barre: righe pari"
-
-; Esattamente n cicli (n >= 2), senza toccare X e Y: A e i flag cambiano.
-.macro delay n
-    .local loop
-    .if (n) >= 15
-        .if ((n) - 1) .mod 7 = 1
-            lda #((n) - 1) / 7 - 1  ; 7 cicli per giro, 1 in più: il resto con nop
-        .else
-            lda #((n) - 1) / 7
-        .endif
-loop:
-        sec
-        sbc #1
-        bne loop
-        .assert >loop = >*, lderror, "ritardo: salto oltre la pagina"
-        .if ((n) - 1) .mod 7 = 1
-            delay_pad 8
-        .else
-            delay_pad ((n) - 1) .mod 7
-        .endif
-    .else
-        delay_pad (n)
-    .endif
-.endmacro
-.macro delay_pad n
-    .if (n) .mod 2 = 1
-        bit $ea                 ; 3 cicli (lettura della pagina zero, nessun effetto)
-        .repeat ((n) - 3) / 2
-            nop
-        .endrepeat
-    .else
-        .repeat (n) / 2
-            nop
-        .endrepeat
-    .endif
-.endmacro
 
 ; Classifica (ch_hl in evidenza); ch_attract = 1 dall'attract (poi la demo).
 .proc enter_scores
@@ -1742,143 +1718,13 @@ loop:
 
 .segment "HSCODE"
 
-; Barre di colore nel bordo, una sfumatura che scende: il frame della classifica finisce qui. Prima
-; la musica (scene_done, che il frame farebbe dopo la scena), poi un colore ogni due righe da BAR_TOP
-; a BAR_END, poi il bordo torna nero, prima dell'interrupt della riga 250. Il processore qui non ha
-; altro da fare: aspetta il raster. Mentre si rifanno le tabelle dei quadrati (math_step, frame più
-; lunghi) niente barre. Sta all'inizio del segmento, così la parte con il tempo contato è in una
-; pagina sola (un salto che passa a un'altra pagina costa un ciclo in più).
-;
-; Una scrittura in $D020 mentre il bordo è a schermo lo cambia a metà riga, e sui VIC-II nuovi lascia
-; un punto grigio chiaro (il "grey dot"): le scritture vanno quindi dove il bordo non si vede.
-; - Nel bordo in alto il bordo copre tutta la riga: si scrive nel ritorno orizzontale, al ciclo
-;   BAR_CYCLE, con il tempo contato al ciclo. Prima il raster si stabilizza: l'attesa di $D012 lascia
-;   un'incertezza di 7 cicli, e sei righe con il confronto al confine della riga (un ciclo in più a
-;   chi è in anticipo) la portano a zero. Nel bordo in alto non ci sono badline, quindi ogni riga
-;   dura 63 cicli.
-; - Nella finestra dello schermo (dalla riga 51) si scrive a metà riga, dove c'è lo schermo e il
-;   bordo non si disegna: lì l'incertezza dell'attesa non conta. Solo nelle righe pari, che non sono
-;   mai badline (riga mod 8 = 3): nelle badline il VIC ferma il processore per 40 cicli proprio in
-;   mezzo alla riga. Il colore cambia così dal bordo destro della riga pari.
-.proc hs_bars
-    pla                         ; niente ritorno in frame: scene_done ora, poi le barre e il
-    pla                         ; ritorno al ciclo dei frame
-    jsr scene_done
-    lda math_ready
-    jeq out
-    ; fase: pari, due righe in meno ogni due frame (il disegno scende); la riga y ha il colore
-    ; HS_TAB[y + fase]
-    lda frame_count
-    and #BAR_PERIOD - 2
-    eor #BAR_PERIOD - 2
-    pha
-    clc
-    adc #BAR_TOP
-    sta top_x
-    pla
-    adc #<HS_TAB                ; (C = 0)
-    sta mid+1
-    lda #>HS_TAB
-    adc #0
-    sta mid+2
-    ; riga BAR_SYNC - 2, o il frame è già oltre: allora solo le righe a metà
-wait:
-    bit $d011
-    bmi wait                    ; righe 256-311
-    lda $d012
-    cmp #BAR_SYNC - 2
-    bcc wait
-    jne late
-    ldx #BAR_SYNC - 2
-:   cpx $d012
-    beq :-                      ; riga BAR_SYNC - 1, forse già avanti
-    inx
-:   cpx $d012
-    beq :-                      ; riga BAR_SYNC: la prossima istruzione al ciclo 4-10
-    ; sei righe: alla lettura di $D012 chi è ancora nella riga ha il salto (un ciclo in più),
-    ; chi è già nella dopo no; ogni riga toglie un ciclo d'incertezza. Il primo passo legge al
-    ; ciclo 64 (il primo della riga dopo) chi è partito al ciclo 10; gli altri durano 63 cicli
-    ; (64 con il salto) e leggono al confine tra le due ultime posizioni rimaste
-    inx
-    delay 49
-    cpx $d012
-    beq *+2
-    .repeat 5
-    inx
-    delay 55
-    cpx $d012
-    beq *+2
-    .endrepeat
-    ; ciclo 4 della riga BAR_SYNC + 6, esatto: la prima scritta al ciclo BAR_CYCLE di BAR_TOP
-    ldx top_x                   ; 4
-    ldy #BAR_PAIRS              ; 2
-    delay (::BAR_TOP - ::BAR_SYNC - 6) * 63 + ::BAR_CYCLE - 4 - 6 - (2 * 63 - 17) - 7
-    ; (il ritardo prima della scritta: dopo l'ultima il ciclo esce subito, prima della badline 51)
-top:
-    delay 2 * 63 - 17
-    lda HS_TAB,x                ; 4 (stessa pagina: BAR_MID + fase < 256)
-    sta $d020                   ; 4: ciclo BAR_CYCLE
-    inx                         ; 2
-    inx                         ; 2
-    dey                         ; 2
-    bne top                     ; 3: due righe, 126 cicli
-    .assert >top = >*, lderror, "barre: salto oltre la pagina"
-    ldx #BAR_MID
-mid:
-    ldy HS_TAB,x                ; (base con la fase) colore della riga pari X (delay usa A)
-:   cpx $d012
-    beq :+
-    bcs :-                      ; aspetta la riga X (o già oltre)
-:   delay ::BAR_MIDDLE
-    sty $d020
-    inx
-    inx
-    cpx #BAR_END + 2
-    bcc mid
-    ldy #COL_BLACK              ; poi a metà della riga dopo l'ultima il bordo torna nero
-:   cpx $d012
-    beq :+
-    bcs :-
-:   delay ::BAR_MIDDLE
-    sty $d020
-out:
-    rts
-late:
-    ; frame già oltre BAR_SYNC - 2: dalla prossima riga pari a metà
-    lda $d012
-    cmp #BAR_END
-    bcs out
-    adc #2
-    and #$fe
-    cmp #BAR_MID
-    bcs :+
-    lda #BAR_MID
-:   tax
-    jmp mid
-top_x: .byte 0                  ; BAR_TOP + fase
-.endproc
-
-; Dopo la copia (hs_load): il disegno della tabella dal prossimo frame, i colori delle barre.
+; Dopo la copia (hs_load): il disegno della tabella dal prossimo frame.
 .proc hs_init
     lda #<draw_scores_table
     sta ch_draw
     lda #>draw_scores_table
     sta ch_draw+1
     inc ch_more
-    ldx #BAR_PERIOD - 1
-loop:
-    lda bar_colors,x
-    cmp #COL_RED                ; con l'easter egg giallo e rosso scambiati, come color_span
-    beq :+
-    cmp #COL_YELLOW
-    bne :++
-:   eor egg_x
-:
-    .repeat ::BAR_COPIES, k
-    sta ::HS_TAB + k * ::BAR_PERIOD,x
-    .endrepeat
-    dex
-    bpl loop
     rts
 .endproc
 
@@ -1896,7 +1742,7 @@ loop:
     adc #4
     sta pk_ok                   ; fine di questo frame
 row:
-    ; riga Y = 4 + 2 * i: posto, iniziali, punti, livello
+    ; riga Y = 4 + 2 * i: posto, iniziali, punti, livello, centrati (colonne 8-31)
     lda pk_i
     asl a
     adc #4
@@ -1907,12 +1753,12 @@ row:
     cmp #'9' + 1
     bne :+
     lda #'1'                    ; 10: "10"
-    ldx #6
+    ldx #8
     ldy pk_p
     sty v_row
     jsr put_ascii
     lda #'0'
-:   ldx #7
+:   ldx #9
     ldy pk_p
     sty v_row
     jsr put_ascii
@@ -1923,15 +1769,15 @@ row:
     tax
     stx pk_dirty                ; inizio della riga
     lda ch_table,x
-    ldx #11
+    ldx #13
     jsr put_ascii
     ldx pk_dirty
     lda ch_table+1,x
-    ldx #12
+    ldx #14
     jsr put_ascii
     ldx pk_dirty
     lda ch_table+2,x
-    ldx #13
+    ldx #15
     jsr put_ascii
     ldx pk_dirty
     ldy #0
@@ -1941,7 +1787,7 @@ row:
     iny
     cpy #4
     bne :-
-    ldx #17
+    ldx #19
     ldy pk_p
     jsr print_tmp
     ; livello: L1-L7, ALL a scala finita
@@ -1953,14 +1799,14 @@ row:
     jmp color
 :   pha
     lda #'L'
-    ldx #27
+    ldx #29
     ldy pk_p
     sty v_row
     jsr put_ascii
     pla
     clc
     adc #'0'
-    ldx #28
+    ldx #30
     jsr put_ascii
 color:
     lda #COL_WHITE
@@ -1986,15 +1832,15 @@ last:
 
 .proc print_all
     lda #'A'
-    ldx #27
+    ldx #29
     ldy pk_p
     sty v_row
     jsr put_ascii
     lda #'L'
-    ldx #28
+    ldx #30
     jsr put_ascii
     lda #'L'
-    ldx #29
+    ldx #31
     jmp put_ascii
 .endproc
 
@@ -2021,7 +1867,7 @@ off:
     .byte 14, 24, "           ", 0
 time:
     jsr ch_timeout
-    jcc hs_bars
+    bcc done
     ; dall'attract la demo (testo pulito qui, demo al prossimo frame), dopo una partita le strisce
     lda ch_attract
     beq :+
@@ -2036,17 +1882,6 @@ done:
     rts
 .endproc
 
-; Due barre in BAR_PERIOD righe, ogni colore per due righe: rossa e gialla, blu e azzurra.
-bar_colors:
-    .byte COL_BROWN, COL_BROWN, COL_RED, COL_RED, COL_ORANGE, COL_ORANGE, COL_LRED, COL_LRED
-    .byte COL_YELLOW, COL_YELLOW, COL_WHITE, COL_WHITE, COL_YELLOW, COL_YELLOW, COL_LRED, COL_LRED
-    .byte COL_ORANGE, COL_ORANGE, COL_RED, COL_RED, COL_BROWN, COL_BROWN
-    .res 10, COL_BLACK
-    .byte COL_BLUE, COL_BLUE, COL_PURPLE, COL_PURPLE, COL_LBLUE, COL_LBLUE, COL_CYAN, COL_CYAN
-    .byte COL_GREEN, COL_GREEN, COL_WHITE, COL_WHITE, COL_GREEN, COL_GREEN, COL_CYAN, COL_CYAN
-    .byte COL_LBLUE, COL_LBLUE, COL_PURPLE, COL_PURPLE, COL_BLUE, COL_BLUE
-    .res 10, COL_BLACK
-.assert * - bar_colors = BAR_PERIOD, error, "barre: BAR_PERIOD colori"
 
 .segment "CODE"
 

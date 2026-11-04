@@ -17,6 +17,8 @@ Banchi e indirizzi in c64/src/ef.inc:
   ROML dei banchi da VOICE_BANK0. Solo il file del primo livello arriva oltre VOICE_RES (player e
   READY, che restano per tutta la scala): quella parte va anche negli altri banchi, allo stesso
   posto, perché la copia prende sempre VOICE_PAGES pagine.
+- c64/gen/howto.bin (letto da qui, non è un argomento): la HOW TO PLAY delle mosse speciali, nella
+  ROML dei banchi HOWTO_BANK (la bitmap) e HOWTO_BANK + 1 (i colori e quelli dell'easter egg);
 - FINALE.bin: il finale di CHALLENGE (c64/src/ending.s, l'uscita PROGRAMMA.prg.end di ld65), nella
   ROML dei banchi da END_BANK, 8 KB per banco;
 - banco della vittoria WIN_BANK (ROML): "YOU WIN!" (c64/gen/you_win.bin) con il player delle voci,
@@ -73,6 +75,8 @@ VOICE_GO = const("VOICE_GO", "voice.inc")
 VOICE_GO_SRC = const("VOICE_GO_SRC", "voice.inc")
 WIN_BANK = const("WIN_BANK", "ef.inc")
 END_BANK = const("END_BANK", "ef.inc")
+HOWTO_BANK = const("HOWTO_BANK", "ef.inc")
+HOWTO = SRC.parent / "gen" / "howto.bin"
 WIN_RUN = const("WIN_RUN", "voice.inc")
 WIN_SAMPLES = const("WIN_SAMPLES", "voice.inc")
 WIN_DESC = const("WIN_DESC", "voice.inc")
@@ -156,12 +160,17 @@ def main() -> None:
     if len(pick) != 0x1100:
         sys.exit(f"{sys.argv[4]}: {len(pick)} byte invece di 4352")
     chips.append(chip(PICK_BANK, 0x8000, pick))
+    howto = HOWTO.read_bytes()
+    if len(howto) != HALF + 0x800:
+        sys.exit(f"{HOWTO}: {len(howto)} byte invece di {HALF + 0x800}")
+    chips.append(chip(HOWTO_BANK, 0x8000, howto[:HALF]))
+    chips.append(chip(HOWTO_BANK + 1, 0x8000, howto[HALF:]))
     # ROMH del banco della classifica: RTI a $FFF0 e i vettori (NMI, reset, IRQ) lì
     vectors = bytearray(b"\xff" * HALF)
     vectors[0x1FF0] = 0x40
     vectors[0x1FFA:0x2000] = bytes([0xF0, 0xFF] * 3)
     chips.append(chip(HI_BANK, 0xA000, bytes(vectors)))
-    assert VOICE_BANK0 + len(voices) <= PICK_BANK < WIN_BANK < END_BANK < HI_BANK
+    assert VOICE_BANK0 + len(voices) <= PICK_BANK < WIN_BANK < END_BANK < HI_BANK < HI_BANK + 8 <= HOWTO_BANK
     out.write_bytes(header + b"".join(chips))
     print(f"{out}: {len(chips)} pezzi da 8 KB")
 

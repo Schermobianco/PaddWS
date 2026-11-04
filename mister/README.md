@@ -264,7 +264,7 @@ due, uno o contro la CPU; NEXT con "uno" si gioca contro la CPU, in Challenge no
 Challenge rimasto in *Players* da un CFG di prima vale contro la CPU), Free Play, difficoltà (dalla partita successiva; vale anche per la
 CPU; la demo usa sempre Normal e la modalità scelta qui: CLASSIC, EVO, NEXT con bonus e racchette
 a caso, CHALLENGE contro l'avversario di un livello a caso), mosse speciali (*Super moves*, vedi
-sotto), punteggi verso i giocatori (tavolo) o dritti (cabinato), suoni
+sotto), punteggi dritti (*Scores: Upright*, il default: cabinato o monitor) o verso i giocatori (tavolo), suoni
 dell'attract (*Attract sound*, vedi sotto), luminosità del bianco (*White level*: 100%, 87%,
 75% o 62%, tutta l'immagine in proporzione), comando delle racchette (*Paddle control*:
 joystick, paddle o spinner) e velocità dello spinner, filtro del SID (*Sound*: SID 8580 o SID
@@ -426,7 +426,7 @@ uno sfidante la voce si ferma. Registrazione di prova: `.\mister\sim\sid\render.
 bit 10 e 11 di `sound_events`, anche nella demo se ha i suoni) l'urlo con il nome della mossa,
 insieme all'effetto SID della mossa; in CHALLENGE (contro la CPU e nella sfida) "READY?" al primo
 frame del conto alla rovescia e "GO!" al via, al posto del suo effetto (i bip dei secondi restano);
-"YOU WIN!" con la scritta del GAME OVER quando un giocatore batte la CPU (Classic, EVO, NEXT e i
+"YOU WIN!" con la scritta YOU WIN (da sola, al posto di GAME OVER) quando un giocatore batte la CPU (Classic, EVO, NEXT e i
 livelli della CHALLENGE, non l'ultimo: lì la dice il finale, un secondo dopo CONGRATULATIONS!).
 Non usano il trucco del volume: un secondo player in `pong_sid.v` legge la stessa ROM dal secondo
 porto delle M10K e dà il campione a 4 bit (`call_level`), che `pong_top` somma all'uscita del SID,

@@ -251,7 +251,7 @@ Pointer Lock dopo il primo clic sulla pagina; `Esc` lo rilascia e un altro clic 
 Sul MiSTer: joystick su/giù (oppure paddle o spinner), **A** scatto in avanti, **B** rapido,
 **X** / **Y** seleziona e usa il bonus (NEXT), **Start**, **Select** gettone; da tastiera `5` e `1`.
 Le mosse speciali si fanno con le mezzelune del joystick + **A** (vedi sopra). Le opzioni (modalità,
-giocatori, Free Play, difficoltà, punteggi verso i giocatori o dritti, suoni dell'attract,
+giocatori, Free Play, difficoltà, punteggi dritti (default) o verso i giocatori, suoni dell'attract,
 luminosità del bianco, paddle o spinner, mosse speciali) sono nell'OSD.
 
 ### Telefoni e tablet (versione web)
@@ -267,7 +267,9 @@ giocatore; in due ognuno ha la sua metà.
   poi un tocco del secondo dito;
 - NEXT: un tocco su una capsula della propria riserva in alto usa subito quel bonus;
 - menu: si trascina la ruota col dito, un tocco sulla voce al centro la cambia o la usa;
-- scelta dei bonus: si tocca la voce; nell'attract un tocco vale come Start;
+- scelta dei bonus: si toccano i tre bonus (un altro tocco li toglie), poi OK in cima alla colonna;
+- scelta della racchetta: un tocco la mostra, un secondo tocco sulla stessa riga la sceglie;
+- nell'attract un tocco vale come Start;
 - pausa: un tocco al centro in alto; in pausa si tocca per riprendere o su MENU.
 
 Nel browser del computer il mouse fa da dito (o da spinner, con **MOUSE SPINNER: ON** nel menu)
@@ -298,6 +300,7 @@ proporzioni diverse compaiono le bande nere (`game.keep_aspect`) invece della de
 | `game.attract_sound` | `true` | suoni e musica dell'attract (gettone e Start si sentono sempre) |
 | `game.music` | `true` | tutte le musiche (menu **MUSIC**); gli effetti restano. Prende il posto di `game.sid_sound` e `game.match_music`: se una delle due era `false` la musica resta spenta |
 | `game.white_level` | `100` | luminosità del bianco in percento (menu: 100, 87, 75, 62), tutta l'immagine in proporzione |
+| `game.scores_upright` | `true` | punteggi dritti in alto (menu **SCORES: UPRIGHT**); con `false` rivolti ai giocatori seduti ai lati di un tavolo (**FACING**) |
 | `colors.accent` | `[255, 210, 37]` | colore di accento (il giallo dell'attract): la voce scelta del menu; solo in NEXT: titolo del menu, titolo e cursore della scelta, scritta del bonus attivato, freccetta della riserva, portali di TELEPORT, volante e segni del limite di STEER, capsula e palla del SUPER, capsula del BULLET e bordo della racchetta di chi lo ha armato |
 | `mouse.spinner` | `false` | il mouse come spinner del giocatore di sinistra (menu **MOUSE SPINNER**); con gli encoder del cabinato non conta |
 | `mouse.travel_pixels` | `1000` | pixel di movimento del mouse per portare la racchetta da un bordo all'altro |

@@ -140,7 +140,7 @@ pad_before: .res 8      ; y all'inizio del tick
     tay
     lda m_players
     cmp #2
-    jeq _two
+    beq _two
     mov32 max_ball, {max1_tab,y}
     mov32 kspeed, {kspeed1_tab,y}
     jmp _pads
@@ -334,7 +334,7 @@ _go:
     beq :+
     jsr next_tick
 :   or32 serve_timer
-    jeq _play
+    beq _play
     sub32 serve_timer, serve_timer, {#1}
     rts
 _play:
@@ -393,17 +393,17 @@ _nodir:
     ; senza comando frena, e sotto la soglia si ferma
     abs32 t0, {pad_speed,x}
     cmp32 {#P_PAD_STOP}, t0
-    jpl _zero
+    bpl _zero
     lda pad_speed+3,x
-    jmi _neg
+    bmi _neg
     sub32 {pad_speed,x}, {pad_speed,x}, {#P_PAD_DECEL}
     lda pad_speed+3,x
-    jpl _move
+    bpl _move
     jmp _zero
 _neg:
     add32 {pad_speed,x}, {pad_speed,x}, {#P_PAD_DECEL}
     lda pad_speed+3,x
-    jmi _move
+    bmi _move
 _zero:
     lda #0
     sta pad_speed,x
@@ -457,43 +457,43 @@ _slow:
     stx side
     ; STEER: la racchetta resta ferma e su e giù guidano la palla
     lda m_next
-    jeq _normal
+    beq _normal
     lda nx_steer
-    jeq _normal
+    beq _normal
     lda nx_steer_s
     cmp side
-    jne _normal
+    bne _normal
     jsr steer_store
     jmp _blaster
 _normal:
     ; direzione cambiata, o rapido cambiato con la direzione premuta
     lda in_dir,x
     cmp pad_dir,x
-    jne _set
+    bne _set
     lda in_dir,x
-    jeq _offset
+    beq _offset
     lda in_flags,x
     and #IN_FAST
     cmp pad_fast,x
-    jeq _offset
+    beq _offset
 _set:
     jsr set_direction
 _offset:
     ldx side
     lda in_flags,x
-    jpl _blaster
+    bpl _blaster
     jsr set_paddle_top
 _blaster:
     ; il BLASTER non ha lo scatto: spara con quel tasto (o con il comando di sparo)
     ldx side
     lda m_next
-    jeq _forward
+    beq _forward
     lda nx_kind,x
     cmp #K_BLASTER
-    jne _forward
+    bne _forward
     lda in_flags,x
     and #IN_FIRE | IN_FORWARD
-    jeq _command
+    beq _command
     stx n_side_x
     jsr next_fire
     jmp _command
@@ -501,7 +501,7 @@ _forward:
     ldx side
     lda in_flags,x
     and #IN_FORWARD
-    jeq _command
+    beq _command
     jsr toggle_forward
 _command:
     ; NEXT: seleziona e attiva i bonus
@@ -518,11 +518,11 @@ _command:
 ; Paddle::set_direction: invertendo la direzione resta un po' di slancio.
 .proc set_direction
     or32 {pad_speed,x}
-    jeq _store
+    beq _store
     lda in_dir,x
-    jeq _store
+    beq _store
     eor pad_speed+3,x
-    jpl _store
+    bpl _store
     mulq16 {pad_speed,x}, {#REVERSE_KEEP}
     ldx side
     mov32 {pad_speed,x}, m_a
@@ -577,7 +577,7 @@ _step:
     jmp _add
 :   neg32 t1, s_v
     cmp32 t0, t1
-    jpl _add
+    bpl _add
     mov32 t0, t1
 _add:
     add32 t0, t0, {pad_y,x}
@@ -700,7 +700,7 @@ _next:
     sub32 t0, t0, t2
     add32 t1, t1, cy
     dec t_rel
-    jne _loop
+    bne _loop
 _no:
     clc
     rts
@@ -709,7 +709,7 @@ _no:
 ; Match::forward_boost: lo scatto rilancia la palla più veloce (o annulla un boost più forte).
 .proc forward_boost
     cmp32 ball_boost, {#P_BOOST_FWD_MUL}
-    jpl _cancel
+    bpl _cancel
     mov32 ball_boost, {#P_BOOST_FWD_MUL}
     mov32 ball_r, {#P_BALL_R_FWD}
     event EV_BOOST
@@ -834,7 +834,7 @@ _x:
     ; bordo alto e basso
     add32 t1, ball_y, ball_r
     cmp32 t1, {#P_HEIGHT - ONE}
-    jmi _bottom
+    bmi _bottom
     sub32 ball_y, {#P_HEIGHT - ONE}, ball_r
     abs32 t1, ball_vy
     neg32 ball_vy, t1
@@ -843,7 +843,7 @@ _x:
 _bottom:
     sub32 t1, ball_y, ball_r
     cmp32 {#ONE}, t1
-    jmi _side
+    bmi _side
     add32 ball_y, {#ONE}, ball_r
     abs32 ball_vy, ball_vy
     event EV_WALL
@@ -862,7 +862,7 @@ _side:
     ldx #4
 :   stx side
     jsr contact
-    jcc _miss
+    bcc _miss
     mov32 ball_y, cy
     jsr bounce
     lda m_next
@@ -874,19 +874,19 @@ _side:
 _miss:
     ; NEXT: la barriera del GUARDIAN rimanda la palla mancata
     lda m_next
-    jeq _points
+    beq _points
     ldx side
     jsr next_barrier
-    jcc _points
+    bcc _points
     event_hi EV_BARRIER_HI
     rts
 _points:
     ; palla oltre il bordo sinistro o destro: punto
     sub32 t0, ball_x, ball_r
     lda t0+3
-    jmi _right_scores
+    bmi _right_scores
     or32 t0
-    jeq _right_scores
+    beq _right_scores
     add32 t0, ball_x, ball_r
     cmp32 t0, {#P_WIDTH}
     bmi :+
@@ -935,11 +935,11 @@ _crossed:
     sub32 t0, cy, ball_r
     add32 t1, {pad_y,x}, {pad_half,x}
     cmp32 t1, t0
-    jmi _overlap
+    bmi _overlap
     add32 t0, cy, ball_r
     sub32 t1, {pad_y,x}, {pad_half,x}
     cmp32 t0, t1
-    jmi _overlap
+    bmi _overlap
     sec
     rts
 _overlap:
@@ -955,11 +955,11 @@ _overlap:
     sub32 t0, ball_y, ball_r
     add32 t1, {pad_y,x}, {pad_half,x}
     cmp32 t1, t0
-    jmi _no
+    bmi _no
     add32 t0, ball_y, ball_r
     sub32 t1, {pad_y,x}, {pad_half,x}
     cmp32 t0, t1
-    jmi _no
+    bmi _no
     mov32 cy, ball_y
     sec
     rts
@@ -1033,7 +1033,7 @@ _plain:
     abs32 t0, ball_vx
     abs32 t1, ball_vy
     cmp32 t0, t1
-    jpl _angle
+    bpl _angle
     lda ball_vy+3
     bmi :+
     mov32 ball_vy, t0
@@ -1042,9 +1042,9 @@ _plain:
 _angle:
     ; EVO: la palla normale colpita dentro l'area boost (la banda grigia) parte potenziata
     lda m_evo
-    jeq _hit
+    beq _hit
     lda in_area
-    jeq _hit
+    beq _hit
     beq32 ball_boost, {#ONE}, :+
     jmp _hit
 :   mov32 ball_boost, {#P_BOOST_MUL}
@@ -1080,9 +1080,9 @@ _flip:
     ; in singolo il muro rimanda la palla senza accelerarla e vale un punto
     lda m_players
     cmp #1
-    jne _speed
+    bne _speed
     cpx #4
-    jne _speed
+    bne _speed
     lda score
     and score+1
     cmp #$FF
@@ -1108,7 +1108,7 @@ _speed:
     sta scorer
     lda m_players
     cmp #2
-    jne _single
+    bne _single
     ldx scorer
     lda score,x
     and score+1,x
@@ -1128,11 +1128,11 @@ _single:
     ; record e punteggio azzerato
     lda best+1
     cmp score+1
-    jcc _record
-    jne _reset
+    bcc _record
+    bne _reset
     lda best
     cmp score
-    jcs _reset
+    bcs _reset
 _record:
     lda score
     sta best

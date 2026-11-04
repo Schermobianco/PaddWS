@@ -39,6 +39,7 @@ module pong_render (
     input  wire [1:0]  overlay,         // 0 nessuna, 1 demo (crediti e scritta), 2 GAME OVER
     input  wire [1:0]  demo_mode,       // modalità della demo: 0 CLASSIC, 1 EVO, 2 NEXT, 3 CHALLENGE
     input  wire [2:0]  winner,          // sotto GAME OVER: 0 nessuno, 1 P1 WINS, 2 P2 WINS, 3 YOU WIN, 4 CPU WINS
+    input  wire        win_solo,        // chi ha vinto da solo, al posto di GAME OVER (YOU WIN, livello perso)
     input  wire        winner_accent,   // NEXT: chi ha vinto nel colore di accento
     input  wire        ball_accent,     // NEXT: palla del SUPER in volo nel colore di accento
     input  wire        free_play,
@@ -483,7 +484,20 @@ always @(*) begin
     win_w2 = 2 * winner_w(winner);
     win_px = 1'b0;
     win_rot_px = 1'b0;
-    if (winner != 3'd0) begin
+    if (win_solo && winner != 3'd0) begin
+        // solo chi ha vinto, nella riga di GAME OVER e nel suo colore, su un riquadro della sua
+        // misura: YOU WIN contro la CPU, CPU WINS a un livello perso della CHALLENGE (il GAME OVER
+        // viene dopo, se il continue scade)
+        go_box = x >= (W - win_w2 - 12) / 2 && x < (W + win_w2 + 12) / 2 && y >= AT_GAME_OVER_Y - 5 && y < AT_GAME_OVER_Y + 19;
+        go_px = 1'b0;
+        win_px = winner_lit(winner, (x - ((W - win_w2) >>> 1)) >> 1, (y - AT_GAME_OVER_Y) >> 1);
+        wl = rot_coord(1'b0, x, y, ROT_CX_L, win_w2);
+        wr = rot_coord(1'b1, x, y, ROT_CX_R, win_w2);
+        go_rot_box = rot_box(x, y, ROT_CX_L, win_w2) || (show_rs && rot_box(x, y, ROT_CX_R, win_w2));
+        go_rot_px = 1'b0;
+        win_rot_px = (wl[20] && winner_lit(winner, wl[19:10], wl[9:0])) ||
+                     (show_rs && wr[20] && winner_lit(winner, wr[19:10], wr[9:0]));
+    end else if (winner != 3'd0) begin
         go_box = x >= GO_BOX_X && x < GO_BOX_X + GO_W2 + 12 && y >= AT_GAME_OVER_Y - 5 && y < AT_WINNER_Y + 19;
         win_px = winner_lit(winner, (x - ((W - win_w2) >>> 1)) >> 1, (y - AT_WINNER_Y) >> 1);
         wl = rot_coord(1'b0, x, y, ROT_CX_L - WIN_STEP, win_w2);

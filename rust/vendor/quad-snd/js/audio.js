@@ -8,8 +8,14 @@ let sound_key_next = 1;
 let playback_key_next = 1;
 
 function audio_init() {
-    if (audio_context == null) {
-        audio_context = new AudioContext();
+    // PADD WS: senza Web Audio (o se il browser lo rifiuta) si gioca senza suoni
+    if (audio_context == null && AudioContext) {
+        try {
+            audio_context = new AudioContext();
+        } catch (e) {
+            console.warn("Audio non disponibile", e);
+            return;
+        }
         let audio_listener = audio_context.listener;
 
         {
@@ -61,23 +67,105 @@ function audio_init() {
     }
 }
 
-function audio_add_buffer(content, content_len) {
-    let content_array = wasm_memory.buffer.slice(content, content + content_len);
+// PADD WS: un WAV PCM a 8 o 16 bit si legge qui, senza decodeAudioData. Su Safari, con
+// l'AudioContext ancora sospeso (prima del primo tocco), la decodifica può non finire mai, e
+// macroquad aspetta ogni suono prima di partire: la pagina restava nera. Null se non è un WAV PCM.
+function wav_buffer(content, content_len) {
+    const bytes = new Uint8Array(wasm_memory.buffer, content, content_len);
+    const view = new DataView(wasm_memory.buffer, content, content_len);
+    const tag = (at) => String.fromCharCode(bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]);
+    if (content_len < 12 || tag(0) !== "RIFF" || tag(8) !== "WAVE") {
+        return null;
+    }
+    let fmt = null;
+    for (let at = 12; at + 8 <= content_len;) {
+        const size = view.getUint32(at + 4, true);
+        const body = at + 8;
+        if (tag(at) === "fmt " && size >= 16) {
+            fmt = {
+                format: view.getUint16(body, true),
+                channels: view.getUint16(body + 2, true),
+                rate: view.getUint32(body + 4, true),
+                bits: view.getUint16(body + 14, true),
+            };
+        } else if (tag(at) === "data" && fmt) {
+            if (fmt.format !== 1 || (fmt.bits !== 8 && fmt.bits !== 16) || fmt.channels < 1) {
+                return null;
+            }
+            const width = fmt.bits / 8;
+            const step = width * fmt.channels;
+            const frames = Math.floor(Math.min(size, content_len - body) / step);
+            if (frames < 1) {
+                return null;
+            }
+            // i Safari vecchi vogliono almeno 22050 Hz: allora si ripete ogni campione
+            let repeat = 1;
+            let buffer;
+            for (;;) {
+                try {
+                    buffer = audio_context.createBuffer(fmt.channels, frames * repeat, fmt.rate * repeat);
+                    break;
+                } catch (e) {
+                    if (fmt.rate * repeat >= 22050) {
+                        return null;
+                    }
+                    repeat *= 2;
+                }
+            }
+            for (let c = 0; c < fmt.channels; c++) {
+                const out = buffer.getChannelData(c);
+                for (let i = 0; i < frames; i++) {
+                    const at2 = body + i * step + c * width;
+                    const v = width === 2 ? view.getInt16(at2, true) / 32768 : (bytes[at2] - 128) / 128;
+                    out.fill(v, i * repeat, (i + 1) * repeat);
+                }
+            }
+            return buffer;
+        }
+        at = body + size + (size & 1);
+    }
+    return null;
+}
 
+function audio_add_buffer(content, content_len) {
     let sound_key = sound_key_next;
     sound_key_next += 1;
 
+    // PADD WS: un suono che non si può avere vale come caricato e muto (null), così il gioco
+    // parte comunque
+    if (audio_context == null) {
+        sounds.set(sound_key, null);
+        return sound_key;
+    }
+    try {
+        const wav = wav_buffer(content, content_len);
+        if (wav) {
+            sounds.set(sound_key, wav);
+            return sound_key;
+        }
+    } catch (e) {
+        console.warn("WAV non letto, si prova decodeAudioData", e);
+    }
+
+    let content_array = wasm_memory.buffer.slice(content, content + content_len);
     audio_context.decodeAudioData(content_array, function(buffer) {
         sounds.set(sound_key, buffer);
     }, function(e) {
         // fail
-        console.error("Failed to decode audio buffer", e);
+        console.warn("Failed to decode audio buffer", e);
+        sounds.set(sound_key, null);
     });
+    // decodifica che non risponde (Safari con l'audio sospeso): dopo 3 s il suono resta muto
+    setTimeout(function() {
+        if (!sounds.has(sound_key)) {
+            sounds.set(sound_key, null);
+        }
+    }, 3000);
     return sound_key;
 }
 
 function audio_source_is_loaded(sound_key) {
-    return sounds.has(sound_key) && sounds.get(sound_key) != undefined;
+    return sounds.has(sound_key);
 }
 
 function recycle_playback() {
@@ -116,6 +204,11 @@ function stop(playback) {
 
 function audio_play_buffer(sound_key, volume, repeat) {
     let playback_key = playback_key_next++;
+
+    // PADD WS: senza audio, o con un suono muto, non si suona niente
+    if (audio_context == null || !sounds.get(sound_key)) {
+        return playback_key;
+    }
 
     let pb = recycle_playback();
 

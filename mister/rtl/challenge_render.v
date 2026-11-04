@@ -22,6 +22,7 @@ module challenge_render (
     input  wire        coin_prompt,       // INSERT COIN invece di PRESS START
     input  wire [5:0]  blink,             // frame % 60
     input  wire [3:0]  cont_digit,        // secondi del continue
+    input  wire        cont_over,         // continue scaduto: GAME OVER al posto della schermata
     input  wire [17:0] name,              // iniziali scelte (codici del font, 6 bit ciascuno)
     input  wire [1:0]  name_pos,          // lettera in corso
     input  wire [5:0]  letter,            // codice della lettera sotto il cursore
@@ -37,6 +38,7 @@ module challenge_render (
 `include "pong_params.vh"
 `include "pong_next.vh"
 `include "pong_challenge.vh"
+`include "pong_attract.vh"
 
 localparam integer W = P_WIDTH >>> 16;
 localparam [23:0] WHITE = 24'hFFFFFF, GRAY = 24'hB4B4B4, BLACK = 24'h000000, ACCENT = 24'hFFD225;
@@ -196,12 +198,17 @@ always @(*) begin
         end
         3'd3: begin   // ------------------------------------------------------ continue
             on = 1'b1;
-            if (`CENTER2(ch_cont_lit, CH_CONT_W, 36)) col = ACCENT;
-            put(W / 2 - 2 * C, 10'd76, {2'd0, cont_digit}, 2'd2, WHITE);
-            if (blink < 6'd30 &&
-                (coin_prompt ? `CENTER1(ch_coin_lit, CH_COIN_W, 160) : `CENTER1(ch_press_lit, CH_PRESS_W, 160)))
-                col = WHITE;
-            if (`CENTER1(ch_reset_lit, CH_RESET_W, 190)) col = GRAY;
+            if (cont_over) begin
+                // continue scaduto: GAME OVER al centro, come quello sopra la partita
+                if (`CENTER2(game_over_lit, GAME_OVER_W, AT_GAME_OVER_Y)) col = WHITE;
+            end else begin
+                if (`CENTER2(ch_cont_lit, CH_CONT_W, 36)) col = ACCENT;
+                put(W / 2 - 2 * C, 10'd76, {2'd0, cont_digit}, 2'd2, WHITE);
+                if (blink < 6'd30 &&
+                    (coin_prompt ? `CENTER1(ch_coin_lit, CH_COIN_W, 160) : `CENTER1(ch_press_lit, CH_PRESS_W, 160)))
+                    col = WHITE;
+                if (`CENTER1(ch_reset_lit, CH_RESET_W, 190)) col = GRAY;
+            end
         end
         3'd4: begin   // ------------------------------------------------------- iniziali
             on = 1'b1;

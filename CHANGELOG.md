@@ -15,6 +15,10 @@ crea il commit e il tag `vX.Y.Z`.
 ## [Non rilasciato]
 
 ### Aggiunto
+- C64: la schermata **HOW TO PLAY** delle mosse speciali, come su PC e MiSTer: con SUPER MOVES:
+  ON dopo la scelta della racchetta (joystick; non con i paddle né per lo sfidante), una bitmap
+  hires dalla cartuccia (banchi 24-25, `gen/howto.bin` da `tools/gen_c64_assets.py`) con le due
+  mosse, i passi del joystick, il tiro, la barra e i comandi; 8 s, il fuoco la salta.
 - PC, Raspberry e web: il **finale della CHALLENGE** (`rust/game/src/ending_ui.rs`), quando si
   batte l'ultimo avversario, al posto della schermata CHAMPION: CONGRATULATIONS! e la voce
   "YOU WIN!", la sfilata dei sette avversari (racchette vere e nome, uno al secondo) con il timbro
@@ -401,6 +405,35 @@ crea il commit e il tag `vX.Y.Z`.
   bonus. Quando è acceso il mouse non fa più da dito nel browser.
 
 ### Corretto
+- C64: la **coda della palla** a volte compariva davanti alla palla invece che dietro. Dopo un
+  rimbalzo, o quando un effetto ripartiva, si riusava l'immagine della coda di prima, con la palla
+  nell'angolo della direzione vecchia, finché il frame non aveva il tempo di disegnare quella
+  nuova (nei frame carichi, come quelli del colpo, anche per diversi frame). Ora l'immagine di
+  prima si usa solo se la palla va nella stessa direzione; se no si vede la palla semplice finché
+  la coda nuova non è pronta. Vale anche per la cometa del SUPER, che già si disegnava dalle
+  posizioni vere della palla. Il banco `paddws-c64 frames` controlla che non succeda più.
+- C64: nelle **iniziali** la lettera in corso spariva per 2,5 secondi ogni 5 (il lampeggio usava il
+  bit 7 del contatore dei frame), anche mentre la si cambiava. Ora lampeggia come cursore: spenta
+  0,16 s ogni 0,64 s.
+- C64: **scritte centrate** nelle schermate prima e dopo la partita: LEVEL n OF 7 e il nome della
+  racchetta nella presentazione del livello (8 pixel a sinistra), la classifica di CHALLENGE (16
+  pixel a sinistra), WIN BONUS, PERFECT e SCORE di LEVEL CLEAR, SCORE di NEW RECORD, il punteggio
+  finale del finale di CHALLENGE e la riga RUN/STOP del menu. Le scritte con un numero dispari di
+  caratteri restano mezzo carattere (4 pixel) a sinistra: il set di caratteri è pieno.
+- Web, **touch**: macroquad tiene una sola fase per dito e per frame, e quando l'appoggio cadeva
+  nello stesso frame del primo movimento o del distacco andava perso. Nel menu a volte la ruota non
+  scorreva o il tocco sulla voce gialla non la usava; in partita la racchetta poteva non seguire
+  il dito. Ora le dita si leggono una volta per frame (`touch::poll`) e ogni dito arriva sempre
+  come appoggio, movimento e distacco.
+- Web, **schermo nero su iPhone, iPad e Mac**: macroquad aspetta che ogni suono sia decodificato
+  prima di far partire il gioco, e su Safari, con l'audio ancora sospeso prima del primo tocco, la
+  decodifica può non finire mai. Ora `audio.js` (copia di quad-snd in `rust/vendor`) legge da sé i
+  WAV PCM senza `decodeAudioData`; un suono che non si decodifica, o un browser senza Web Audio,
+  danno un gioco muto invece di una pagina ferma. Gli errori della pagina e i panic del gioco
+  compaiono in un riquadro rosso in basso (su iPhone la console non si vede senza un Mac).
+- Release, pacchetto web: `tools/build-web.ps1` non svuotava `rust/target/web`, e nello zip della
+  4.0.0-beta.16 è finito anche un `.wasm` di una build vecchia, mai usato dalla pagina. Ora la
+  cartella si ricrea a ogni build.
 - C64: nel conto alla rovescia di NEXT un frame poteva superare il budget (circa 18.900 cicli)
   quando l'immagine di una racchetta e una della rotazione del SUPER (circa 10.400 cicli) si
   preparavano nello stesso frame: la rotazione ora parte solo con il frame sotto circa 5.000 cicli.
@@ -521,6 +554,31 @@ crea il commit e il tag `vX.Y.Z`.
   Ora si vede solo a lampi come su PC e MiSTer, senza effetti né coda, che la tradirebbero.
 
 ### Modificato
+- PC, Raspberry e web, **filtro CRT**: `crt_effects.resolution_scale` passa da 6.0 a 1.0 (righe
+  emulate 3 × altezza del campo / valore: da 240 a 1.440, scanline molto più fitte) e la
+  bombatura scende di un quarto (0,01172 e 0,015625; in `padd_config.json` 0,015 e 0,0225). Chi
+  ha nel file la bombatura di prima, mai cambiata a mano, passa alla nuova.
+- **YOU WIN** al posto di GAME OVER: quando chi gioca batte la CPU (Classic, EVO, NEXT e livelli
+  della CHALLENGE) la partita finisce con la sola scritta YOU WIN, invece di GAME OVER con YOU WIN
+  sotto; con la CPU che vince e in due restano GAME OVER e sotto chi ha vinto. Su PC, web,
+  Raspberry, MiSTer e C64 (nel giro delle schermate del PC `5_game_over_win`).
+- **Punteggi dritti** di default, così non si presume un tavolo con i giocatori seduti ai lati:
+  sul PC, web e Raspberry la voce **SCORES** del menu (`game.scores_upright`, UPRIGHT o FACING):
+  dritti in alto ai lati della linea centrale, record e palle del singolo a destra, come sul
+  MiSTer; FACING è la disposizione di prima, rivolta ai giocatori. Sul MiSTer l'opzione *Scores*
+  dell'OSD ora parte da *Upright* (chi aveva salvato una scelta la trova invertita). Il C64 li ha
+  sempre dritti.
+- **GAME OVER in CHALLENGE** solo quando la partita è finita davvero: a un livello perso si vede
+  solo CPU WINS (si può ancora continuare), e GAME OVER, con la sua musica e per il suo tempo,
+  quando il CONTINUE scade (o si esce), prima delle iniziali o della classifica. Prima GAME OVER
+  compariva prima del CONTINUE e mancava alla fine. Su PC, web, Raspberry, MiSTer e C64 (nel giro
+  delle schermate del PC `8_challenge_lost` e `8_challenge_continue_over`).
+- C64: la classifica di CHALLENGE non ha più le barre di colore nel bordo, che resta nero.
+- Web, **touch** nelle scelte prima della partita: il primo tocco su una racchetta la mostra
+  (anteprima e descrizione), un secondo tocco sulla stessa riga la sceglie; il terzo bonus non
+  chiude più la scelta, si conferma toccando **OK** in cima alla propria colonna (fino ad allora
+  i bonus si possono ancora togliere). Il trascinamento della ruota del menu parte dopo una
+  corsa un po' più lunga, così un tocco un po' mosso resta un tocco.
 - **Licenza**: il codice di PADD WS (Rust, C64, Python, strumenti) passa dalla MIT alla **GNU GPL
   v3 o successiva** (`LICENSE`): chi lo distribuisce, anche a pagamento e modificato, deve dare i
   sorgenti con la stessa licenza. Il core MiSTer resta GPL v2 o successiva, compatibile perché il

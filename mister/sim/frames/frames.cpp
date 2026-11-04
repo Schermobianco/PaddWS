@@ -644,10 +644,13 @@ int main(int argc, char** argv) {
                     if (ch_games == 1) set_score(r, 0, 7);
                     else set_score(r, 1, 7);
                 }
+                if (m == 6 && t == 3) { ch_shot = true; ch_name = "ch_over" + std::to_string(ch_games); }  // perso: solo CPU WINS
                 if (m == 6 && t == 5) r->pong_top__DOT__mframe = 175;          // GAME OVER breve
                 if (m == 9 && t == 65) { ch_shot = true; ch_name = "ch_clear"; }
                 if (m == 10 && t == 65) { ch_shot = true; ch_name = "ch_continue"; }
                 if (m == 10 && t == 70) r->pong_top__DOT__mframe = 595;        // continue scaduto
+                if (m == 10 && t == 80) { ch_shot = true; ch_name = "ch_cont_over"; }  // poi GAME OVER
+                if (m == 10 && t == 81) r->pong_top__DOT__mframe = 175;        // GAME OVER breve
                 if (m == 11 && (t == 20 || t == 75)) { ch_shot = true; ch_name = "ch_initials" + std::to_string(t); }
                 if (m == 12 && t == 30) { ch_shot = true; ch_name = "ch_scores"; }
                 if (m == 12 && t == 31) break;

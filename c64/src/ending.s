@@ -879,7 +879,7 @@ e_due: .byte 0                  ; frame che mancano all'evento (- 1)
     ; SCORE che sale
     ldx #0
     jsr e_count
-    ldx #22
+    ldx #24
     ldy #8
     jsr print_tmp
     jmp total
@@ -889,7 +889,7 @@ bonus:
     jsr at_time
     bcc :+
     jsr print_at
-    .byte 4, 11, "CHAMPION BONUS   +", 0
+    .byte 6, 11, "CHAMPION BONUS   +", 0
     lda #COL_YELLOW
     ldy #11
     jsr color_row
@@ -906,7 +906,7 @@ bonus:
     sta ptr2
     lda #>(ch_txt + 1)
     sta ptr2+1
-    ldx #22
+    ldx #24
     ldy #11
     jsr print_str
 total:
@@ -915,7 +915,7 @@ total:
     jsr at_time
     bcc later
     jsr big_print
-    .byte 4, 15, "TOTAL", 0
+    .byte 6, 15, "TOTAL", 0
     ldx #3
 :   lda ch_score,x
     sta ch_tmp,x
@@ -924,7 +924,7 @@ total:
     jsr e_digits
     lda #0
     sta e_scr
-    ldx #18
+    ldx #20
     ldy #15
     jsr big_at
 later:
@@ -1021,7 +1021,7 @@ end_arp: .incbin "ending.bin", SID_ENDING_ARP, SID_ENDING_SIZE - SID_ENDING_ARP
     ldy #4
     jsr color_rows2
     jsr print_at
-    .byte 9, 8, "SCORE", 0
+    .byte 11, 8, "SCORE", 0
     ; premio del campione (vittoria e partita perfetta, già sommati da enter_clear) e punti prima
     clc
     lda ch_bonus

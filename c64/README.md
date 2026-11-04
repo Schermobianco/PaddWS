@@ -41,9 +41,13 @@ La versione C64 gioca la stessa partita del core Rust ([`rust/core`](../rust/cor
   colpo che attiva un bonus mentre la CPU rifà la previsione), anche con le mosse speciali, circa
   17.900 con il BULLET sempre in gioco e il tema del BLASTER. Un tick pesantissimo (colpo con le
   previsioni da rifare, capsula nuova e BULLET nello stesso tick, circa 12.000 cicli più la CPU)
-  lascerebbe il frame oltre il budget: se dopo la scena il frame è già oltre circa 14.800 cicli
-  restano gli sprite del frame prima (nel banco di prova 6 frame su circa 52.000) e il resto
-  aspetta come sempre. Il tema di CHALLENGE
+  lascerebbe il frame oltre il budget: se dopo la scena il frame è già oltre circa 14.500 cicli
+  restano gli sprite del frame prima (nel banco di prova 15 frame su circa 52.000) e il resto
+  aspetta come sempre (sprite, riserve e controlli costano fino a circa 3.400 cicli: con la soglia
+  più in alto il frame sforerebbe il suo tempo). Un frame che sfora comunque trova il raster di
+  nuovo alle righe dopo l'interrupt, come a inizio frame: `frame_after` e `sid_time` lo
+  riconoscono da `frame_flag`, che l'interrupt ha rialzato, e non accettano altro lavoro (il banco
+  di prova non esegue l'interrupt: lì un frame così risulta oltre il budget). Il tema di CHALLENGE
   costa fino a circa 1.700 cicli nei frame in cui partono due note (circa 2.500 con le frequenze
   riscritte quando cambia il bullet time): se il frame è già oltre i 15.500 cicli il tick della
   musica aspetta il prossimo (circa un frame ogni 1.200). Il lavoro che si ripete uguale si
@@ -70,8 +74,8 @@ cargo run --release -p paddws-c64 -- params   # c64\gen\params.inc dal core Rust
 cargo run --release -p paddws-c64 -- math     # aritmetica 6502 contro il core Rust
 cargo run --release -p paddws-c64 -- game     # partite intere, stato confrontato a ogni tick
 cargo run --release -p paddws-c64 -- sid      # player del SID contro quello Verilog, temi di CHALLENGE compresi; tempo dinamico e canzone del finale contro il player Rust
-cargo run --release -p paddws-c64 -- ui       # ogni scena e routine del menu torna; voci di CHALLENGE, caratteri della scelta, classifica nella flash, gesti e schermo delle mosse speciali; finale saltato, YOU WIN nel GAME OVER
-cargo run --release -p paddws-c64 -- frames   # attract, partite EVO, NEXT (anche con le mosse speciali e con il BULLET sempre in gioco e il tema del BLASTER) e CHALLENGE (P1 al joystick, con il tema, le voci e le mosse speciali): nessun frame oltre il budget; bordo della partita (BORDER GRAY), barre della classifica, il finale da capo
+cargo run --release -p paddws-c64 -- ui       # ogni scena e routine del menu torna; voci di CHALLENGE, caratteri della scelta, classifica nella flash, gesti e schermo delle mosse speciali; finale saltato, YOU WIN nel GAME OVER (da sola e centrata quando vince chi gioca)
+cargo run --release -p paddws-c64 -- frames   # attract, partite EVO, NEXT (anche con le mosse speciali e con il BULLET sempre in gioco e il tema del BLASTER) e CHALLENGE (P1 al joystick, con il tema, le voci e le mosse speciali): nessun frame oltre il budget; bordo della partita (BORDER GRAY), coda della palla mai dalla parte sbagliata, classifica con il bordo nero, il finale da capo
 cargo run --release -p paddws-c64 -- ending   # solo il finale, come alla fine di frames
 cargo run --release -p paddws-c64 -- profile  # cicli per routine: demo, partita, tick NEXT con due CPU
 ```
@@ -262,7 +266,7 @@ L'attract è quello delle altre versioni:
 2. strisce che entrano, logo che si scopre con il raster bianco e un lampo (bordo giallo, come
    lo sfondo);
 3. titolo con la pallina che rimbalza sul nero;
-4. classifica di CHALLENGE, con le barre di colore nel bordo;
+4. classifica di CHALLENGE;
 5. demo CPU contro CPU (EVO, Normal);
 6. di nuovo le strisce.
 
@@ -314,7 +318,15 @@ mezzelune dei picchiaduro, come sul MiSTer, con avanti verso l'avversario: STRAI
 dritto e più veloce) e RISING STRIKE (dritto, poi s'impenna lontano dall'avversario). Il fuoco
 che chiude la mezzaluna usa la mossa se può partire, altrimenti il bonus selezionato; la
 mezzaluna con la racchetta a casa la fa anche scattare in avanti. Con i paddle non ci sono gesti.
-Anche la CPU usa le mosse. Non c'è la schermata HOW TO PLAY del PC e del MiSTer.
+Anche la CPU usa le mosse. Con SUPER MOVES: ON, dopo la scelta della racchetta, la schermata
+**HOW TO PLAY** come su PC e MiSTer (non con i paddle, che non hanno gesti, né per lo sfidante di
+CHALLENGE): una bitmap hires composta da `tools/gen_c64_assets.py` con le figure di
+`tools/gen_howto_assets.py` (riquadri delle due mosse con i passi del joystick, FIRE, il tiro, la
+barra e i comandi), in `gen/howto.bin`, nei banchi `HOWTO_BANK` della cartuccia (24: la bitmap,
+25: i colori e quelli dell'easter egg). `pick.s` la copia a schermo spento, 3 pagine per frame
+(bitmap a `$E000`, colori nello schermo di testo a `$C000`: a `$C400` c'è già il codice delle
+mosse), poi la mostra per 8 s; fuoco o Start la saltano dopo 0,3 s. La bitmap copre le tabelle dei
+quadrati, che si rifanno nel conto alla rovescia o nella presentazione (`math_invalidate`).
 
 NEXT comincia con due schermate, come sulle altre versioni: ognuno sceglie 3 bonus su 6 e poi il
 tipo di racchetta (su e giù, fuoco per prendere o lasciare; con i paddle si gira il paddle),
@@ -448,7 +460,8 @@ effetti.
 
 ### YOU WIN!
 
-Come sul PC, "YOU WIN!" con il GAME OVER di ogni partita vinta contro la CPU (Classic, EVO, NEXT e
+Come sul PC, la scritta YOU WIN (da sola, al posto di GAME OVER) e la voce "YOU WIN!" alla fine di
+ogni partita vinta contro la CPU (Classic, EVO, NEXT e
 livelli di CHALLENGE; all'ultimo livello la dice il finale) e all'inizio del finale. I campioni
 (`assets/sounds/voice/you_win.raw4`, 2.548 byte, in `gen/you_win.bin`) stanno nel banco della
 vittoria della cartuccia (13, `tools/make_crt.py`) con il player delle voci: 16 pagine da copiare a
@@ -566,6 +579,7 @@ ENDTEST` parte dall'ultimo livello appena vinto, con il player delle voci in mem
 | 13 (ROML) | banco della vittoria: YOU WIN! con il player delle voci, 16 pagine per `$EB00-$FAFF` (vedi *YOU WIN!*) |
 | 14-15 (ROML) | il finale di CHALLENGE (`paddws.prg.end`, vedi *Finale*) |
 | 16 (ROML) | la classifica, scritta dal programma (settore 2 della flash ROML, banchi 16-23, solo per lei); nella ROMH i vettori, che puntano a un RTI |
+| 24-25 (ROML) | `gen/howto.bin`: la HOW TO PLAY delle mosse speciali, bitmap (31 pagine) nel 24, colori e colori dell'easter egg (4 pagine ciascuno) nel 25 |
 
 All'accensione l'avvio copia nei 256 byte di RAM dell'EasyFlash (`$DF00`) il caricatore, e la sua
 fine a `$0110`. Il caricatore passa al modo a 16K, fa la parte del reset del KERNAL che serve (CIA,
@@ -639,26 +653,9 @@ Durante l'attract:
 - il bordo è giallo come lo sfondo, anche nei frame a schermo spento in cui si pulisce la bitmap
   prima delle strisce (bianco nel lampo del logo).
 
-**Classifica con le barre nel bordo** (`src/challenge.s`, `hs_bars`). Nella classifica di
-CHALLENGE (dopo il titolo, e alla fine di una scala) il processore non ha altro da fare: dopo la
-musica il frame aspetta il raster e scrive in `$D020` una sfumatura, due barre ogni 64 righe (rossa
-e gialla, blu e azzurra), un colore ogni due righe dalla riga 28 alla 240, che scende di due righe
-ogni due frame; poi il bordo torna nero, prima dell'interrupt della riga 250. Una scrittura in
-`$D020` si vede se cade mentre il bordo è a schermo (cambio a metà riga, e il "grey dot" dei VIC-II
-nuovi), quindi:
-- nel bordo in alto (righe 28-50, senza badline: 63 cicli per riga) il raster si stabilizza al
-  ciclo nelle righe 20-26: l'attesa di `$D012` lascia 7 cicli d'incertezza, e in ognuna delle sei
-  righe dopo una lettura al confine della riga dà un ciclo in più a chi è in anticipo. Poi il
-  colore cambia al ciclo 7 di ogni riga pari, nel ritorno orizzontale, con il tempo contato;
-- accanto allo schermo (righe 52-240) si scrive a metà riga, dove c'è lo schermo e il bordo non si
-  disegna, così l'incertezza dell'attesa non conta; solo nelle righe pari, che non sono mai badline
-  (nelle badline il VIC ferma il processore per 40 cicli in mezzo alla riga).
-
-Il codice della classifica e delle barre sta nella cartuccia (segmento `HSCODE`, sotto). Il frame
-della classifica arriva a circa 17.700 cicli nel banco di prova, quasi tutti di attesa; mentre
-`math_step` rifà le tabelle dei quadrati (i primi frame dopo il titolo) le barre non ci sono. In
-VICE ogni riga del bordo ha un colore solo; `paddws-c64 frames` controlla i colori scritti, il
-budget, lo scorrimento e il bordo nero alla fine e all'uscita.
+**Classifica** (`src/challenge.s`). Il codice della classifica sta nella cartuccia (segmento
+`HSCODE`, sotto); il bordo resta nero. `paddws-c64 frames` controlla il budget, il bordo nero e
+l'uscita.
 
 ## Memoria
 
@@ -670,7 +667,7 @@ budget, lo scorrimento e il bordo nero alla fine e all'uscita.
 | `$0284-$0313` | routine sempre in memoria (segmento `LOWCODE`, quasi pieno), copiate all'avvio da `title_unpack`; da `$0314` i vettori del KERNAL, che restano liberi |
 | `$0334-$03FF` | stato delle CPU (il buffer della cassetta: il KERNAL non lo tocca) |
 | `$0400-$07FF` | tabelle degli shift del generatore, stato di NEXT e delle scelte |
-| `$0801-$BC9F` | programma (stub BASIC, codice, dati), con poche decine di byte liberi alla fine |
+| `$0801-$BC9F` | programma (stub BASIC, codice, dati), con circa 590 byte liberi alla fine |
 | `$BCA0-$BFFF` | variabili (2 byte liberi); nel `.prg` al loro posto quello che serve solo all'avvio (segmento INIT, circa 510 byte ancora liberi): `title_unpack` e `hi_load` con la classifica iniziale, poi l'immagine di `LOWCODE` |
 | `$C000-$C3FF` | schermo (nel `.prg` ci sono gli sprite, copiati sotto l'I/O all'avvio) |
 | `$C400-$C7FF` | secondo schermo (colori della bitmap); in NEXT il codice delle mosse speciali (segmento `SMCODE`, 1.013 byte), copiato dalla cartuccia nella scelta |
@@ -681,7 +678,7 @@ budget, lo scorrimento e il bordo nero alla fine e all'uscita.
 | `$DF00-$DFFF` | RAM dell'EasyFlash (I/O): prima il caricatore, poi le routine di `src/ef.s` |
 | `$E000-$FF3F` | bitmap (attract); in partita immagini degli effetti e delle racchette di NEXT (`$E000-$E93F`); nella presentazione di CHALLENGE il file voce a `$E000`; nel finale di CHALLENGE il suo codice, la canzone e i fuochi (`$E000-$FEFF`, vedi *Finale*) |
 | `$EB00-$FAFF` | nel GAME OVER vinto contro la CPU: il player delle voci e YOU WIN (i campioni a `$F000`, sulle tabelle dei quadrati) |
-| `$E000-$E2D0` | dentro la bitmap: nella classifica di CHALLENGE il suo codice e le barre del bordo (segmento `HSCODE`, 721 byte), copiati dalla cartuccia nel primo frame di disegno (`hs_load`); da `$E400` i colori delle barre (320 byte, `hs_init`) |
+| `$E000-$E16A` | dentro la bitmap: nella classifica di CHALLENGE il suo codice (segmento `HSCODE`, 363 byte), copiato dalla cartuccia nel primo frame di disegno (`hs_load`) |
 | `$E940-$EA3F` | dentro la bitmap: in NEXT con le mosse speciali le 4 icone della mossa armata, preparate nei primi frame della partita |
 | `$EB20-$EFFF` | dentro la bitmap: in CHALLENGE player e READY, dal file voce del primo livello, per tutta la scala |
 | `$F800-$FA00` | dentro la bitmap: in CHALLENGE il tema dell'avversario, copiato dal file voce (una traccia per pagina) |
@@ -765,7 +762,9 @@ registri come sul C64.
     puntarlo (prima quello che si vede, confronto srotolato). Altrimenti si disegna nello sprite
     usato meno di recente, mai in quello in vista, e solo se il frame resta comunque sotto circa
     16.500 cicli (il disegno ne costa al massimo circa 4.000); se no resta l'immagine di prima,
-    agganciata alla palla.
+    agganciata alla palla, ma solo se la palla va ancora nella stessa direzione (stesso angolo):
+    dopo un rimbalzo avrebbe la coda davanti. Allora si vede la palla semplice finché la coda
+    nuova non è disegnata (nel banco di prova, per la cometa, circa un frame su cinque del volo).
   - La firma si ricava da quella del frame prima: le posizioni scalano di un posto e si spostano
     del movimento della palla, con una somma a 8 bit (il calcolo completo solo quando cambiano
     angolo o lato della palla).

@@ -278,7 +278,7 @@ joystick:
     and #JOY_UP
     beq :+
     lda #1
-    jmp dir
+    bne dir
 :   lda joy,y
     and #JOY_DOWN
     beq dir
@@ -300,7 +300,7 @@ dir:
     lda in_dir,x
     bmi :+
     lda #0
-    jmp :++
+    beq :++
 :   lda #1
 :   ora v_col
     tay                         ; Y = indice di tap_age

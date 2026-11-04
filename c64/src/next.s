@@ -182,7 +182,7 @@ pl:
     inx
     inx
     cpx #8
-    jne pl
+    bne pl
     lda #0
     ldx #2 * MAX_SHOTS - 1
 :   sta shot_on,x
@@ -283,15 +283,15 @@ max_next_tab:    .dword T_MAX_NEXT
     lda #0
     ldy nx_res,x
     cpy #B_NONE
-    jeq done
+    beq done
     lda #1
     ldy nx_res+1,x
     cpy #B_NONE
-    jeq done
+    beq done
     lda #2
     ldy nx_res+2,x
     cpy #B_NONE
-    jeq done
+    beq done
     lda #3
 done:
     ora #0                      ; Z = 1 se la riserva è vuota
@@ -323,7 +323,7 @@ done:
 .proc steer_store
     ; il verso: in_dir, oppure dalla manopola
     lda in_flags,x
-    jmi knob
+    bmi knob
     lda in_dir,x
     jmp set
 knob:
@@ -375,10 +375,10 @@ set:
 .proc next_command
     lda in_flags,x
     and #IN_SELECT
-    jeq activate
+    beq activate
     ; seleziona: il successivo, in giro
     jsr res_count
-    jeq activate
+    beq activate
     sta n_t
     ldy nx_sel,x
     iny
@@ -425,7 +425,7 @@ activate:
     cmp #B_BULLET
     bne :+
     lda nx_bside
-    jpl done
+    bpl done
     ; posti dopo i: avanti di uno
 :   lda n_i
     cmp #2
@@ -445,10 +445,10 @@ activate:
     jmp dec_sel
 :   lda nx_sel,x
     cmp n_t+1
-    jne pause
+    bne pause
 dec_sel:
     lda nx_sel,x
-    jeq pause
+    beq pause
     dec nx_sel,x
 pause:
     ; pausa prima del bonus successivo (più breve con l'ARCADE)
@@ -467,11 +467,11 @@ pause:
 :   event EV_ACTIVATE
     lda n_j
     cmp #B_SLOW
-    jeq slow
+    beq slow
     cmp #B_BULLET
     jeq bullet
     cmp #B_SUPER
-    jne arm
+    bne arm
     ; SUPER: animazione a caso
     stx n_side
     lda #3
@@ -638,7 +638,7 @@ zone_r: .byte <(P_WIDTH >> 17), <((P_WIDTH - P_BULLET_ZONE) >> 16)
     tay
     ldx #MAX_SHOTS
 :   lda shot_on,y
-    jeq free
+    beq free
     iny
     dex
     bne :-
@@ -653,7 +653,7 @@ free:
     asl a
     tay                         ; Y = posto * 4
     cpx #0
-    jne right
+    bne right
     add32 {shot_x,y}, {pad_x,x}, {#P_PAD_HALF_W}
     mov32 {shot_vx,y}, {#P_SHOT_SPEED}
     jmp sy
@@ -721,7 +721,7 @@ tp_ok:  .res 8
     beq32 n_t, ball_x, :+
     jmp compute
 :   dec tp_n,x                  ; un passo in meno; all'arrivo si rifà
-    jeq compute
+    beq compute
     mov32 {tp_bx,x}, ball_x
     lda s_k
     bne slowed
@@ -768,14 +768,14 @@ compute:
     dec16_sat {nx_gap,x}
     lda nx_reload,x
     ora nx_reload+1,x
-    jeq next
+    beq next
     lda nx_reload,x
     bne :+
     dec nx_reload+1,x
 :   dec nx_reload,x
     lda nx_reload,x
     ora nx_reload+1,x
-    jne next
+    bne next
     lda #P_BLASTER_SHOTS
     sta nx_ammo,x
 next:
@@ -848,10 +848,10 @@ no:
     ; prossima: con un ARCADE in campo più spesso
     lda nx_kind
     cmp #K_ARCADE
-    jeq arcade
+    beq arcade
     lda nx_kind+4
     cmp #K_ARCADE
-    jeq arcade
+    beq arcade
     lda #<P_SPAWN_TICKS
     sta n_t
     lda #>P_SPAWN_TICKS
@@ -877,11 +877,11 @@ jitter:
     ; primo posto libero
     ldx #0
 :   lda cap_on,x
-    jeq free
+    beq free
     inx
     cpx #4
     bne :-
-    jmp done
+    rts
 free:
     stx n_i
     ; verso chi: contro un solo ARCADE due su tre a lui, altrimenti a caso
@@ -898,9 +898,9 @@ free:
     eor #2
     sta n_t
 :   lda n_t
-    jeq coin
+    beq coin
     cmp #3
-    jeq coin
+    beq coin
     ; n_t = 1: ARCADE a sinistra, 2: a destra
     lda #3
     sta m_b
@@ -912,15 +912,15 @@ free:
     bcc :+
     eor #3                      ; all'altro
 :   cmp #1
-    jeq left
+    beq left
     jmp to_right
 coin:
     jsr rng_next
     lda rng+3
-    jmi to_right
+    bmi to_right
 left:
     lda #0
-    jmp side
+    beq side
 to_right:
     lda #4
 side:
@@ -989,7 +989,7 @@ drift:
     jmp :++
 :   mov32 {cap_vy,y}, {#-P_CAP_DRIFT}
 :   inc nx_spawned
-    jne done
+    bne done
     inc nx_spawned+1
 done:
     rts
@@ -1043,11 +1043,11 @@ toward:
     abs32 n_t, n_t
     add32 n_u, {pad_half,x}, {#P_CAP_HALF}
     cmp32 n_u, n_t
-    jmi out
+    bmi out
     ; con la riserva piena passa oltre
     jsr res_count
     cmp #3
-    jeq out
+    beq out
     ldy n_i
     lda cap_bonus,y
     jsr res_push
@@ -1065,7 +1065,7 @@ out:
     tay
     add32 n_t, {cap_x,y}, {#P_CAP_HALF}
     lda n_t+3
-    jmi gone
+    bmi gone
     sub32 n_t, {cap_x,y}, {#P_CAP_HALF}
     blt32 {#P_WIDTH}, n_t, gone
     jmp next
@@ -1225,7 +1225,7 @@ next_cap:
     eor #4
     tax                         ; X = avversario
     cpx #0
-    jeq hit_left
+    beq hit_left
     ; colpo del sinistro: x >= bordo sinistro della racchetta destra
     sub32 n_t, {pad_x,x}, {#P_PAD_HALF_W}
     cmp32 {shot_x,y}, n_t
@@ -1234,16 +1234,16 @@ next_cap:
 hit_left:
     add32 n_t, {pad_x,x}, {#P_PAD_HALF_W}
     cmp32 n_t, {shot_x,y}
-    jmi edge
+    bmi edge
 height:
     sub32 n_t, {shot_y,y}, {pad_y,x}
     abs32 n_t, n_t
     add32 n_u, {pad_half,x}, {#P_BLASTER_BAND}
     cmp32 n_u, n_t
-    jpl stop
+    bpl stop
 edge:
     lda shot_x+3,y
-    jmi stop
+    bmi stop
     blt32 {#P_WIDTH}, {shot_x,y}, stop
     jmp next
 stop:
@@ -1272,7 +1272,7 @@ next:
     beq :+
     jsr sm_motion
 :   or32 nx_curve
-    jeq steer
+    beq steer
     mov32 s_v, nx_curve
     lda s_k
     jsr slow_v
@@ -1283,7 +1283,7 @@ steer:
     jeq slow
     ; si guida fino a 3/4 del campo, contati da chi ha colpito
     lda nx_steer_s
-    jne right
+    bne right
     blt32 ball_x, {#P_WIDTH - (P_WIDTH >> 2)}, guide
     jmp past
 right:
@@ -1295,11 +1295,11 @@ past:
     jmp slow
 guide:
     lda nx_steer_dir
-    jeq slow
+    beq slow
     ; fino al doppio della velocità orizzontale (circa 63 gradi)
     asl32 n_u
     lda nx_steer_dir
-    jmi down
+    bmi down
     mov32 s_v, {#P_STEER_ACCEL}
     jmp accel
 down:
@@ -1434,7 +1434,7 @@ vy:
 kinds:
     lda nx_kind,x
     cmp #K_TWIST
-    jne hammer
+    bne hammer
     ; TWIST: la palla prende parte della velocità della racchetta, entro i 45 gradi
     mulq16 {pad_motion,x}, {#P_TWIST_TRANSFER}
     add32 ball_vy, ball_vy, m_a
@@ -1443,21 +1443,21 @@ kinds:
     jmp armed
 hammer:
     cmp #K_HAMMER
-    jne rush
+    bne rush
     ; HAMMER: tiro più veloce se la palla non ha già un boost e non c'è SMASH o SUPER
     beq32 ball_boost, {#ONE}, :+
     jmp armed
 :   jsr smash_or_super
-    jcs armed
+    bcs armed
     mov32 ball_boost, {#P_HAMMER_MUL}
     jmp armed
 rush:
     cmp #K_RUSH
-    jne armed
+    bne armed
     ; RUSH dalla posizione avanzata: tiro più veloce, se non c'è SMASH o SUPER
     beq32 {pad_x,x}, {pad_home,x}, armed
     jsr smash_or_super
-    jcs armed
+    bcs armed
     mulq16 ball_boost, {#P_RUSH_MUL}
     mov32 ball_boost, m_a
 armed:
@@ -1468,7 +1468,7 @@ armed:
     sta nx_armed,x
     pla
     cmp #B_SMASH
-    jeq smash
+    beq smash
     cmp #B_SUPER
     jeq super
     cmp #B_CURVE
@@ -1533,9 +1533,9 @@ steer:
     ldx n_side
     lda nx_armed,x
     cmp #B_SMASH
-    jeq yes
+    beq yes
     cmp #B_SUPER
-    jeq yes
+    beq yes
     clc
     rts
 yes:
@@ -1563,7 +1563,7 @@ yes:
     lda nx_barrier,x
     jeq no
     cpx #0
-    jne right
+    bne right
     ; sinistra: palla.sinistra <= linea
     sub32 n_t, ball_x, ball_r
     blt32 {#P_GUARDIAN_X}, n_t, no

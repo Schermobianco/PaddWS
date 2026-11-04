@@ -1254,14 +1254,31 @@ impl WarpCheck {
     }
 }
 
-/// Cometa del SUPER in partita NEXT: in quasi tutti i frame del volo (il primo, carico, può
-/// ancora mostrare la palla semplice) la palla è uno sprite della coda (cache a $E000), hires ed espanso, con la testa
-/// (5x5 pixel doppi) e almeno in metà dei frame anche la coda dietro.
+/// Cometa del SUPER in partita NEXT: la palla è uno sprite della coda (cache a $E000), hires ed
+/// espanso, con la testa (5x5 pixel doppi) e almeno in metà dei frame anche la coda dietro, in
+/// quasi tutti i frame del volo tranne quelli dopo un rimbalzo in cui la cometa nuova non è ancora
+/// disegnata (lì la palla semplice) e il primo, carico. Mai uno sprite della coda con la palla
+/// nell'angolo di un'altra direzione: la coda finirebbe davanti alla palla.
 #[derive(Default)]
 struct CometCheck {
     frames: u32,
     shown: u32,
     tailed: u32,
+    /// palla semplice dopo un cambio di direzione (sprite della coda di un'altra direzione)
+    waiting: u32,
+    /// sprite della coda con la palla nell'angolo di un'altra direzione
+    wrong: u32,
+    /// frame con uno sprite della coda (grigia o cometa) e quelli nell'angolo sbagliato
+    trails: u32,
+    trails_wrong: u32,
+}
+
+/// L'angolo della palla nello sprite della coda (trail_dir di video.s): bit 7 il segno di vx, bit
+/// 0-1 vy (0 sale, 1 orizzontale, 2 scende).
+fn trail_dir(m: &Machine) -> u8 {
+    let vy = (0..4).fold(0u32, |v, i| v | (m.read_u8("ball_vy", i) as u32) << (8 * i)) as i32;
+    let y = if vy < 0 { 2 } else if vy == 0 { 1 } else { 0 };
+    y | (m.read_u8("ball_vx", 3) & 0x80)
 }
 
 impl CometCheck {
@@ -1270,6 +1287,11 @@ impl CometCheck {
     const TRAIL_BUFS: u8 = 4;
 
     fn check(&mut self, m: &Machine) {
+        let ptr = m.read_u8("sh_ptr", 0);
+        if m.read_u8("sh_enable", 0) & 1 != 0 && (Self::SP_TRAIL0..Self::SP_TRAIL0 + Self::TRAIL_BUFS).contains(&ptr) {
+            self.trails += 1;
+            self.trails_wrong += (m.read_u8("tr_shdir", 0) != trail_dir(m)) as u32;
+        }
         if m.read_u8("nx_super", 0) == 0
             || m.read_u8("nx_super_a", 0) != 2
             || m.read_u8("sh_bg", 0) != 0
@@ -1278,10 +1300,15 @@ impl CometCheck {
             return;
         }
         self.frames += 1;
-        let ptr = m.read_u8("sh_ptr", 0);
         let expanded = m.read_u8("sh_xexp", 0) & m.read_u8("sh_yexp", 0) & 1 != 0;
         let hires = m.read_u8("sh_mc", 0) & 1 == 0;
+        let same_dir = m.read_u8("tr_shdir", 0) == trail_dir(m);
         if !(Self::SP_TRAIL0..Self::SP_TRAIL0 + Self::TRAIL_BUFS).contains(&ptr) || !expanded || !hires {
+            self.waiting += !same_dir as u32;
+            return;
+        }
+        if !same_dir {
+            self.wrong += 1;
             return;
         }
         let bits: u32 = (0..63)
@@ -1298,13 +1325,25 @@ impl CometCheck {
             println!("FAIL: NEXT: la cometa del SUPER non vola mai");
             return false;
         }
-        if self.shown * 10 < self.frames * 9 || self.tailed * 2 < self.frames {
+        if self.trails_wrong > 0 {
             println!(
-                "FAIL: NEXT: cometa del SUPER in {} frame su {}, con la coda in {}",
-                self.shown, self.frames, self.tailed
+                "FAIL: NEXT: coda della palla dalla parte sbagliata (palla nell'angolo di un'altra direzione) in {} frame su {}",
+                self.trails_wrong, self.trails
             );
             return false;
         }
+        let flying = self.frames - self.waiting;
+        if self.wrong > 0 || self.shown * 10 < flying * 9 || self.tailed * 2 < flying || self.waiting * 3 > self.frames {
+            println!(
+                "FAIL: NEXT: cometa del SUPER in {} frame su {} ({} in attesa dopo un rimbalzo), con la coda in {}, con la palla nell'angolo sbagliato in {}",
+                self.shown, self.frames, self.waiting, self.tailed, self.wrong
+            );
+            return false;
+        }
+        println!(
+            "  coda della palla: {} frame, mai dalla parte sbagliata; cometa del SUPER in {} frame su {} (palla semplice in {} dopo un rimbalzo, finché la cometa nuova non è disegnata)",
+            self.trails, self.shown, self.frames, self.waiting
+        );
         true
     }
 }
@@ -2066,10 +2105,10 @@ fn frames(m: &mut Machine) -> bool {
             return false;
         }
     }
-    match scores_bars(m) {
+    match scores_border(m) {
         Ok(s) => println!("  {s}"),
         Err(e) => {
-            println!("FAIL: barre della classifica: {e}");
+            println!("FAIL: classifica: {e}");
             return false;
         }
     }
@@ -2088,13 +2127,10 @@ fn frames(m: &mut Machine) -> bool {
     true
 }
 
-/// Barre nel bordo della classifica (hs_bars, challenge.s): dalla classifica dell'attract, frame
-/// per frame, i colori scritti in $D020. Il codice viene dalla cartuccia (hs_load), quindi prima
-/// lo si cancella. In ogni frame con le barre un colore ogni due righe da BAR_TOP a BAR_END
-/// (sfumatura: colori diversi), sempre nel budget e con il bordo di nuovo nero alla fine; il disegno
-/// scende di due righe ogni due frame; uscendo dalla classifica il bordo resta nero. I tempi al
-/// ciclo (scritte dove il bordo non si vede) qui non si vedono: si provano in VICE.
-fn scores_bars(m: &mut Machine) -> Result<String, String> {
+/// Classifica dall'attract (challenge.s), frame per frame: il bordo resta nero (niente effetti nel
+/// bordo), ogni frame nel budget, la scena finisce. Il codice viene dalla cartuccia (hs_load),
+/// quindi prima lo si cancella.
+fn scores_border(m: &mut Machine) -> Result<String, String> {
     let (run, code) = m.moved_segment("HSCODE").map(|(a, c)| (a, c.len())).ok_or("niente HSCODE")?;
     m.cpu.mem[run as usize..run as usize + code].fill(0);
     m.write_u8("ch_attract", 0, 1);
@@ -2102,8 +2138,7 @@ fn scores_bars(m: &mut Machine) -> Result<String, String> {
     m.call("enter_scores");
     let watch = m.cpu.watch.replace((0xD020, 0xD020));
     let frame = m.addr("frame");
-    let (mut bar_frames, mut most, mut worst, mut last_lines) = (0u32, 0usize, 0u64, Vec::<u8>::new());
-    let (mut scrolled, mut moved) = (0u32, 0u32);
+    let (mut frames, mut worst) = (0u32, 0u64);
     let mut after = None;
     for f in 0..600 {
         m.cpu.writes.clear();
@@ -2116,29 +2151,13 @@ fn scores_bars(m: &mut Machine) -> Result<String, String> {
         let c = m.cpu.call(frame, 1_000_000)?;
         m.cpu.frame_start = None;
         m.cpu.idle(start + FRAME_CYCLES)?;
-        let colors: Vec<u8> = m.cpu.writes.iter().map(|&(_, v)| v & 15).collect();
         // (al primo frame apply_shadows mette ancora il bordo della scena di prima)
-        if f > 0 && m.cpu.mem[0xD020] & 15 != 0 {
-            return Err(format!("frame {f}: bordo non nero alla fine ({})", m.cpu.mem[0xD020] & 15));
-        }
-        if before == ST_SCORES && colors.len() > 100 {
-            bar_frames += 1;
-            most = most.max(colors.len());
+        if before == ST_SCORES && f > 0 {
+            frames += 1;
             worst = worst.max(c);
-            if colors.last() != Some(&0) {
-                return Err(format!("frame {f}: l'ultima scrittura non rimette il nero"));
+            if let Some(&(_, v)) = m.cpu.writes.iter().find(|w| w.1 & 15 != 0) {
+                return Err(format!("frame {f}: bordo non nero ({})", v & 15));
             }
-            if colors.iter().collect::<std::collections::HashSet<_>>().len() < 8 {
-                return Err(format!("frame {f}: poche sfumature"));
-            }
-            // il disegno scende di due righe ogni due frame: i colori di questo frame sono quelli di
-            // prima o quelli di prima spostati di uno (l'ultimo è il nero della fine)
-            let n = colors.len();
-            if last_lines.len() == n && last_lines != colors {
-                moved += 1;
-                scrolled += (last_lines[..n - 2] == colors[1..n - 1]) as u32;
-            }
-            last_lines = colors;
         }
         if before == ST_SCORES && m.read_u8("state", 0) != ST_SCORES {
             after = Some(f);
@@ -2149,19 +2168,10 @@ fn scores_bars(m: &mut Machine) -> Result<String, String> {
     let Some(left) = after else {
         return Err("la classifica non finisce".into());
     };
-    if bar_frames < 300
-        || most < ((BAR_END - BAR_TOP) / 2 + 2) as usize
-        || worst > FRAME_BUDGET
-        || scrolled != moved
-        || scrolled < bar_frames / 2 - 2
-    {
-        return Err(format!(
-            "{bar_frames} frame con le barre, al più {most} colori, cicli max {worst}, {scrolled} frame su {moved} cambiati che scendono di due righe"
-        ));
+    if frames < 300 || worst > FRAME_BUDGET {
+        return Err(format!("{frames} frame, cicli max {worst}"));
     }
-    Ok(format!(
-        "barre della classifica: {bar_frames} frame, {most} colori per frame (uno ogni due righe), cicli max {worst} (aspetta il raster), scendono di due righe ogni due frame; uscita al frame {left} con il bordo nero"
-    ))
+    Ok(format!("classifica: {frames} frame con il bordo nero, cicli max {worst}; uscita al frame {left}"))
 }
 
 /// Bordo della partita (border_game, play.s) caso per caso: BLACK sempre 0 (quello dello sfondo),
@@ -2219,14 +2229,12 @@ fn border_logic(m: &mut Machine) -> Result<String, String> {
     Ok(format!("bordo della partita: {cases} casi di border_game come previsto"))
 }
 
-/// Colori del VIC-II e righe delle barre della classifica (video.s, challenge.s)
+/// Colori del VIC-II (video.s)
 const COL_RED: u8 = 2;
 const COL_YELLOW: u8 = 7;
 const COL_DGRAY: u8 = 11;
 const COL_MGRAY: u8 = 12;
 const COL_GRAY: u8 = 15;
-const BAR_TOP: u32 = 28;
-const BAR_END: u32 = 240;
 
 /// Profilo: cicli per routine (solo le istruzioni della routine, non quelle che chiama) nella
 /// demo e in una partita EVO contro la CPU, su tutti i frame e su quelli oltre PROFILE_HEAVY.
@@ -3984,6 +3992,7 @@ fn dash(m: &mut Machine) -> Result<String, String> {
 /// delle iniziali dopo, le parti dei fuochi e dei titoli.
 const ST_ENDING: u8 = 16;
 const ST_OVER: u8 = 8;
+const ST_CONT: u8 = 12;
 const SID_SONG_ENDING: u8 = 8;
 /// canzone del titolo e quella dell'easter egg delle iniziali (il finale letto dalla cartuccia)
 const SID_SONG_TITLE: u8 = 1;
@@ -4237,15 +4246,18 @@ fn ending_run(m: &mut Machine, score: u32, fire_at: Option<u32>) -> Result<Endin
                 }
             }
             (3, 440) => {
-                check(text_at(m, 0xC000, 8, 22, &format!("{score:07}")), "punteggio: SCORE sbagliato");
                 check(
-                    text_at(m, 0xC000, 11, 4, &format!("CHAMPION BONUS   +{ENDING_BONUS:06}")),
+                    text_at(m, 0xC000, 8, 11, "SCORE") && text_at(m, 0xC000, 8, 24, &format!("{score:07}")),
+                    "punteggio: SCORE sbagliato",
+                );
+                check(
+                    text_at(m, 0xC000, 11, 6, &format!("CHAMPION BONUS   +{ENDING_BONUS:06}")),
                     "punteggio: CHAMPION BONUS sbagliato",
                 );
                 check(big_text_at(m, "FINAL SCORE", 9, 4), "punteggio: FINAL SCORE non a schermo");
                 let total = format!("{:07}", score + ENDING_BONUS);
                 check(
-                    big_text_at(m, "TOTAL", 4, 15) && big_text_at(m, &total, 18, 15),
+                    big_text_at(m, "TOTAL", 6, 15) && big_text_at(m, &total, 20, 15),
                     "punteggio: TOTAL non a schermo",
                 );
             }
@@ -4353,10 +4365,54 @@ fn ending_frames(m: &mut Machine) -> Result<String, String> {
     ))
 }
 
+/// Scritte grandi del GAME OVER (OV_* di play.s, tabelle over_*)
+const OV_GAME_OVER: u8 = 0;
+const OV_YOU_WIN: u8 = 1;
+const OV_P2_WINS: u8 = 3;
+const OV_CPU_WINS: u8 = 4;
+
+/// Le scritte grandi `labels` del GAME OVER, la prima nelle righe 10-11 e la seconda nelle 13-14,
+/// centrate (colonna (40 - larghezza) / 2); con una sola, nelle righe 13-14 nessuna.
+fn over_labels(m: &Machine, labels: &[u8]) -> Result<(), String> {
+    over_labels_at(m, labels, 10)
+}
+
+/// Come `over_labels`, con la prima scritta dalla riga `top`.
+fn over_labels_at(m: &Machine, labels: &[u8], top: u16) -> Result<(), String> {
+    let label_at = |k: u8, row: u16| -> Result<bool, String> {
+        let w = m.image_u8("over_w", k as u16) as u16;
+        let col = (40 - w) / 2;
+        if m.image_u8("over_col", k as u16) as u16 != col {
+            return Err(format!("scritta {k} non centrata"));
+        }
+        let at = (m.image_u8("over_lo", k as u16) as u16) | (m.image_u8("over_hi", k as u16) as u16) << 8;
+        Ok((0..w).all(|c| {
+            (0..2).all(|r| m.cpu.mem[(0xC000 + (row + r) * 40 + col + c) as usize] == m.cpu.mem[(at + r * w + c) as usize])
+        }))
+    };
+    for (i, &k) in labels.iter().enumerate() {
+        let row = top + 3 * i as u16;
+        if !label_at(k, row)? {
+            return Err(format!("scritta {k} non a schermo nelle righe {row}-{}", row + 1));
+        }
+    }
+    if labels.len() == 1 {
+        for k in [OV_GAME_OVER, OV_YOU_WIN, OV_P2_WINS, OV_CPU_WINS] {
+            if label_at(k, 13)? {
+                return Err(format!("scritta {k} di troppo nelle righe 13-14"));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Il finale saltato con il fuoco di chi gioca: prima del mezzo secondo (non salta), durante la
 /// voce, nella sfilata, nei fuochi e nei titoli; ogni volta l'uscita pulita, la voce ferma. Poi
 /// YOU WIN nel GAME OVER: contro la CPU quando vince chi gioca (Classic, un livello di CHALLENGE),
-/// non quando vince la CPU né all'ultimo livello (la dice il finale).
+/// non quando vince la CPU né all'ultimo livello (la dice il finale). A schermo, centrate: solo
+/// YOU WIN quando vince chi gioca, solo CPU WINS a un livello perso di CHALLENGE (si può ancora
+/// continuare), se no GAME OVER e sotto CPU WINS (o P1/P2 WINS in due). Poi il continue lasciato
+/// scadere: GAME OVER, e dopo le iniziali o la classifica.
 fn ending_ui(m: &mut Machine) -> Result<String, String> {
     let mut lines = Vec::new();
     for (at, what) in [
@@ -4381,22 +4437,26 @@ fn ending_ui(m: &mut Machine) -> Result<String, String> {
     if let Some((at, bytes)) = m.moved_segment("SMCODE").map(|(a, b)| (a, b.to_vec())) {
         m.cpu.load(at, &bytes);
     }
-    for (cg, level, left, right, want, what) in [
-        (0u8, 0u8, 11u8, 3u8, 1usize, "Classic vinta"),
-        (0, 0, 4, 11, 0, "Classic persa"),
-        (1, 2, 5, 1, 1, "livello 3 di CHALLENGE"),
-        (1, 6, 5, 1, 0, "ultimo livello"),
+    for (cg, level, cpu, left, right, want, labels, what) in [
+        (0u8, 0u8, 4u8, 11u8, 3u8, 1usize, &[OV_YOU_WIN][..], "Classic vinta"),
+        (0, 0, 4, 4, 11, 0, &[OV_GAME_OVER, OV_CPU_WINS][..], "Classic persa"),
+        (0, 0, 0xFF, 4, 11, 0, &[OV_GAME_OVER, OV_P2_WINS][..], "Classic in due"),
+        (1, 2, 4, 5, 1, 1, &[OV_YOU_WIN][..], "livello 3 di CHALLENGE"),
+        (1, 2, 4, 1, 5, 0, &[OV_CPU_WINS][..], "livello 3 perso"),
+        (1, 6, 4, 5, 1, 0, &[OV_YOU_WIN][..], "ultimo livello"),
     ] {
         quiet_inputs(m);
         m.cpu.a = m.read_u8("rung_kind", 0);
         m.call("ef_voice");
-        for (name, v) in [("cg_active", cg), ("ch_level", level), ("ch_side", 0), ("cpu_side", 4), ("m_players", 2), ("m_next", cg)] {
+        for (name, v) in [("cg_active", cg), ("ch_level", level), ("ch_side", 0), ("cpu_side", cpu), ("m_players", 2), ("m_next", cg)] {
             m.write_u8(name, 0, v);
         }
         for (o, v) in [(0u16, left), (1, 0), (4, right), (5, 0)] {
             m.write_u8("score", o, v);
         }
+        m.call("clear_screen"); // (le scritte del caso prima)
         m.call("enter_over");
+        over_labels(m, labels).map_err(|e| format!("GAME OVER, {what}: {e}"))?;
         m.cpu.watch = Some((0xD418, 0xD418));
         m.cpu.writes.clear();
         let mut n = 0;
@@ -4428,9 +4488,35 @@ fn ending_ui(m: &mut Machine) -> Result<String, String> {
         }
         m.call("math_ensure");
     }
+    // continue lasciato scadere: GAME OVER (righe 11-12), poi iniziali o classifica
+    quiet_inputs(m);
+    for (name, v) in [("cg_active", 1u8), ("ch_level", 2), ("ch_side", 0)] {
+        m.write_u8(name, 0, v);
+    }
+    m.call("enter_cont");
+    let (mut over_at, mut left) = (None, None);
+    for n in 0..3000u32 {
+        full_frame(m).map_err(|e| format!("continue, frame {n}: {e}"))?;
+        if m.read_u8("state", 0) != ST_CONT {
+            left = Some(n);
+            break;
+        }
+        if over_at.is_none() && m.read_u8("ch_go", 0) != 0 && m.read_u8("ch_phase", 0) == 0 {
+            over_labels_at(m, &[OV_GAME_OVER], 11).map_err(|e| format!("continue scaduto: {e}"))?;
+            over_at = Some(n);
+        }
+    }
+    let (Some(over_at), Some(left)) = (over_at, left) else {
+        return Err(format!("continue scaduto: GAME OVER al frame {over_at:?}, uscita al frame {left:?}"));
+    };
+    if ![ST_INITIALS, ST_SCORES].contains(&m.read_u8("state", 0)) || left - over_at < 100 {
+        return Err(format!("continue scaduto: GAME OVER per {} frame, poi lo stato {}", left - over_at, m.read_u8("state", 0)));
+    }
+    m.call("math_ensure");
     Ok(format!(
-        "finale saltato con il fuoco (frame giocati: {}), sempre con l'uscita pulita; YOU WIN nel GAME OVER solo se vince chi gioca contro la CPU, non all'ultimo livello",
-        lines.join(", ")
+        "finale saltato con il fuoco (frame giocati: {}), sempre con l'uscita pulita; YOU WIN nel GAME OVER solo se vince chi gioca contro la CPU (da sola e centrata), detta non all'ultimo livello; CPU WINS da sola a un livello perso, GAME OVER quando il continue scade ({} frame, poi iniziali o classifica)",
+        lines.join(", "),
+        left - over_at
     ))
 }
 
@@ -4575,7 +4661,8 @@ fn egg_ui(m: &mut Machine) -> Result<String, String> {
 /// Colori a schermo alla fine di un frame: i registri di colore del VIC ($D020-$D02E) che si
 /// vedono (gli altri a zero: $D022-$D024 solo con i caratteri multicolore, $D025-$D026 solo con
 /// uno sprite multicolore acceso, i colori degli sprite accesi), la RAM dei colori, i colori della
-/// bitmap ($C400, solo nel modo bitmap) e in fondo i modi (bit 0 bitmap, bit 1 caratteri
+/// bitmap (solo nel modo bitmap: nello schermo che dice $D018, $C400 nell'attract e $C000 nella
+/// HOW TO PLAY) e in fondo i modi (bit 0 bitmap, bit 1 caratteri
 /// multicolore). A schermo spento ($D011 bit 4 a zero) c'è solo il bordo.
 fn screen_colors(m: &Machine) -> Vec<u8> {
     let mem = &m.cpu.mem;
@@ -4599,7 +4686,8 @@ fn screen_colors(m: &Machine) -> Vec<u8> {
     v.extend((0xD800..0xDBE8).map(|a| mem[a] & 15));
     let bitmap = mem[0xD011] & 0x20 != 0;
     if bitmap {
-        v.extend_from_slice(&mem[0xC400..0xC7E8]);
+        let matrix = 0xC000 + (mem[0xD018] as usize >> 4) * 0x400;
+        v.extend_from_slice(&mem[matrix..matrix + 1000]);
     }
     v.push(bitmap as u8 | (mc_text as u8) << 1);
     v
@@ -4673,7 +4761,7 @@ fn egg_frame(m: &mut Machine) -> Result<u64, String> {
 type EggJoy = fn(&mut Machine, &mut Rng, u32) -> u8;
 
 /// Un tratto: `frames` frame con il joystick `joy`; colori, stato e canzone di ogni frame, cicli
-/// massimi e i colori scritti in $D020 (le barre della classifica).
+/// massimi e i colori scritti in $D020.
 struct EggRun {
     colors: Vec<Vec<u8>>,
     states: Vec<(u8, u8)>,
@@ -4709,7 +4797,7 @@ fn egg_run(m: &mut Machine, what: &str, frames: u32, joy: EggJoy) -> Result<EggR
 ///   cartuccia (SID_SONG_EGG), che costa qualche ciclo in più;
 /// - il menu, le scelte e una partita NEXT contro la CPU con le mosse speciali e il bordo GRAY
 ///   (bordo giallo con il SUPER e le mosse MAX, rosso al match point);
-/// - la classifica con il record in evidenza e le barre nel bordo (i colori scritti in $D020);
+/// - la classifica con il record in evidenza, con il bordo nero (i colori scritti in $D020);
 /// - il finale di CHALLENGE da capo (sfilata, timbri, fuochi, titoli), con i suoi controlli.
 fn egg_frames(m: &mut Machine) -> Result<String, String> {
     let egg_on = |m: &mut Machine| egg_initials(m, b"WS!");
@@ -4814,7 +4902,7 @@ fn egg_frames(m: &mut Machine) -> Result<String, String> {
         on.worst
     ));
     worst = worst.max(on.worst);
-    // classifica con il record in evidenza e le barre nel bordo
+    // classifica con il record in evidenza, il bordo nero
     m.cpu = after;
     for i in 0..80 {
         let b = m.image_u8("table_init", i);
@@ -4829,21 +4917,11 @@ fn egg_frames(m: &mut Machine) -> Result<String, String> {
     m.cpu = start;
     egg_on(m);
     let on = egg_run(m, "classifica", 300, idle)?;
-    let swapped: Vec<u8> = off.border.iter().map(|&c| egg_swap(c)).collect();
-    if off.border.len() < 10_000 || on.border != swapped || !off.border.contains(&COL_RED) {
-        return Err(format!(
-            "barre della classifica: {} colori scritti, {} con l'easter egg, scambiati: {}",
-            off.border.len(),
-            on.border.len(),
-            on.border == swapped
-        ));
+    if off.border.iter().chain(&on.border).any(|&c| c != 0) {
+        return Err("classifica: bordo non nero".into());
     }
     let (n, lit) = egg_compare("classifica", &off.colors, &on.colors)?;
-    lines.push(format!(
-        "classifica {n} frame ({lit} con giallo o rosso, {} colori delle barre scambiati; cicli max {})",
-        on.border.len(),
-        on.worst
-    ));
+    lines.push(format!("classifica {n} frame ({lit} con giallo o rosso, bordo nero; cicli max {})", on.worst));
     worst = worst.max(on.worst);
     // il finale di CHALLENGE da capo
     m.cpu = after;

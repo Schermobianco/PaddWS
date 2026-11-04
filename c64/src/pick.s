@@ -21,6 +21,18 @@ PH_CLEAR = 1                    ; pulire lo schermo
 PH_CHARS = 2                    ; caratteri della scelta (ef_pick, circa 11.000 cicli)
 PH_DRAW  = 3                    ; scritte fisse (poi le colonne, una per frame)
 PH_MATCH = 4                    ; partita (lo schermo è già pulito)
+; HOW TO PLAY delle mosse speciali, dopo la scelta della racchetta (come su PC e MiSTer): bitmap e
+; colori dalla cartuccia (gen/howto.bin, banchi HOWTO_BANK) a schermo spento, HW_STEP pagine per
+; frame, poi la bitmap per HOWTO_FRAMES frame (8 s); fuoco o Start la saltano dopo HOWTO_SKIP.
+; La bitmap copre le tabelle dei quadrati ($F000), che poi si rifanno (math_invalidate, math_step
+; nel conto alla rovescia o nella presentazione); i colori vanno nello schermo di testo ($C000),
+; non a $C400, dove c'è già il codice delle mosse speciali.
+HW_BITMAP    = 31               ; pagine della bitmap: $E000-$FEFF (le ultime 8 celle sono vuote)
+HW_PAGES     = HW_BITMAP + 4    ; poi i colori
+HW_STEP      = 3                ; pagine per frame (circa 3.800 cicli l'una)
+HOWTO_FRAMES = 8 * 50
+HOWTO_SKIP   = 15               ; 0,3 s
+.assert HOWTO_FRAMES >= 256 .and HOWTO_FRAMES < 512, error, "HOW TO PLAY: il tempo si conta così"
 
 .segment "NEXTBSS"
 .segment "ZEROPAGE"
@@ -81,6 +93,9 @@ s_twist:    .byte "TWIST   ", 0
 s_blaster:  .byte "BLASTER ", 0
 s_rush:     .byte "RUSH    ", 0
 s_guardian: .byte "GUARDIAN", 0
+; colonna del nome centrato (senza gli spazi in fondo): (40 - lunghezza) / 2
+kind_col:   .byte (40 - 6) / 2, (40 - 5) / 2, (40 - 6) / 2, (40 - 5) / 2, (40 - 7) / 2, (40 - 4) / 2
+            .byte (40 - 8) / 2
 ; frase del tipo (paddle_ui::tagline), centrata sotto la colonna
 kind_tags:  .word t_arcade, t_titan, t_hammer, t_twist, t_blaster, t_rush, t_guardian
 t_arcade:   .byte "  MORE BONUSES  ", 0
@@ -116,6 +131,7 @@ col_base:   .byte 0, 20             ; prima colonna della metà di ciascun gioca
     ldx #1
 :   stx pk_fixed
     lda #0
+    sta hw_pg
     sta pk_kind
     sta pk_count
     sta pk_count+1
@@ -371,7 +387,10 @@ done:
 
 ; Un frame della scelta (bonus o racchetta).
 .proc pick_scene
-    lda #KEY_STOP
+    lda hw_pg                   ; HOW TO PLAY in corso
+    beq :+
+    jmp howto_scene
+:   lda #KEY_STOP
     jsr key_pressed
     bcc :+
     jsr ef_pick                 ; (C = 1) i caratteri di prima
@@ -425,8 +444,17 @@ go:
     lda pk_kind
     bne :+
     jmp kind_enter
-:   ; la partita al prossimo frame, con lo schermo già pulito ora
-    lda #PH_MATCH
+:   ; con le mosse speciali prima la HOW TO PLAY (non con i paddle, senza gesti, né per lo
+    ; sfidante); poi la partita al prossimo frame, con lo schermo già pulito ora
+    lda cfg_super
+    beq :+
+    lda ctl_paddle
+    bne :+
+    lda cg_active
+    cmp #CG_DUEL
+    beq :+
+    jmp howto_enter
+:   lda #PH_MATCH
     sta pk_phase
     lda #COL_WHITE
     jmp clear_text
@@ -1488,6 +1516,122 @@ empty_tmp = m_p                 ; quattro caratteri del posto vuoto (m_p non ser
     rts
 .endproc
 
+; ------------------------------------------------------------------------------------ HOW TO PLAY
+
+.proc howto_enter
+    lda #1
+    sta hw_pg                   ; pagina da copiare + 1
+    sta math_ready              ; niente math_step nella bitmap finché si vede (poi da capo)
+    lda #0
+    sta sh_enable
+    lda #MODE_OFF
+    sta sh_mode
+    rts
+.endproc
+
+.proc howto_scene
+    lda hw_pg
+    cmp #$ff
+    bne :+
+    ; schermo pulito: la partita quando le tabelle dei quadrati sono rifatte (math_step, in frame),
+    ; non nello stesso frame (con begin_match sarebbe troppo)
+    lda math_ready
+    jeq wait
+    lda #0
+    sta hw_pg
+    lda #PH_MATCH
+    sta pk_phase
+    rts
+:   cmp #HW_PAGES + 1
+    bcs show
+    ; copia: la bitmap a $E000, poi i colori (quelli dell'easter egg 4 pagine dopo) a $C000
+    ldx #HW_STEP
+copy:
+    txa
+    pha
+    ldx hw_pg
+    dex                         ; pagina
+    txa
+    cmp #HW_BITMAP
+    bcs colors
+    pha
+    adc #$80                    ; (C = 0)
+    sta ef_src+2
+    pla
+    adc #>$E000                 ; (C = 0)
+    tay
+    lda #HOWTO_BANK
+    bne one
+colors:
+    sbc #HW_BITMAP              ; (C = 1)
+    pha
+    clc
+    ldx egg_x
+    beq :+
+    adc #4                      ; (C = 0)
+:   adc #$80                    ; (C = 0)
+    sta ef_src+2
+    pla
+    clc
+    adc #>SCREEN
+    tay
+    lda #HOWTO_BANK + 1
+one:
+    ldx #1
+    jsr ef_copy
+    inc hw_pg
+    pla
+    tax
+    lda hw_pg
+    cmp #HW_PAGES + 1
+    bcs shown
+    dex
+    bne copy
+    rts
+shown:
+    lda #MODE_HOWTO
+    sta sh_mode
+    lda #0
+    sta hw_t
+    sta hw_t+1
+    rts
+show:
+    ; HOWTO_FRAMES frame, o fuoco / Start dopo HOWTO_SKIP
+    inc hw_t
+    bne :+
+    inc hw_t+1
+:   lda hw_t+1
+    bne late
+    lda hw_t
+    cmp #HOWTO_SKIP
+    bcc wait
+    bcs skip
+late:
+    lda hw_t
+    cmp #<HOWTO_FRAMES
+    bcs leave
+skip:
+    jsr start_pressed
+    bcs leave
+wait:
+    rts
+leave:
+    ; schermo di testo pulito, poi le tabelle dei quadrati da rifare (sopra) e la partita
+    lda #$ff
+    sta hw_pg
+    jsr math_invalidate
+    lda #MODE_TEXT
+    sta sh_mode
+    lda #COL_WHITE
+    jmp clear_text
+.endproc
+
+.segment "NEXTBSS"
+hw_pg:  .res 1                  ; HOW TO PLAY: pagina da copiare + 1 (0 = non in corso, $FF = finita,
+                                ; si aspettano le tabelle dei quadrati)
+hw_t:   .res 2                  ; frame da quando si vede
+.segment "CODE"
+
 ; ------------------------------------------------------------------------------------ GUARDIAN
 
 ; Muro tratteggiato dietro la racchetta del GUARDIAN, sotto le riserve (righe BAR_ROW0-24): i
@@ -1619,12 +1763,12 @@ SHOT_MAX_CELLS = 4 * MAX_SHOTS   ; fino a due celle per colpo, tutti e due i gio
     ; fuori dalla partita lo schermo è già un altro: i colpi si dimenticano
     lda state
     cmp #ST_COUNT
-    jcc leave
+    bcc leave
     cmp #ST_OVER + 1
-    jcs leave
+    bcs leave
     jsr shots_erase
     lda m_next
-    jeq done
+    beq done
     lda state
     cmp #ST_COUNT
     bcc done
@@ -1633,7 +1777,7 @@ SHOT_MAX_CELLS = 4 * MAX_SHOTS   ; fino a due celle per colpo, tutti e due i gio
     ldy #0
 shot:
     lda shot_on,y
-    jeq next
+    beq next
     sty ns_k
     tya
     asl a
@@ -1643,14 +1787,14 @@ shot:
     lda #<((P_HEIGHT >> 16) - 3)
     sec
     sbc shot_y+2,x
-    jcc skip
+    bcc skip
     lsr a
     lsr a
     lsr a
     cmp #4
-    jcc skip
+    bcc skip
     cmp #25
-    jcs skip
+    bcs skip
     sta v_row
     ; colonna e fase: x0 = int(x) - 3, colonna x0 / 8, fase x0 & 6
     lda shot_x+2,x
@@ -1659,7 +1803,7 @@ shot:
     sta v_n
     lda shot_x+3,x
     sbc #0
-    jmi skip
+    bmi skip
     lsr a                       ; bit 8 di x0 nel carry
     lda v_n
     ror a
@@ -1667,7 +1811,7 @@ shot:
     lsr a
     sta v_col
     cmp #40
-    jcs skip
+    bcs skip
     lda v_n
     and #6
     sta m_t                     ; fase * 2 = indice in shot_chars
@@ -1688,7 +1832,7 @@ skip:
 next:
     iny
     cpy #2 * MAX_SHOTS
-    jne shot
+    bne shot
 done:
     rts
 leave:
@@ -2126,7 +2270,10 @@ PV_CY = (PICK_ROW0 + KINDS - 1) * 8 + 4    ; centro della lista (riga in pixel)
 .proc pick_preview
     lda #0
     sta sh_enable
-    lda pk_kind
+    lda hw_pg                   ; nella HOW TO PLAY nessuna anteprima
+    beq :+
+    rts
+:   lda pk_kind
     bne :+
     lda #$ff                    ; scelta dei bonus: anteprime da rifare
     sta pv_kind
