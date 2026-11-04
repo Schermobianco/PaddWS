@@ -21,7 +21,7 @@ use crate::platform;
 use crate::render::Renderer;
 
 /// Identificatore del "dito" del mouse (quelli del touch sono piccoli interi).
-const MOUSE_ID: u64 = u64::MAX;
+pub(crate) const MOUSE_ID: u64 = u64::MAX;
 
 /// Il mouse fa da spinner del giocatore 1: allora non è un dito.
 static MOUSE_SPINNER: AtomicBool = AtomicBool::new(false);

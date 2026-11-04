@@ -536,6 +536,8 @@ const WHEEL_EDGE: f32 = FRAC_PI_2 * 0.95;
 const WHEEL_SCROLL: f32 = 0.18;
 /// Touch: corsa del dito oltre la quale trascina la ruota invece di toccare una voce.
 const DRAG_START: f32 = 16.0;
+/// secondi tra due passi della rotella del mouse
+const WHEEL_GAP: f64 = 0.06;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Item {
@@ -583,6 +585,8 @@ pub struct Menu {
     drag: Option<Drag>,
     /// encoder già impostati per questa schermata
     knobs_ready: bool,
+    /// ultimo passo della rotella del mouse (nel browser)
+    wheel_at: f64,
 }
 
 impl Menu {
@@ -597,6 +601,7 @@ impl Menu {
             t: WHEEL_SCROLL,
             drag: None,
             knobs_ready: false,
+            wheel_at: 0.0,
         }
     }
 
@@ -719,6 +724,9 @@ impl Menu {
                         if d.dragging {
                             // la ruota si ferma sulla voce più vicina
                             (self.from, self.t) = (self.pos, 0.0);
+                        } else if f.phase == TouchPhase::Ended && f.id == touch::MOUSE_ID {
+                            // il click del mouse (nel browser) usa sempre la voce attiva
+                            used = true;
                         } else if f.phase == TouchPhase::Ended
                             && let Some(i) = self.item_at(app, f.pos.y)
                         {
@@ -869,6 +877,18 @@ impl Menu {
     fn update(&mut self, app: &mut App, dt: f64) -> Option<Scene> {
         let n = self.items.len();
         let mut confirm = self.read_touch(app);
+        // nel browser la rotella del mouse gira la ruota, una voce per scatto (al più una ogni
+        // WHEEL_GAP: i trackpad mandano tanti piccoli scatti), anche con il mouse come spinner
+        let (_, wheel) = mouse_wheel();
+        if platform::WEB && wheel != 0.0 && get_time() - self.wheel_at >= WHEEL_GAP {
+            self.wheel_at = get_time();
+            if wheel < 0.0 {
+                self.select(self.selected + 1);
+            } else {
+                self.select(self.selected.saturating_sub(1));
+            }
+            self.knobs_ready = false; // lo spinner riparte dalla voce nuova
+        }
         // encoder (o mouse come spinner): la manopola gira la ruota, il click usa la voce
         if let Some(enc) = &mut app.encoders
             && !std::mem::replace(&mut self.knobs_ready, true)
@@ -1011,6 +1031,7 @@ mod menu_tests {
             t: WHEEL_SCROLL,
             drag: None,
             knobs_ready: false,
+            wheel_at: 0.0,
         };
         m.select(1);
         m.scroll(0.03);

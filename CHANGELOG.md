@@ -15,6 +15,9 @@ crea il commit e il tag `vX.Y.Z`.
 ## [Non rilasciato]
 
 ### Aggiunto
+- Web, **menu con il mouse**: la rotella gira la ruota del menu, una voce per scatto (al più
+  una ogni 60 ms, così un trackpad non la fa correre), e il click usa sempre la voce attiva, in
+  qualunque punto dello schermo; vale anche con MOUSE SPINNER acceso. Il tocco resta com'era.
 - C64: la schermata **HOW TO PLAY** delle mosse speciali, come su PC e MiSTer: con SUPER MOVES:
   ON dopo la scelta della racchetta (joystick; non con i paddle né per lo sfidante), una bitmap
   hires dalla cartuccia (banchi 24-25, `gen/howto.bin` da `tools/gen_c64_assets.py`) con le due
