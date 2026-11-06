@@ -15,6 +15,13 @@ crea il commit e il tag `vX.Y.Z`.
 ## [Non rilasciato]
 
 ### Aggiunto
+- Raspberry Pi: l'eseguibile **`paddws-X.Y.Z-linux-armv7.tar.gz`** per Raspberry Pi OS a 32 bit, che serve
+  al Pi 2 v1.1 (processore solo a 32 bit) e a chi usa un Pi 3 o 4 con il sistema a 32 bit. Lo
+  costruisce forge come l'aarch64, in compilazione incrociata (`arm-linux-gnueabihf`, glibc al massimo
+  2.36); i controlli fanno anche clippy per `armv7-unknown-linux-gnueabihf`.
+- **`hardware/deck`**: il Deck, una console da tavolo stampata in 3D per il Raspberry Pi con il display
+  ufficiale da 7", due encoder ottici e i pulsanti DASH, SELECT e USE: modello SolidCraft (`deck.sc`),
+  STEP, progetto per Bambu Studio con i 5 piatti (`deck.3mf`), pezzi separati e istruzioni di montaggio.
 - PC, Raspberry e web: le voci **MUSIC VOLUME** ed **EFFECTS VOLUME** del menu, da 0% a 100% a
   passi del 10% (`game.music_volume`, `game.effects_volume`, 100 di default), al posto di MUSIC:
   ON/OFF. Destra e sinistra alzano e abbassano fermandosi agli estremi, la conferma (Invio, tocco,
