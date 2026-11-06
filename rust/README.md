@@ -218,11 +218,13 @@ core; ogni campione d'uscita è la media dei cicli che copre, come la registrazi
 - Gli effetti restano campioni WAV registrati dal core simulato (`assets/sounds/sid/`), con le
   copie rallentate per il bullet time. Non c'è più la scelta dei campioni originali: quelli
   (`paddws/sounds/`) servono solo alla versione Python.
-- **MUSIC** (`game.music`) accende e spegne tutte le musiche (titolo, menu, presentazioni, temi
-  della CHALLENGE, game over); gli effetti restano sempre. **ATTRACT SOUND** spegne tutto il suono
-  dell'attract: lì la musica suona solo se sono accesi tutti e due. Le chiavi di prima
-  (`game.sid_sound` e `game.match_music`) diventano `game.music` (spenta se una delle due
-  spegneva la musica) e spariscono dal file.
+- **MUSIC VOLUME** (`game.music_volume`) ed **EFFECTS VOLUME** (`game.effects_volume`), da 0 a
+  100 a passi di 10: il guadagno è il quadrato del valore (50% = un quarto, circa -12 dB), così i
+  passi si sentono simili. La musica cambia volume subito (`SidMusic::set_gain`), a 0 non suona;
+  gli effetti e le voci prendono il volume a ogni `play_sound`. **ATTRACT SOUND** spegne tutto il
+  suono dell'attract. Le chiavi di prima (`game.music`, e prima `game.sid_sound` e
+  `game.match_music`) diventano `game.music_volume` (0 se una di loro spegneva la musica) e
+  spariscono dal file. Nel browser i volumi sono gli stessi del PC anche sui telefoni.
 
 ## Fluidità
 
@@ -233,8 +235,8 @@ core; ogni campione d'uscita è la media dei cicli che copre, come la registrazi
 - `glFinish` dopo ogni frame (latenza ~1 frame), disattivato se fa perdere frame.
 - Su Windows: GPU dedicata sui portatili ibridi (`NvOptimusEnablement`), priorità "sopra il
   normale" e thread registrato in MMCSS come "Games".
-- CRT a risoluzione interna limitata (720p) con righe emulate fisse (240 con i default): stesso
-  aspetto in finestra e a schermo intero.
+- CRT a risoluzione interna limitata (720p) con righe emulate fisse (576 con il default
+  `resolution_scale` 2.5): stesso aspetto in finestra e a schermo intero.
 
 Misure su RTX 3060 Laptop, monitor 2560×1440 a 165 Hz: 6,06 ms per frame in finestra e a
 schermo intero, con e senza CRT; 11 prove su 12 senza frame persi (una con 1 frame perso).

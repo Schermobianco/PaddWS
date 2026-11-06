@@ -1,4 +1,4 @@
-// Schermata HOW TO PLAY delle mosse speciali (NEXT e CHALLENGE con l'opzione Super moves), in stile
+// Schermata HOW TO PLAY delle mosse speciali (prima delle partite NEXT e CHALLENGE), in stile
 // Neo Geo come rust/game/src/moves_ui.rs, su uno schermo 320x240: titolo, i riquadri di STRAIGHT
 // SHOT e RISING STRIKE con la frase dell'effetto, il gesto del controllo scelto nell'OSD (joystick
 // arcade di tre quarti, oppure manopola vista dall'alto con la freccia della rotazione per paddle e

@@ -2069,8 +2069,7 @@ fail:
     lda #$80
     sta hi_next
 done:
-    lda #$0f
-    sta SID + $18
+    jsr sid_set_vol             ; il volume del menu, con il modo del filtro
 off:
     rts
 ; posto hi_next: $8000 + hi_next * 128

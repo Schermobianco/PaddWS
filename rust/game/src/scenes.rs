@@ -276,9 +276,11 @@ impl App {
     }
 
     /// Fa suonare `want` (o il silenzio, con il rilascio delle note); la musica cambia solo quando
-    /// cambia quella richiesta, e riparte da capo. Con MUSIC spenta non suona nessuna musica.
+    /// cambia quella richiesta, e riparte da capo. Il volume segue MUSIC VOLUME anche mentre la
+    /// canzone suona; a 0 non suona nessuna musica.
     pub fn set_music(&mut self, want: Option<Song>) {
-        let want = want.filter(|_| self.cfg.game.music);
+        self.sid_music.set_gain(config::volume_gain(self.cfg.game.music_volume));
+        let want = want.filter(|_| self.cfg.game.music_volume > 0);
         if want == self.music {
             return;
         }
@@ -296,15 +298,18 @@ impl App {
         to_f32(self.params.scale)
     }
 
+    /// Suona `sound` una volta al volume di EFFECTS VOLUME (gli effetti e le voci "da SID"); a 0
+    /// niente.
+    fn play_effect(&self, sound: &Sound) {
+        let volume = config::volume_gain(self.cfg.game.effects_volume);
+        if volume > 0.0 {
+            play_sound(sound, PlaySoundParams { looped: false, volume });
+        }
+    }
+
     /// Gettone inserito.
     pub fn play_coin(&self) {
-        play_sound(
-            &self.assets.sid[4],
-            PlaySoundParams {
-                looped: false,
-                volume: platform::volume(),
-            },
-        );
+        self.play_effect(&self.assets.sid[4]);
     }
 
     /// CHALLENGE: il nome dell'avversario, come lo dice il SID.
@@ -318,13 +323,7 @@ impl App {
 
     /// Una delle voci "da SID" (il nome dell'avversario, gli urli delle mosse, READY e GO).
     pub fn say(&self, voice: &Sound) {
-        play_sound(
-            voice,
-            PlaySoundParams {
-                looped: false,
-                volume: platform::voice_volume(),
-            },
-        );
+        self.play_effect(voice);
     }
 
     /// Come `play`; con `slow` (bullet time) il suono rallentato.
@@ -356,14 +355,7 @@ impl App {
             Event::SpecialHit => 6,
         };
         let a = &self.assets;
-        let sound = if slow { &a.slow_sid[i] } else { &a.sid[i] };
-        play_sound(
-            sound,
-            PlaySoundParams {
-                looped: false,
-                volume: platform::volume(),
-            },
-        );
+        self.play_effect(if slow { &a.slow_sid[i] } else { &a.sid[i] });
     }
 
     /// Schermo intero, come lo mostra la voce del menu: nel browser quello vero della pagina.
@@ -436,10 +428,10 @@ impl Scene {
     /// Musica della scena: il titolo nell'attract (se ha i suoni) e nei menu, i jingle di
     /// CHALLENGE, il game over a fine partita; in partita e nella demo silenzio, tranne in CHALLENGE
     /// contro la CPU (non nella sfida tra due giocatori), dove suona il tema dell'avversario del
-    /// livello. Con MUSIC spenta (`game.music`) nessuna musica, gli effetti restano; con ATTRACT
-    /// SOUND spento l'attract è muto, musica compresa.
+    /// livello. Con MUSIC VOLUME a 0 (`game.music_volume`) nessuna musica, gli effetti restano; con
+    /// ATTRACT SOUND spento l'attract è muto, musica compresa.
     pub fn music(&self, app: &App) -> Option<Song> {
-        if !app.cfg.game.music {
+        if app.cfg.game.music_volume == 0 {
             return None;
         }
         egg_song(self.scene_music(app), app.egg)
@@ -596,6 +588,20 @@ const DIFFICULTY_NAMES: [&str; DIFFICULTY_LEVELS as usize] = ["EASY", "NORMAL", 
 /// Livelli del bianco proposti dal menu, in percento (gli stessi dell'OSD del MiSTer).
 const WHITE_LEVELS: [u8; 4] = [100, 87, 75, 62];
 
+/// Volume del menu dopo un passo (vedi `Menu::change`): +1 e -1 si fermano a 0 e a 100, 0 (la
+/// conferma) sale e dopo il 100 torna a 0. Un valore fuori dai passi (dal file) va al passo vicino.
+fn step_volume(volume: u8, step: i8) -> u8 {
+    let volume = volume.min(100);
+    let v = volume / config::VOLUME_STEP * config::VOLUME_STEP;
+    if step < 0 {
+        if v < volume { v } else { v.saturating_sub(config::VOLUME_STEP) }
+    } else if step == 0 && volume == 100 {
+        0
+    } else {
+        (v + config::VOLUME_STEP).min(100)
+    }
+}
+
 /// Simbolo della pausa per il touch: dove finisce sotto la cima del campo (unità a 480 righe,
 /// scalate con `App::scale`) e luminosità in partita rispetto al grigio chiaro.
 const PAUSE_ICON_BOTTOM: f32 = 26.0;
@@ -637,10 +643,10 @@ enum Item {
     GameType,
     Players,
     Difficulty,
-    /// solo con GAME TYPE: NEXT (e quindi anche in CHALLENGE)
-    SuperMoves,
-    /// tutte le musiche (gli effetti restano)
-    Music,
+    /// volume di tutte le musiche, in percento (0 = nessuna musica)
+    MusicVolume,
+    /// volume degli effetti e delle voci, in percento
+    EffectsVolume,
     AttractSound,
     WhiteLevel,
     Fullscreen,
@@ -707,14 +713,12 @@ impl Menu {
         }
     }
 
-    /// Voci del menu: le opzioni di NEXT compaiono solo con GAME TYPE: NEXT.
+    /// Voci del menu (le mosse speciali di NEXT sono sempre accese: non hanno una voce).
     fn items(app: &App, resume: bool) -> Vec<Item> {
         let mut items = vec![Item::GameType, Item::Players, Item::Difficulty];
-        if app.next {
-            items.push(Item::SuperMoves);
-        }
         items.extend([
-            Item::Music,
+            Item::MusicVolume,
+            Item::EffectsVolume,
             Item::AttractSound,
             Item::WhiteLevel,
             Item::Fullscreen,
@@ -875,8 +879,8 @@ impl Menu {
                 let level = app.cfg.game.difficulty.min(DIFFICULTY_LEVELS - 1);
                 format!("DIFFICULTY : {}", DIFFICULTY_NAMES[level as usize])
             }
-            Item::SuperMoves => format!("SUPER MOVES : {}", on_off(app.cfg.next.super_moves)),
-            Item::Music => format!("MUSIC : {}", on_off(app.cfg.game.music)),
+            Item::MusicVolume => format!("MUSIC VOLUME : {}%", app.cfg.game.music_volume),
+            Item::EffectsVolume => format!("EFFECTS VOLUME : {}%", app.cfg.game.effects_volume),
             Item::AttractSound => format!("ATTRACT SOUND : {}", on_off(app.cfg.game.attract_sound)),
             Item::WhiteLevel => format!("WHITE LEVEL : {}%", app.cfg.game.white_level),
             Item::Fullscreen => format!("FULLSCREEN : {}", on_off(app.fullscreen())),
@@ -890,10 +894,13 @@ impl Menu {
         }
     }
 
-    /// Cambia il valore di una voce di opzione; false se la voce è un'azione.
-    fn change(app: &mut App, item: Item) -> bool {
+    /// Cambia il valore di una voce di opzione; false se la voce è un'azione. `step` è +1 o -1
+    /// per destra e sinistra, 0 per la conferma (Invio, tocco, click): i volumi salgono o scendono
+    /// di `VOLUME_STEP` fermandosi a 0 e a 100, con la conferma salgono e dopo il 100 tornano a 0;
+    /// le altre voci passano sempre al valore successivo.
+    fn change(app: &mut App, item: Item, step: i8) -> bool {
         // con un'altra partita scelta quella lasciata non si riprende più
-        if matches!(item, Item::GameType | Item::Players | Item::Difficulty | Item::SuperMoves) {
+        if matches!(item, Item::GameType | Item::Players | Item::Difficulty) {
             app.drop_suspended();
         }
         match item {
@@ -928,13 +935,15 @@ impl Menu {
                 app.save_mode();
             }
             Item::Difficulty => app.next_difficulty(),
-            Item::SuperMoves => {
-                app.cfg.next.super_moves = !app.cfg.next.super_moves;
+            Item::MusicVolume => {
+                // la musica che suona cambia subito (`App::set_music`)
+                app.cfg.game.music_volume = step_volume(app.cfg.game.music_volume, step);
                 config::save_preferences(&app.config_path, &app.cfg);
             }
-            Item::Music => {
-                app.cfg.game.music = !app.cfg.game.music;
+            Item::EffectsVolume => {
+                app.cfg.game.effects_volume = step_volume(app.cfg.game.effects_volume, step);
                 config::save_preferences(&app.config_path, &app.cfg);
+                app.play(Event::Hit); // per sentire il volume nuovo
             }
             Item::AttractSound => {
                 app.cfg.game.attract_sound = !app.cfg.game.attract_sound;
@@ -965,7 +974,7 @@ impl Menu {
     /// Usa la voce al centro: cambia il valore di un'opzione o fa l'azione.
     fn use_item(&self, app: &mut App) -> Option<Scene> {
         let item = self.items[self.selected];
-        if Self::change(app, item) {
+        if Self::change(app, item, 0) {
             return None;
         }
         if item == Item::Play {
@@ -1032,11 +1041,10 @@ impl Menu {
         }
         let item = self.items[self.selected];
         let had_mouse = app.mouse_spinner();
-        if [KeyCode::Left, KeyCode::Right, KeyCode::A, KeyCode::D]
-            .iter()
-            .any(|k| input::pressed(*k))
-        {
-            Self::change(app, item);
+        if input::pressed(KeyCode::Right) || input::pressed(KeyCode::D) {
+            Self::change(app, item, 1);
+        } else if input::pressed(KeyCode::Left) || input::pressed(KeyCode::A) {
+            Self::change(app, item, -1);
         }
         confirm |= input::any_pressed(&[KeyCode::Enter, KeyCode::KpEnter, KeyCode::Space]);
         if confirm && let Some(scene) = self.use_item(app) {
@@ -1141,6 +1149,23 @@ mod menu_tests {
         for s in [None, Some(Song::Intro), Some(Song::Champion), Some(Song::Theme(PaddleKind::Titan))] {
             assert_eq!(egg_song(s, true), s);
         }
+    }
+
+    #[test]
+    fn volumes_step_by_ten_and_stop_or_wrap() {
+        assert_eq!(step_volume(50, 1), 60);
+        assert_eq!(step_volume(50, -1), 40);
+        assert_eq!(step_volume(100, 1), 100);
+        assert_eq!(step_volume(0, -1), 0);
+        // la conferma sale e dopo il 100 riparte da 0
+        assert_eq!(step_volume(90, 0), 100);
+        assert_eq!(step_volume(100, 0), 0);
+        // valori scritti a mano nel file: al passo vicino
+        assert_eq!(step_volume(35, 1), 40);
+        assert_eq!(step_volume(35, -1), 30);
+        assert_eq!(step_volume(30, -1), 20);
+        assert_eq!(step_volume(95, 0), 100);
+        assert_eq!(step_volume(250, -1), 90);
     }
 
     #[test]
@@ -1269,7 +1294,7 @@ impl Play {
         } else {
             Match::new(app.params.clone(), app.players, app.evo, app.seed)
         };
-        game.set_super_moves(app.cfg.next.super_moves); // fuori da NEXT non fa nulla
+        game.set_super_moves(true); // sempre accese in NEXT; fuori da NEXT non fa nulla
         let cpus = (app.cpu && app.players == 2)
             .then(|| Cpu::new(&app.params, app.cfg.game.difficulty, Side::Right, app.seed))
             .into_iter()
@@ -1321,7 +1346,7 @@ impl Play {
         let (loadouts, kinds) = rung.sides(side, app.loadout[side as usize], app.paddles[side as usize]);
         next_seed(app);
         let mut game = Match::new_next_paddles(params.clone(), loadouts, kinds, app.seed);
-        game.set_super_moves(app.cfg.next.super_moves);
+        game.set_super_moves(true);
         let cpus = vec![Cpu::new(&params, rung.cpu, side.opponent(), app.seed)];
         let mut play = Self::with_match(app, game, cpus);
         play.solo = side;
@@ -1339,7 +1364,7 @@ impl Play {
         let params = rung_params(app, level);
         next_seed(app);
         let mut game = Match::new_next_paddles(params, app.loadout, app.paddles, app.seed);
-        game.set_super_moves(app.cfg.next.super_moves);
+        game.set_super_moves(true);
         let mut play = Self::with_match(app, game, Vec::new());
         play.duel = Some(level);
         play
@@ -1375,7 +1400,7 @@ impl Play {
         } else {
             Match::new(params.clone(), 2, mode == DemoMode::Evo, app.seed)
         };
-        game.set_super_moves(app.cfg.next.super_moves);
+        game.set_super_moves(true);
         let cpus = vec![
             Cpu::new(&params, DEMO_DIFFICULTY, Side::Left, app.seed),
             Cpu::new(&params, right_level, Side::Right, app.seed ^ 1),

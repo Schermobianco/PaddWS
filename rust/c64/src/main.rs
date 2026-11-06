@@ -149,6 +149,10 @@ fn ui(m: &mut Machine) -> bool {
             }
         }
     }
+    if let Err(e) = volume_ui(m) {
+        println!("FAIL: VOLUME: {e}");
+        return false;
+    }
     // joystick del giocatore sinistro (porta 2): verso l'avversario (destra) lo scatto con la
     // racchetta a casa, dalla parte opposta il rientro con la racchetta avanzata, altrimenti niente
     let forward = |m: &mut Machine, joy: u8| -> bool {
@@ -295,9 +299,49 @@ fn ui(m: &mut Machine) -> bool {
     true
 }
 
+/// Voce VOLUME del menu (play.s, sid.s): i passi da 0% a 100% con il giro dopo il 100%, il testo
+/// del valore, il volume del SID (vol_levels) scritto subito in $D418, con il modo del filtro della
+/// canzone se c'è.
+fn volume_ui(m: &mut Machine) -> Result<(), String> {
+    const LEVELS: [u8; 11] = [0, 1, 2, 3, 4, 5, 7, 8, 10, 12, 15];
+    const MI_VOLUME: u8 = 6;
+    let text = |m: &Machine| -> String { (0..4).map(|i| m.read_u8("vol_text", i) as char).collect() };
+    m.write_u8("menu_sel", 0, MI_VOLUME);
+    m.cpu.watch = Some((0xD418, 0xD418));
+    for (rf, vm) in [(0u8, 0x1Fu8), (0xF1, 0x1F)] {
+        m.write_u8("sid_rf", 0, rf);
+        m.write_u8("sid_vm", 0, vm);
+        m.write_u8("opt_volume", 0, 0);
+        // giù dallo 0% resta 0%, poi su fino al 100% e il giro
+        for (dir, step) in [(0xFFu8, 0u8)].into_iter().chain((1..=10).map(|s| (1, s))).chain([(1, 0)]) {
+            m.cpu.writes.clear();
+            m.cpu.a = dir;
+            m.call("change_value");
+            let (got, vol) = (m.read_u8("opt_volume", 0), m.read_u8("sid_vol", 0));
+            if got != step || vol != LEVELS[step as usize] {
+                return Err(format!("passo {got} (atteso {step}), volume del SID {vol}"));
+            }
+            let mode = if rf != 0 { vm & 0xF0 } else { 0 };
+            if m.cpu.writes.last() != Some(&(0xD418, mode | vol)) {
+                return Err(format!("passo {step}: $D418 {:?}", m.cpu.writes));
+            }
+            m.call("draw_menu");
+            let want = format!("{:<4}", format!("{}%", 10 * step as u32));
+            if text(m) != want {
+                return Err(format!("passo {step}: testo {:?} invece di {want:?}", text(m)));
+            }
+        }
+    }
+    m.cpu.watch = None;
+    m.cpu.writes.clear();
+    m.write_u8("opt_volume", 0, 10);
+    m.write_u8("sid_vol", 0, 15);
+    Ok(())
+}
+
 /// Mosse speciali (supers.s) nel banco ui: il codice dalla cartuccia con sm_page (l'attract l'ha
-/// coperto), la voce SUPER MOVES del menu, i gesti del joystick letti come in partita (read_input,
-/// build_input) per tutti e due i giocatori, la scritta e la barra.
+/// coperto), nessuna voce del menu che le spenga, i gesti del joystick letti come in partita
+/// (read_input, build_input) per tutti e due i giocatori, la scritta e la barra.
 fn supers_ui(m: &mut Machine) -> Result<String, String> {
     let (run, code) = m.moved_segment("SMCODE").map(|(a, c)| (a, c.to_vec())).ok_or("niente SMCODE")?;
     m.cpu.mem[run as usize..run as usize + code.len()].fill(0);
@@ -309,18 +353,17 @@ fn supers_ui(m: &mut Machine) -> Result<String, String> {
     if m.cpu.mem[run as usize..run as usize + code.len()] != code[..] {
         return Err("sm_page non copia il codice delle mosse dalla cartuccia".into());
     }
-    // voce del menu: si accende e si spegne
-    m.write_u8("cfg_super", 0, 0);
-    m.write_u8("menu_sel", 0, 6);
-    m.cpu.a = 1;
-    m.call("change_value");
-    if m.read_u8("cfg_super", 0) != 1 {
-        return Err("la voce SUPER MOVES del menu non accende le mosse".into());
+    // sempre accese: nessuna voce del menu le cambia
+    m.write_u8("cfg_super", 0, 1);
+    for sel in 0..9u8 {
+        for dir in [1u8, 0xFF] {
+            m.write_u8("menu_sel", 0, sel);
+            m.cpu.a = dir;
+            m.call("change_value");
+        }
     }
-    m.cpu.a = 1;
-    m.call("change_value");
-    if m.read_u8("cfg_super", 0) != 0 {
-        return Err("la voce SUPER MOVES del menu non spegne le mosse".into());
+    if m.read_u8("cfg_super", 0) != 1 {
+        return Err("una voce del menu spegne le mosse speciali".into());
     }
     // gesti: partita NEXT con le mosse, palla in gioco, niente di armato
     let (up, down, left, right, fire) = (0x01u8, 0x02u8, 0x04u8, 0x08u8, 0x10u8);

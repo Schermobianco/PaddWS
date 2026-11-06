@@ -22,8 +22,10 @@ NEXT bonus e racchette sono a caso; in CHALLENGE si vede l'avversario di un live
 Con un gettone, o in Free Play, Start apre il menu (sul MiSTer avvia subito la partita con le
 opzioni dell'OSD); ogni partita costa un credito, anche in due. La partita comincia dopo un conto
 alla rovescia di 3 secondi. Dal menu si scelgono modalità (**GAME TYPE**), giocatori
-(**PLAYERS**: TWO, VS CPU, CHALLENGE, ONE), difficoltà e le altre opzioni; le scelte restano per la
-volta dopo. Se si torna al menu durante una partita, **RESUME** la riprende.
+(**PLAYERS**: TWO, VS CPU, CHALLENGE, ONE), difficoltà, volumi e le altre opzioni; le scelte
+restano per la volta dopo. La prima volta il gioco parte in NEXT con PLAYERS: CHALLENGE (sul
+MiSTer *Game type: Challenge*, sul C64 a ogni accensione). Se si torna al menu durante una
+partita, **RESUME** la riprende.
 
 ## Modalità
 
@@ -78,9 +80,8 @@ velocità massima. I valori sono nella sezione `next.paddles` della
 
 ## Mosse speciali (NEXT)
 
-Mosse da picchiaduro che si fanno con un gesto del controllo. Si accendono con **SUPER MOVES: ON**
-nel menu (sul MiSTer, OSD *Super moves*) e valgono per le partite NEXT, per la CHALLENGE e per la
-demo dell'attract; sono le stesse per tutti i tipi di racchetta. Prima della partita la schermata
+Mosse da picchiaduro che si fanno con un gesto del controllo. Sono sempre accese nelle partite
+NEXT, nella CHALLENGE e nella demo dell'attract; sono le stesse per tutti i tipi di racchetta. Prima della partita la schermata
 **HOW TO PLAY**, in pixel art come nei giochi Neo Geo, le presenta: il comando del controllo in uso
 (tastiera, gamepad o stick arcade, spinner del cabinato, mouse o touch) si accende passo dopo passo,
 la palla parte con l'effetto della mossa, e sotto ci sono il costo e i comandi dei bonus. Start (o
@@ -151,9 +152,9 @@ livello al GUARDIAN del boss finale. Le partite sono NEXT a 5 punti.
 - **Voce**: nella presentazione una voce digitalizzata "da SID" annuncia il nome dell'avversario
   (su C64 e MiSTer con il trucco del registro del volume del SID; sul C64 dalla cartuccia).
 - **Musiche degli avversari**: in partita contro la CPU ogni avversario ha il suo tema, sulle prime
-  due voci del SID (la terza resta agli effetti). Si spengono con **MUSIC: OFF** nel menu (OSD
-  *Music* sul MiSTer, che spegne tutte le musiche); sul C64 il tema arriva con la voce, dalla
-  cartuccia.
+  due voci del SID (la terza resta agli effetti). Si spengono con **MUSIC VOLUME: 0%** nel menu
+  (sul MiSTer *Music volume: 0%*, che spegne tutte le musiche); sul C64 il tema arriva con la voce,
+  dalla cartuccia.
 
 La scala è tarata per un giocatore medio con il joystick (vince il primo livello quasi sempre, il
 boss circa una volta su quattro); la difficoltà del menu sposta la velocità della palla: con spinner
@@ -165,12 +166,18 @@ Suoni e musiche passano per un **SID** (il chip del Commodore 64): sul MiSTer è
 (OSD *Sound*: SID 8580 o SID 6581); su PC, Raspberry e web le musiche le suona in tempo reale un SID
 scritto in Rust con lo stesso player (`rust/sid`), gli effetti sono registrati dal core simulato.
 
-- **MUSIC: OFF** (sul MiSTer OSD *Music: Off*) spegne tutte le musiche e lascia gli effetti.
+- **MUSIC VOLUME** ed **EFFECTS VOLUME** (PC, Raspberry e web; sul MiSTer *Music volume* ed
+  *Effects volume* nell'OSD) regolano la musica e gli effetti
+  (voci comprese) da 0% a 100%, a passi del 10%: destra e sinistra alzano e abbassano, la conferma
+  (Invio, tocco, click) alza e dopo il 100% torna a 0%. Con la musica a 0% non suona nessuna
+  canzone. Il volume della musica cambia subito anche per la canzone che suona; cambiando quello
+  degli effetti si sente un colpo al volume nuovo.
+- Sul C64 c'è un solo **VOLUME**, per musica ed effetti insieme (il SID ha un solo registro del
+  volume), da 0% a 100% a passi del 10%; le voci digitalizzate restano al loro livello.
 - **ATTRACT SOUND: OFF** rende muto l'attract, musica compresa, e spegne anche la musica del menu e
-  delle scelte di bonus e racchetta; la musica si sente solo se sono accesi sia ATTRACT SOUND sia
-  MUSIC.
-- Sui telefoni e sui tablet i volumi sono più bassi e tutte le musiche hanno lo stesso livello dei
-  temi della partita; nel browser del computer si sente come su PC.
+  delle scelte di bonus e racchetta.
+- Nel browser, anche sui telefoni e sui tablet, i volumi sono quelli del PC: si abbassano dal
+  menu.
 
 Le musiche sono originali: il titolo, la presentazione dei livelli, il livello superato, il
 continue, il game over, il campione e il finale; in partita solo gli effetti, tranne in CHALLENGE,

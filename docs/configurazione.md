@@ -11,8 +11,8 @@ Commodore 64 nel menu; nel browser le scelte del menu restano nel `localStorage`
 chiavi mancanti prendono il valore di default, quelle sconosciute vengono segnalate e ignorate.
 Dimensioni e velocità sono espresse per la risoluzione di riferimento 800×480 e scalate su
 `resolution`. Dal menu si cambiano e si salvano modalità e giocatori, schermo intero, filtro CRT,
-difficoltà, musica, suoni dell'attract, luminosità del bianco, punteggi, mosse speciali e mouse
-come spinner.
+difficoltà, volumi della musica e degli effetti, suoni dell'attract, luminosità del bianco,
+punteggi e mouse come spinner.
 
 Con `resolution.width = 0` (default) il campo prende le proporzioni del monitor con l'altezza
 indicata: 640×480 su 4:3, 853×480 su 16:9, 800×480 sul display del Pi, quindi niente bande nere.
@@ -25,17 +25,19 @@ proporzioni diverse compaiono le bande nere (`game.keep_aspect`) invece della de
 | `game.points_to_win` | `11` | punti per vincere in due |
 | `game.lives` | `3` | palle in singolo |
 | `game.difficulty` | `1` | 0 EASY, 1 NORMAL, 2 HARD, 3 EXPERT |
-| `game.game_type` | `"classic"` | modalità scelta nel menu (**GAME TYPE**): `"classic"`, `"evo"` o `"next"` |
-| `game.players` | `"two"` | giocatori scelti nel menu (**PLAYERS**): `"two"`, `"cpu"`, `"challenge"` o `"one"` |
+| `game.game_type` | `"next"` | modalità scelta nel menu (**GAME TYPE**): `"classic"`, `"evo"` o `"next"` |
+| `game.players` | `"challenge"` | giocatori scelti nel menu (**PLAYERS**): `"two"`, `"cpu"`, `"challenge"` o `"one"` |
 | `game.self_test` | `true` | auto-test all'avvio |
 | `game.attract_sound` | `true` | suoni e musica dell'attract, e musica del menu (gettone e Start si sentono sempre) |
-| `game.music` | `true` | tutte le musiche (menu **MUSIC**); gli effetti restano. Prende il posto di `game.sid_sound` e `game.match_music`: se una delle due era `false` la musica resta spenta |
+| `game.music_volume` | `100` | volume di tutte le musiche in percento, da 0 (nessuna musica) a 100 (menu **MUSIC VOLUME**, a passi del 10%). Prende il posto di `game.music` (e prima di `game.sid_sound` e `game.match_music`): se una di loro era `false` parte da 0 |
+| `game.effects_volume` | `100` | volume degli effetti e delle voci in percento (menu **EFFECTS VOLUME**) |
 | `game.white_level` | `100` | luminosità del bianco in percento (menu: 100, 87, 75, 62), tutta l'immagine in proporzione |
 | `game.scores_upright` | `true` | punteggi dritti in alto (menu **SCORES: UPRIGHT**); con `false` rivolti ai giocatori seduti ai lati di un tavolo (**FACING**) |
 | `colors.accent` | `[255, 210, 37]` | colore di accento (il giallo dell'attract): la voce scelta del menu; solo in NEXT: titolo del menu, titolo e cursore della scelta, scritta del bonus attivato, freccetta della riserva, portali di TELEPORT, volante e segni del limite di STEER, capsula e palla del SUPER, capsula del BULLET e bordo della racchetta di chi lo ha armato |
 | `mouse.spinner` | `false` | il mouse come spinner del giocatore di sinistra (menu **MOUSE SPINNER**); con gli encoder del cabinato non conta |
 | `mouse.travel_pixels` | `1000` | pixel di movimento del mouse per portare la racchetta da un bordo all'altro |
 | `game.vsync`, `game.keep_aspect`, `game.serve_delay` | | sincronia verticale, bande nere, attesa alla battuta |
+| `crt_effects.resolution_scale` | `2.5` | righe emulate dal filtro CRT: 3 × altezza del campo / valore (576 a 480 righe). Il default di prima, `1.0`, passa da solo a `2.5` |
 
 Le altre sezioni (`ball`, `paddle`, `boost`, `encoder`, `crt_effects`) sono nel `padd_config.json`
 del pacchetto, con i valori di default.
@@ -75,8 +77,7 @@ buoni si riportano poi nel core Rust e nel MiSTer).
 | `curve_accel` | `0.3` | effetto di CURVE |
 | `steer_accel` | `0.3` | sterzata di STEER con su o giù premuti (la palla guidata arriva al massimo a circa 63°) |
 | `hitstop_seconds` | `0.167` | fermo del gioco del SUPER con hit-stop |
-| `super_moves` | `false` | mosse speciali accese (si cambia anche dal menu) |
-| `super_meter_max`, `super_cost` | `64`, `32` | barra delle mosse speciali e costo di una mossa |
+| `super_meter_max`, `super_cost` | `64`, `32` | barra delle mosse speciali (sempre accese; la vecchia chiave `super_moves` sparisce dal file) e costo di una mossa |
 | `super_gain_hit`, `super_gain_dash`, `super_gain_conceded` | `2`, `4`, `8` | barra guadagnata con un colpo, con lo scatto che intercetta, con un punto subito |
 | `super_straight_multiplier` | `2` | spinta del tiro con STRAIGHT SHOT MAX (1 + 1/2ⁿ: 2, 1,5, 1,25…); la mossa normale ha la metà dell'aggiunta |
 

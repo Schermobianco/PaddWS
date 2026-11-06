@@ -30,8 +30,8 @@ Altre schermate in [Come si gioca](docs/come-si-gioca.md#schermate).
 - **EVO**: colpendo la palla al centro della racchetta la si potenzia; lo scatto in avanti la
   intercetta e la rilancia.
 - **NEXT**: prima della partita ognuno sceglie 3 bonus su 6 (TELEPORT, SMASH, SLOW, CURVE, GHOST,
-  STEER) e uno di sette tipi di racchetta; i bonus arrivano in capsule da raccogliere. Con
-  **SUPER MOVES: ON** ci sono anche due mosse speciali da fare con un gesto del controllo.
+  STEER) e uno di sette tipi di racchetta; i bonus arrivano in capsule da raccogliere. Ci sono
+  anche due mosse speciali da fare con un gesto del controllo.
 - **VS CPU**: tutte le modalità da soli contro il computer.
 - **CHALLENGE**: da soli contro 7 avversari CPU sempre più forti, con punti arcade, continue,
   classifica e il finale. Un secondo giocatore può entrare come in Street Fighter 2: *HERE COMES A

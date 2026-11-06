@@ -148,10 +148,10 @@ il tick più pesante delle prove di `game` sullo scatto è di circa 9.900.
 
 ### Mosse speciali
 
-`src/supers.s` traduce `Next::super_moves` (rust/core/src/next.rs) e `Cpu::special` (cpu.rs), con
-l'opzione **SUPER MOVES** del menu (`cfg_super`, spenta all'accensione), per NEXT e CHALLENGE.
-Spente, la partita è quella di prima: le chiamate nel tick guardano `sm_on` e lo stato resta a
-zero.
+`src/supers.s` traduce `Next::super_moves` (rust/core/src/next.rs) e `Cpu::special` (cpu.rs), per
+NEXT e CHALLENGE, sempre accese (`cfg_super` a 1 dall'accensione; fino alla 4.0.0-beta.19 c'era la
+voce SUPER MOVES del menu). Spente, cosa che fanno solo i banchi di prova, la partita è quella di
+prima: le chiamate nel tick guardano `sm_on` e lo stato resta a zero.
 - **Barra** (`sm_meter`, 0-64): +2 a ogni colpo, +4 con lo scatto che intercetta la palla (il bit
   7 di `sm_dash`: `next_on_hit` riceve il carry dallo scatto), +8 per un punto subito, fino al
   massimo; resta da un punto all'altro.
@@ -278,15 +278,21 @@ Gettoni e partenza:
 Il menu si usa con il joystick (o i cursori): su e giù scelgono la voce, sinistra, destra o il
 fuoco cambiano il valore, e il fuoco su **PLAY** inizia la partita. **RUN/STOP** torna
 all'attract. Le voci:
-- GAME: Classic, EVO o NEXT (EVO e NEXT sono a due: con PLAYERS ONE si torna a Classic);
+- GAME: Classic, EVO o NEXT (EVO e NEXT sono a due: con PLAYERS ONE si torna a Classic); NEXT
+  all'accensione;
 - PLAYERS: uno, due, contro la CPU (a destra, al livello della difficoltà) o CHALLENGE (solo
-  NEXT: con un altro gioco diventa VS CPU);
+  NEXT: con un altro gioco diventa VS CPU); CHALLENGE all'accensione;
 - DIFFICULTY;
 - CONTROL: joystick o paddle;
 - FREE PLAY;
 - ATTRACT SOUND: suoni e musica dell'attract (gettone e Start si sentono sempre);
-- SUPER MOVES: le mosse speciali in NEXT e CHALLENGE (spente all'accensione);
-- BORDER: BLACK o GRAY (GRAY all'accensione). Il campo occupa tutto lo schermo: con GRAY il bordo
+- VOLUME: il volume del SID, da 0% a 100% a passi del 10% (100% all'accensione), per musica ed
+  effetti insieme (il SID ha un solo volume, `$D418`). I passi vanno sui 16 livelli del registro,
+  più fitti in basso (`vol_levels` in `src/sid.s`: 0, 1, 2, 3, 4, 5, 7, 8, 10, 12, 15); vale
+  subito, anche per la canzone che suona, e il player lo tiene anche quando uno strumento nel
+  filtro riscrive `$D418`. Le voci digitalizzate (nome dell'avversario, READY, GO, YOU WIN) usano
+  proprio quel registro per i campioni e restano al loro livello; finite, il SID torna al volume
+  del menu (`VOICE_VOL`);- BORDER: BLACK o GRAY (GRAY all'accensione). Il campo occupa tutto lo schermo: con GRAY il bordo
   è grigio scuro in partita (e nella demo), così si vedono le pareti, e segue la partita (sotto,
   *Bordo*). BLACK è il bordo di sempre.
 
@@ -300,7 +306,7 @@ singolo si gioca contro il muro con 3 palle. Dopo il GAME OVER si torna all'attr
 | verso l'avversario | scatto in avanti (EVO, NEXT), sparo del BLASTER: destra | idem: sinistra |
 | dalla parte opposta | rientro dallo scatto: sinistra | idem: destra |
 | fuoco | NEXT: usa il bonus selezionato; EVO: scatto in avanti | idem |
-| SUPER MOVES | ↓ ↘ → + fuoco STRAIGHT SHOT, → ↓ ↘ + fuoco RISING STRIKE | ↓ ↙ ← + fuoco, ← ↓ ↙ + fuoco |
+| mosse speciali (NEXT) | ↓ ↘ → + fuoco STRAIGHT SHOT, → ↓ ↘ + fuoco RISING STRIKE | ↓ ↙ ← + fuoco, ← ↓ ↙ + fuoco |
 | paddle (coppia nella porta 1) | paddle X, pulsante = scatto; F / C sceglie / usa | paddle Y; . / - |
 
 In NEXT con il joystick il bonus selezionato (in negativo, con la freccetta) cambia da solo ogni
@@ -311,14 +317,14 @@ bullet time: attivato aspetta (la racchetta lampeggia come con un bonus armato) 
 palla entra nella propria metà campo verso di sé; allora tutto rallenta tranne la propria racchetta,
 finché la palla non è ribattuta o c'è un punto.
 
-Con **SUPER MOVES: ON** ognuno ha accanto alle riserve la barra delle mosse speciali, che si
+In NEXT ognuno ha accanto alle riserve la barra delle mosse speciali, sempre accese, che si
 riempie colpendo (di più con lo scatto che intercetta la palla e quando si subisce un punto) e
 diventa gialla quando una mossa è pronta: a metà la mossa normale, piena la MAX. Le mosse sono le
 mezzelune dei picchiaduro, come sul MiSTer, con avanti verso l'avversario: STRAIGHT SHOT (tiro
 dritto e più veloce) e RISING STRIKE (dritto, poi s'impenna lontano dall'avversario). Il fuoco
 che chiude la mezzaluna usa la mossa se può partire, altrimenti il bonus selezionato; la
 mezzaluna con la racchetta a casa la fa anche scattare in avanti. Con i paddle non ci sono gesti.
-Anche la CPU usa le mosse. Con SUPER MOVES: ON, dopo la scelta della racchetta, la schermata
+Anche la CPU usa le mosse. Dopo la scelta della racchetta, la schermata
 **HOW TO PLAY** come su PC e MiSTer (non con i paddle, che non hanno gesti, né per lo sfidante di
 CHALLENGE): una bitmap hires composta da `tools/gen_c64_assets.py` con le figure di
 `tools/gen_howto_assets.py` (riquadri delle due mosse con i passi del joystick, FIRE, il tiro, la

@@ -44,6 +44,14 @@
 // contro la CPU e del finale della CHALLENGE): dalla stessa ROM, con un
 // secondo player che non tocca il SID. Esce come campione a 4 bit (`call_level`) che pong_top somma
 // all'uscita audio, così musica ed effetti continuano; una voce nuova interrompe quella in corso.
+//
+// Volumi della musica e degli effetti (opzioni dell'OSD, `music_vol` e `fx_vol`: il passo, 0 = 100%,
+// 10 = 0%): un guadagno per voce del SID (`vol_gain`, 64 = 1, il quadrato del volume come nel gioco
+// Rust) che scala l'inviluppo (rtl/sid/sid_voice.sv), quindi non il DC delle voci e non il $D418.
+// Le voci 1 e 2 sono della musica; la voce 3 degli effetti mentre ne suona uno (`active[3]`), se no
+// della musica; con la voce digitalizzata le voci 2 e 3, che ne danno il DC, degli effetti. Le voci
+// di partita prendono il guadagno degli effetti in pong_top (`fx_gain`). Con il passo 0 i guadagni
+// sono 64 e tutto è come prima: anche chi lascia a zero gli ingressi (render.cpp, writes.cpp).
 
 `timescale 1ns / 1ps
 
@@ -70,6 +78,11 @@ module pong_sid #(
     input  wire        call_go,
     input  wire [3:0]  call_id,
     output reg  [3:0]  call_level,
+    // volumi: passo dell'OSD, 0 = 100% .. 10 = 0% (oltre il 10: 0%); guadagno degli effetti per le
+    // voci di partita
+    input  wire [3:0]  music_vol,
+    input  wire [3:0]  fx_vol,
+    output reg  [6:0]  fx_gain,
     output wire signed [15:0] sample
 );
 
@@ -703,6 +716,36 @@ always @(posedge clk) begin
     end
 end
 
+// ------------------------------------------------------------------ volumi
+
+// guadagno del passo dell'OSD (0 = 100%, 10 = 0%): 64 * volume², come config::volume_gain del gioco
+// Rust
+function [6:0] vol_gain(input [3:0] step);
+    case (step)
+        4'd0: vol_gain = 7'd64;
+        4'd1: vol_gain = 7'd52;
+        4'd2: vol_gain = 7'd41;
+        4'd3: vol_gain = 7'd31;
+        4'd4: vol_gain = 7'd23;
+        4'd5: vol_gain = 7'd16;
+        4'd6: vol_gain = 7'd10;
+        4'd7: vol_gain = 7'd6;
+        4'd8: vol_gain = 7'd3;
+        4'd9: vol_gain = 7'd1;
+        default: vol_gain = 7'd0;
+    endcase
+endfunction
+
+reg [6:0] music_gain = 7'd64;
+initial fx_gain = 7'd64;
+reg [6:0] gain_2 = 7'd64, gain_3 = 7'd64;
+always @(posedge clk) begin
+    music_gain <= vol_gain(music_vol);
+    fx_gain <= vol_gain(fx_vol);
+    gain_2 <= voice_on ? fx_gain : music_gain;
+    gain_3 <= voice_on || active[3] ? fx_gain : music_gain;
+end
+
 wire [17:0] sid_audio;
 
 sid_top #(.MULTI_FILTERS(0), .DUAL(0)) sid (
@@ -727,6 +770,9 @@ sid_top #(.MULTI_FILTERS(0), .DUAL(0)) sid (
     .filter_en(1'b1),
     .mode(mode_8580),
     .cfg(2'd0),
+    .gain_1(music_gain),
+    .gain_2(gain_2),
+    .gain_3(gain_3),
     .ld_clk(clk),
     .ld_addr(12'd0),
     .ld_data(16'd0),

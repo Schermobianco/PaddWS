@@ -50,20 +50,23 @@ pub struct Game {
     pub self_test: bool,
     /// 0 facile, 1 normale, 2 difficile, 3 esperto: accelerazione e velocità massima della palla
     pub difficulty: u8,
-    /// suoni e musica della sequenza attract (gettone e Start si sentono sempre); la musica
-    /// dell'attract suona solo se anche `music` è acceso
+    /// suoni e musica della sequenza attract, e musica del menu e delle scelte (gettone e Start si
+    /// sentono sempre)
     pub attract_sound: bool,
-    /// tutte le musiche del SID (titolo, menu, presentazioni, temi della CHALLENGE, game over...);
-    /// con false solo gli effetti, che restano sempre
-    pub music: bool,
+    /// volume della musica del SID in percento, da 0 (nessuna musica) a 100 a passi di
+    /// `VOLUME_STEP` (menu MUSIC VOLUME)
+    pub music_volume: u8,
+    /// volume degli effetti e delle voci in percento, come `music_volume` (menu EFFECTS VOLUME)
+    pub effects_volume: u8,
     /// luminosità del bianco in percento: tutta l'immagine scala in proporzione
     pub white_level: u8,
     /// punteggi dritti in alto, per un cabinato o un monitor normale, invece che rivolti ai
     /// giocatori seduti ai lati di un tavolo (come l'opzione Scores del MiSTer)
     pub scores_upright: bool,
-    /// GAME TYPE dell'ultima scelta nel menu: "classic", "evo" o "next"
+    /// GAME TYPE dell'ultima scelta nel menu: "classic", "evo" o "next" (di default NEXT)
     pub game_type: String,
-    /// PLAYERS dell'ultima scelta nel menu: "two", "cpu", "challenge" o "one"
+    /// PLAYERS dell'ultima scelta nel menu: "two", "cpu", "challenge" o "one" (di default
+    /// CHALLENGE)
     pub players: String,
 }
 
@@ -83,11 +86,12 @@ impl Default for Game {
             self_test: true,
             difficulty: 1,
             attract_sound: true,
-            music: true,
+            music_volume: 100,
+            effects_volume: 100,
             white_level: 100,
             scores_upright: true,
-            game_type: "classic".into(),
-            players: "two".into(),
+            game_type: "next".into(),
+            players: "challenge".into(),
         }
     }
 }
@@ -253,6 +257,20 @@ impl Default for Colors {
     }
 }
 
+/// Passo dei volumi del menu, in percento.
+pub const VOLUME_STEP: u8 = 10;
+
+/// Guadagno di un volume in percento (0-100): il quadrato, così i passi del menu si sentono più
+/// uguali tra loro di quanto farebbero con un guadagno lineare (50% = un quarto, circa -12 dB).
+pub fn volume_gain(percent: u8) -> f32 {
+    let v = f32::from(percent.min(100)) / 100.0;
+    v * v
+}
+
+/// Righe emulate del filtro CRT di prima (`resolution_scale` 1.0: 1440 righe, con il moiré): se
+/// nel file nessuno l'ha cambiata, passa al default nuovo.
+const OLD_RESOLUTION_SCALE: f32 = 1.0;
+
 /// Bombatura dello schermo CRT (orizzontale e verticale). Le bombature di prima (`OLD_WARPS`), se
 /// nel file nessuno le ha cambiate, passano a questa: il doppio della prima toglieva spazio agli
 /// angoli, dove stanno le riserve dei bonus; poi un quarto in meno.
@@ -276,7 +294,7 @@ impl Default for Crt {
     fn default() -> Self {
         Self {
             enabled: false,
-            resolution_scale: 1.0,
+            resolution_scale: 2.5,
             hard_scan: -8.0,
             hard_pix: -3.0,
             warp_x: WARP.0,
@@ -292,9 +310,6 @@ impl Default for Crt {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Next {
-    /// mosse speciali (STRAIGHT SHOT, RISING STRIKE) nelle partite NEXT e CHALLENGE e nella loro
-    /// demo: opzione del menu, spenta di default
-    pub super_moves: bool,
     pub ball_speedup: [f64; 4],
     pub ball_max_speed: [f64; 4],
     pub capsule_size: f64,
@@ -425,7 +440,6 @@ impl Default for Next {
     fn default() -> Self {
         let t = NextTuning::default();
         Self {
-            super_moves: false,
             ball_speedup: t.ball_speedup,
             ball_max_speed: t.ball_max_speed,
             capsule_size: t.capsule_size,
@@ -590,18 +604,23 @@ pub fn migrate_old_name(path: &Path, old_name: &str) {
     }
 }
 
-/// Chiavi della musica di prima della 4.0.0-beta.16: `game.sid_sound` (false = i campioni
-/// originali, senza musica) e `game.match_music` (i temi della CHALLENGE). In un file che non ha
-/// ancora `game.music` la musica resta spenta se una delle due la spegneva.
-const OLD_MUSIC_KEYS: [&str; 2] = ["sid_sound", "match_music"];
+/// Chiavi della musica di prima: `game.music` (MUSIC: ON/OFF, fino alla 4.0.0-beta.19) e, prima
+/// della 4.0.0-beta.16, `game.sid_sound` (false = i campioni originali, senza musica) e
+/// `game.match_music` (i temi della CHALLENGE). In un file che non ha ancora `game.music_volume`
+/// la musica resta spenta (volume 0) se una di loro la spegneva.
+const OLD_MUSIC_KEYS: [&str; 3] = ["music", "sid_sound", "match_music"];
 
-/// `game.music` ricavato dalle chiavi vecchie, se il file ha solo quelle.
-fn old_music(data: &Value) -> Option<bool> {
-    let game = data.get("game")?.as_object()?;
-    if game.contains_key("music") || !OLD_MUSIC_KEYS.iter().any(|k| game.contains_key(*k)) {
-        return None;
-    }
-    Some(!OLD_MUSIC_KEYS.iter().any(|k| game.get(*k).and_then(Value::as_bool) == Some(false)))
+/// Chiavi di `next` tolte dal file: le mosse speciali sono sempre accese (fino alla
+/// 4.0.0-beta.19 c'era l'opzione SUPER MOVES).
+const OLD_NEXT_KEYS: [&str; 1] = ["super_moves"];
+
+/// Il file ha ancora solo le chiavi vecchie della musica e una di loro la spegneva.
+fn old_music_off(data: &Value) -> bool {
+    let Some(game) = data.get("game").and_then(Value::as_object) else {
+        return false;
+    };
+    !game.contains_key("music_volume")
+        && OLD_MUSIC_KEYS.iter().any(|k| game.get(*k).and_then(Value::as_bool) == Some(false))
 }
 
 /// Carica il file (nel browser dal `localStorage`); se manca lo crea con i default, non
@@ -618,9 +637,15 @@ pub fn load(path: &Path) -> Config {
                 {
                     (crt.warp_x, crt.warp_y) = WARP;
                 }
-                if let Some(music) = serde_json::from_str::<Value>(&text).ok().as_ref().and_then(old_music) {
-                    cfg.game.music = music;
+                // lo stesso per le righe emulate
+                if (crt.resolution_scale - OLD_RESOLUTION_SCALE).abs() < 1e-5 {
+                    crt.resolution_scale = Crt::default().resolution_scale;
                 }
+                if serde_json::from_str::<Value>(&text).ok().as_ref().is_some_and(old_music_off) {
+                    cfg.game.music_volume = 0;
+                }
+                let g = &mut cfg.game;
+                (g.music_volume, g.effects_volume) = (g.music_volume.min(100), g.effects_volume.min(100));
                 add_missing(path, &text, &cfg);
                 cfg
             }
@@ -643,9 +668,9 @@ pub fn load(path: &Path) -> Config {
 }
 
 /// Aggiunge al file le voci nuove che non ha ancora (le sezioni `next` e `mouse`, le voci nuove di
-/// `next` come `super_moves`, `colors.accent` e `game.music`), con i valori letti (i default per
-/// quelle che mancano), e toglie le chiavi della musica di prima (`OLD_MUSIC_KEYS`), lasciando
-/// intatto il resto: chi aggiorna il gioco trova i nuovi parametri da regolare.
+/// `next`, `colors.accent` e i volumi di `game`), con i valori letti (i default per quelle che
+/// mancano), e toglie le chiavi di prima (`OLD_MUSIC_KEYS`, `OLD_NEXT_KEYS`), lasciando intatto il
+/// resto: chi aggiorna il gioco trova i nuovi parametri da regolare.
 fn add_missing(path: &Path, text: &str, cfg: &Config) {
     let Ok(mut data) = serde_json::from_str::<Value>(text) else {
         return;
@@ -656,6 +681,9 @@ fn add_missing(path: &Path, text: &str, cfg: &Config) {
         match obj.get_mut("next") {
             // voci nuove della sezione in fondo, nell'ordine della struttura
             Some(Value::Object(section)) => {
+                for key in OLD_NEXT_KEYS {
+                    changed |= section.shift_remove(key).is_some();
+                }
                 for (key, v) in next {
                     if !section.contains_key(&key) {
                         section.insert(key, v);
@@ -684,20 +712,27 @@ fn add_missing(path: &Path, text: &str, cfg: &Config) {
         colors.insert("accent".into(), cfg.colors.accent.to_vec().into());
         changed = true;
     }
-    // MUSIC per tutte le musiche al posto di SOUND (SID o campioni) e della musica in partita
+    // i volumi della musica e degli effetti al posto di MUSIC (e prima di SOUND e della musica in
+    // partita)
     let game = obj.entry("game").or_insert_with(|| Value::Object(Default::default()));
     if let Some(game) = game.as_object_mut() {
         for key in OLD_MUSIC_KEYS {
             changed |= game.shift_remove(key).is_some();
         }
-        if !game.contains_key("music") {
-            game.insert("music".into(), cfg.game.music.into());
-            changed = true;
+        for (key, v) in [("music_volume", cfg.game.music_volume), ("effects_volume", cfg.game.effects_volume)] {
+            if !game.contains_key(key) {
+                game.insert(key.into(), v.into());
+                changed = true;
+            }
         }
     }
-    // la bombatura nuova al posto di quella vecchia (vedi `load`)
+    // la bombatura e le righe emulate nuove al posto di quelle vecchie (vedi `load`)
     if let Some(Value::Object(crt)) = obj.get_mut("crt_effects") {
-        for (key, v) in [("warp_x", cfg.crt_effects.warp_x), ("warp_y", cfg.crt_effects.warp_y)] {
+        for (key, v) in [
+            ("warp_x", cfg.crt_effects.warp_x),
+            ("warp_y", cfg.crt_effects.warp_y),
+            ("resolution_scale", cfg.crt_effects.resolution_scale),
+        ] {
             let old = crt.get(key).and_then(Value::as_f64);
             if old.is_some_and(|old| (old - v as f64).abs() > 1e-5) {
                 crt.insert(key.into(), (v as f64).into());
@@ -722,13 +757,13 @@ pub fn save_preferences(path: &Path, cfg: &Config) {
     set(&mut data, "game", "fullscreen", cfg.game.fullscreen);
     set(&mut data, "game", "difficulty", cfg.game.difficulty);
     set(&mut data, "game", "attract_sound", cfg.game.attract_sound);
-    set(&mut data, "game", "music", cfg.game.music);
+    set(&mut data, "game", "music_volume", cfg.game.music_volume);
+    set(&mut data, "game", "effects_volume", cfg.game.effects_volume);
     set(&mut data, "game", "white_level", cfg.game.white_level);
     set(&mut data, "game", "scores_upright", cfg.game.scores_upright);
     set(&mut data, "game", "game_type", cfg.game.game_type.as_str());
     set(&mut data, "game", "players", cfg.game.players.as_str());
     set(&mut data, "crt_effects", "enabled", cfg.crt_effects.enabled);
-    set(&mut data, "next", "super_moves", cfg.next.super_moves);
     set(&mut data, "mouse", "spinner", cfg.mouse.spinner);
     write_json(path, &data);
 }
@@ -804,46 +839,81 @@ mod tests {
         let path = std::env::temp_dir().join(format!("paddws_prefs_{}.json", std::process::id()));
         fs::write(&path, r#"{"ball": {"radius": 9}, "game": {"fullscreen": false}}"#).unwrap();
         let mut cfg = load(&path);
-        assert!(cfg.game.music);
+        assert_eq!((cfg.game.music_volume, cfg.game.effects_volume), (100, 100));
         cfg.game.fullscreen = true;
-        cfg.game.music = false;
+        cfg.game.music_volume = 30;
+        cfg.game.effects_volume = 0;
         cfg.crt_effects.enabled = true;
         save_preferences(&path, &cfg);
         let data: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(data["ball"]["radius"], 9);
         assert_eq!(data["game"]["fullscreen"], true);
         assert_eq!(data["crt_effects"]["enabled"], true);
-        assert_eq!(data["game"]["music"], false);
-        assert!(!load(&path).game.music);
+        assert_eq!(data["game"]["music_volume"], 30);
+        assert_eq!(data["game"]["effects_volume"], 0);
+        let cfg = load(&path);
+        assert_eq!((cfg.game.music_volume, cfg.game.effects_volume), (30, 0));
         let _ = fs::remove_file(path);
     }
 
     #[test]
-    fn the_old_sound_keys_become_music() {
+    fn the_old_sound_keys_become_the_music_volume() {
         let path = std::env::temp_dir().join(format!("paddws_music_{}.json", std::process::id()));
-        // musica in partita spenta, o i campioni originali (senza musica): MUSIC spenta
-        for (old, music) in [
-            (r#""sid_sound": true, "match_music": false"#, false),
-            (r#""sid_sound": false, "match_music": true"#, false),
-            (r#""sid_sound": true, "match_music": true"#, true),
-            (r#""match_music": true"#, true),
+        // MUSIC spenta, musica in partita spenta o i campioni originali (senza musica): volume 0
+        for (old, volume) in [
+            (r#""music": false"#, 0),
+            (r#""music": true"#, 100),
+            (r#""sid_sound": true, "match_music": false"#, 0),
+            (r#""sid_sound": false, "match_music": true"#, 0),
+            (r#""sid_sound": true, "match_music": true"#, 100),
+            (r#""match_music": true"#, 100),
         ] {
             fs::write(&path, format!(r#"{{"game": {{"fullscreen": true, {old}, "difficulty": 2}}}}"#)).unwrap();
-            assert_eq!(load(&path).game.music, music, "{old}");
+            assert_eq!(load(&path).game.music_volume, volume, "{old}");
             let text = fs::read_to_string(&path).unwrap();
             let data: Value = serde_json::from_str(&text).unwrap();
             // le chiavi vecchie spariscono, le altre restano nel loro ordine
-            assert_eq!(data["game"]["music"], music);
-            assert!(data["game"].get("sid_sound").is_none() && data["game"].get("match_music").is_none());
+            assert_eq!(data["game"]["music_volume"], volume);
+            assert_eq!(data["game"]["effects_volume"], 100);
+            for key in OLD_MUSIC_KEYS {
+                assert!(data["game"].get(key).is_none(), "{key}");
+            }
             assert!(text.find("fullscreen").unwrap() < text.find("difficulty").unwrap());
             // da qui in poi vale la chiave nuova
-            assert_eq!(load(&path).game.music, music);
+            assert_eq!(load(&path).game.music_volume, volume);
         }
-        // un file senza la sezione del gioco prende la musica accesa
+        // un file senza la sezione del gioco prende i volumi pieni
         fs::write(&path, r#"{"ball": {"radius": 9}}"#).unwrap();
-        assert!(load(&path).game.music);
+        assert_eq!(load(&path).game.music_volume, 100);
         let data: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(data["game"]["music"], true);
+        assert_eq!(data["game"]["music_volume"], 100);
+        // un volume oltre il 100% si ferma a 100
+        fs::write(&path, r#"{"game": {"music_volume": 250, "effects_volume": 120}}"#).unwrap();
+        let cfg = load(&path);
+        assert_eq!((cfg.game.music_volume, cfg.game.effects_volume), (100, 100));
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn volumes_follow_a_square_curve() {
+        assert_eq!(volume_gain(0), 0.0);
+        assert_eq!(volume_gain(100), 1.0);
+        assert!((volume_gain(50) - 0.25).abs() < 1e-6);
+        assert_eq!(volume_gain(200), 1.0);
+        assert!((0..100).step_by(VOLUME_STEP as usize).all(|v| volume_gain(v) < volume_gain(v + VOLUME_STEP)));
+    }
+
+    #[test]
+    fn the_old_crt_rows_become_the_new_default() {
+        let path = std::env::temp_dir().join(format!("paddws_crt_{}.json", std::process::id()));
+        fs::write(&path, r#"{"crt_effects": {"enabled": true, "resolution_scale": 1.0}}"#).unwrap();
+        assert_eq!(load(&path).crt_effects.resolution_scale, 2.5);
+        let data: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(data["crt_effects"]["resolution_scale"], 2.5);
+        // un valore scelto a mano resta
+        fs::write(&path, r#"{"crt_effects": {"resolution_scale": 6.0}}"#).unwrap();
+        assert_eq!(load(&path).crt_effects.resolution_scale, 6.0);
+        assert_eq!(Config::default().crt_effects.resolution_scale, 2.5);
         let _ = fs::remove_file(path);
     }
 
@@ -874,23 +944,27 @@ mod tests {
     }
 
     #[test]
-    fn super_moves_are_off_by_default_added_to_old_files_and_saved() {
+    fn the_super_moves_option_leaves_old_files() {
         let path = std::env::temp_dir().join(format!("paddws_super_{}.json", std::process::id()));
-        // file di una versione precedente: sezione `next` senza le mosse speciali
-        fs::write(&path, r#"{"next": {"smash_multiplier": 3.0, "super_cost": 16}}"#).unwrap();
-        let mut cfg = load(&path);
-        assert!(!cfg.next.super_moves);
+        // file di una versione precedente: l'opzione delle mosse speciali, senza i loro parametri
+        fs::write(&path, r#"{"next": {"smash_multiplier": 3.0, "super_moves": false, "super_cost": 16}}"#).unwrap();
+        let cfg = load(&path);
         assert_eq!(cfg.tuning().next.super_cost, 16);
         assert_eq!(cfg.tuning().next.super_meter_max, NextTuning::default().super_meter_max);
-        let data: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        let data: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(data["next"]["smash_multiplier"], 3.0);
-        assert_eq!(data["next"]["super_moves"], false);
+        assert!(data["next"].get("super_moves").is_none());
         assert_eq!(data["next"]["super_cost"], 16);
         assert_eq!(data["next"]["super_gain_hit"], 2);
-        cfg.next.super_moves = true;
-        save_preferences(&path, &cfg);
-        assert!(load(&path).next.super_moves);
+        assert!(text.find("smash_multiplier").unwrap() < text.find("super_cost").unwrap());
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn the_menu_starts_in_next_challenge() {
+        let g = Game::default();
+        assert_eq!((g.game_type.as_str(), g.players.as_str()), ("next", "challenge"));
     }
 
     #[test]

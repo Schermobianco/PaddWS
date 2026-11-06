@@ -13,6 +13,7 @@
 	input   [7:0] att_dec,
 	input   [7:0] sus_rel,
 	input         osc_msb_in,
+	input   [6:0] gain,       // PaddWS: volume della voce, 64 = 1 (vedi sotto)
 
 	input   [7:0] _st_out,
 	input   [7:0] p_t_out,
@@ -175,6 +176,9 @@ sid_dac #(.BITS (8)) envelope_dac
 reg [7:0] wave_out;
 always @(posedge clock) if(ce_1m) wave_out <= norm[11:4] | comb;
 
+// PaddWS: inviluppo per il volume (al più 255 * 64, 14 bit)
+wire [14:0] env_gain = (mode ? envelope : env_6581) * gain;
+
 // DAC with floating input simulation
 reg signed [21:0] dca_out;
 always @(posedge clock) begin
@@ -190,7 +194,9 @@ always @(posedge clock) begin
 		else if(keep_cnt) keep_cnt <= keep_cnt - 1'd1;
 		else dac_out <= 0;
 
-		env_dac <= mode ? envelope : env_6581;
+		// PaddWS: l'inviluppo per il volume della voce (gain / 64, da pong_sid.v): il DC della voce
+		// resta fuori, così cambiare volume non dà colpi; con 64 è l'inviluppo di prima
+		env_dac <= {1'b0, env_gain[13:6]};
 		dca_out <= (mode ? VOICE_DC_8580 : VOICE_DC_6581) + (dac_out * env_dac);
 	end
 end

@@ -32,6 +32,11 @@ module sid_top
 	input [N-1:0] mode,
 	input [(N*2)-1:0] cfg,
 
+	// PaddWS: volume di ogni voce, 64 = 1 (sid_voice), uguale per i due chip
+	input   [6:0] gain_1,
+	input   [6:0] gain_2,
+	input   [6:0] gain_3,
+
 	input         ld_clk,
 	input  [11:0] ld_addr,
 	input  [15:0] ld_data,
@@ -101,6 +106,7 @@ generate
 			.att_dec(Voice_1_Att_dec[i]),
 			.sus_rel(Voice_1_Sus_Rel[i]),
 			.osc_msb_in(voice_3_PA_MSB[i]),
+			.gain(gain_1),
 			.osc_msb_out(voice_1_PA_MSB[i]),
 			.voice_out(voice_1[i]),
 			._st_out(_st_out[i*3+0]),
@@ -122,6 +128,7 @@ generate
 			.att_dec(Voice_2_Att_dec[i]),
 			.sus_rel(Voice_2_Sus_Rel[i]),
 			.osc_msb_in(voice_1_PA_MSB[i]),
+			.gain(gain_2),
 			.osc_msb_out(voice_2_PA_MSB[i]),
 			.voice_out(voice_2[i]),
 			._st_out(_st_out[i*3+1]),
@@ -143,6 +150,7 @@ generate
 			.att_dec(Voice_3_Att_dec[i]),
 			.sus_rel(Voice_3_Sus_Rel[i]),
 			.osc_msb_in(voice_2_PA_MSB[i]),
+			.gain(gain_3),
 			.osc_msb_out(voice_3_PA_MSB[i]),
 			.voice_out(voice_3[i]),
 			.osc_out(Misc_Osc3[i]),

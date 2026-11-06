@@ -385,13 +385,13 @@ go_desc:    .word go, go_end
     lda $dd0d
 .endproc
 
-; Il SID torna al programma: voci spente, volume al massimo, il suo NMI.
+; Il SID torna al programma: voci spente, il volume del menu (VOICE_VOL), il suo NMI.
 .proc give_back
     lda #0
     sta SID + $04
     sta SID + $0b
     sta SID + $12
-    lda #$0f
+    lda VOICE_VOL
     sta SID + $18
     lda old_nmi
     sta $fffa

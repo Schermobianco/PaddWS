@@ -162,12 +162,14 @@ win_pg:    .res 1               ; YOU WIN nel GAME OVER: 0 no, 1-16 prossima pag
 
 .proc play_main
     lda #1
-    sta opt_mode
     sta opt_level
     sta opt_free
     sta opt_asound
     sta opt_border
-    lda #2
+    sta cfg_super               ; mosse speciali sempre accese (NEXT e CHALLENGE)
+    lda #2                      ; all'accensione NEXT in CHALLENGE, come su PC e MiSTer
+    sta opt_mode
+    lda #OPT_CHALLENGE
     sta opt_players
     lda #0
     sta ctl_paddle
@@ -176,16 +178,13 @@ win_pg:    .res 1               ; YOU WIN nel GAME OVER: 0 no, 1-16 prossima pag
 .if .defined(ENDTEST)
     jsr endtest_setup           ; build per le schermate del finale (sotto, tra le routine dell'avvio)
 .elseif .defined(AUTOSTART)
-    lda #3                      ; build per le schermate: subito una partita contro la CPU
+    lda #3                      ; build per le schermate: subito una partita EVO contro la CPU
     sta opt_players
+    lda #1
 .ifdef AUTONEXT
-    lda #2                      ; (con AUTONEXT in NEXT, dalle scelte)
+    lda #2                      ; (con AUTONEXT in NEXT, dalle scelte; con SMTEST due CPU, SMFULL:
+.endif                          ; barre piene)
     sta opt_mode
-.endif
-.ifdef SMTEST
-    lda #1                      ; (con SMTEST le mosse speciali e due CPU; SMFULL: barre piene)
-    sta cfg_super
-.endif
 .ifdef AUTOCHALLENGE
     lda #2                      ; (con AUTOCHALLENGE in CHALLENGE, dalle scelte)
     sta opt_mode
@@ -696,7 +695,7 @@ MI_LEVEL   = 2
 MI_CONTROL = 3
 MI_FREE    = 4
 MI_ASOUND  = 5
-MI_SUPER   = 6                  ; mosse speciali di NEXT (cfg_super, supers.s)
+MI_VOLUME  = 6                  ; volume del SID (opt_volume, sid_volume)
 MI_BORDER  = 7                  ; bordo in partita (opt_border, border_game)
 MI_PLAY    = 8
 MENU_ROW0  = 4                  ; prima voce, una ogni 2 righe (fino alla 20)
@@ -776,7 +775,7 @@ item:
     rts
 .endproc
 
-item_names: .word s_game, s_players, s_level, s_control, s_free, s_asound, s_moves, s_border
+item_names: .word s_game, s_players, s_level, s_control, s_free, s_asound, s_volume, s_border
             .word s_play
 s_game:     .byte "GAME", 0
 s_players:  .byte "PLAYERS", 0
@@ -784,7 +783,7 @@ s_level:    .byte "DIFFICULTY", 0
 s_control:  .byte "CONTROL", 0
 s_free:     .byte "FREE PLAY", 0
 s_asound:   .byte "ATTRACT SOUND", 0
-s_moves:    .byte "SUPER MOVES", 0
+s_volume:   .byte "VOLUME", 0
 s_border:   .byte "BORDER", 0
 s_play:     .byte "PLAY", 0
 
@@ -800,7 +799,7 @@ s_play:     .byte "PLAY", 0
 .endproc
 
 value_fn: .word v_game - 1, v_players - 1, v_level - 1, v_control - 1, v_free - 1, v_asound - 1
-          .word v_super - 1, v_border - 1, v_none - 1
+          .word v_volume - 1, v_border - 1, v_none - 1
 
 .proc v_game
     lda opt_mode
@@ -840,11 +839,44 @@ value_fn: .word v_game - 1, v_players - 1, v_level - 1, v_control - 1, v_free - 
     ldy #>on_off_names
     jmp pick_name
 .endproc
-.proc v_super
-    lda cfg_super
-    ldx #<on_off_names
-    ldy #>on_off_names
-    jmp pick_name
+; il passo del volume in percento in vol_text ("0%", "10%"... "100%", con gli spazi fino a 4)
+.proc v_volume
+    ldy #0
+    ldx opt_volume
+    cpx #VOLUME_STEPS - 1
+    bcc tens
+    lda #'1'                    ; 100%
+    sta vol_text
+    lda #'0'
+    sta vol_text+1
+    ldy #2
+    bne zero
+tens:
+    txa
+    beq zero                    ; 0%
+    ora #'0'
+    sta vol_text
+    iny
+zero:
+    lda #'0'
+    sta vol_text,y
+    lda #'%'
+    sta vol_text+1,y
+    iny
+    iny
+    lda #' '
+pad:
+    cpy #4
+    bcs done
+    sta vol_text,y
+    iny
+    bne pad
+done:
+    lda #<vol_text
+    sta ptr2
+    lda #>vol_text
+    sta ptr2+1
+    rts
 .endproc
 .proc v_border
     lda opt_border
@@ -896,6 +928,7 @@ s_off:      .byte "OFF     ", 0
 s_on:       .byte "ON      ", 0
 s_black:    .byte "BLACK   ", 0
 s_gray:     .byte "GRAY    ", 0
+vol_text:   .byte "100%", 0     ; il valore di VOLUME, scritto da v_volume
 
 ; Menu: su e giù scelgono la voce, sinistra e destra (o fuoco) cambiano il valore; fuoco su PLAY
 ; inizia la partita; RUN/STOP torna all'attract. Joystick sulle due porte, cursori e RETURN.
@@ -1069,12 +1102,21 @@ not_players:
     eor #1
     sta opt_asound
     jmp attract_song            ; la musica si ferma (o riparte) subito
-:   cpx #MI_SUPER
-    bne :+
-    lda cfg_super
-    eor #1
-    sta cfg_super
-:   cpx #MI_BORDER
+:   cpx #MI_VOLUME
+    bne not_volume
+    ; un passo su o giù: sotto lo 0% resta 0%, dopo il 100% si torna a 0% (il fuoco fa il giro)
+    lda opt_volume
+    clc
+    adc at_tmp
+    bpl :+
+    lda #0
+:   cmp #VOLUME_STEPS
+    bcc :+
+    lda #0
+:   sta opt_volume
+    jmp sid_volume              ; subito, anche per la musica che suona
+not_volume:
+    cpx #MI_BORDER
     bne :+
     lda opt_border
     eor #1

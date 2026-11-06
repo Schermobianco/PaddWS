@@ -4,7 +4,7 @@
 // Argomento "up": scritte dritte (opzione OSD "Upright"). Argomento "mute": suoni dell'attract
 // spenti dal frame 300 (si contano i cicli con il SID attivo: canzone o effetto), partita a due e
 // fine al conto alla rovescia.
-// Argomento "music": opzione OSD "Music: Off" dall'accensione, titolo, partita a un giocatore senza
+// Argomento "music": opzione OSD "Music volume: 0%" dall'accensione, titolo, partita a un giocatore senza
 // toccare la racchetta e GAME OVER: si contano i cicli con una canzone del SID (attesi 0) e quelli
 // con un effetto (attesi > 0).
 // Argomento "next": NEXT contro la CPU; il giocatore sceglie TELEPORT, SMASH e SLOW con il joystick.
@@ -286,7 +286,7 @@ int main(int argc, char** argv) {
     top.paddle0 = top.paddle1 = 0;
     top.spinner0 = top.spinner1 = 0;
     top.super_moves = sup_test || howto_test;
-    top.music_off = music_test;
+    top.music_vol = music_test ? 10 : 0;   // Music volume: 0%
     top.nv_autosave = 1;
     top.ioctl_download = top.ioctl_upload = top.ioctl_wr = 0;
     top.ioctl_index = 0;

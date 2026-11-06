@@ -1,7 +1,7 @@
 ; Mosse speciali di NEXT: traduzione di `Next::super_moves` (rust/core/src/next.rs: barra, STRAIGHT
 ; SHOT e RISING STRIKE) e di `Cpu::special` (cpu.rs), più i gesti dei comandi, la grafica e i
-; suoni. Accese dalla voce SUPER MOVES del menu (cfg_super), valgono per le partite NEXT e
-; CHALLENGE; spente, la partita è quella di prima (nessuna routine di qui cambia lo stato).
+; suoni. Sempre accese (cfg_super, da play_main), valgono per le partite NEXT e CHALLENGE; spente
+; (solo nei banchi di prova) la partita è quella di prima (nessuna routine di qui cambia lo stato).
 ;
 ; Il programma è quasi pieno: gran parte del codice sta nella cartuccia (segmento SMCODE, nel
 ; .prg da SM_IMG, dopo le routine dell'avvio) e gira a SM_RUN, nella RAM del secondo schermo, che
@@ -73,7 +73,7 @@ STEP_F    = 15                  ; 0,3 s tra due direzioni
 BTN_F     = 13                  ; 0,25 s dall'ultima al fuoco
 
 .segment "BSS"
-cfg_super: .res 1               ; voce SUPER MOVES del menu
+cfg_super: .res 1               ; mosse speciali accese: 1 dall'accensione (play_main), 0 solo nei banchi di prova
 sm_on:     .res 1               ; mosse speciali nella partita in corso (next_init, solo NEXT)
 
 .segment "LOWBSS"

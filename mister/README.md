@@ -259,29 +259,37 @@ Comandi: su/giù (doppio tocco = rapido, come nell'originale: un tocco breve e d
 direzione entro 200 ms), **A** = scatto in avanti (EVO e NEXT), **B** = rapido, **X** = seleziona
 il bonus, **Y** = usa il bonus (NEXT), **Start** = inizia la partita, **Select** = gettone (da
 tastiera: **5** gettone, **1** start, come nei cabinati MAME).
-Opzioni da OSD (F12): modalità (*Game type*: Classic, EVO, NEXT o Challenge), giocatori (*Players*:
+Opzioni da OSD (F12): modalità (*Game type*: Challenge, il default, NEXT, EVO o Classic), giocatori (*Players*:
 due, uno o contro la CPU; NEXT con "uno" si gioca contro la CPU, in Challenge non conta; un valore
 Challenge rimasto in *Players* da un CFG di prima vale contro la CPU), Free Play, difficoltà (dalla partita successiva; vale anche per la
 CPU; la demo usa sempre Normal e la modalità scelta qui: CLASSIC, EVO, NEXT con bonus e racchette
-a caso, CHALLENGE contro l'avversario di un livello a caso), mosse speciali (*Super moves*, vedi
-sotto), punteggi dritti (*Scores: Upright*, il default: cabinato o monitor) o verso i giocatori (tavolo), suoni
+a caso, CHALLENGE contro l'avversario di un livello a caso), punteggi dritti (*Scores: Upright*, il default: cabinato o monitor) o verso i giocatori (tavolo), suoni
 dell'attract (*Attract sound*, vedi sotto), luminosità del bianco (*White level*: 100%, 87%,
 75% o 62%, tutta l'immagine in proporzione), comando delle racchette (*Paddle control*:
 joystick, paddle o spinner) e velocità dello spinner, filtro del SID (*Sound*: SID 8580 o SID
-6581), musiche (*Music*, vedi sotto), salvataggio automatico della classifica di CHALLENGE
+6581), volumi della musica e degli effetti (*Music volume*, *Effects volume*, vedi sotto),
+salvataggio automatico della classifica di CHALLENGE
 (*Autosave scores*, vedi [Classifica sulla SD](#classifica-sulla-sd)), proporzioni, effetti di
 scansione, reset.
 
-Due opzioni tolgono l'audio, e si sommano:
+Volumi e audio dell'attract:
 
-- *Music: Off* (bit 26 dello status) spegne tutte le canzoni del SID, ovunque: titolo, scelta di
-  NEXT, HOW TO PLAY, presentazione, livello superato, finale, continue, iniziali, classifica, game
-  over e i temi degli avversari in partita. Restano sempre gli effetti, il nome dell'avversario detto
-  dalla voce e le voci di partita (urla delle mosse, READY, GO e YOU WIN). In un CFG di prima questo bit era
-  *Match music*: chi l'aveva spento ora ha spente tutte le musiche.
+- *Music volume* (bit 31:28 dello status) ed *Effects volume* (bit 35:32), da 100% (il primo valore,
+  il default) a 0% a passi del 10%. Il player li applica come guadagno di ogni voce del SID
+  (`vol_gain` in `rtl/pong_sid.v`, 64 = 1: il quadrato del volume, come nel gioco Rust), che scala
+  l'inviluppo della voce (`rtl/sid/sid_voice.sv`, marcato PaddWS): il DC delle voci e il volume del
+  SID ($D418) non cambiano, quindi cambiare volume non dà colpi. Le voci 1 e 2 sono della musica,
+  la 3 degli effetti mentre ne suona uno e altrimenti della musica; la voce digitalizzata con il
+  nome dell'avversario (voci 2 e 3) e le voci di partita (urla delle mosse, READY, GO e YOU WIN)
+  seguono gli effetti. Con il SID 6581 il DC proprio del chip resta, quindi a 0% il nome
+  dell'avversario si sente ancora, piano. Al 100% le scritture e il suono sono quelli di prima.
+- *Music volume: 0%* spegne tutte le canzoni del SID, ovunque: titolo, scelta di NEXT, HOW TO
+  PLAY, presentazione, livello superato, finale, continue, iniziali, classifica, game over e i temi
+  degli avversari in partita. Fino alla 4.0.0-beta.19 c'era *Music: On/Off* (bit 26, ora libero ma
+  nei CFG vecchi può valere 1).
 - *Attract sound: Off* (bit 11) zittisce tutto l'attract, demo compresa: musica ed effetti; il
-  gettone e Start si sentono sempre. Con *Attract sound: On* e *Music: Off* nell'attract restano
-  solo gli effetti (strisce, pallina del titolo, demo).
+  gettone e Start si sentono sempre. Con *Attract sound: On* e *Music volume: 0%* nell'attract
+  restano solo gli effetti (strisce, pallina del titolo, demo).
 
 *Sound* è il bit 23. In un CFG di prima il valore Samples (bit 24:23 = 2, i campioni WAV, tolti)
 ha il bit 23 a zero e suona quindi con il SID 8580; il bit 24, libero, nei CFG vecchi può valere 1
@@ -373,7 +381,7 @@ un player in stile C64 a 50 Hz che legge da una ROM le tracce scritte in
 continue, game over, campione e i 7 temi degli avversari di CHALLENGE, canzoni 7-13 nell'ordine di
 `PaddleKind`, e il finale, la 14, dopo i temi) e suona gli effetti sulla voce 3. In partita c'è musica solo in CHALLENGE contro la
 CPU: il tema dell'avversario (`SID_SONG_THEME0 + rung_kind`), in ripetizione sulle voci 1 e 2; non
-nella sfida tra due giocatori né nella demo, e mai con *Music: Off*. Gli
+nella sfida tra due giocatori né nella demo, e mai con *Music volume: 0%*. Gli
 scenari `challenge` e `challenger` del simulatore dei frame controllano la canzone in partita. Le
 versioni PC, Raspberry e web suonano le musiche in tempo reale con il port in Rust del player
 (`rust/sid`, stesse scritture ai registri) e usano per gli effetti i WAV registrati dal player
@@ -488,7 +496,8 @@ nella scelta della racchetta il suo segno sono tre immagini attaccate dietro. Il
 palla come nel core Rust e l'animazione dei portali segue la x della palla.
 La partita dimostrativa ora è giocata da due CPU come quella del gioco Rust.
 
-**Mosse speciali** (OSD *Super moves*, spenta di default; NEXT, CHALLENGE e le loro demo): barra
+**Mosse speciali** (sempre accese in NEXT, CHALLENGE e nelle loro demo; fino alla 4.0.0-beta.19
+c'era l'opzione OSD *Super moves*): barra
 per giocatore sotto la riserva (tacca al costo, gialla quando una mossa è pronta), mosse e regole
 identiche al core Rust (le esegue il firmware di `pong_logic_rv.v`). La mossa spende tutti i
 settori pieni della barra (`P_SUPER_COST` ciascuno, al massimo 2) e ha il loro numero come livello;

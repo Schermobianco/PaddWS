@@ -615,6 +615,10 @@ egg_yel:      .res 1            ; il giallo: COL_YELLOW, o COL_RED con l'easter 
 egg_red:      .res 1            ; il rosso: COL_RED, o COL_YELLOW
 egg_song:     .res 1            ; canzone del titolo: SID_SONG_TITLE, o SID_SONG_EGG
 egg_buf:      .res 3            ; il comando di SID_SONG_EGG dalla cartuccia (egg_stage, sid.s)
+; VOLUME del menu: qui, a un indirizzo fisso, perché lo legge anche il player delle voci (voice.s)
+opt_volume:   .res 1            ; passo, da 0 (0%) a VOLUME_STEPS - 1 (100%)
+sid_vol:      .res 1            ; il suo volume del SID, 0-15 (vol_levels, sid.s)
+.assert sid_vol = VOICE_VOL, error, "VOICE_VOL fuori posto"
 .segment "RODATA"
 bullet_dst_lo:
     .repeat 8, i

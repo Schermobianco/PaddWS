@@ -129,14 +129,8 @@
         }
     }
 
-    // telefono o tablet: il puntatore principale è il dito (il gioco ci regola i volumi)
-    function paddws_touch_device() {
-        return window.matchMedia("(pointer: coarse)").matches;
-    }
-
     function register_plugin(importObject) {
         importObject.env.paddws_is_fullscreen = paddws_is_fullscreen;
-        importObject.env.paddws_touch_device = paddws_touch_device;
         importObject.env.paddws_set_fullscreen = paddws_set_fullscreen;
     }
 

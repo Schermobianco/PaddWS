@@ -288,7 +288,7 @@ async fn run(args: Args, mut cfg: Config, config_path: PathBuf) {
         pads: gamepad::Pads::open(),
         pad_used: false,
         music: None,
-        sid_music: music::SidMusic::start(),
+        sid_music: music::SidMusic::start(config::volume_gain(cfg.game.music_volume)),
         egg: false,
         suspended: None,
         config_path,
@@ -489,7 +489,6 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         app.players = 2;
         app.cpu = false;
         app.next = true;
-        app.cfg.next.super_moves = true;
         let mut howto = HowTo::new(app);
         howto.skip_to(at - 0.5);
         if let Some(device) = device {
@@ -805,10 +804,10 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
             egg(app, scene)
         }),
     ];
-    // le schermate che accendono le mosse speciali, il touch o il gamepad non cambiano le altre
-    let (super_moves, touch) = (app.cfg.next.super_moves, app.touch);
+    // le schermate che accendono il touch o il gamepad non cambiano le altre
+    let touch = app.touch;
     for (name, make) in shots {
-        (app.cfg.next.super_moves, app.touch, app.pad_used) = (super_moves, touch, false);
+        (app.touch, app.pad_used) = (touch, false);
         app.set_egg(false);
         let mut scene = make(app);
         for _ in 0..30 {

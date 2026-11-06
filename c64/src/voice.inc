@@ -38,4 +38,8 @@ WIN_PAGES   = 16
 COUNT_FRAMES = 3 * 50           ; conto alla rovescia di 3 secondi prima della prima battuta
 VOICE_COUNT = $FFC0             ; 3 byte nella RAM sotto il KERNAL, dopo i caratteri del BULLET
 
+; Volume del SID scelto nel menu (VOLUME, 0-15; sid_vol in video.s): finita la voce, il SID torna
+; a questo volume invece che a 15.
+VOICE_VOL = $FFF3
+
 VOICE_PAGES = 16                ; pagine copiate dalla cartuccia: da VOICE_BASE a VOICE_END

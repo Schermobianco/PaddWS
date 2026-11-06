@@ -82,7 +82,7 @@
     },
     "crt_effects": {
         "enabled": true,
-        "resolution_scale": 1.0,
+        "resolution_scale": 2.5,
         "hard_scan": -8.0,
         "hard_pix": -3.0,
         "warp_x": 0.015,

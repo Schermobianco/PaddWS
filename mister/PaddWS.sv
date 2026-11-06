@@ -56,15 +56,15 @@ assign VIDEO_ARY = (!ar) ? 12'd3 : 12'd0;
 localparam CONF_STR = {
 	"PaddWS;;",
 	"-;",
-	"O[13:12],Game type,Classic,EVO,NEXT,Challenge;",
+	"O[13:12],Game type,Challenge,NEXT,EVO,Classic;",
 	"O[15:14],Players,Two,One,Vs CPU;",
-	"O[25],Super moves,Off,On;",
 	"O[7],Free play,Off,On;",
 	"O[9:8],Difficulty,Normal,Hard,Expert,Easy;",
 	"O[10],Scores,Upright,Facing players;",
 	"O[11],Attract sound,On,Off;",
 	"O[23],Sound,SID 8580,SID 6581;",
-	"O[26],Music,On,Off;",
+	"O[31:28],Music volume,100%,90%,80%,70%,60%,50%,40%,30%,20%,10%,0%;",
+	"O[35:32],Effects volume,100%,90%,80%,70%,60%,50%,40%,30%,20%,10%,0%;",
 	"O[27],Autosave scores,On,Off;",
 	"O[17:16],White level,100%,87%,75%,62%;",
 	"O[19:18],Paddle control,Joystick,Paddle,Spinner;",
@@ -143,17 +143,22 @@ pll pll
 
 ///////////////////////   PARTITA   //////////////////////////////
 
-wire [1:0] game_type = status[13:12];      // 0 Classic, 1 EVO, 2 NEXT, 3 CHALLENGE
+wire [1:0] game_type = ~status[13:12];     // 0 Classic, 1 EVO, 2 NEXT, 3 CHALLENGE (l'OSD parte da Challenge)
 wire [1:0] players_mode = status[15:14];   // 0 due, 1 uno, 2 contro la CPU (3 da un CFG vecchio: pong_top)
 wire free_play = status[7];
 wire [1:0] difficulty = status[9:8] + 2'd1;   // l'OSD parte da Normal (0): 0 facile .. 3 esperto
 wire upright = !status[10];       // di default dritti: non si presume un tavolo
 wire attract_mute = status[11];
-wire music_off = status[26];                 // nessuna canzone del SID (effetti e voci sì)
+// volumi della musica e degli effetti (voci comprese): il passo, 0 = 100% .. 10 = 0% (pong_sid). Il
+// bit 26 (Music: On/Off fino alla 4.0.0-beta.19) resta libero, ma nei CFG vecchi può valere 1
+wire [3:0] music_vol = status[31:28];
+wire [3:0] fx_vol = status[35:32];
 // Sound è il bit 23: un CFG di prima con Samples (bit 24:23 = 2) suona con il SID 8580. Il bit 24
 // resta libero ma nei CFG vecchi può valere 1: non va riusato
 wire sid_6581 = status[23];
-wire super_moves = status[25];               // mosse speciali in NEXT e CHALLENGE (dalla partita successiva)
+// mosse speciali sempre accese in NEXT e CHALLENGE: il bit 25 (l'opzione Super moves fino alla
+// 4.0.0-beta.19) resta libero, ma nei CFG vecchi può valere 1
+wire super_moves = 1'b1;
 
 // cambiare modalità o numero di giocatori riporta all'attract
 reg [3:0] mode_q = 4'b0000;
@@ -183,7 +188,8 @@ pong_top pong
 	.super_moves(super_moves),
 	.upright(upright),
 	.attract_mute(attract_mute),
-	.music_off(music_off),
+	.music_vol(music_vol),
+	.fx_vol(fx_vol),
 	.sid_6581(sid_6581),
 	.joy0(joy0),
 	.joy1(joy1),

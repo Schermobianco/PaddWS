@@ -15,6 +15,29 @@ crea il commit e il tag `vX.Y.Z`.
 ## [Non rilasciato]
 
 ### Aggiunto
+- PC, Raspberry e web: le voci **MUSIC VOLUME** ed **EFFECTS VOLUME** del menu, da 0% a 100% a
+  passi del 10% (`game.music_volume`, `game.effects_volume`, 100 di default), al posto di MUSIC:
+  ON/OFF. Destra e sinistra alzano e abbassano fermandosi agli estremi, la conferma (Invio, tocco,
+  click, encoder) alza e dopo il 100% torna a 0%. Il guadagno è il quadrato del valore (50% = un
+  quarto), così i passi si sentono simili. La musica cambia volume subito, anche a metà canzone, e
+  a 0% non suona; EFFECTS VOLUME vale anche per le voci "da SID" e fa sentire un colpo al volume
+  nuovo. Un `game.music: false` di prima (o le chiavi ancora più vecchie che spegnevano la musica)
+  diventa `music_volume: 0` e sparisce dal file.
+- MiSTer: le opzioni OSD **Music volume** ed **Effects volume** (bit 31:28 e 35:32), da 100%, il
+  default, a 0% a passi del 10%, al posto di *Music: On/Off* (bit 26, ora libero). Ogni voce del SID
+  ha un guadagno (`vol_gain` in `rtl/pong_sid.v`, 64 = 1, il quadrato del volume come nel gioco
+  Rust) che scala il suo inviluppo in `rtl/sid/sid_voice.sv` (moltiplicazione 8×7 in logica: i DSP
+  sono tutti usati), senza toccare il DC delle voci né il $D418, quindi senza colpi. Voci 1 e 2
+  della musica, voce 3 degli effetti mentre ne suona uno; la voce digitalizzata (voci 2 e 3) e le
+  voci di partita seguono gli effetti. A 0% la musica non parte proprio. Al 100% tutto è come
+  prima: gli effetti WAV registrati da `mister/sim/sid/render.ps1` restano identici.
+- C64: la voce **VOLUME** del menu, da 0% a 100% a passi del 10% (100% all'accensione), per
+  musica ed effetti insieme: il SID ha un solo volume. I passi vanno sui livelli di `$D418` (0, 1,
+  2, 3, 4, 5, 7, 8, 10, 12, 15, più fitti in basso); il volume vale subito, anche a metà canzone, e
+  il player lo mette anche nelle scritture di `$D418` degli strumenti nel filtro (`sid_set_vol`),
+  quindi al 100% le scritture restano quelle del player Verilog. Dopo una voce digitalizzata il
+  SID torna al volume del menu (`VOICE_VOL` = $FFF3) invece che a 15; le voci stesse, che usano
+  `$D418` per i campioni, restano al loro livello. `paddws-c64 ui` prova passi, testo e `$D418`.
 - Web, **schermo intero sui dispositivi touch** (`rust/web/fullscreen.js`): il primo tocco porta
   la pagina a schermo intero (il browser lo concede solo dentro un gesto) e su Android blocca
   l'orientamento in orizzontale; quel tocco non arriva al gioco. Se si esce, il tocco dopo ci
@@ -584,6 +607,19 @@ crea il commit e il tag `vX.Y.Z`.
   Ora si vede solo a lampi come su PC e MiSTer, senza effetti né coda, che la tradirebbero.
 
 ### Modificato
+- **Si parte in NEXT con CHALLENGE**: PC, Raspberry e web di default (`game.game_type: "next"`,
+  `game.players: "challenge"`; chi ha già salvato una scelta la ritrova), il MiSTer con *Game
+  type: Challenge* come primo valore dell'OSD (ora Challenge, NEXT, EVO, Classic: un CFG di prima
+  legge i valori al contrario), il C64 a ogni accensione.
+- **Mosse speciali sempre accese** in NEXT, nella CHALLENGE e nelle loro demo, su PC, Raspberry,
+  web, MiSTer e C64; quindi la schermata HOW TO PLAY compare prima di ogni partita NEXT (in
+  CHALLENGE solo prima del primo livello, come prima).
+- Web: **niente più volumi ridotti sui telefoni e sui tablet** (effetti all'8%, musica al 4% e
+  canzoni pareggiate a quella dei temi): si sente come su PC, e i volumi si abbassano dal menu.
+- PC, Raspberry e web: filtro CRT con **`crt_effects.resolution_scale` 2.5** di default (576 righe
+  emulate invece di 1440); un `1.0` rimasto nel file, il default di prima, passa
+  da solo a 2.5. Anche il `padd_config.json` del pacchetto, letto pure dalla versione Python, ha
+  2.5.
 - Web, **campo più largo sui telefoni**: la larghezza segue la tela finché si è nell'attract
   (rotazione del telefono, barre di Safari) invece di restare quella dell'apertura della pagina,
   spesso ancora in verticale; sui telefoni restano ai lati due fasce per le dita del 7% ciascuna,
@@ -837,6 +873,9 @@ crea il commit e il tag `vX.Y.Z`.
   circa 7.300 cicli. `paddws-c64 game` prova anche 4.000 scatti a caso contro il core.
 
 ### Rimosso
+- PC, Raspberry e web: le voci **SUPER MOVES** e **MUSIC** del menu (al posto di MUSIC i due
+  volumi); la chiave `next.super_moves` sparisce dal file. MiSTer: le opzioni OSD *Super moves*
+  (il bit 25 dello status resta libero) e *Music: On/Off* (al suo posto i due volumi). C64: la voce SUPER MOVES del menu (al suo posto VOLUME).
 - PC, Raspberry e web: la voce **SOUND: SID / SAMPLES** e i campioni originali (normali e
   rallentati per il bullet time): effetti sempre del SID. Le voci di partita (urla, READY, GO e il
   nome dell'avversario) restano.

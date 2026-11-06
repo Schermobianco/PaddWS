@@ -68,6 +68,11 @@ fx_start:   .word 0
 vbase:      .byte 0, 7, 14, 14              ; primo registro della voce di ogni canale
 ; arpeggi: semitoni per i passi 0-2 (modo 0 spento, 1 minore, 2 maggiore, 3 ottava)
 arp_table:  .byte 0, 0, 0,  0, 3, 7,  0, 4, 7,  0, 12, 12
+; VOLUME del menu (opt_volume, da 0 a 100% a passi del 10%): il volume del SID ($D418, 0-15),
+; più fitto in basso come il guadagno al quadrato del gioco Rust, senza due passi uguali
+VOLUME_STEPS = 11
+vol_levels: .byte 0, 1, 2, 3, 4, 5, 7, 8, 10, 12, 15
+.assert * - vol_levels = VOLUME_STEPS, error, "un volume del SID per passo"
 
 .segment "ZEROPAGE"
 sp:      .res 2                 ; lettura della traccia
@@ -127,6 +132,10 @@ sid_vm:      .res 1             ; copia di $D418, valida con sid_rf diverso da 0
     bpl :-
     lda #1
     sta sid_new
+    lda #VOLUME_STEPS - 1       ; VOLUME 100% (play_main non lo cambia: resta per i banchi di prova)
+    sta opt_volume
+    lda #$0f
+    sta sid_vol
     rts
 .endproc
 .segment "CODE"
@@ -284,9 +293,9 @@ hush:
     inx
     cpx #3
     bne :--
-    ; volume al massimo, senza filtro: modo spento, nessuna voce nel filtro, la scivolata del
-    ; taglio ferma (il taglio resta)
-    lda #$0f
+    ; volume del menu (sid_vol, 15 al 100%), senza filtro: modo spento, nessuna voce nel filtro,
+    ; la scivolata del taglio ferma (il taglio resta)
+    lda sid_vol
     sta SID + $18
     ldx #0
     stx SID + $17
@@ -584,8 +593,7 @@ filter:
     sta sid_vm
     jsr write_cut
     stx SID + $17
-    lda sid_vm
-    sta SID + $18
+    jmp sid_set_vol             ; $D418 con il modo del filtro e il volume del menu
 :   rts
 
 ; puntatore della traccia avanti di un byte
@@ -640,6 +648,28 @@ full:
 
 .segment "BSS"
 sid_cmd_byte: .res 1
+
+; VOLUME del menu cambiato (opt_volume): il volume del SID nuovo vale subito, anche per la canzone
+; che suona. X cambia.
+.segment "CODE"
+.proc sid_volume
+    ldx opt_volume
+    lda vol_levels,x
+    sta sid_vol
+.endproc
+
+; $D418 = il modo del filtro della canzone (sid_vm, se uno strumento nel filtro l'ha scritto) con
+; il volume del menu al posto del suo (15 negli strumenti, tools/gen_sid_music.py): al 100% le
+; scritture sono quelle del player del MiSTer.
+.proc sid_set_vol
+    lda sid_rf
+    beq :+
+    lda sid_vm
+    and #$f0
+:   ora sid_vol
+    sta SID + $18
+    rts
+.endproc
 
 ; Comando di una traccia di SID_SONG_EGG, che resta nella cartuccia (nella finestra $8000-$9FFF):
 ; i suoi byte (al più 3, Y = 0-2 in read_cmd) dalla ROML del banco END_BANK a egg_buf, e (sp) lì.

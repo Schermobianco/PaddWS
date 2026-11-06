@@ -301,24 +301,18 @@ impl PaddlePick {
                     let i = free as usize;
                     app.paddles[i] = Some(PaddleKind::ALL[self.cursor[i]]);
                     let run = app.run.as_mut().expect("sfida senza CHALLENGE");
-                    if app.cfg.next.super_moves && !std::mem::replace(&mut run.howto[i], true) {
+                    if !std::mem::replace(&mut run.howto[i], true) {
                         return Some(Scene::HowTo(crate::moves_ui::HowTo::duel(app)));
                     }
                     return Some(Scene::Game(Box::new(Play::duel(app))));
                 }
                 app.paddles = self.cursor.map(|i| Some(PaddleKind::ALL[i]));
-                // con le mosse speciali prima la loro presentazione (in CHALLENGE solo qui, prima
-                // del primo incontro)
-                if app.cfg.next.super_moves {
-                    if let Some(run) = &mut app.run {
-                        run.howto[run.side as usize] = true;
-                    }
-                    return Some(Scene::HowTo(crate::moves_ui::HowTo::new(app)));
+                // prima la presentazione delle mosse speciali (in CHALLENGE solo qui, prima del
+                // primo incontro)
+                if let Some(run) = &mut app.run {
+                    run.howto[run.side as usize] = true;
                 }
-                if app.run.is_some() {
-                    return Some(Scene::Intro(crate::challenge_ui::Intro::new(app)));
-                }
-                return Some(Scene::Game(Box::new(Play::new(app))));
+                return Some(Scene::HowTo(crate::moves_ui::HowTo::new(app)));
             }
             return None;
         }

@@ -20,7 +20,7 @@
 // scelte di NEXT), 5 rapido (B), 6 seleziona bonus (X), 7 usa bonus (Y), 8 start, 9 moneta. Tastiera: 5 = moneta,
 // 1 = start, come nei core arcade.
 // Come nel gioco originale un doppio tocco veloce su o giù dà l'accelerazione rapida.
-// Mosse speciali (opzione Super moves, NEXT e CHALLENGE): prima della partita la schermata HOW TO
+// Mosse speciali (NEXT e CHALLENGE, sempre accese da PaddWS.sv): prima della partita la schermata HOW TO
 // PLAY (howto_render, con i comandi del controllo scelto nell'OSD), in partita i gesti dei giocatori
 // (modulo move_gesture in fondo) diventano il codice della mossa per un tick; barra, nomi delle mosse
 // ed effetti li disegna next_render.
@@ -57,7 +57,8 @@ module pong_top #(
     input  wire        super_moves,    // mosse speciali in NEXT e CHALLENGE (anche nella loro demo)
     input  wire        upright,        // punteggi e scritte dritti invece che verso i giocatori
     input  wire        attract_mute,   // attract e demo senza suoni (gettone e Start si sentono)
-    input  wire        music_off,      // nessuna canzone del SID (effetti e voci sì)
+    input  wire [3:0]  music_vol,      // volume della musica: passo dell'OSD, 0 = 100% .. 10 = 0% (nessuna canzone)
+    input  wire [3:0]  fx_vol,         // volume degli effetti e delle voci, come music_vol
     input  wire        sid_6581,       // filtro del SID: 0 8580, 1 6581
     input  wire [31:0] joy0,
     input  wire [31:0] joy1,
@@ -1870,9 +1871,11 @@ wire sfx_slow = bul_on && game_sound && (mode == M_GAME || mode == M_DEMO) && !s
 // voci 1 e 2, la 3 resta agli effetti
 // (all'arrivo dello sfidante un ciclo di silenzio: la musica riparte anche se era già quella)
 // il numero del tema è in un registro, così la tabella dei livelli resta fuori dal percorso.
-// Opzione "Music: Off" (`music_off`): nessuna canzone, ovunque; restano gli effetti, la voce del nome
-// dell'avversario e le voci di partita. "Attract sound: Off" (`attract_mute`) toglie invece tutto
-// l'audio dell'attract e della demo (musica ed effetti, non gettone e Start): le due si sommano
+// Opzione "Music volume: 0%" (`music_off`): nessuna canzone, ovunque; restano gli effetti, la voce del
+// nome dell'avversario e le voci di partita. Gli altri volumi li applica pong_sid. "Attract sound: Off"
+// (`attract_mute`) toglie invece tutto l'audio dell'attract e della demo (musica ed effetti, non
+// gettone e Start): le due si sommano
+wire       music_off = music_vol >= 4'd10;
 reg  [3:0] theme_song = SID_SONG_THEME0;
 reg        theme_on = 1'b0;
 always @(posedge clk) begin
@@ -1905,6 +1908,7 @@ wire [3:0] sid_song = ch_join || music_off ? 4'd0 :
 reg        call_go = 1'b0;
 reg  [3:0] call_id = VOICE_READY;
 wire [3:0] call_level;
+wire [6:0] fx_gain;                    // volume degli effetti (pong_sid), 64 = 1: anche per le voci di partita
 wire       you_win = game_over_now && mode == M_GAME && two && match_cpu && ((score0 >= score1) != ch_cpu_left) &&
                      !(ch_active && ch_level == CH_LEVELS - 1);
 always @(posedge clk) begin
@@ -1941,20 +1945,23 @@ pong_sid #(.ROM_FILE(SID_ROM), .VOICE_FILE(VOICE_ROM)) sid (
     .call_go(call_go),
     .call_id(call_id),
     .call_level(call_level),
+    .music_vol(music_vol),
+    .fx_vol(fx_vol),
+    .fx_gain(fx_gain),
     .sample(sid_sample)
 );
 
 // Uscita: il SID (con il nome dell'avversario già nel suo volume, $D418) più le voci di partita a 4
-// bit tenute (±16.384: sopra effetti e musica del SID), con entrambi i filtri. Somma a 18 bit e
-// saturazione.
-wire signed [17:0] call_add = ($signed({1'b0, call_level}) - 18'sd8) <<< 11;
+// bit tenute (±16.384: sopra effetti e musica del SID) per il volume degli effetti (fx_gain / 64), con
+// entrambi i filtri. Somma a 18 bit e saturazione.
+wire signed [17:0] call_add = (($signed({1'b0, call_level}) - 18'sd8) * $signed({1'b0, fx_gain})) <<< 5;
 wire signed [17:0] audio_mix = {{2{sid_sample[15]}}, sid_sample} + call_add;
 assign audio = (audio_mix[17:15] == 3'b000 || audio_mix[17:15] == 3'b111) ? audio_mix[15:0] :
                {audio_mix[17], {15{~audio_mix[17]}}};
 
 endmodule
 
-// Gesti delle mosse speciali di un giocatore (NEXT con l'opzione Super moves): riconosciuti qui, nei
+// Gesti delle mosse speciali di un giocatore (NEXT, con super_moves acceso): riconosciuti qui, nei
 // comandi, e mai nella logica di gioco, che riceve solo il codice della mossa per un tick.
 //
 // Joystick, come nei picchiaduro (avanti = verso l'avversario, a destra per il giocatore di sinistra):
