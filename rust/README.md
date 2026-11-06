@@ -1,7 +1,7 @@
 # PADD WS – versione Rust
 
 Versione nativa del gioco: un unico eseguibile (font, suoni e grafica dell'attract inclusi), per
-Windows, Linux x86_64 e Linux ARM64 (Raspberry Pi). Stato: **4.0.0-alpha.2**.
+Windows, Linux x86_64, Linux ARM64 e ARM a 32 bit (Raspberry Pi). Stato: **4.0.0-alpha.2**.
 
 ## Compilare ed eseguire
 

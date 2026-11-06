@@ -19,15 +19,15 @@ Opzioni: `-Publish` (pubblica la release del tag con `gh`), `-NoCheck`, `-CheckO
 
 1. costruisce l'immagine `paddws-build` dal `Dockerfile` (solo la prima volta e quando cambia):
    Ubuntu 22.04 come i runner Linux della CI, con
-   - Rust con i target Linux x86_64, aarch64 (compilazione incrociata), Windows (MinGW) e wasm32;
+   - Rust con i target Linux x86_64, aarch64 e armv7 (compilazione incrociata), Windows (MinGW) e wasm32;
    - PowerShell per `tools/build-web.ps1`;
    - cc65;
    - Python con le dipendenze della versione Python e pytest;
 2. nel container `forge-build` (`build-all.sh`) fa:
    - i controlli della CI: clippy `-D warnings` e test Rust, banco di prova del C64 contro il core
      Rust, tracce MiSTer, pytest;
-   - i pacchetti Windows, Linux x86_64 e aarch64 (glibc al massimo 2.36, per Raspberry Pi OS
-     Bookworm), web, Python e C64;
+   - i pacchetti Windows, Linux x86_64, aarch64 e armv7 (glibc al massimo 2.36, per Raspberry Pi OS
+     Bookworm a 64 e a 32 bit), web, Python e C64;
 3. sintetizza il core MiSTer con Quartus (`mister/synth.sh`, immagine fissata per digest in
    `mister/quartus-image.txt`) e fa lo zip della SD.
 

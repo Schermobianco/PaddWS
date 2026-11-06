@@ -41,6 +41,9 @@ if [ -z "$NOCHECK" ]; then
     cd rust
     cargo clippy --all-targets --release -q -- -D warnings
     cargo clippy --release -q -p paddws --target wasm32-unknown-unknown -- -D warnings
+    # Raspberry Pi a 32 bit (Pi 2 v1.1): usize e puntatori a 32 bit
+    PKG_CONFIG_ALLOW_CROSS=1 PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig \
+        cargo clippy --release -q -p paddws --target armv7-unknown-linux-gnueabihf -- -D warnings
     cargo test --release -q > /tmp/test.log 2>&1 || { cat /tmp/test.log; exit 1; }
     grep -E "test result" /tmp/test.log | awk '{ p += $4; f += $6 } END { print "  test: " p " passati, " f " falliti" }'
     cd ..
@@ -87,6 +90,13 @@ step "Linux aarch64 (compilazione incrociata)"
 glibc aarch64-linux-gnu-objdump rust/target/aarch64-unknown-linux-gnu/release/paddws
 stage linux-aarch64 rust/target/aarch64-unknown-linux-gnu/release/paddws padd_config.json rust/README.md $licenses
 tardir "paddws-$version-linux-aarch64"
+
+step "Linux armv7 (compilazione incrociata, Raspberry Pi OS a 32 bit)"
+(cd rust && PKG_CONFIG_ALLOW_CROSS=1 PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig \
+    cargo build --release -q -p paddws --target armv7-unknown-linux-gnueabihf)
+glibc arm-linux-gnueabihf-objdump rust/target/armv7-unknown-linux-gnueabihf/release/paddws
+stage linux-armv7 rust/target/armv7-unknown-linux-gnueabihf/release/paddws padd_config.json rust/README.md $licenses
+tardir "paddws-$version-linux-armv7"
 
 step "web"
 CI=1 pwsh -NoProfile -File tools/build-web.ps1 > /tmp/web.log 2>&1 || { tail -20 /tmp/web.log; exit 1; }

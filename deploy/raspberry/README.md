@@ -13,21 +13,22 @@ Sul cabinato gira la versione Python oppure la versione Rust: hanno lo stesso
 
 ## Modelli
 
-La versione Rust usa l'eseguibile `linux-aarch64` della release, che richiede Raspberry Pi OS **a
-64 bit** (Bookworm o successivo).
+La versione Rust usa l'eseguibile `linux-aarch64` della release con Raspberry Pi OS **a 64 bit**
+oppure `linux-armv7` con Raspberry Pi OS **a 32 bit** (Bookworm o successivo in tutti e due i casi).
 
 | modello | versione Rust | note |
 |---|---|---|
 | Pi 5, Pi 4, Pi 400 | sì | il target principale |
 | Pi 3, 3B+, 3A+, Zero 2 W | sì, con il sistema a 64 bit | grafica VideoCore IV (OpenGL 2.1): basta al gioco, meglio tenere spento il filtro CRT; non ancora provato su un Pi 3 vero |
 | Pi 2 v1.2 (BCM2837, come il Pi 3) | sì, con il sistema a 64 bit | come il Pi 3 |
-| Pi 2 v1.1 (BCM2836) | no | processore solo a 32 bit: servirebbe un eseguibile `armv7` a 32 bit, che oggi non c'è (anche per chi usa il Pi 3 con il sistema a 32 bit) |
+| Pi 2 v1.1 (BCM2836) | sì, con il sistema a 32 bit e l'eseguibile `linux-armv7` | processore solo a 32 bit; grafica VideoCore IV come il Pi 3; non ancora provato su un Pi 2 vero |
 | Pi 1, Zero, Zero W | no | troppo vecchi (ARMv6) |
 
 La revisione del Pi 2 è scritta sulla scheda ("V1.1" o "V1.2"); da terminale,
 `cat /proc/device-tree/model` scrive per esteso modello e revisione (per esempio "Raspberry Pi 2
-Model B Rev 1.1"). Per sapere se il sistema è a 64 bit: `uname -m` risponde `aarch64` (64 bit)
-oppure `armv7l` (32 bit). Gli encoder si leggono dai GPIO del kernel su tutti i modelli.
+Model B Rev 1.1"). Per sapere se il sistema è a 64 bit: `uname -m` risponde `aarch64` (64 bit,
+eseguibile `linux-aarch64`) oppure `armv7l` (32 bit, eseguibile `linux-armv7`, anche per un Pi 3
+con il sistema a 32 bit). Gli encoder si leggono dai GPIO del kernel su tutti i modelli.
 
 ## Collegamenti
 
@@ -91,6 +92,7 @@ con STEER la manopola girata lontano dalla racchetta (ferma) guida la palla.
 
 ```sh
 # dall'ultima release: paddws-X.Y.Z-linux-aarch64.tar.gz (Raspberry Pi OS a 64 bit)
+# oppure paddws-X.Y.Z-linux-armv7.tar.gz (Raspberry Pi OS a 32 bit, Pi 2 v1.1)
 mkdir -p /home/pi/paddws-rust
 tar xzf paddws-*-linux-aarch64.tar.gz --strip-components=1 -C /home/pi/paddws-rust
 ```
