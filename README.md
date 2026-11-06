@@ -47,7 +47,7 @@ Regole, bonus, racchette, mosse e comandi: **[Come si gioca](docs/come-si-gioca.
 | **Rust** (macroquad), un eseguibile | Windows, Linux x86_64, Raspberry Pi (Linux ARM64 e ARM a 32 bit) | `paddws-X.Y.Z-windows-x86_64.zip`, `-linux-x86_64.tar.gz`, `-linux-aarch64.tar.gz`, `-linux-armv7.tar.gz`: si avvia direttamente |
 | **Core MiSTer** FPGA, 320×240 a 15 kHz | DE10-Nano con MiSTer | `PaddWS_MiSTer_AAAAMMGG.zip`: si scompatta nella radice della SD (`/media/fat`), compare tra i titoli arcade |
 | **Commodore 64** (anteprima, PAL), assembly 6502 | C64, C64 Ultimate, VICE | `paddws-X.Y.Z-c64.zip`: la cartuccia EasyFlash `paddws.crt` |
-| **Python** (Arcade 3.3), la prima versione | Windows, Linux, macOS, Raspberry Pi | `paddws-X.Y.Z-python.zip`: `pip install -r requirements.txt`, poi `python main.py` |
+| **Python** (Arcade 3.3), la prima versione | Windows, Linux, macOS, Raspberry Pi | `paddws-X.Y.Z-python.zip`: `pip install -r python/requirements.txt`, poi `python python/main.py` |
 
 Tutto è nelle [release](https://github.com/Schermobianco/PaddWS/releases). La versione Python è
 congelata: ha CLASSIC ed EVO, senza CPU, NEXT né CHALLENGE. Cosa c'è su ogni versione:
@@ -71,6 +71,20 @@ Il core MiSTer e la versione C64 ne riproducono lo stato tick per tick, verifica
 Tutti i comandi, mouse come spinner ed encoder del cabinato compresi:
 [Come si gioca](docs/come-si-gioca.md#comandi).
 
+## Console da stampare
+
+[![Render del Deck montato](hardware/deck/previews/render.png)](hardware/deck/README.md)
+
+Il [Deck](hardware/deck/README.md) è una console da tavolo da stampare in 3D: un Raspberry Pi con
+il display ufficiale da 7", una manopola su encoder ottico a ogni capo e i pulsanti DASH, SELECT e
+USE. Ci sono il modello per SolidCraft e in STEP, il progetto per Bambu Studio con i pezzi già divisi
+nei piatti (nessun supporto, un colore per piatto) e le istruzioni di montaggio.
+
+| | |
+|---|---|
+| ![Il Deck visto dall'alto](hardware/deck/previews/top.png) | ![Il Deck con il piano trasparente](hardware/deck/previews/inside.png) |
+| Dall'alto: manopole con le 20 tacche, DASH, SELECT e USE ai due capi | Dentro: colonnine, barre del display e code di rondine tra le due metà |
+
 ## Documentazione
 
 - [Come si gioca](docs/come-si-gioca.md): modalità, bonus, racchette, mosse speciali, CHALLENGE,
@@ -80,6 +94,7 @@ Tutti i comandi, mouse come spinner ed encoder del cabinato compresi:
 - [Sviluppo](docs/sviluppo.md): struttura, compilazione, test e verifiche, release.
 - Le singole versioni: [Rust](rust/README.md), [core MiSTer](mister/README.md),
   [Commodore 64](c64/README.md), [cabinato Raspberry Pi](deploy/raspberry/README.md).
+- [Console da stampare](hardware/README.md): il Deck, pezzi, componenti e montaggio.
 - Le novità di ogni versione: [CHANGELOG.md](CHANGELOG.md).
 
 ## Licenza

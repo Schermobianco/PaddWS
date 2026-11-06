@@ -3,7 +3,7 @@ from pathlib import Path
 
 import paddws
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 CHANGELOG = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
 PRERELEASE = "-" in paddws.__version__
 

@@ -3,13 +3,15 @@
 import sys
 from pathlib import Path
 
-# PyInstaller estrae i dati inclusi sotto sys._MEIPASS
-ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+# il pacchetto sta in python/paddws: asset e configurazione, comuni alle altre versioni, due
+# cartelle sopra (nel repository e nello zip della release); PyInstaller li estrae sotto sys._MEIPASS
+PACKAGE = Path(__file__).resolve().parent
+ROOT = Path(getattr(sys, "_MEIPASS", PACKAGE.parent.parent))
 ASSETS = ROOT / "assets"
 FONTS = ASSETS / "fonts"
 IMAGES = ASSETS / "images"
 # effetti della versione Python (tools/gen_sounds.py e tools/gen_coin_sound.py): li usa solo lei
-SOUNDS = ROOT / "paddws" / "sounds"
+SOUNDS = PACKAGE / "sounds"
 ICONS = ASSETS / "icons"
 ATTRACT = ASSETS / "attract"
 DEFAULT_CONFIG = ROOT / "padd_config.json"

@@ -21,7 +21,9 @@ crea il commit e il tag `vX.Y.Z`.
   2.36); i controlli fanno anche clippy per `armv7-unknown-linux-gnueabihf`.
 - **`hardware/deck`**: il Deck, una console da tavolo stampata in 3D per il Raspberry Pi con il display
   ufficiale da 7", due encoder ottici e i pulsanti DASH, SELECT e USE: modello SolidCraft (`deck.sc`),
-  STEP, progetto per Bambu Studio con i 5 piatti (`deck.3mf`), pezzi separati e istruzioni di montaggio.
+  STEP, progetto per Bambu Studio con i 6 piatti (`deck-bambu-studio.3mf`), pezzi separati e istruzioni di montaggio.
+  Il piano si stampa a faccia in giù (il sopra prende la texture della piastra), con la battuta del vetro
+  in una cornice incollata da sotto e i tubi degli inserti sotto il piano.
 - PC, Raspberry e web: le voci **MUSIC VOLUME** ed **EFFECTS VOLUME** del menu, da 0% a 100% a
   passi del 10% (`game.music_volume`, `game.effects_volume`, 100 di default), al posto di MUSIC:
   ON/OFF. Destra e sinistra alzano e abbassano fermandosi agli estremi, la conferma (Invio, tocco,
@@ -614,6 +616,12 @@ crea il commit e il tag `vX.Y.Z`.
   Ora si vede solo a lampi come su PC e MiSTer, senza effetti né coda, che la tradirebbero.
 
 ### Modificato
+- Struttura: la versione Python sta tutta in **`python/`** (il pacchetto `python/paddws`, i test,
+  `main.py`, `pyproject.toml`, `requirements.txt`), accanto a `rust/`, `c64/` e `mister/`; asset e
+  `padd_config.json` restano nella radice, comuni a tutte le versioni. Il nome del pacchetto non cambia
+  (`python -m paddws`). Lo zip della release ha la stessa struttura: `pip install -r
+  python/requirements.txt`, poi `python python/main.py`. Sul Raspberry, chi aveva installato la
+  versione Python da un clone del repository rifà `pip install -e "./python[pi]"`.
 - **Si parte in NEXT con CHALLENGE**: PC, Raspberry e web di default (`game.game_type: "next"`,
   `game.players: "challenge"`; chi ha già salvato una scelta la ritrova), il MiSTer con *Game
   type: Challenge* come primo valore dell'OSD (ora Challenge, NEXT, EVO, Classic: un CFG di prima

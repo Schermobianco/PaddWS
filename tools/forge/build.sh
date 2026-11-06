@@ -34,7 +34,7 @@ trap 'fixown; result fallita' EXIT
 
 echo "== immagine paddws-build"
 ctx=$(mktemp -d)
-cp "$src/tools/forge/Dockerfile" "$src/requirements.txt" "$ctx/"
+cp "$src/tools/forge/Dockerfile" "$src/python/requirements.txt" "$ctx/"
 docker build -q -t paddws-build "$ctx" > /dev/null
 rm -rf "$ctx"
 

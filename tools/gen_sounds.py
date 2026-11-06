@@ -1,4 +1,4 @@
-"""Genera gli effetti sonori "classici" della versione Python: paddws/sounds/ping.wav, pong.wav,
+"""Genera gli effetti sonori "classici" della versione Python: python/paddws/sounds/ping.wav, pong.wav,
 boost.wav ed error.wav. Il gettone (coin.wav) lo genera tools/gen_coin_sound.py.
 
 Uso:
@@ -18,7 +18,7 @@ import wave
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "paddws" / "sounds"
+OUT = ROOT / "python" / "paddws" / "sounds"
 RATE = 48000
 # volume medio (rms) dei campioni di prima, così il mixer non va ritoccato
 TARGET_RMS = 0.245

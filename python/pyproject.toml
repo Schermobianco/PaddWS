@@ -25,3 +25,5 @@ include = ["paddws*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# il pacchetto si importa da questa cartella anche senza installarlo
+pythonpath = ["."]

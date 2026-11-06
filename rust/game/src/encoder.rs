@@ -1,5 +1,5 @@
 //! Encoder rotativi con pulsante del cabinato Raspberry Pi, come nella versione Python
-//! (`paddws/hardware.py`), più i pulsanti SELEZIONA e USA del bonus di NEXT.
+//! (`python/paddws/hardware.py`), più i pulsanti SELEZIONA e USA del bonus di NEXT.
 //!
 //! Encoder meccanici con scatti (KY-040, fino a 30 impulsi per giro): il contatore si muove a ogni
 //! scatto, come in Python. Encoder ottici senza scatti (360 o 600 impulsi per giro): conta ogni

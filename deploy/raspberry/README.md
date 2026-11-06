@@ -119,8 +119,12 @@ sudo systemctl enable --now pigpiod        # solo se si usano gli encoder
 git clone <repo> /home/pi/PaddWS            # oppure copiare la cartella
 cd /home/pi/PaddWS
 python3 -m venv .venv
-.venv/bin/pip install -e ".[pi]"
+.venv/bin/pip install -e "./python[pi]"
 ```
+
+Il pacchetto Python sta nella cartella `python/` del repository: chi aveva installato una
+versione precedente, con il pacchetto nella radice, dopo `git pull` rifà
+`.venv/bin/pip install -e "./python[pi]"`.
 
 In `padd_config.json` impostare `"encoder": {"enabled": true, ...}` con i pin corretti (gli
 stessi dello schema; i pulsanti SELEZIONA e USA la versione Python non li usa).

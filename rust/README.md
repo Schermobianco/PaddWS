@@ -217,7 +217,7 @@ core; ogni campione d'uscita è la media dei cicli che copre, come la registrazi
   sul MiSTer e sul C64, sono in `sid/src/engine.rs` e nel CHANGELOG.
 - Gli effetti restano campioni WAV registrati dal core simulato (`assets/sounds/sid/`), con le
   copie rallentate per il bullet time. Non c'è più la scelta dei campioni originali: quelli
-  (`paddws/sounds/`) servono solo alla versione Python.
+  (`python/paddws/sounds/`) servono solo alla versione Python.
 - **MUSIC VOLUME** (`game.music_volume`) ed **EFFECTS VOLUME** (`game.effects_volume`), da 0 a
   100 a passi di 10: il guadagno è il quadrato del valore (50% = un quarto, circa -12 dB), così i
   passi si sentono simili. La musica cambia volume subito (`SidMusic::set_gain`), a 0 non suona;

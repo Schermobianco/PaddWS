@@ -4,7 +4,7 @@ Uso:
     python tools/release.py patch|minor|major|X.Y.Z|X.Y.Z-alpha.N [--dry-run] [--trailer TESTO]
 
 Passi: controlla che il repository sia pulito e che il changelog abbia voci
-"Non rilasciato", aggiorna `paddws/__init__.py`, `rust/Cargo.toml` e `rust/Cargo.lock`,
+"Non rilasciato", aggiorna `python/paddws/__init__.py`, `rust/Cargo.toml` e `rust/Cargo.lock`,
 crea il commit "Versione X.Y.Z" e il tag annotato vX.Y.Z. Per una versione definitiva
 sposta le voci "Non rilasciato" nella nuova sezione del changelog con la data di oggi;
 le anteprime (X.Y.Z-alpha.N) le lasciano dove sono. I pacchetti li costruiscono
@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-VERSION_FILE = ROOT / "paddws" / "__init__.py"
+VERSION_FILE = ROOT / "python" / "paddws" / "__init__.py"
 CARGO_TOML = ROOT / "rust" / "Cargo.toml"
 CARGO_LOCK = ROOT / "rust" / "Cargo.lock"
 RUST_CRATES = ("paddws", "paddws-core", "paddws-trace", "paddws-c64", "paddws-mister-fw", "paddws-sid")

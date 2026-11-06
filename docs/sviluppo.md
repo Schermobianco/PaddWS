@@ -17,20 +17,22 @@ rust/            versione Rust: core deterministico (core), gioco anche web (gam
                  tracce (trace) e firmware RISC-V (mister-fw) del MiSTer, banco di prova del C64 (c64)
 mister/          core MiSTer: RTL Verilog, simulazione, progetto Quartus (framework Template_MiSTer)
 c64/             versione Commodore 64 in 6502 (anteprima), verificata contro il core Rust
-paddws/          versione Python
-  core/            logica di gioco pura (match, parametri, doppio tocco), senza dipendenze grafiche
-  app.py           finestra: scaling letterbox, audio, ritmo dei frame
-  attract.py       sequenza attract
-  scenes.py        attract, menu, partita
-  config.py        configurazione tipizzata, caricamento e salvataggio JSON
-  crt.py           filtro CRT
-  hardware.py      encoder (pigpio), rilevamento Raspberry Pi, spegnimento
+python/          versione Python
+  paddws/          il pacchetto
+    core/            logica di gioco pura (match, parametri, doppio tocco), senza dipendenze grafiche
+    app.py           finestra: scaling letterbox, audio, ritmo dei frame
+    attract.py       sequenza attract
+    scenes.py        attract, menu, partita
+    config.py        configurazione tipizzata, caricamento e salvataggio JSON
+    crt.py           filtro CRT
+    hardware.py      encoder (pigpio), rilevamento Raspberry Pi, spegnimento
+  tests/           test pytest
 assets/          font, immagini, suoni, icone, bitmap e tempi dell'attract (comuni a tutte le versioni)
 deploy/raspberry servizio systemd e configurazione di boot
+hardware/        console da stampare in 3D: il Deck (modello SolidCraft e STEP, progetto Bambu Studio)
 tools/           rilascio, ambiente Rust portable, generatori di icone, attract, suoni e ROM MiSTer,
                  musiche del SID (gen_sid_music.py, suonate dal SID Rust di rust/sid), scritte di
                  CHALLENGE, VM forge per le release
-tests/           test pytest della versione Python
 docs/            documentazione, schermate e icone
 ```
 
@@ -53,8 +55,8 @@ Versione Python:
 ```sh
 python -m venv .venv
 .venv\Scripts\activate            # Linux/macOS: source .venv/bin/activate
-pip install -e ".[dev]"
-python -m paddws                  # oppure: python main.py, oppure: paddws
+pip install -e "./python[dev]"
+python -m paddws                  # oppure: python python/main.py, oppure: paddws
 ```
 
 Opzioni: `--config FILE`, `--fullscreen` / `--windowed`, `--crt` / `--no-crt`, `--debug`.
@@ -106,7 +108,7 @@ workflow run` o `build_ongithub.bat`). Gli stessi controlli girano in locale con
 ## Versioni e release
 
 Numerazione [Semantic Versioning](https://semver.org/lang/it/), una sola per tutto il progetto:
-Python (`paddws/__init__.py`), Rust (`rust/Cargo.toml`), core MiSTer e versione C64 escono insieme
+Python (`python/paddws/__init__.py`), Rust (`rust/Cargo.toml`), core MiSTer e versione C64 escono insieme
 con lo stesso numero (un test controlla che quelli di Python e Rust coincidano). La versione
 compare nel menu, nel log all'avvio e con `--version`. Le modifiche sono descritte in
 [CHANGELOG.md](../CHANGELOG.md).

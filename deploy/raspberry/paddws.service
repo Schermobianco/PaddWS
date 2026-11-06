@@ -13,6 +13,7 @@ User=pi
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/home/pi/.Xauthority
 WorkingDirectory=/home/pi/PaddWS
+# il pacchetto è installato dalla cartella python/ (pip install -e "./python[pi]")
 ExecStart=/home/pi/PaddWS/.venv/bin/python -m paddws --fullscreen
 Restart=on-failure
 RestartSec=2

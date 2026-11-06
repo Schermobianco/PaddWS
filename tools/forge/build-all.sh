@@ -31,7 +31,9 @@ glibc() {
 if [ -z "$CHECKONLY" ]; then
     # per primo, prima che i test lascino __pycache__ nei sorgenti: gli stessi file della CI
     step "pacchetto Python"
-    stage python paddws assets deploy main.py padd_config.json requirements.txt pyproject.toml README.md \
+    # la cartella python/ intera, come nel repository: il pacchetto trova asset e configurazione due
+    # cartelle sopra di sé
+    stage python python assets deploy padd_config.json README.md \
         CHANGELOG.md LICENSE THIRD_PARTY.md
     zipdir "paddws-$version-python"
 fi
@@ -69,7 +71,7 @@ if [ -z "$NOCHECK" ]; then
     else echo "  attenzione: il firmware ricompilato su Linux ha byte diversi da mister/rtl/gen"; cp /tmp/fwgen/* mister/rtl/gen/; fi
 
     step "controlli Python: pytest"
-    python3 -m pytest -q -p no:cacheprovider tests 2>&1 | tail -1
+    (cd python && python3 -m pytest -q -p no:cacheprovider tests 2>&1 | tail -1)
 fi
 [ -n "$CHECKONLY" ] && exit 0
 

@@ -1,4 +1,4 @@
-"""Genera paddws/sounds/coin.wav: il "gettone" dei cabinati della versione Python, due note
+"""Genera python/paddws/sounds/coin.wav: il "gettone" dei cabinati della versione Python, due note
 in salita.
 
 Uso:
@@ -16,7 +16,7 @@ import wave
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "paddws" / "sounds" / "coin.wav"
+OUT = ROOT / "python" / "paddws" / "sounds" / "coin.wav"
 RATE = 48000
 
 # (frequenza in Hz, durata in secondi, decadimento: costante di tempo in secondi)

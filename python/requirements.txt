@@ -1,0 +1,3 @@
+# Versioni verificate; per l'installazione completa usare: pip install -e "./python[dev]" (dalla radice del repository)
+arcade==3.3.3
+pyglet==2.1.19

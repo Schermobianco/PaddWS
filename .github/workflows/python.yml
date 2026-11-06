@@ -23,19 +23,19 @@ jobs:
           python-version: "3.12"
 
       - name: Dipendenze
-        run: pip install -r requirements.txt pytest
+        run: pip install -r python/requirements.txt pytest
 
       - name: Test
-        run: python -m pytest -q
+        run: cd python && python -m pytest -q
 
       - name: Pacchetto
         id: package
         run: |
-          version=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' paddws/__init__.py)
+          version=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' python/paddws/__init__.py)
           dir="paddws-$version-python"
           # solo i file del repository: niente cache, ambienti virtuali o file di sviluppo
           git archive --format=zip --prefix="$dir/" -o "$dir.zip" HEAD \
-            paddws assets deploy main.py padd_config.json requirements.txt pyproject.toml README.md CHANGELOG.md             LICENSE THIRD_PARTY.md
+            python assets deploy padd_config.json README.md CHANGELOG.md             LICENSE THIRD_PARTY.md
           echo "archive=$dir.zip" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
 

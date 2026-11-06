@@ -3,7 +3,7 @@
 #   Rust (versione fissa) con i target Linux x86_64, Linux aarch64 e armv7 (compilazione incrociata),
 #   Windows x86_64 (MinGW), web (wasm32) e RISC-V (riscv32im, firmware del core MiSTer); PowerShell per tools/build-web.ps1 come nella CI;
 #   cc65 per il C64; Python con le dipendenze della versione
-#   Python (requirements.txt, copiato nel contesto da build.sh) e pytest.
+#   Python (python/requirements.txt, copiato nel contesto da build.sh) e pytest.
 # La costruisce tools/forge/build.sh quando manca o quando cambia questo file.
 FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
