@@ -65,12 +65,14 @@ cp -L /etc/resolv.conf $R/etc/resolv.conf
     find . -type f -exec install -m 644 "{}" "$R/{}" \;)
 mkdir -p $R/opt/paddws
 tar xzf "$GAME" -C $R/opt/paddws --strip-components=1 --no-same-owner
-# configurazione del Deck: encoder ottici da 600 impulsi, filtro CRT spento (VideoCore IV)
+# configurazione del Deck: encoder ottici da 600 impulsi, filtro CRT spento (VideoCore IV),
+# pallina e racchette al 125% (ZOOM: sul 7" a 100% la pallina è di 2 mm)
 python3 - "$R/opt/paddws/padd_config.json" "$R/opt/paddws/deck_config.json" <<'EOF'
 import json, sys
 cfg = json.load(open(sys.argv[1]))
 cfg["encoder"].update(enabled=True, pulses_per_revolution=600, debounce_us=0)
 cfg["crt_effects"]["enabled"] = False
+cfg["game"]["zoom"] = 125
 cfg["game"]["fullscreen"] = True
 with open(sys.argv[2], "w") as f:
     json.dump(cfg, f, indent=4)

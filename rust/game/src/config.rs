@@ -60,6 +60,9 @@ pub struct Game {
     pub effects_volume: u8,
     /// luminosità del bianco in percento: tutta l'immagine scala in proporzione
     pub white_level: u8,
+    /// spessore della pallina e delle racchette in percento (menu ZOOM), per gli schermi piccoli:
+    /// cambia anche gli urti, l'altezza delle racchette e il campo restano gli stessi
+    pub zoom: u16,
     /// punteggi dritti in alto, per un cabinato o un monitor normale, invece che rivolti ai
     /// giocatori seduti ai lati di un tavolo (come l'opzione Scores del MiSTer)
     pub scores_upright: bool,
@@ -89,6 +92,7 @@ impl Default for Game {
             music_volume: 100,
             effects_volume: 100,
             white_level: 100,
+            zoom: 100,
             scores_upright: true,
             game_type: "next".into(),
             players: "challenge".into(),
@@ -526,14 +530,15 @@ impl Config {
     /// Parametri per il core; la larghezza deve essere già risolta.
     pub fn tuning(&self) -> Tuning {
         let (b, p, bo) = (&self.ball, &self.paddle, &self.boost);
+        let zoom = self.zoom();
         Tuning {
             width: self.resolution.width,
             height: self.resolution.height,
-            ball_radius: b.radius,
-            ball_radius_boost: b.radius_boost,
-            ball_radius_boost_fwd: b.radius_boost_fwd,
+            ball_radius: b.radius * zoom,
+            ball_radius_boost: b.radius_boost * zoom,
+            ball_radius_boost_fwd: b.radius_boost_fwd * zoom,
             difficulty: self.game.difficulty,
-            pad_width: p.width,
+            pad_width: p.width * zoom,
             pad_height: p.height,
             pad_start_pos: p.start_pos,
             pad_forward_pos: p.forward_pos,
@@ -551,6 +556,12 @@ impl Config {
             tick_hz: paddws_core::TICK_HZ,
             next: self.next.tuning(),
         }
+    }
+
+    /// Fattore di `Game::zoom`, tenuto fra 50% e 300% (un valore assurdo nel file non rompe il
+    /// campo).
+    pub fn zoom(&self) -> f64 {
+        self.game.zoom.clamp(50, 300) as f64 / 100.0
     }
 }
 
@@ -760,6 +771,7 @@ pub fn save_preferences(path: &Path, cfg: &Config) {
     set(&mut data, "game", "music_volume", cfg.game.music_volume);
     set(&mut data, "game", "effects_volume", cfg.game.effects_volume);
     set(&mut data, "game", "white_level", cfg.game.white_level);
+    set(&mut data, "game", "zoom", cfg.game.zoom);
     set(&mut data, "game", "scores_upright", cfg.game.scores_upright);
     set(&mut data, "game", "game_type", cfg.game.game_type.as_str());
     set(&mut data, "game", "players", cfg.game.players.as_str());
@@ -941,6 +953,23 @@ mod tests {
         assert_eq!(t.next.ball_max_speed[1], 6.0);
         assert_eq!(t.next.slow_multiplier, NextTuning::default().slow_multiplier);
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn zoom_thickens_ball_and_paddles_only() {
+        let base = Config::default().tuning();
+        let mut cfg = Config::default();
+        cfg.game.zoom = 150;
+        let t = cfg.tuning();
+        assert_eq!(t.ball_radius, base.ball_radius * 1.5);
+        assert_eq!(t.ball_radius_boost, base.ball_radius_boost * 1.5);
+        assert_eq!(t.ball_radius_boost_fwd, base.ball_radius_boost_fwd * 1.5);
+        assert_eq!(t.pad_width, base.pad_width * 1.5);
+        assert_eq!(t.pad_height, base.pad_height);
+        assert_eq!(t.pad_max_speed, base.pad_max_speed);
+        // un valore assurdo nel file resta nei limiti
+        cfg.game.zoom = 5000;
+        assert_eq!(cfg.tuning().pad_width, base.pad_width * 3.0);
     }
 
     #[test]

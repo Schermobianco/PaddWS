@@ -587,6 +587,8 @@ pub(crate) fn coin_and_start(app: &mut App) -> Option<Scene> {
 const DIFFICULTY_NAMES: [&str; DIFFICULTY_LEVELS as usize] = ["EASY", "NORMAL", "HARD", "EXPERT"];
 /// Livelli del bianco proposti dal menu, in percento (gli stessi dell'OSD del MiSTer).
 const WHITE_LEVELS: [u8; 4] = [100, 87, 75, 62];
+/// Spessori di pallina e racchette proposti dal menu ZOOM, in percento (`Game::zoom`).
+const ZOOM_LEVELS: [u16; 5] = [100, 125, 150, 175, 200];
 
 /// Volume del menu dopo un passo (vedi `Menu::change`): +1 e -1 si fermano a 0 e a 100, 0 (la
 /// conferma) sale e dopo il 100 torna a 0. Un valore fuori dai passi (dal file) va al passo vicino.
@@ -649,6 +651,8 @@ enum Item {
     EffectsVolume,
     AttractSound,
     WhiteLevel,
+    /// spessore di pallina e racchette, per gli schermi piccoli
+    Zoom,
     Fullscreen,
     Crt,
     /// punteggi dritti o rivolti ai giocatori (tavolo)
@@ -721,6 +725,7 @@ impl Menu {
             Item::EffectsVolume,
             Item::AttractSound,
             Item::WhiteLevel,
+            Item::Zoom,
             Item::Fullscreen,
             Item::Crt,
             Item::Scores,
@@ -883,6 +888,7 @@ impl Menu {
             Item::EffectsVolume => format!("EFFECTS VOLUME : {}%", app.cfg.game.effects_volume),
             Item::AttractSound => format!("ATTRACT SOUND : {}", on_off(app.cfg.game.attract_sound)),
             Item::WhiteLevel => format!("WHITE LEVEL : {}%", app.cfg.game.white_level),
+            Item::Zoom => format!("ZOOM : {}%", app.cfg.game.zoom),
             Item::Fullscreen => format!("FULLSCREEN : {}", on_off(app.fullscreen())),
             Item::Crt => format!("CRT FILTER : {}", on_off(app.cfg.crt_effects.enabled)),
             Item::Scores => format!("SCORES : {}", if app.cfg.game.scores_upright { "UPRIGHT" } else { "FACING" }),
@@ -957,6 +963,17 @@ impl Menu {
                     .position(|&l| l == app.cfg.game.white_level)
                     .map_or(0, |i| i + 1);
                 app.cfg.game.white_level = levels[i % levels.len()];
+                config::save_preferences(&app.config_path, &app.cfg);
+            }
+            Item::Zoom => {
+                // 100 -> 125 -> 150 -> 175 -> 200 -> 100; vale dalla prossima partita (quella
+                // lasciata per il menu tiene i suoi parametri) e subito nelle demo
+                let i = ZOOM_LEVELS
+                    .iter()
+                    .position(|&z| z == app.cfg.game.zoom)
+                    .map_or(0, |i| i + 1);
+                app.cfg.game.zoom = ZOOM_LEVELS[i % ZOOM_LEVELS.len()];
+                app.params = Params::new(&app.cfg.tuning());
                 config::save_preferences(&app.config_path, &app.cfg);
             }
             Item::Fullscreen => app.toggle_fullscreen(),
@@ -1624,10 +1641,11 @@ impl Play {
     }
 
     /// Larghezza della striscia dietro la racchetta della CPU, dal bordo del campo fin quasi al
-    /// dorso della racchetta nella posizione di partenza.
+    /// dorso della racchetta nella posizione di partenza: si ferma prima del dorso di un quarto
+    /// della distanza della racchetta dal bordo, anche con lo ZOOM (10 pixel su 15 di default).
     fn join_strip(&self) -> f32 {
         let p = &self.game.params;
-        to_f32(p.pad_start_pos) - to_f32(p.pad_width)
+        to_f32(p.pad_start_pos) * 0.75 - to_f32(p.pad_width) / 2.0
     }
 
     /// Touch in CHALLENGE: un dito appoggiato nella zona dello sfidante (`in_join_zone`) e tenuto

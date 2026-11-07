@@ -32,6 +32,7 @@ proporzioni diverse compaiono le bande nere (`game.keep_aspect`) invece della de
 | `game.music_volume` | `100` | volume di tutte le musiche in percento, da 0 (nessuna musica) a 100 (menu **MUSIC VOLUME**, a passi del 10%). Prende il posto di `game.music` (e prima di `game.sid_sound` e `game.match_music`): se una di loro era `false` parte da 0 |
 | `game.effects_volume` | `100` | volume degli effetti e delle voci in percento (menu **EFFECTS VOLUME**) |
 | `game.white_level` | `100` | luminosità del bianco in percento (menu: 100, 87, 75, 62), tutta l'immagine in proporzione |
+| `game.zoom` | `100` | spessore della pallina e delle racchette in percento, urti compresi (menu **ZOOM**: 100, 125, 150, 175, 200), per gli schermi piccoli; altezza delle racchette e campo restano gli stessi |
 | `game.scores_upright` | `true` | punteggi dritti in alto (menu **SCORES: UPRIGHT**); con `false` rivolti ai giocatori seduti ai lati di un tavolo (**FACING**) |
 | `colors.accent` | `[255, 210, 37]` | colore di accento (il giallo dell'attract): la voce scelta del menu; solo in NEXT: titolo del menu, titolo e cursore della scelta, scritta del bonus attivato, freccetta della riserva, portali di TELEPORT, volante e segni del limite di STEER, capsula e palla del SUPER, capsula del BULLET e bordo della racchetta di chi lo ha armato |
 | `mouse.spinner` | `false` | il mouse come spinner del giocatore di sinistra (menu **MOUSE SPINNER**); con gli encoder del cabinato non conta |

@@ -83,7 +83,8 @@ aggiungere o togliere a mano la parola `paddws.rw` in fondo a `cmdline.txt` dal 
 
 Il gioco è in `/opt/paddws` (sola lettura), la sua configurazione in `/data/padd_config.json`;
 `deck_config.json` accanto all'eseguibile è quella di partenza, rimessa se il file in `/data` è
-rovinato. Registro del gioco: `/media/paddws-run/early.log` (la prima istanza, partita prima di
+rovinato: encoder da 600 impulsi, filtro CRT spento e ZOOM al 125% (pallina e racchette più
+spesse, da cambiare nel menu). Registro del gioco: `/media/paddws-run/early.log` (la prima istanza, partita prima di
 systemd) e `journalctl -u paddws` (le successive).
 
 ## Costruire l'immagine

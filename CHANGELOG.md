@@ -31,6 +31,12 @@ crea il commit e il tag `vX.Y.Z`.
   piccola scritta subito). Il gioco gira nativo Wayland sotto cage e parte prima di systemd, con un
   kernel su misura e un Mesa senza LLVM. WiFi (chiavetta USB) e chiavi ssh da `secret\wifi.txt` e
   `secret\ssh.txt` nella partizione di boot; `write-sd.ps1` scrive e verifica la SD da Windows.
+- PC, Raspberry e web: la voce **ZOOM** del menu (`game.zoom`, 100% di default, poi 125, 150, 175 e
+  200%) ingrandisce lo spessore della pallina (anche col boost) e delle racchette, per gli schermi
+  piccoli come il 7" del Deck, dove a 100% la pallina è di 2 mm. Vale anche per gli urti; l'altezza
+  delle racchette, il campo e le velocità restano gli stessi. Si vede subito nelle demo dell'attract,
+  la partita lasciata per il menu tiene il suo. Nell'immagine del Deck parte al 125%. MiSTer e
+  C64 restano come sono.
 - PC, Raspberry e web: le voci **MUSIC VOLUME** ed **EFFECTS VOLUME** del menu, da 0% a 100% a
   passi del 10% (`game.music_volume`, `game.effects_volume`, 100 di default), al posto di MUSIC:
   ON/OFF. Destra e sinistra alzano e abbassano fermandosi agli estremi, la conferma (Invio, tocco,
