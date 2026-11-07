@@ -32,7 +32,7 @@ cambia solo il filamento tra un piatto e l'altro, mai durante una stampa.
 |---|---|---|
 | 1 | metà G1 del piano (a faccia in giù), pezzi del logo | 1: PETG nero |
 | 2 | metà G2 del piano, 2 manopole (capovolte) | 1: PETG nero |
-| 3 | cornice del vetro (flangia sulla piastra), 2 barre del display | 1: PETG nero |
+| 3 | cornice del vetro (flangia sulla piastra), 4 barre del display | 1: PETG nero |
 | 4 | metà G1 della vasca (dritta), 2 anelli delle tacche, 2 indicatori, 8 lettere di DASH | 2: PETG giallo |
 | 5 | metà G2 della vasca | 2: PETG giallo |
 | 6 | 8 piedini | 3: TPU 95A |
@@ -61,10 +61,15 @@ plastiche difficili, oppure stampare i pezzi da incollare in PLA.
 | 2 | pulsanti arcade da 24 mm a scatto (DASH): si agganciano al piano, assottigliato a 2 mm attorno al foro da un incavo da sotto |
 | 4 | pulsanti momentanei da pannello Ø16 mm con il dado (SELECT, USE), normalmente aperti, con almeno 6 mm di filetto; sotto il piano c'è posto per 35 mm |
 | 1 | prolunga micro-USB da pannello (foro 9 × 4, viti a 28 mm: da adattare al connettore) |
-| 1 | amplificatore PAM8403 e 2 altoparlanti Ø28 con il bordo spesso 3 mm, a incastro nelle guide del fianco posteriore |
+| 1 | amplificatore PAM8403 e 2 altoparlanti sottili Ø28 (8 Ω, 2 W, spessi fino a 5,4 mm), a incastro nelle guide del fianco posteriore |
+| 1 | cavo audio con spina jack 3,5 mm stereo maschio a 3 poli (TRS, non a 4 poli), 20-30 cm (un cavo audio tagliato o un cavetto "jack 3,5 mm a fili liberi"): dalla presa audio del Pi 2 all'ingresso del PAM8403 (punta = L, anello = R, corpo = GND) |
+| 1 | alimentatore micro-USB 5,1 V 2,5 A, oppure powerbank con uscita USB-A da almeno 2,4 A |
+| 1 | microSD da almeno 8 GB |
+| - | cavetti Dupont femmina per la GPIO, faston da 4,8 mm per i pulsanti |
 | 18 | inserti in ottone a caldo M3 × 5 × 4 (tipo Voron: Ø5 in testa, lunghi 4 mm; fori da 4,4 × 4,5): 12 e 4 nei tubi sotto il piano (viti della vasca e barre), 2 nelle manopole |
 | 12 | viti M3 × 35 a testa bombata (ISO 7380): da sotto la vasca, dentro le colonnine, negli inserti dei tubi del piano |
-| 8 | viti M3 × 6: barre → tubi del piano, barre → telaio del display |
+| 4 | viti M3 × 8: barre → tubi del piano |
+| 4 | viti M3 × 6: barre → telaio del display (nelle borchie non si va oltre 2,9 mm) |
 | 6 | viti M3 × 6 a testa bassa: encoder → piano (sotto le manopole restano 2 mm) |
 | 2 | grani M3 × 5 per le manopole |
 | 4 | rondelle M12 (24 × 13 × 2,5), due per manopola: fanno da volano |
@@ -76,7 +81,7 @@ schema degli encoder ottici (`pulses_per_revolution: 600`, `debounce_us: 0`).
 
 1. Inserti a caldo nei tubi sotto il piano (12 per le viti della vasca, 4 per le barre) e di fianco
    nelle manopole, con la punta del saldatore a circa 230-240 °C per il PETG. Sopra gli inserti
-   restano 4,5 mm di piano (3,5 sopra quelli delle barre).
+   restano 4,5 mm di piano (4 sopra quelli delle barre).
 2. Appoggiare le due metà del piano a faccia in giù, accostate alla giunta, e incollare da sotto la
    cornice del vetro: il labbro entra nell'apertura e allinea le metà, la flangia va incollata sotto
    il piano. La cornice sta a cavallo della giunta e unisce le due metà.
@@ -84,14 +89,18 @@ schema degli encoder ottici (`pulses_per_revolution: 600`, `debounce_us: 0`).
    nelle sedi del fianco della vasca. Le lettere che stanno a cavallo della giunta si incollano dopo
    aver unito le metà.
 4. Mettere il display nell'apertura dall'alto, con il vetro sul labbro della cornice, e avvitare sotto
-   le due barre: al telaio del display (asole) e ai tubi del piano. Le barre tengono il vetro contro
-   la cornice: si stringono senza forzare, perché la cornice è solo incollata.
+   le quattro barre corte, una per angolo: al telaio del display (asola, sulla borchia del foro) e
+   al tubo del piano. Le barre tengono il vetro contro la cornice: si stringono senza forzare,
+   perché la cornice è solo incollata. Il centro del telaio resta libero per la scheda del display
+   e il Pi, con i loro connettori.
 5. Encoder da sotto, con 3 viti dall'alto ciascuno; SELECT e USE con il dado; DASH si aggancia a
    scatto nel suo foro; il Raspberry dietro al display, sui suoi distanziali.
 6. Vasca: calare la metà G2 sulla G1 dall'alto, facendo entrare le code di rondine nelle sedi.
    Montare la presa sul fianco posteriore e infilare dall'alto gli altoparlanti nelle loro guide,
-   con il cono verso le feritoie: le costole sul labbro si schiacciano e li tengono fermi contro
-   la parete, senza vibrare. Un anello di gommapiuma adesiva sul bordo li isola ancora di più.
+   con il cono verso le feritoie. Il bordo appoggia su due distanziali della parete, così la
+   membrana resta a 1,5 mm dalla plastica; le costole sul labbro si schiacciano e li tengono fermi,
+   senza vibrare. Se il bordo è più sottile della gola (5,7 mm), un anello di gommapiuma adesiva
+   sul bordo, dalla parte del labbro, prende il gioco.
 7. Cablare, appoggiare il piano sulla vasca e avvitarlo da sotto con le 12 viti M3 × 35, che passano
    dentro le colonnine.
 8. Rondelle nella sede sotto le manopole, manopole sugli alberi (il piano dell'albero verso il grano),
@@ -103,11 +112,17 @@ schema degli encoder ottici (`pulses_per_revolution: 600`, `debounce_us: 0`).
   col calibro e si cambia il parametro: il labbro della cornice si rifà da solo.
 - **Raggio degli angoli del vetro** (ora 6,5 mm: non è quotato, sugli esemplari si misura 6,5-7 mm) e **fori M3 del telaio**: le asole delle
   barre assorbono ±4 mm in lunghezza, non in larghezza.
+- **Altezza delle borchie dei fori M3** (ora 2,5 mm dal dietro del telaio, cioè 8,46 mm dal vetro):
+  le barre appoggiano lì. Se sporgono meno, le barre tirano giù il display e il vetro scende sotto
+  il piano: una rondella M3 tra barra e borchia. Se sporgono di più, le barre spingono il vetro
+  fuori dalla cornice: una rondella tra barra e tubo.
 - **Spessore del piano attorno a DASH** (ora 2 mm): la distanza tra il sotto della ghiera e i
   ganci del pulsante a scatto.
 - **Fori degli inserti** (ora Ø4,4, come per gli M3 × 5 × 4 di CNC Kitchen e ruthex): con altre marche
   conviene provare l'inserto in un foro di prova prima di stampare il piano.
-- **Bordo degli altoparlanti** (ora 3 mm): se è più sottile le costole non bastano a tenerli.
+- **Spessore degli altoparlanti** (ora 5,4 mm, lo spessore totale dichiarato): conta quello nei 2 mm
+  esterni, dove li tiene il labbro delle guide. Se è più sottile, un anello di gommapiuma sul bordo
+  prende il gioco; oppure si adattano le guide allo spessore misurato.
 - **Connettore di alimentazione**: foro e viti sono per una prolunga micro-USB tipica.
 - **Encoder**: misure dei venditori (corpo Ø38 × 35,5, collare Ø20 × 5, albero Ø6 × 13 con il piano,
   fori M3 sul cerchio Ø30).
