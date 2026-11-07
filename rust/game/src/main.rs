@@ -113,9 +113,11 @@ fn exit_with(message: &str) -> ! {
 }
 
 fn main() {
+    platform::startup_mark("main");
     let args = parse_args();
     let config_path = args.config.clone().unwrap_or_else(config::default_path);
     let mut cfg = config::load(&config_path);
+    platform::startup_mark("configurazione");
     if let Some(f) = args.fullscreen {
         cfg.game.fullscreen = f;
     }
@@ -155,6 +157,13 @@ fn main() {
         }),
         platform: macroquad::miniquad::conf::Platform {
             swap_interval: Some(if cfg.game.vsync { 1 } else { 0 }),
+            // con PADDWS_WAYLAND (il Deck, sotto cage) direttamente Wayland, senza Xwayland:
+            // un avvio di Mesa in meno; altrove resta X11, il backend più collaudato di miniquad
+            linux_backend: if std::env::var_os("PADDWS_WAYLAND").is_some() {
+                macroquad::miniquad::conf::LinuxBackend::WaylandWithX11Fallback
+            } else {
+                macroquad::miniquad::conf::LinuxBackend::X11Only
+            },
             ..Default::default()
         },
     };
@@ -241,6 +250,7 @@ fn gl_renderer() -> String {
 }
 
 async fn run(args: Args, mut cfg: Config, config_path: PathBuf) {
+    platform::startup_mark("finestra e GL");
     println!("GPU: {}", gl_renderer());
     if platform::WEB {
         // nel browser il campo prende le proporzioni della tela (vedi anche il ciclo qui sotto)
@@ -250,6 +260,7 @@ async fn run(args: Args, mut cfg: Config, config_path: PathBuf) {
     platform::boost_priority();
     show_mouse(false);
     let assets = load_assets().await;
+    platform::startup_mark("suoni e font");
     for s in &assets.sid {
         play_sound(
             s,
@@ -259,9 +270,22 @@ async fn run(args: Args, mut cfg: Config, config_path: PathBuf) {
             },
         ); // apre subito il dispositivo audio
     }
+    platform::startup_mark("dispositivo audio");
+    // nell'ordine dei campi di App, per misurare i tempi dell'avvio
+    let renderer = Renderer::new(cfg.resolution.width, cfg.resolution.height, cfg.game.keep_aspect);
+    platform::startup_mark("renderer");
+    let scores = challenge_ui::load_scores(&config_path);
+    let attract = AttractArt::load();
+    platform::startup_mark("attract");
+    let encoders = App::open_encoders(&cfg);
+    platform::startup_mark("encoder");
+    let pads = gamepad::Pads::open();
+    platform::startup_mark("gamepad");
+    let sid_music = music::SidMusic::start(config::volume_gain(cfg.game.music_volume));
+    platform::startup_mark("musica SID");
     let mut app = App {
         params: Params::new(&cfg.tuning()),
-        renderer: Renderer::new(cfg.resolution.width, cfg.resolution.height, cfg.game.keep_aspect),
+        renderer,
         on_raspberry: platform::is_raspberry_pi(),
         quit: false,
         players: 2,
@@ -276,19 +300,19 @@ async fn run(args: Args, mut cfg: Config, config_path: PathBuf) {
         paddles: [None; 2],
         challenge: false,
         run: None,
-        scores: challenge_ui::load_scores(&config_path),
+        scores,
         seed: platform::clock_seed(),
         assets,
-        attract: AttractArt::load(),
+        attract,
         credits: 0,
         touch: false,
-        encoders: App::open_encoders(&cfg),
+        encoders,
         knob_events: Vec::new(),
         mouse: mouse::Spinner::default(),
-        pads: gamepad::Pads::open(),
+        pads,
         pad_used: false,
         music: None,
-        sid_music: music::SidMusic::start(config::volume_gain(cfg.game.music_volume)),
+        sid_music,
         egg: false,
         suspended: None,
         config_path,
@@ -326,6 +350,7 @@ async fn run(args: Args, mut cfg: Config, config_path: PathBuf) {
     let mut scene = Scene::Attract(Attract::new(&app.attract, app.cfg.game.self_test));
     let mut pacer = Pacer::new(app.cfg.game.vsync, app.cfg.game.fps);
     let mut bench: Option<(Instant, f64, Vec<f64>)> = None;
+    let mut first_frame = true;
     if let Some(secs) = args.bench {
         app.evo = true;
         let mut play = Play::new(&mut app);
@@ -404,6 +429,10 @@ async fn run(args: Args, mut cfg: Config, config_path: PathBuf) {
 
         pacer.wait();
         next_frame().await;
+        if first_frame {
+            platform::startup_mark("primo fotogramma");
+            first_frame = false;
+        }
         pacer.after_present();
     }
 }

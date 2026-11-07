@@ -148,6 +148,31 @@ pub fn clock_seed() -> u32 {
     ((now.fract() * 1e9) as u32) ^ (now as u32) | 1
 }
 
+/// Tempi dell'avvio, solo con la variabile d'ambiente PADDWS_STARTUP_TIMES: millisecondi dalla
+/// prima chiamata (all'inizio di main) e dalla precedente, su stderr. Per capire dove va il
+/// tempo sulle macchine lente (il Raspberry Pi 2 del Deck).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn startup_mark(step: &str) {
+    use std::sync::{Mutex, OnceLock};
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    static TIMES: Mutex<Option<(Instant, Instant)>> = Mutex::new(None);
+    if !*ENABLED.get_or_init(|| std::env::var_os("PADDWS_STARTUP_TIMES").is_some()) {
+        return;
+    }
+    let now = Instant::now();
+    let mut t = TIMES.lock().unwrap_or_else(|e| e.into_inner());
+    let (start, last) = t.get_or_insert((now, now));
+    eprintln!(
+        "avvio: {step:<16} {:6.0} ms (+{:4.0})",
+        (now - *start).as_secs_f64() * 1000.0,
+        (now - *last).as_secs_f64() * 1000.0
+    );
+    *last = now;
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn startup_mark(_step: &str) {}
+
 pub fn is_raspberry_pi() -> bool {
     fs::read_to_string("/proc/device-tree/model")
         .map(|m| m.contains("Raspberry Pi"))

@@ -459,6 +459,12 @@ crea il commit e il tag `vX.Y.Z`.
   bonus. Quando è acceso il mouse non fa più da dito nel browser.
 
 ### Corretto
+- Linux e Raspberry sotto Wayland (`PADDWS_WAYLAND=1`, miniquad copiata in `rust/vendor/miniquad/`):
+  il gioco non si blocca più all'avvio quando il compositor non ha dispositivi di input, e la
+  classifica non resta nera (superficie senza canale alfa).
+- PC e Raspberry: il gioco non si ferma più per qualche secondo quando l'ora di sistema salta in
+  avanti (per esempio quando il Raspberry la prende dalla rete dopo l'avvio): i tempi di miniquad
+  vengono da un orologio monotono.
 - PC, Raspberry e web: con i punteggi dritti (il default) il titolo delle mosse speciali di NEXT,
   per esempio MAX STRAIGHT SHOT, copriva il punteggio del suo lato; ora sta sotto i punteggi.
 - Web, Android: **"glBindTexture called with an already deleted texture"** nel riquadro degli

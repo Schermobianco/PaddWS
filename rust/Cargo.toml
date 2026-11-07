@@ -25,3 +25,7 @@ strip = false
 # quad-snd (l'audio di macroquad) con la sorgente continua per la musica del SID: vendor/quad-snd
 [patch.crates-io]
 quad-snd = { path = "vendor/quad-snd" }
+# miniquad (finestra e OpenGL di macroquad) con l'avvio Wayland che non si blocca sotto cage
+# senza dispositivi di input e con un orologio che non salta quando cambia l'ora di sistema
+# (il Deck): vendor/miniquad
+miniquad = { path = "vendor/miniquad" }

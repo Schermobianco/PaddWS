@@ -1,0 +1,61 @@
+# miniquad 0.4.11 (https://github.com/not-fl3/miniquad, Fedor Logachev, MIT o Apache-2.0), usato da
+# macroquad per finestra e OpenGL. Copia con una modifica di PADD WS (rust/Cargo.toml, [patch.crates-io]):
+# - src/native/linux_wayland.rs: all'avvio wl_display_roundtrip al posto di due wl_display_dispatch,
+#   che restano bloccati se il compositor non ha altri eventi da mandare (cage senza dispositivi
+#   di input, sul Deck);
+# - src/lib.rs: `date::now` con un orologio monotono (l'ora di sistema solo come origine): un salto
+#   dell'ora, come la sincronizzazione dalla rete del Raspberry senza orologio a batteria,
+#   fermava il gioco per qualche secondo;
+# - src/native/egl.rs: senza alfa richiesto si sceglie prima un formato senza alfa: sotto
+#   Wayland le zone disegnate con alfa 0 diventavano trasparenti (nere);
+# - src/lib.rs: avvisi del compilatore spenti (codice di terzi).
+# Il resto è invariato.
+
+[package]
+name = "miniquad"
+version = "0.4.11"
+authors = ["not-fl3 <not.fl3@gmail.com>"]
+edition = "2018"
+rust-version = "1.70"
+license = "MIT OR Apache-2.0"
+homepage = "https://github.com/not-fl3/miniquad"
+repository = "https://github.com/not-fl3/miniquad"
+description = """
+Cross-platform window context and rendering library.
+"""
+readme = "README.md"
+exclude = ["examples/"]
+keywords = ["graphics", "3D", "opengl", "gamedev", "windowing"]
+categories = ["rendering::graphics-api"]
+
+[features]
+
+# Optional log-rs like macros implementation
+# disabled by default
+log-impl = []
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = [
+    "wingdi",
+    "winuser",
+    "libloaderapi",
+    "windef",
+    "shellscalingapi",
+    "errhandlingapi",
+    "windowsx",
+    "winbase",
+    "hidusage",
+    "shellapi",
+    "imm",
+] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+libc = "0.2"
+ndk-sys = "0.2"
+
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+objc = { package = "objc-rs", version = "0.2" }
+
