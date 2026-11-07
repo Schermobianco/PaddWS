@@ -233,16 +233,42 @@ function [7:0] dim(input [7:0] c, input [1:0] lvl);
 endfunction
 wire [23:0] rgb_out = {dim(rgb[23:16], white_level), dim(rgb[15:8], white_level), dim(rgb[7:0], white_level)};
 
-arcade_video #(.WIDTH(320), .DW(24)) arcade_video
+// Gamma dell'OSD con gamma_fast: le tre curve si leggono insieme, in un colpo per pixel. Il
+// gamma_corr di arcade_video legge R, G e B uno dopo l'altro e vuole almeno 4 colpi di
+// CLK_VIDEO per pixel; qui sono 3 (20 MHz / 3), e con il gamma acceso B prendeva la curva di G
+// (il giallo diventava quasi bianco) e G quella del pixel prima. Tutto in ritardo di un pixel,
+// sincronismi compresi.
+wire [23:0] rgb_g;
+wire        hblank_g, vblank_g, hsync_g, vsync_g;
+gamma_fast gamma
+(
+	.clk_vid(clk_sys),
+	.ce_pix(ce_pix),
+	.gamma_bus(gamma_bus),
+	.HSync(hsync),
+	.VSync(vsync),
+	.HBlank(hblank),
+	.VBlank(vblank),
+	.DE(1'b0),
+	.RGB_in(rgb_out),
+	.HSync_out(hsync_g),
+	.VSync_out(vsync_g),
+	.HBlank_out(hblank_g),
+	.VBlank_out(vblank_g),
+	.DE_out(),
+	.RGB_out(rgb_g)
+);
+
+arcade_video #(.WIDTH(320), .DW(24), .GAMMA(0)) arcade_video
 (
 	.clk_video(clk_sys),
 	.ce_pix(ce_pix),
 
-	.RGB_in(rgb_out),
-	.HBlank(hblank),
-	.VBlank(vblank),
-	.HSync(hsync),
-	.VSync(vsync),
+	.RGB_in(rgb_g),
+	.HBlank(hblank_g),
+	.VBlank(vblank_g),
+	.HSync(hsync_g),
+	.VSync(vsync_g),
 
 	.CLK_VIDEO(CLK_VIDEO),
 	.CE_PIXEL(CE_PIXEL),
@@ -256,7 +282,7 @@ arcade_video #(.WIDTH(320), .DW(24)) arcade_video
 
 	.fx(status[6:4]),
 	.forced_scandoubler(forced_scandoubler),
-	.gamma_bus(gamma_bus)
+	.gamma_bus()   // il gamma lo fa gamma_fast qui sopra
 );
 
 ///////////////////////   AUDIO   ////////////////////////////////

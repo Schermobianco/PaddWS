@@ -472,6 +472,11 @@ crea il commit e il tag `vX.Y.Z`.
   bonus. Quando è acceso il mouse non fa più da dito nel browser.
 
 ### Corretto
+- MiSTer: con un filtro **gamma** del framework acceso (qualsiasi curva) i colori si rovinavano: il
+  giallo diventava quasi bianco e comparivano frange colorate. Il `gamma_corr` di `arcade_video`
+  legge R, G e B uno dopo l'altro e vuole almeno 4 colpi di clock per pixel, il core ne dà 3: B
+  prendeva la curva di G e G quella del pixel prima. Ora il gamma lo fa `gamma_fast` in
+  `PaddWS.sv`, con le tre curve lette insieme (due blocchi di RAM in più).
 - Linux e Raspberry sotto Wayland (`PADDWS_WAYLAND=1`, miniquad copiata in `rust/vendor/miniquad/`):
   il gioco non si blocca più all'avvio quando il compositor non ha dispositivi di input, e la
   classifica non resta nera (superficie senza canale alfa).
