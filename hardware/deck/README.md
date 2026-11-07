@@ -62,7 +62,7 @@ plastiche difficili, oppure stampare i pezzi da incollare in PLA.
 | 4 | pulsanti momentanei da pannello Ø16 mm con il dado (SELECT, USE), normalmente aperti, con almeno 6 mm di filetto; sotto il piano c'è posto per 35 mm |
 | 1 | prolunga micro-USB da pannello (foro 9 × 4, viti a 28 mm: da adattare al connettore) |
 | 1 | amplificatore PAM8403 e 2 altoparlanti Ø28 con il bordo spesso 3 mm, a incastro nelle guide del fianco posteriore |
-| 18 | inserti in ottone a caldo M3 × 3, diametro esterno circa 4,2 (fori da 4,0): 12 e 4 nei tubi sotto il piano (viti della vasca e barre), 2 nelle manopole |
+| 18 | inserti in ottone a caldo M3 × 5 × 4 (tipo Voron: Ø5 in testa, lunghi 4 mm; fori da 4,4 × 4,5): 12 e 4 nei tubi sotto il piano (viti della vasca e barre), 2 nelle manopole |
 | 12 | viti M3 × 35 a testa bombata (ISO 7380): da sotto la vasca, dentro le colonnine, negli inserti dei tubi del piano |
 | 8 | viti M3 × 6: barre → tubi del piano, barre → telaio del display |
 | 6 | viti M3 × 6 a testa bassa: encoder → piano (sotto le manopole restano 2 mm) |
@@ -75,8 +75,8 @@ schema degli encoder ottici (`pulses_per_revolution: 600`, `debounce_us: 0`).
 ## Montaggio
 
 1. Inserti a caldo nei tubi sotto il piano (12 per le viti della vasca, 4 per le barre) e di fianco
-   nelle manopole, con la punta del saldatore a circa 230-240 °C per il PETG. Sopra gli inserti dei
-   tubi della vasca restano 5,7 mm di piano.
+   nelle manopole, con la punta del saldatore a circa 230-240 °C per il PETG. Sopra gli inserti
+   restano 4,5 mm di piano (3,5 sopra quelli delle barre).
 2. Appoggiare le due metà del piano a faccia in giù, accostate alla giunta, e incollare da sotto la
    cornice del vetro: il labbro entra nell'apertura e allinea le metà, la flangia va incollata sotto
    il piano. La cornice sta a cavallo della giunta e unisce le due metà.
@@ -105,6 +105,8 @@ schema degli encoder ottici (`pulses_per_revolution: 600`, `debounce_us: 0`).
   barre assorbono ±4 mm in lunghezza, non in larghezza.
 - **Spessore del piano attorno a DASH** (ora 2 mm): la distanza tra il sotto della ghiera e i
   ganci del pulsante a scatto.
+- **Fori degli inserti** (ora Ø4,4, come per gli M3 × 5 × 4 di CNC Kitchen e ruthex): con altre marche
+  conviene provare l'inserto in un foro di prova prima di stampare il piano.
 - **Bordo degli altoparlanti** (ora 3 mm): se è più sottile le costole non bastano a tenerli.
 - **Connettore di alimentazione**: foro e viti sono per una prolunga micro-USB tipica.
 - **Encoder**: misure dei venditori (corpo Ø38 × 35,5, collare Ø20 × 5, albero Ø6 × 13 con il piano,
