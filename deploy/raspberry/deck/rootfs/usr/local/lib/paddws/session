@@ -1,0 +1,28 @@
+#!/bin/sh
+# Lanciato da cage: il gioco a schermo intero (nativo Wayland). Quando si chiude, cage si chiude
+# con lui e paddws.service riavvia tutti e due. Prima aspetta (al massimo 5 s) i controlli dei
+# file salvati (prepare, lanciato in parallelo da early; nei riavvii successivi li fa qui) e
+# l'audio: il gioco apre l'uscita audio una volta sola, all'avvio. Se /data non c'è (partizione
+# rovinata) si gioca con la configurazione del Deck, in sola lettura.
+
+R=/media/paddws-run
+[ -e $R/cage.pid ] || [ -e $R/prepared ] || /usr/local/lib/paddws/prepare
+
+audio_ready() {
+    for p in /dev/snd/pcmC*D0p; do
+        [ -e "$p" ] && return 0
+    done
+    return 1
+}
+read -r up _ </proc/uptime
+end=$((${up%.*} + 5))
+while ! { { [ -e $R/prepared ] || [ ! -e $R/cage.pid ]; } && audio_ready; }; do
+    read -r up _ </proc/uptime
+    [ "${up%.*}" -ge "$end" ] && break
+    sleep 0.02
+done
+
+if [ -s /data/padd_config.json ]; then
+    cd /data && exec /opt/paddws/paddws --fullscreen --config /data/padd_config.json
+fi
+cd /tmp && exec /opt/paddws/paddws --fullscreen --config /opt/paddws/deck_config.json

@@ -2,7 +2,8 @@
 # Release sulla macchina forge, dai sorgenti di un commit in ~/forge/src (li manda build.bat):
 #   1. immagine paddws-build (tools/forge/Dockerfile), ricostruita solo quando cambia;
 #   2. controlli e pacchetti nel container forge-build (tools/forge/build-all.sh);
-#   3. core MiSTer: sintesi con Quartus (mister/synth.sh, container quartus-synth) e zip della SD.
+#   3. core MiSTer: sintesi con Quartus (mister/synth.sh, container quartus-synth) e zip della SD;
+#   4. immagine della SD del Deck, se c'è ~/forge/deck-cache (deploy/raspberry/deck/build-image.sh).
 # I pacchetti vanno in ~/forge/out, con BUILD.txt (versione, commit, esito) per lo stato della console.
 #
 #   sh build.sh [--no-check] [--check-only] [--no-mister] [--synth]
@@ -67,6 +68,25 @@ if [ -z "$checkonly" ] && [ -z "$nomister" ]; then
     docker run --rm -v "$sd:/sd" -v "$out:/out" -w /sd paddws-build zip -qr -X "/out/PaddWS_MiSTer_$day.zip" _Arcade
     rm -rf "$sd"
     echo "  $out/PaddWS_MiSTer_$day.zip"
+fi
+# immagine della SD del Deck (deploy/raspberry/deck) dal pacchetto linux-armv7 appena fatto. La
+# Lite, Mesa senza LLVM e il kernel del Deck si preparano una volta in ~/forge/deck-cache
+# (lite.img, mesa.tar, kernel.tar): senza la cartella l'immagine si salta
+deck=$HOME/forge/deck-cache
+if [ -z "$checkonly" ] && [ -f "$deck/lite.img" ]; then
+    echo
+    echo "== immagine della SD del Deck (circa 10 minuti)"
+    img=$out/paddws-$version-deck-pi2.img
+    set -- "$deck/lite.img" "$out/paddws-$version-linux-armv7.tar.gz" "$img"
+    if [ -f "$deck/mesa.tar" ]; then set -- "$@" "$deck/mesa.tar"; else set -- "$@" -; fi
+    [ -f "$deck/kernel.tar" ] && set -- "$@" "$deck/kernel.tar"
+    sudo bash "$src/deploy/raspberry/deck/build-image.sh" "$@" > "$HOME/forge/deck.log" 2>&1 ||
+        { tail -30 "$HOME/forge/deck.log"; exit 1; }
+    grep -E '^pronta' "$HOME/forge/deck.log" | sed 's/^/  /'
+    rm -f "$img"
+elif [ -z "$checkonly" ]; then
+    echo
+    echo "== immagine del Deck saltata: manca $deck/lite.img"
 fi
 trap - EXIT
 fixown

@@ -1,0 +1,26 @@
+#!/bin/sh
+# Modalità del Deck:
+#   deck-mode ro   normale: sistema in sola lettura con l'overlay in RAM (resiste alla corrente tolta)
+#   deck-mode rw   manutenzione: al prossimo avvio il sistema si scrive davvero (apt, modifiche)
+#   deck-mode      dice la modalità attuale
+# Cambia la parola paddws.rw in cmdline.txt e riavvia. In manutenzione NON togliere la corrente:
+# spegnere con "sudo poweroff".
+
+set -e
+B=/boot/firmware
+case "$1" in
+    "")
+        if grep -qw paddws.rw /proc/cmdline; then echo rw; else echo ro; fi
+        exit 0 ;;
+    rw|ro) ;;
+    *) echo "uso: deck-mode [rw|ro]" >&2; exit 2 ;;
+esac
+[ "$(id -u)" = 0 ] || exec sudo "$0" "$@"
+
+if mountpoint -q $B; then mount -o remount,rw $B; else mount -o rw $B; fi
+sed -i 's/ paddws\.rw//g' $B/cmdline.txt
+if [ "$1" = rw ]; then sed -i '1s/$/ paddws.rw/' $B/cmdline.txt; fi
+sync
+umount $B
+echo "cmdline.txt aggiornato: riavvio in modalità $1"
+systemctl reboot

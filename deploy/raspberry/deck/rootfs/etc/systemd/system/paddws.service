@@ -1,0 +1,23 @@
+# PADD WS sul Deck: cage (compositor Wayland per una sola applicazione, a tutto schermo e senza
+# cursore) con il gioco dentro, nativo Wayland (Xwayland solo se Wayland non partisse).
+# La prima volta cage parte già prima di systemd (early, da paddws-init): questo servizio la
+# adotta e, se il gioco si chiude, fa ripartire tutto (run). Come root, con il seatd incorporato
+# in libseat; /data la monta paddws-init.
+
+[Unit]
+Description=PADD WS
+DefaultDependencies=no
+After=systemd-journald.socket
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+Type=simple
+# i file salvati li controlla session, subito prima del gioco
+ExecStart=/usr/local/lib/paddws/run
+Restart=always
+RestartSec=1
+TimeoutStopSec=3
+
+[Install]
+WantedBy=multi-user.target

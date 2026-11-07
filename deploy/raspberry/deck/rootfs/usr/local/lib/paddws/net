@@ -1,0 +1,66 @@
+#!/bin/sh
+# Rete del Deck, avviata da paddws-net.timer qualche secondo dopo il gioco. Carica il driver USB
+# (dwc2): fino a qui l'USB è spento, così all'avvio non rallenta il gioco.
+#
+# Legge dalla cartella secret/ della partizione di boot (montata in sola lettura e subito smontata):
+# - secret/wifi.txt: rete e password, scritte come connessione per NetworkManager (in RAM, come
+#   tutto /etc);
+# - secret/ssh.txt: le chiavi pubbliche ammesse per l'utente pi (una per riga, come authorized_keys).
+# Poi avvia NetworkManager, avahi (il Deck si chiama deck.local) e ssh. Le chiavi ssh del Deck si
+# creano la prima volta in /data/ssh e restano quelle. Il cavo Ethernet funziona sempre.
+
+F=/boot/firmware/secret/wifi.txt
+C=/etc/NetworkManager/system-connections/deck-wifi.nmconnection
+K=/boot/firmware/secret/ssh.txt
+
+# l'USB (chiavetta WiFi, Ethernet) parte solo adesso, per non rubare tempo al gioco all'avvio
+modprobe dwc2
+
+mount /boot/firmware 2>/dev/null
+if [ -f "$K" ]; then
+    install -d -m 700 -o pi -g pi /home/pi/.ssh
+    tr -d '\r' <"$K" | sed '1s/^\xEF\xBB\xBF//' | grep -E '^(ssh-|ecdsa-|sk-)' >/home/pi/.ssh/authorized_keys
+    chown pi:pi /home/pi/.ssh/authorized_keys
+    chmod 600 /home/pi/.ssh/authorized_keys
+fi
+if [ -f "$F" ]; then
+    # il Blocco note di Windows può aggiungere BOM e fine riga CRLF
+    text=$(tr -d '\r' <"$F" | sed '1s/^\xEF\xBB\xBF//')
+    # nel formato di NetworkManager la barra rovescia va raddoppiata
+    ssid=$(printf '%s\n' "$text" | sed -n 's/^rete=//p' | head -n 1 | sed 's/\\/\\\\/g')
+    psk=$(printf '%s\n' "$text" | sed -n 's/^password=//p' | head -n 1 | sed 's/\\/\\\\/g')
+    if [ -n "$ssid" ]; then
+        mkdir -p "${C%/*}"
+        {
+            printf '[connection]\nid=deck-wifi\ntype=wifi\nautoconnect=true\n\n'
+            printf '[wifi]\nmode=infrastructure\nssid=%s\n\n' "$ssid"
+            if [ -n "$psk" ]; then
+                printf '[wifi-security]\nkey-mgmt=wpa-psk\npsk=%s\n\n' "$psk"
+            fi
+            printf '[ipv4]\nmethod=auto\n\n[ipv6]\nmethod=auto\n'
+        } >"$C"
+        chmod 600 "$C"
+    fi
+fi
+umount /boot/firmware 2>/dev/null
+
+# Raspberry Pi OS tiene la radio spenta finché non si sceglie il paese (rfkill e stato di
+# NetworkManager): qui il paese è già nella cmdline, quindi la si accende
+for f in /sys/class/rfkill/*/soft; do [ -w "$f" ] && echo 0 >"$f"; done
+mkdir -p /var/lib/NetworkManager
+printf '[main]\nNetworkingEnabled=true\nWirelessEnabled=true\nWWANEnabled=true\n' \
+    >/var/lib/NetworkManager/NetworkManager.state
+
+# chiavi del Deck per ssh: create una volta sola, in /data (l'unica partizione scrivibile)
+if [ ! -s /data/ssh/ssh_host_ed25519_key ]; then
+    mkdir -p /data/ssh && chmod 700 /data/ssh
+    ssh-keygen -q -t ed25519 -N '' -f /data/ssh/ssh_host_ed25519_key.new &&
+        mv /data/ssh/ssh_host_ed25519_key.new.pub /data/ssh/ssh_host_ed25519_key.pub &&
+        mv /data/ssh/ssh_host_ed25519_key.new /data/ssh/ssh_host_ed25519_key
+fi
+
+# wpa_supplicant va avviato a mano: è disattivato (per non partire con il sistema) e da
+# disattivato NetworkManager non lo può più attivare via D-Bus
+systemctl start --no-block wpa_supplicant.service NetworkManager.service avahi-daemon.service \
+    ssh.service systemd-timesyncd.service
+exit 0

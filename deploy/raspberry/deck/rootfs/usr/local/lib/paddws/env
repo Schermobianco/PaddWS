@@ -1,0 +1,10 @@
+# Ambiente di cage e del gioco (letto da early e da run).
+# Il seatd incorporato in libseat: cage gira come root e apre da sé schermo e input.
+export XDG_RUNTIME_DIR=/media/paddws-run
+export LIBSEAT_BACKEND=builtin
+# solo il backend DRM: niente libinput (gli encoder si leggono dai GPIO), niente freccia del mouse
+export WLR_BACKENDS=drm
+# il gioco direttamente su Wayland: senza Xwayland, un avvio di Mesa in meno
+export PADDWS_WAYLAND=1
+# tempi delle fasi dell'avvio del gioco nel suo registro (/media/paddws-run/early.log)
+export PADDWS_STARTUP_TIMES=1

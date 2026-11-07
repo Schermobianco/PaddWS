@@ -1,0 +1,6 @@
+[Unit]
+Description=Rete del Deck (WiFi da secret/wifi.txt, ssh, avahi)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/paddws/net

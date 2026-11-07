@@ -1,0 +1,13 @@
+# Solo con la parola "paddws.log" in cmdline.txt: un minuto dopo l'avvio scrive deck-log.txt
+# nella partizione di boot, da leggere sul PC (il registro normale sta solo in RAM).
+
+[Unit]
+Description=Registro del Deck sulla partizione di boot
+ConditionKernelCommandLine=paddws.log
+
+[Timer]
+OnBootSec=60s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

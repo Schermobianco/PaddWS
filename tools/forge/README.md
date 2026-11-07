@@ -30,6 +30,11 @@ Opzioni: `-Publish` (pubblica la release del tag con `gh`), `-NoCheck`, `-CheckO
      Bookworm a 64 e a 32 bit), web, Python e C64;
 3. sintetizza il core MiSTer con Quartus (`mister/synth.sh`, immagine fissata per digest in
    `mister/quartus-image.txt`) e fa lo zip della SD.
+4. se c'è `~/forge/deck-cache`, costruisce dal pacchetto armv7 l'immagine della SD del Deck,
+   `paddws-X.Y.Z-deck-pi2.img.xz` ([deploy/raspberry/deck](../../deploy/raspberry/deck/README.md),
+   circa 10 minuti, con `sudo`). La cartella si prepara una volta: `lite.img` (Raspberry Pi OS Lite
+   Trixie armhf, decompressa), `mesa.tar` (`mesa/build-mesa.sh`) e `kernel.tar`
+   (`kernel/build-kernel.sh`); senza `lite.img` l'immagine si salta.
 
 I pacchetti restano in `~/forge/out` con `BUILD.txt` (versione, commit, esito). Le crate e la
 cartella `target` restano nei volumi Docker `forge-cargo` e `forge-target`: dalla seconda volta si

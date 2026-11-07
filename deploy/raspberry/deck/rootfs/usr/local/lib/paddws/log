@@ -1,0 +1,44 @@
+#!/bin/sh
+# Scrive deck-log.txt nella partizione di boot (paddws-log.timer, solo con "paddws.log" in
+# cmdline.txt): tutto quello che serve per capire un avvio andato male senza la rete. È l'unica
+# scrittura sulla FAT, e solo in questa modalità di prova.
+
+B=/boot/firmware
+out=/run/deck-log.txt
+# una prova in più si può mettere dal PC: deck-debug.sh nella partizione di boot (gira come root;
+# i file che lascia in /run/deck-out finiscono anche loro nella partizione di boot)
+mkdir -p /run/deck-out
+mount "$B" 2>/dev/null
+[ -f "$B/deck-debug.sh" ] && tr -d '\r' <"$B/deck-debug.sh" >/run/deck-debug.sh
+umount "$B" 2>/dev/null
+{
+    sec() { printf '\n===== %s\n' "$*"; }
+    if [ -f /run/deck-debug.sh ]; then
+        sec "deck-debug.sh"; sh /run/deck-debug.sh 2>&1
+    fi
+}  >/run/deck-log-x.txt 2>&1
+{
+    cat /run/deck-log-x.txt
+    sec() { printf '\n===== %s\n' "$*"; }
+    sec uptime; cat /proc/uptime; date
+    sec cmdline; cat /proc/cmdline
+    sec "systemctl --failed"; systemctl --failed --no-pager
+    sec "systemd-analyze"; systemd-analyze 2>&1; systemd-analyze critical-chain paddws.service 2>&1
+    sec "paddws.service"; systemctl status paddws.service --no-pager -l 2>&1 | head -20
+    sec "journalctl paddws"; journalctl -b -u paddws --no-pager 2>&1 | tail -150
+    sec "cage partito prima di systemd (early)"; tail -60 /media/paddws-run/early.log 2>&1
+    sec "drm"; for s in /sys/class/drm/card*-*/status; do echo "$s: $(cat "$s")"; done; ls -l /dev/dri
+    sec "audio"; cat /proc/asound/cards; ls -l /dev/snd
+    sec "rete"; ip -br addr; ip route; nmcli -f all dev 2>&1; nmcli con 2>&1
+    sec "rete: journal"; journalctl -b -u NetworkManager -u wpa_supplicant -u paddws-net --no-pager 2>&1 | tail -80
+    sec "usb"; cat /sys/bus/usb/devices/*/product 2>/dev/null; for d in /sys/bus/usb/devices/*; do [ -f "$d/idVendor" ] && echo "$(cat $d/idVendor):$(cat $d/idProduct) $(cat $d/product 2>/dev/null)"; done
+    sec "moduli"; cat /proc/modules | cut -d' ' -f1 | sort | tr '\n' ' '
+    sec "dmesg"; dmesg 2>&1 | tail -250
+    sec "journalctl -b (ultime righe)"; journalctl -b --no-pager 2>&1 | tail -400
+} >"$out" 2>&1
+
+mount -o rw "$B" 2>/dev/null || mount -o remount,rw "$B"
+tr -d '\r' <"$out" | sed 's/$/\r/' >"$B/deck-log.txt"
+for f in /run/deck-out/*; do [ -f "$f" ] && cp "$f" "$B/"; done
+sync
+umount "$B"

@@ -1,0 +1,11 @@
+# La rete parte dopo il gioco, per non rubargli tempo all'avvio.
+
+[Unit]
+Description=Rete del Deck, dopo il gioco
+
+[Timer]
+OnBootSec=12s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

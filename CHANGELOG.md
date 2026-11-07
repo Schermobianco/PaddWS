@@ -24,6 +24,13 @@ crea il commit e il tag `vX.Y.Z`.
   STEP, progetto per Bambu Studio con i 6 piatti (`deck-bambu-studio.3mf`), pezzi separati e istruzioni di montaggio.
   Il piano si stampa a faccia in giù (il sopra prende la texture della piastra), con la battuta del vetro
   in una cornice incollata da sotto e i tubi degli inserti sotto il piano.
+- **Immagine della SD del Deck** (`paddws-X.Y.Z-deck-pi2.img.xz`, `deploy/raspberry/deck`): Raspberry
+  Pi OS Lite a 32 bit ridotto per il Pi 2 con il display da 7", che parte dritto nel gioco in circa 8
+  secondi dall'accensione, senza scritte né cursori, e sopporta la corrente tolta in qualsiasi momento
+  (sistema in sola lettura con un overlay in RAM, configurazione e classifiche in una partizione
+  piccola scritta subito). Il gioco gira nativo Wayland sotto cage e parte prima di systemd, con un
+  kernel su misura e un Mesa senza LLVM. WiFi (chiavetta USB) e chiavi ssh da `secret\wifi.txt` e
+  `secret\ssh.txt` nella partizione di boot; `write-sd.ps1` scrive e verifica la SD da Windows.
 - PC, Raspberry e web: le voci **MUSIC VOLUME** ed **EFFECTS VOLUME** del menu, da 0% a 100% a
   passi del 10% (`game.music_volume`, `game.effects_volume`, 100 di default), al posto di MUSIC:
   ON/OFF. Destra e sinistra alzano e abbassano fermandosi agli estremi, la conferma (Invio, tocco,

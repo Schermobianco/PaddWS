@@ -1,0 +1,72 @@
+#!/usr/bin/python3
+"""Crea /data/readahead.list per la lettura anticipata (paddws-readahead.timer, 40 s dopo
+l'avvio, solo se manca o se è di un'altra immagine): per i file usati da cage, Xwayland e il
+gioco, gli intervalli che sono in memoria (cioè letti dalla SD durante l'avvio), uniti quando
+distano meno di GAP. La prima riga è l'identità dell'immagine (/etc/paddws-build)."""
+import ctypes
+import mmap
+import os
+import re
+
+GAP = 32 * 1024
+OUT = "/data/readahead.list"
+PROCS = ("cage", "Xwayland", "paddws")
+
+libc = ctypes.CDLL(None, use_errno=True)
+libc.mmap.restype = ctypes.c_void_p
+libc.mmap.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_long]
+libc.munmap.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+libc.mincore.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_char_p]
+PAGE = mmap.PAGESIZE
+
+
+def used_files():
+    files = set()
+    for pid in filter(str.isdigit, os.listdir("/proc")):
+        try:
+            if open(f"/proc/{pid}/comm").read().strip() not in PROCS:
+                continue
+            files.add(os.readlink(f"/proc/{pid}/exe"))
+            for line in open(f"/proc/{pid}/maps"):
+                m = re.search(r"\s(/(usr|opt|lib)/\S+)$", line)
+                if m:
+                    files.add(m.group(1))
+        except OSError:
+            pass
+    return sorted({os.path.realpath(f) for f in files})
+
+
+def resident_ranges(path):
+    size = os.path.getsize(path)
+    if not size:
+        return []
+    fd = os.open(path, os.O_RDONLY)
+    addr = libc.mmap(None, size, mmap.PROT_READ, mmap.MAP_SHARED, fd, 0)
+    vec = ctypes.create_string_buffer((size + PAGE - 1) // PAGE)
+    libc.mincore(ctypes.c_void_p(addr), size, vec)
+    libc.munmap(ctypes.c_void_p(addr), size)
+    os.close(fd)
+    out, start, last = [], None, None
+    for i, b in enumerate(vec.raw):
+        if b & 1:
+            if start is not None and (i - last - 1) * PAGE <= GAP:
+                last = i
+                continue
+            if start is not None:
+                out.append((start * PAGE, min((last - start + 1) * PAGE, size - start * PAGE)))
+            start = last = i
+    if start is not None:
+        out.append((start * PAGE, min((last - start + 1) * PAGE, size - start * PAGE)))
+    return out
+
+
+lines = [open("/etc/paddws-build").read().strip()]
+for f in used_files():
+    try:
+        lines += [f"{f} {off} {ln}" for off, ln in resident_ranges(f)]
+    except OSError:
+        pass
+with open(OUT + ".new", "w") as fh:
+    fh.write("\n".join(lines) + "\n")
+os.replace(OUT + ".new", OUT)
+print(f"{len(lines) - 1} intervalli in {OUT}")

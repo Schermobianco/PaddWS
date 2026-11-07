@@ -1,0 +1,6 @@
+# Deck: la radice e /data non sono qui. La radice la monta il kernel in sola lettura, sotto
+# l'overlay di paddws-init; /data (configurazione e classifica, scritte subito e con il journal
+# anche dei dati) la monta paddws-init, prima di systemd, per non aspettare udev.
+# La partizione di boot si monta solo quando serve (secret/wifi.txt e secret/ssh.txt, deck-mode), in sola lettura.
+proc                  /proc           proc  defaults                0 0
+PARTUUID=50414444-01  /boot/firmware  vfat  ro,noauto,umask=022     0 0

@@ -1,0 +1,45 @@
+#!/bin/sh
+# Avvio veloce del gioco, lanciato da paddws-init subito dopo il montaggio del sistema, prima di
+# systemd (che sul Pi 2 impiega un paio di secondi a partire): aspetta lo schermo, lancia in
+# parallelo i controlli dei file salvati (prepare) e avvia cage, che poi lancia il gioco
+# (session, che aspetta prepare e l'audio). Gira
+# come root, con il seatd incorporato in libseat: non servono udev né servizi. paddws.service,
+# quando systemd arriva, adotta questa istanza (run) e la riavvia se il gioco si chiude.
+
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+R=/media/paddws-run
+mkdir -p $R && chmod 700 $R
+
+# schermo pronto: un connettore del driver video (DSI o HDMI) risulta collegato (al massimo 5 s)
+screen_ready() {
+    for s in /sys/class/drm/card*-*/status; do
+        [ -r "$s" ] && read -r st <"$s" && [ "$st" = connected ] && return 0
+    done
+    return 1
+}
+read -r up _ </proc/uptime
+end=$((${up%.*} + 5))
+while ! screen_ready; do
+    read -r up _ </proc/uptime
+    [ "${up%.*}" -ge "$end" ] && break
+    sleep 0.02
+done
+
+# cage (wlroots) usa solo le schede video che udev ha già inizializzato, ma udev parte con systemd,
+# dopo: si scrive qui la loro voce nel database di udev (quella che udev scriverebbe, e che rifà
+# quando arriva), altrimenti cage resta ad aspettare
+mkdir -p /run/udev/data
+for d in /sys/class/drm/card[0-9]*; do
+    [ -r "$d/dev" ] || continue
+    read -r devnum <"$d/dev"
+    f=/run/udev/data/c$devnum
+    [ -e "$f" ] || printf 'I:%s0000\nG:seat\nQ:seat\nV:1\n' "${up%.*}${up#*.}" >"$f"
+done
+
+# i controlli dei file salvati in parallelo, mentre cage prepara la grafica: session li aspetta
+rm -f $R/prepared
+{ /usr/local/lib/paddws/prepare; : >$R/prepared; } &
+
+. /usr/local/lib/paddws/env
+/usr/bin/cage -- /usr/local/lib/paddws/session </dev/null >$R/early.log 2>&1 &
+echo $! >$R/cage.pid

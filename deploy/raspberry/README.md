@@ -1,5 +1,8 @@
 # Installazione su Raspberry Pi
 
+Per il Deck (Pi 2 a 32 bit con il display da 7") c'è un'immagine della SD già pronta, che parte
+dritta nel gioco e sopporta la corrente tolta: [deck/README.md](deck/README.md).
+
 Testato come target: Raspberry Pi 4/5 con Raspberry Pi OS (desktop, X11); per gli altri modelli vedi sotto.
 Sul cabinato gira la versione Python oppure la versione Rust: hanno lo stesso
 `padd_config.json` e un servizio systemd ciascuna, e se ne abilita uno solo.

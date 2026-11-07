@@ -1,0 +1,7 @@
+[Unit]
+Description=Registro del Deck sulla partizione di boot
+ConditionKernelCommandLine=paddws.log
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/paddws/log

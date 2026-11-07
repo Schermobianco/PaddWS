@@ -1,0 +1,24 @@
+# Deck: Raspberry Pi 2 a 32 bit con il display ufficiale da 7" (DSI) e l'audio dal jack.
+# Tutto è scelto per partire in fretta e senza scritte: niente arcobaleno, niente initramfs,
+# niente rilevamenti automatici.
+
+disable_splash=1
+boot_delay=0
+avoid_warnings=1
+auto_initramfs=0
+camera_auto_detect=0
+display_auto_detect=0
+disable_fw_kms_setup=1
+disable_overscan=1
+force_turbo=1
+# firmware ridotto (start_cd.elf): con KMS la memoria video è del kernel, l'audio funziona lo stesso
+gpu_mem=16
+
+dtparam=audio=on
+dtoverlay=vc4-kms-v3d,noaudio
+dtoverlay=vc4-kms-dsi-7inch,disable_touch
+max_framebuffers=2
+
+# USB con il driver dwc2 (un modulo) al posto di dwc_otg (nel kernel, che ferma l'avvio per quasi
+# un secondo): dwc2 lo carica paddws-net dopo il gioco, insieme a WiFi ed Ethernet
+dtoverlay=dwc2,dr_mode=host

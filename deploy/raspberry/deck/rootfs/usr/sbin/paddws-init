@@ -1,0 +1,77 @@
+#!/bin/sh
+# Primo programma del Deck (init= in cmdline.txt), prima di systemd.
+#
+# Il kernel monta la partizione del sistema in sola lettura; qui sopra si monta un overlay in
+# RAM: tutto ciò che il sistema scrive finisce in memoria e sparisce allo spegnimento, così
+# togliere la corrente non può mai rovinare la SD. La partizione vera resta visibile, in sola
+# lettura, in /media/root-ro. Solo /data (configurazione e classifica) si scrive davvero.
+#
+# Per partire prima, già qui (senza aspettare udev e systemd):
+# - si monta /data;
+# - si caricano in sottofondo i driver di display e audio;
+# - si avvia il gioco (early); systemd parte solo quando il gioco è pronto;
+# - si leggono in sottofondo dalla SD le parti di librerie che cage e il gioco useranno
+#   (/data/readahead.list, raccolto da readahead-gen al primo avvio di ogni immagine), così
+#   quando servono sono già in memoria;
+# - l'identità della macchina (machine-id) si ricava dal numero di serie del Pi: diversa per
+#   ogni Deck e uguale a ogni avvio.
+#
+# Con la parola "paddws.rw" in cmdline.txt il sistema parte senza overlay e in scrittura: è la
+# modalità di manutenzione (deck-mode rw / deck-mode ro).
+
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+L=/usr/local/lib/paddws
+mount -t proc proc /proc
+
+DATA_OPTS=noatime,sync,data=journal
+readahead() {
+    [ -f "$1/readahead.list" ] && python3 $L/readahead "$1/readahead.list" /etc/paddws-build 2>/dev/null &
+}
+
+# tutta la catena del display DSI (fixed compreso: senza, il vc4 aspetta che lo carichi udev,
+# 4 secondi dopo) e l'audio
+modprobe -a -b fixed i2c_bcm2835 i2c_mux_pinctrl rpi_panel_attiny_regulator tc358762 panel_simple \
+    vc4 snd_bcm2835 2>/dev/null &
+
+if grep -qw paddws.rw /proc/cmdline; then
+    mount -o remount,rw /
+    mount -t ext4 -o $DATA_OPTS /dev/mmcblk0p3 /data 2>/dev/null && readahead /data
+    umount /proc
+    exec /sbin/init "$@"
+fi
+
+if modprobe overlay &&
+    mount -t tmpfs -o mode=0755 tmpfs /ovl/rw &&
+    mkdir /ovl/rw/upper /ovl/rw/work &&
+    mount -t overlay overlay -o lowerdir=/,upperdir=/ovl/rw/upper,workdir=/ovl/rw/work /ovl/root
+then
+    serial=$(tr -d '\0' </proc/device-tree/serial-number 2>/dev/null)
+    [ -n "$serial" ] && printf 'paddws-deck-%s' "$serial" | md5sum | cut -c1-32 >/ovl/root/etc/machine-id
+    mount -t ext4 -o $DATA_OPTS /dev/mmcblk0p3 /ovl/root/data 2>/dev/null && readahead /ovl/root/data
+    # /sys (e /dev/shm, più sotto) servono già a early, cage e al gioco, prima di systemd, che
+    # poi li trova montati
+    mount -t sysfs -o nosuid,nodev,noexec sysfs /ovl/root/sys
+    mount --move /proc /ovl/root/proc
+    mount --move /dev /ovl/root/dev
+    # anche la memoria condivisa serve già a cage (senza, si chiude subito)
+    mkdir -p /ovl/root/dev/shm
+    mount -t tmpfs -o nosuid,nodev,mode=1777 tmpfs /ovl/root/dev/shm
+    cd /ovl/root
+    pivot_root . media/root-ro
+    # il gioco parte subito (early, poi adottato da paddws.service); systemd solo quando il
+    # gioco è pronto (al massimo 6 s), così udev e gli altri servizi non gli rubano CPU e SD
+    chroot . /usr/local/lib/paddws/early </dev/null >/dev/null 2>&1 &
+    read -r up _ </proc/uptime
+    end=$((${up%.*} + 6))
+    until grep -qsE 'Encoders on GPIO|encoders disabled' media/paddws-run/early.log; do
+        read -r up _ </proc/uptime
+        [ "${up%.*}" -ge "$end" ] && break
+        sleep 0.05
+    done
+    exec chroot . /sbin/init "$@" <dev/console >dev/console 2>&1
+fi
+
+# l'overlay non si è montato: si parte lo stesso, con il sistema in sola lettura
+mount -t ext4 -o $DATA_OPTS /dev/mmcblk0p3 /data 2>/dev/null && readahead /data
+umount /proc
+exec /sbin/init "$@"

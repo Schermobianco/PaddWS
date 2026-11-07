@@ -55,7 +55,7 @@ plastiche difficili, oppure stampare i pezzi da incollare in PLA.
 
 | q.tà | cosa |
 |---|---|
-| 1 | Raspberry Pi 2, con Raspberry Pi OS a 32 bit e l'eseguibile `linux-armv7` |
+| 1 | Raspberry Pi 2, con l'immagine della SD del Deck ([deploy/raspberry/deck](../../deploy/raspberry/deck/README.md): Raspberry Pi OS a 32 bit ridotto, con l'eseguibile `linux-armv7`) |
 | 1 | display ufficiale Raspberry Pi 7" (800 × 480), con il cavo DSI |
 | 2 | encoder ottici LPD3806-600BM-G5-24C |
 | 2 | pulsanti arcade da 24 mm a scatto (DASH): si agganciano al piano, assottigliato a 2 mm attorno al foro da un incavo da sotto |

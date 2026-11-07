@@ -1,0 +1,25 @@
+#!/usr/bin/python3
+"""Lettura anticipata, lanciata da paddws-init: per ogni riga 'file offset lunghezza' di
+readahead.list chiede al kernel di caricare quel pezzo di file in memoria (posix_fadvise
+WILLNEED), senza aspettare. I pezzi sono quelli che cage, Xwayland e il gioco leggono all'avvio
+(li raccoglie readahead-gen): quando li chiedono sono già in memoria, e intanto la SD ha
+lavorato mentre il resto del sistema partiva. Se l'elenco è di un'altra immagine non si usa.
+Argomenti: l'elenco e il file con l'identità dell'immagine."""
+import os
+import sys
+
+lines = open(sys.argv[1]).read().splitlines()
+if not lines or lines[0].strip() != open(sys.argv[2]).read().strip():
+    sys.exit(0)
+fds = {}
+for line in lines[1:]:
+    parts = line.split()
+    if len(parts) != 3:
+        continue
+    try:
+        fd = fds.get(parts[0])
+        if fd is None:
+            fd = fds[parts[0]] = os.open(parts[0], os.O_RDONLY)
+        os.posix_fadvise(fd, int(parts[1]), int(parts[2]), os.POSIX_FADV_WILLNEED)
+    except (OSError, ValueError):
+        continue

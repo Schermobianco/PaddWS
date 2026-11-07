@@ -1,0 +1,19 @@
+#!/bin/sh
+# Programma di paddws.service. Se cage è già partito con early (prima di systemd) lo adotta:
+# aspetta che finisca, così quando il gioco si chiude systemd riavvia il servizio, e la volta
+# dopo cage parte da qui. Altrimenti avvia cage con il gioco.
+
+R=/media/paddws-run
+mkdir -p $R && chmod 700 $R
+if [ -f $R/cage.pid ]; then
+    pid=$(cat $R/cage.pid)
+    rm -f $R/cage.pid
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        while kill -0 "$pid" 2>/dev/null; do sleep 1; done
+        exit 0
+    fi
+fi
+# da qui session rifà i controlli dei file salvati (prepare) prima del gioco
+rm -f $R/prepared
+. /usr/local/lib/paddws/env
+exec /usr/bin/cage -- /usr/local/lib/paddws/session

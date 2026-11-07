@@ -78,7 +78,9 @@ Tutti i comandi, mouse come spinner ed encoder del cabinato compresi:
 Il [Deck](hardware/deck/README.md) è una console da tavolo da stampare in 3D: un Raspberry Pi con
 il display ufficiale da 7", una manopola su encoder ottico a ogni capo e i pulsanti DASH, SELECT e
 USE. Ci sono il modello per SolidCraft e in STEP, il progetto per Bambu Studio con i pezzi già divisi
-nei piatti (nessun supporto, un colore per piatto) e le istruzioni di montaggio.
+nei piatti (nessun supporto, un colore per piatto) e le istruzioni di montaggio. Per il Pi 2 c'è
+l'[immagine della SD](deploy/raspberry/deck/README.md) già pronta (`paddws-X.Y.Z-deck-pi2.img.xz`
+nelle release): parte nel gioco in circa 8 secondi e si spegne togliendo la corrente.
 
 | | |
 |---|---|

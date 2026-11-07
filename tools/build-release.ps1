@@ -107,6 +107,8 @@ try {
         New-Item -ItemType Directory $dist | Out-Null
         scp -q "${vm}:forge/out/*.zip" "${vm}:forge/out/*.tar.gz" $dist
         if ($LASTEXITCODE -ne 0) { throw "copia dei pacchetti da forge" }
+        # l'immagine del Deck c'è solo se forge ha ~/forge/deck-cache (tools/forge/build.sh)
+        scp -q "${vm}:forge/out/*.img.xz" $dist 2>$null
         Get-ChildItem $dist | ForEach-Object { "  {0,-45} {1,10:N0} byte" -f $_.Name, $_.Length }
     }
     $ok = $true

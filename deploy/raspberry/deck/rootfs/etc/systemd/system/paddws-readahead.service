@@ -1,0 +1,9 @@
+[Unit]
+Description=Elenco per la lettura anticipata del Deck
+# solo se manca o se è di un'altra immagine (la prima riga è l'identità dell'immagine)
+ConditionPathIsMountPoint=/data
+
+[Service]
+Type=oneshot
+ExecCondition=/bin/sh -c '! head -n 1 /data/readahead.list 2>/dev/null | cmp -s - /etc/paddws-build'
+ExecStart=/usr/local/lib/paddws/readahead-gen

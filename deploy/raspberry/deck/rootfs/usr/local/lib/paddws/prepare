@@ -1,0 +1,28 @@
+#!/bin/sh
+# Prima del gioco (come root, da session): i file salvati in /data. Il gioco li riscrive per
+# intero; se la corrente manca proprio in quel momento il file può restare vuoto: allora si
+# rimette la copia dell'ultimo avvio buono (o, per la configurazione, quella dell'immagine). La
+# copia si aggiorna solo se il file è cambiato, quindi di solito all'avvio non si scrive nulla.
+
+D=/data
+
+# un file JSON intero finisce con } o ]
+whole() {
+    [ -s "$1" ] && tail -c 16 "$1" | tr -d ' \t\r\n' | grep -q '[]}]$'
+}
+
+for f in padd_config.json padd_scores.json; do
+    if whole "$D/$f"; then
+        if ! cmp -s "$D/$f" "$D/$f.bak"; then
+            cp "$D/$f" "$D/$f.new" && mv "$D/$f.new" "$D/$f.bak"
+        fi
+    elif whole "$D/$f.bak"; then
+        cp "$D/$f.bak" "$D/$f.new" && mv "$D/$f.new" "$D/$f"
+    elif [ "$f" = padd_config.json ]; then
+        cp /opt/paddws/deck_config.json "$D/$f.new" && mv "$D/$f.new" "$D/$f"
+    else
+        rm -f "$D/$f"
+    fi
+done
+chown pi:pi "$D" "$D"/padd_* 2>/dev/null
+exit 0

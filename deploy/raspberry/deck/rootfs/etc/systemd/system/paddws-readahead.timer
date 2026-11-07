@@ -1,0 +1,10 @@
+# Una volta per immagine: 40 s dopo l'avvio raccoglie l'elenco per la lettura anticipata.
+
+[Unit]
+Description=Elenco per la lettura anticipata del Deck
+
+[Timer]
+OnBootSec=40s
+
+[Install]
+WantedBy=timers.target

@@ -11,3 +11,6 @@
 *.prg binary
 *.d64 binary
 *.crt binary
+# file del sistema del Deck: finiscono in Linux così come sono
+deploy/raspberry/deck/rootfs/** text eol=lf
+deploy/raspberry/deck/boot/** text eol=lf
