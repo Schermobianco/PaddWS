@@ -2,6 +2,9 @@
 
 # Deck
 
+> **Progetto non ancora collaudato.** Il Deck non è ancora stato stampato e provato per intero:
+> misure, pezzi e istruzioni cambieranno con le prossime revisioni.
+
 Console da tavolo per PADD WS: una scatola piatta di 320 × 160 × 47,5 mm con lo schermo ufficiale da 7" al
 centro e una postazione per giocatore a ogni capo (manopola, DASH, SELECT, USE). Ogni pezzo è di un
 solo colore e si stampa senza supporti; tutti i pezzi entrano sul piatto da 256 mm.
@@ -81,7 +84,7 @@ ricambio sono nascoste, dietro la console.
 | 1 | Raspberry Pi 2, con l'immagine della SD del Deck ([deploy/raspberry/deck](../../deploy/raspberry/deck/README.md): Raspberry Pi OS a 32 bit ridotto, con l'eseguibile `linux-armv7`) |
 | 1 | display ufficiale Raspberry Pi 7" (800 × 480), con il cavo DSI |
 | 2 | encoder ottici LPD3806-600BM-G5-24C |
-| 2 | pulsanti arcade da 24 mm a scatto (DASH): si agganciano al piano, assottigliato a 2 mm attorno al foro da un incavo da sotto |
+| 2 | pulsanti arcade da 30 mm a scatto, Sanwa OBSF-30 (DASH): foro da 30, ghiera Ø33,2; si agganciano al piano, assottigliato a 3 mm attorno al foro da un incavo da sotto; sotto il piano servono 35,5 mm |
 | 4 | pulsanti momentanei da pannello Ø16 mm con il dado (SELECT, USE), normalmente aperti, con almeno 6 mm di filetto; sotto il piano c'è posto per 35 mm |
 | 1 | prolunga micro-USB da pannello con due viti M3 a 28 mm (oppure un'altra presa, con la sua placca: vedi sopra) |
 | 1 | cavo sdoppiatore micro-USB (a Y): dalla prolunga al Pi 2 e alla micro-USB del display; così i pin 5V e GND del display restano liberi, senza cavetti verso la GPIO |
@@ -90,12 +93,11 @@ ricambio sono nascoste, dietro la console.
 | 1 | alimentatore micro-USB 5,1 V 2,5 A, oppure powerbank con uscita USB-A da almeno 2,4 A |
 | 1 | microSD da almeno 8 GB |
 | - | cavetti Dupont femmina per la GPIO, faston da 4,8 mm per i pulsanti |
-| 18 | inserti in ottone a caldo M3 × 5 × 4 (tipo Voron: Ø5 in testa, lunghi 4 mm; fori da 4,4 × 4,5): 12 e 4 nei tubi sotto il piano (viti della vasca e barre), 2 nelle manopole |
+| 16 | inserti in ottone a caldo M3 × 5 × 4 (tipo Voron: Ø5 in testa, lunghi 4 mm; fori da 4,4 × 4,5): nei tubi sotto il piano, 12 per le viti della vasca e 4 per le barre |
 | 12 | viti M3 × 35 a testa bombata (ISO 7380): da sotto la vasca, dentro le colonnine, negli inserti dei tubi del piano |
 | 4 | viti M3 × 8: barre → tubi del piano |
 | 4 | viti M3 × 6: barre → telaio del display (nelle borchie non si va oltre 2,9 mm) |
-| 6 | viti M3 × 6 a testa bassa: encoder → piano (sotto le manopole restano 2 mm) |
-| 2 | grani M3 × 5 per le manopole |
+| 6 | viti M3 × 6 a testa svasata piana (ISO 10642): encoder → piano, dall'alto, a filo del piano |
 | 4 | rondelle M12 (24 × 13 × 2,5), due per manopola: fanno da volano |
 
 Collegamenti e configurazione degli encoder: [deploy/raspberry/README.md](../../deploy/raspberry/README.md),
@@ -103,9 +105,9 @@ schema degli encoder ottici (`pulses_per_revolution: 600`, `debounce_us: 0`).
 
 ## Montaggio
 
-1. Inserti a caldo nei tubi sotto il piano (12 per le viti della vasca, 4 per le barre) e di fianco
-   nelle manopole, con la punta del saldatore a circa 230-240 °C per il PETG. Sopra gli inserti
-   restano 4,5 mm di piano (4 sopra quelli delle barre).
+1. Inserti a caldo nei tubi sotto il piano (12 per le viti della vasca, 4 per le barre), con la
+   punta del saldatore a circa 230-240 °C per il PETG. Sopra gli inserti restano 4,5 mm di piano
+   (4 sopra quelli delle barre).
 2. Appoggiare le due metà del piano a faccia in giù, accostate alla giunta, e incollare da sotto la
    cornice del vetro: il labbro entra nell'apertura e allinea le metà, la flangia va incollata sotto
    il piano. La cornice sta a cavallo della giunta e unisce le due metà.
@@ -128,8 +130,9 @@ schema degli encoder ottici (`pulses_per_revolution: 600`, `debounce_us: 0`).
    sul bordo, dalla parte del labbro, prende il gioco.
 7. Cablare, appoggiare il piano sulla vasca e avvitarlo da sotto con le 12 viti M3 × 35, che passano
    dentro le colonnine.
-8. Rondelle nella sede sotto le manopole, manopole sugli alberi (il piano dell'albero verso il grano),
-   piedini sotto la vasca.
+8. Rondelle nella sede sotto le manopole, poi le manopole sugli alberi, a pressione: il taglio
+   dell'albero va dalla parte dell'indicatore giallo. Nel foro due costoline si schiacciano e
+   tengono la manopola, senza grano. Infine i piedini sotto la vasca.
 
 ## Da verificare prima di stampare
 
@@ -141,8 +144,11 @@ schema degli encoder ottici (`pulses_per_revolution: 600`, `debounce_us: 0`).
   le barre appoggiano lì. Se sporgono meno, le barre tirano giù il display e il vetro scende sotto
   il piano: una rondella M3 tra barra e borchia. Se sporgono di più, le barre spingono il vetro
   fuori dalla cornice: una rondella tra barra e tubo.
-- **Spessore del piano attorno a DASH** (ora 2 mm): la distanza tra il sotto della ghiera e i
-  ganci del pulsante a scatto.
+- **Spessore del piano attorno a DASH** (ora 3 mm): i venditori danno i Sanwa OBSF-30 per pannelli
+  da 2 a 3,7-4 mm. Conta la distanza tra il sotto della ghiera e i denti dei ganci.
+- **Foro dell'albero nelle manopole** (ora Ø6,3, con il lato piatto a 2,25 mm dall'asse e due
+  costoline da 0,25 mm): l'albero è Ø6 e il suo taglio sta a poco più di 5 mm dal lato tondo. Se la
+  manopola entra troppo dura o balla, si cambia il foro.
 - **Fori degli inserti** (ora Ø4,4, come per gli M3 × 5 × 4 di CNC Kitchen e ruthex): con altre marche
   conviene provare l'inserto in un foro di prova prima di stampare il piano.
 - **Spessore degli altoparlanti** (ora 5,4 mm, lo spessore totale dichiarato): conta quello nei 2 mm
@@ -150,5 +156,5 @@ schema degli encoder ottici (`pulses_per_revolution: 600`, `debounce_us: 0`).
   prende il gioco; oppure si adattano le guide allo spessore misurato.
 - **Presa di alimentazione**: la placca micro-USB è per una prolunga con le viti a 28 mm. Con
   un'altra presa si usa o si rifà un'altra placca: il resto della console non cambia.
-- **Encoder**: misure dei venditori (corpo Ø38 × 35,5, collare Ø20 × 5, albero Ø6 × 13 con il piano,
+- **Encoder**: misure dei venditori (corpo Ø38 × 35,5, collare Ø20 × 5, albero Ø6 × 13 con il taglio a poco più di 5 mm dal lato tondo,
   fori M3 sul cerchio Ø30).

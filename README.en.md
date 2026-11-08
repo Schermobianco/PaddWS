@@ -83,7 +83,8 @@ buttons. It comes with the SolidCraft model and a STEP file, the Bambu Studio pr
 parts already split into plates (no supports, one colour per plate) and the assembly instructions.
 For the Pi 2 there is a ready-made [SD card image](deploy/raspberry/deck/README.en.md)
 (`paddws-X.Y.Z-deck-pi2.img.xz` in the releases): it boots into the game in about 8 seconds and is
-switched off by pulling the plug.
+switched off by pulling the plug. The Deck has not been fully printed and tried out yet: the design
+will change in the next revisions.
 
 | | |
 |---|---|

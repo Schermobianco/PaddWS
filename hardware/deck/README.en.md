@@ -2,6 +2,9 @@
 
 # Deck
 
+> **Not tested yet.** The Deck has not been fully printed and tried out yet: dimensions, parts and
+> instructions will change in the next revisions.
+
 A table-top console for PADD WS: a flat 320 × 160 × 47.5 mm box with the official 7" screen in the
 middle and one station per player at each end (knob, DASH, SELECT, USE). Every part is a single
 colour and prints without supports; all parts fit on the 256 mm build plate.
@@ -84,7 +87,7 @@ hidden behind the console.
 | 1 | Raspberry Pi 2, with the Deck SD card image ([deploy/raspberry/deck](../../deploy/raspberry/deck/README.en.md): a trimmed-down 32-bit Raspberry Pi OS, with the `linux-armv7` executable) |
 | 1 | official Raspberry Pi 7" display (800 × 480), with the DSI cable |
 | 2 | LPD3806-600BM-G5-24C optical encoders |
-| 2 | 24 mm snap-in arcade buttons (DASH): they clip into the top plate, thinned to 2 mm around the hole by a recess from below |
+| 2 | 30 mm snap-in arcade buttons, Sanwa OBSF-30 (DASH): 30 mm hole, Ø33.2 bezel; they clip into the top plate, thinned to 3 mm around the hole by a recess from below; they need 35.5 mm under the top plate |
 | 4 | Ø16 mm momentary panel buttons with nut (SELECT, USE), normally open, with at least 6 mm of thread; there are 35 mm of room under the top plate |
 | 1 | panel-mount micro-USB extension with two M3 screws 28 mm apart (or another socket, with its plate: see above) |
 | 1 | micro-USB Y splitter cable: from the extension to the Pi 2 and to the display's micro-USB; this way the display's 5V and GND pins stay free, with no wires to the GPIO |
@@ -93,12 +96,11 @@ hidden behind the console.
 | 1 | 5.1 V 2.5 A micro-USB power supply, or a power bank with a USB-A output of at least 2.4 A |
 | 1 | microSD card of at least 8 GB |
 | - | female Dupont jumper wires for the GPIO, 4.8 mm spade connectors for the buttons |
-| 18 | M3 × 5 × 4 brass heat-set inserts (Voron style: Ø5 at the top, 4 mm long; holes 4.4 × 4.5): 12 and 4 in the tubes under the top plate (tray screws and bars), 2 in the knobs |
+| 16 | M3 × 5 × 4 brass heat-set inserts (Voron style: Ø5 at the top, 4 mm long; holes 4.4 × 4.5): in the tubes under the top plate, 12 for the tray screws and 4 for the bars |
 | 12 | M3 × 35 button head screws (ISO 7380): from under the tray, inside the pillars, into the inserts of the top plate tubes |
 | 4 | M3 × 8 screws: bars → top plate tubes |
 | 4 | M3 × 6 screws: bars → display frame (no deeper than 2.9 mm into the bosses) |
-| 6 | M3 × 6 low head screws: encoders → top plate (2 mm left under the knobs) |
-| 2 | M3 × 5 grub screws for the knobs |
+| 6 | M3 × 6 flat countersunk screws (ISO 10642): encoders → top plate, from above, flush with the top plate |
 | 4 | M12 washers (24 × 13 × 2.5), two per knob: they act as a flywheel |
 
 Encoder wiring and configuration: [deploy/raspberry/README.en.md](../../deploy/raspberry/README.en.md),
@@ -106,9 +108,9 @@ optical encoder diagram (`pulses_per_revolution: 600`, `debounce_us: 0`).
 
 ## Assembly
 
-1. Heat-set inserts into the tubes under the top plate (12 for the tray screws, 4 for the bars) and
-   from the side into the knobs, with the soldering iron tip at about 230-240 °C for PETG. Above the
-   inserts there are 4.5 mm of top plate left (4 above those for the bars).
+1. Heat-set inserts into the tubes under the top plate (12 for the tray screws, 4 for the bars),
+   with the soldering iron tip at about 230-240 °C for PETG. Above the inserts there are 4.5 mm of
+   top plate left (4 above those for the bars).
 2. Lay the two halves of the top plate face down, pushed together at the joint, and glue the glass
    frame from below: the lip goes into the opening and aligns the halves, the flange is glued under
    the top plate. The frame straddles the joint and joins the two halves.
@@ -130,8 +132,9 @@ optical encoder diagram (`pulses_per_revolution: 600`, `debounce_us: 0`).
    (5.7 mm), a ring of adhesive foam on the rim, on the lip side, takes up the play.
 7. Wire everything, place the top plate on the tray and screw it from below with the 12 M3 × 35
    screws, which run inside the pillars.
-8. Washers into the seat under the knobs, knobs on the shafts (the flat of the shaft towards the
-   grub screw), feet under the tray.
+8. Washers into the seat under the knobs, then press the knobs onto the shafts: the flat of the
+   shaft goes on the side of the yellow pointer. Two small ribs in the hole get squashed and hold
+   the knob, with no grub screw. Finally the feet under the tray.
 
 ## To check before printing
 
@@ -143,8 +146,12 @@ optical encoder diagram (`pulses_per_revolution: 600`, `debounce_us: 0`).
   glass): the bars rest there. If they stick out less, the bars pull the display down and the glass
   sinks below the top plate: put an M3 washer between bar and boss. If they stick out more, the
   bars push the glass out of the frame: put a washer between bar and tube.
-- **Top plate thickness around DASH** (now 2 mm): the distance between the underside of the bezel
-  and the clips of the snap-in button.
+- **Top plate thickness around DASH** (now 3 mm): sellers give the Sanwa OBSF-30 for panels from 2
+  to 3.7-4 mm. What counts is the distance between the underside of the bezel and the teeth of the
+  clips.
+- **Shaft hole in the knobs** (now Ø6.3, with the flat side 2.25 mm from the axis and two 0.25 mm
+  ribs): the shaft is Ø6 and its flat is a little over 5 mm from the round side. If the knob goes on
+  too hard or wobbles, change the hole.
 - **Insert holes** (now Ø4.4, as for the M3 × 5 × 4 inserts by CNC Kitchen and ruthex): with other
   brands, try the insert in a test hole before printing the top plate.
 - **Speaker thickness** (now 5.4 mm, the stated total thickness): what counts is the thickness in
@@ -152,5 +159,5 @@ optical encoder diagram (`pulses_per_revolution: 600`, `debounce_us: 0`).
   rim takes up the play; or adapt the guides to the measured thickness.
 - **Power socket**: the micro-USB plate is for an extension with screws 28 mm apart. With another
   socket, use or redesign another plate: the rest of the console doesn't change.
-- **Encoders**: sellers' dimensions (body Ø38 × 35.5, collar Ø20 × 5, Ø6 × 13 shaft with a flat, M3
+- **Encoders**: sellers' dimensions (body Ø38 × 35.5, collar Ø20 × 5, Ø6 × 13 shaft with a flat a little over 5 mm from the round side, M3
   holes on a Ø30 circle).

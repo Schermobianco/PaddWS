@@ -82,7 +82,8 @@ il display ufficiale da 7", una manopola su encoder ottico a ogni capo e i pulsa
 USE. Ci sono il modello per SolidCraft e in STEP, il progetto per Bambu Studio con i pezzi già divisi
 nei piatti (nessun supporto, un colore per piatto) e le istruzioni di montaggio. Per il Pi 2 c'è
 l'[immagine della SD](deploy/raspberry/deck/README.md) già pronta (`paddws-X.Y.Z-deck-pi2.img.xz`
-nelle release): parte nel gioco in circa 8 secondi e si spegne togliendo la corrente.
+nelle release): parte nel gioco in circa 8 secondi e si spegne togliendo la corrente. Il Deck non è
+ancora stato stampato e provato per intero: il progetto cambierà con le prossime revisioni.
 
 | | |
 |---|---|
