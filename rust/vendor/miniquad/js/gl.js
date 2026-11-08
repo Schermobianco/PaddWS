@@ -107,6 +107,21 @@ document.exitPointerLock = document.exitPointerLock ||
     // pointer lock in any form is not supported on iOS safari
     (function () { });
 
+// PADD WS: macroquad chiede la cattura del cursore a ogni frame (Event::update). Nel browser una
+// richiesta fuori da un gesto dell'utente viene rifiutata: dopo Esc ne partivano 60 al secondo, tutte
+// rifiutate (promise non gestite), finché il browser le bloccava del tutto ("Too many pointer lock
+// requests"). Qui si chiede una volta all'avvio, poi solo con un clic sulla tela (onmousedown), e si
+// esce solo se il cursore è davvero catturato.
+var pointer_lock_wanted = false;
+var pointer_lock_armed = true;
+function request_pointer_lock() {
+    pointer_lock_armed = false;
+    var p = canvas.requestPointerLock();
+    if (p && p.catch) {
+        p.catch(function () { });
+    }
+}
+
 function assert(flag, message) {
     if (flag == false) {
         alert(message)
@@ -1190,6 +1205,10 @@ var importObject = {
                 }
             };
             canvas.onmousedown = function (event) {
+                // PADD WS: il clic è il gesto che il browser vuole per catturare il cursore
+                if (pointer_lock_wanted && document.pointerLockElement !== canvas) {
+                    request_pointer_lock();
+                }
                 var relative_position = mouse_relative_position(event.clientX, event.clientY);
                 var x = relative_position.x;
                 var y = relative_position.y;
@@ -1426,9 +1445,12 @@ var importObject = {
             delete FS.loaded_files[file_id];
         },
         sapp_set_cursor_grab: function (grab) {
+            pointer_lock_wanted = grab;
             if (grab) {
-                canvas.requestPointerLock();
-            } else {
+                if (document.pointerLockElement !== canvas && pointer_lock_armed) {
+                    request_pointer_lock();
+                }
+            } else if (document.pointerLockElement === canvas) {
                 document.exitPointerLock();
             }
         },

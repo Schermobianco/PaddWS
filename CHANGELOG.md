@@ -14,18 +14,22 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+## [4.0.1] - 2026-11-08
+
 ### Aggiunto
 - **`check_ongithub.bat`**: i controlli prima di un push con le GitHub Action, per chi non ha la
   macchina forge. I file come sono ora, anche non committati, vanno in un commit temporaneo su un
   ramo `check/...`; partono Rust, Python, C64 e MiSTer (sintesi compresa, `-NoSynth` per saltarla) e
   lo script le segue fino alla fine, poi cancella il ramo. Sui rami le Action non pubblicano nulla.
 
-## [4.0.1] - 2026-11-08
-
 ### Corretto
 - PC, Raspberry e web: alla fine della partita, al posto di YOU WIN e del GAME OVER, lo schermo
   restava bianco per tutti i 3 secondi della schermata: il lampo del punto decisivo non si spegneva
   più, perché a partita finita il suo tempo non scendeva.
+- Web, con MOUSE SPINNER acceso: dopo Esc (che libera il mouse) il gioco chiedeva di nuovo di
+  catturarlo a ogni frame; il browser rifiutava tutte le richieste, mostrava una raffica di errori e
+  alla fine le bloccava. Ora il mouse si cattura una volta all'avvio e poi solo con un clic sulla
+  pagina, e non si chiede più di liberarlo a ogni frame quando l'opzione è spenta.
 
 ## [4.0.0] - 2026-11-08
 
