@@ -1,6 +1,6 @@
 # Come si gioca
 
-[← README](../README.md) · **Italiano** · [English](en/how-to-play.md)
+[← README](../README.md) · [<img src="flags/it.svg" alt="" height="14"> **Italiano**](come-si-gioca.md) · [<img src="flags/gb.svg" alt="" height="14"> English](en/how-to-play.md)
 
 - [L'attract e la partita](#lattract-e-la-partita)
 - [Modalità](#modalità) e [bonus di NEXT](#bonus-di-next)

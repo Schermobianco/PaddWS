@@ -1,4 +1,4 @@
-**Italiano** · [English](CONTRIBUTING.en.md)
+[<img src="docs/flags/it.svg" alt="" height="14"> **Italiano**](CONTRIBUTING.md) · [<img src="docs/flags/gb.svg" alt="" height="14"> English](CONTRIBUTING.en.md)
 
 # Contribuire a PADD WS
 

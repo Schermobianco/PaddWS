@@ -1,6 +1,6 @@
 # How to play
 
-[← README](../../README.en.md) · [Italiano](../come-si-gioca.md) · **English**
+[← README](../../README.en.md) · [<img src="../flags/it.svg" alt="" height="14"> Italiano](../come-si-gioca.md) · [<img src="../flags/gb.svg" alt="" height="14"> **English**](how-to-play.md)
 
 - [Attract mode and matches](#attract-mode-and-matches)
 - [Modes](#modes) and [NEXT power-ups](#next-power-ups)

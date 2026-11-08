@@ -1,4 +1,4 @@
-**Italiano** · [English](#security-policy)
+[<img src="docs/flags/it.svg" alt="" height="14"> **Italiano**](SECURITY.md) · [<img src="docs/flags/gb.svg" alt="" height="14"> English](#security-policy)
 
 # Sicurezza
 

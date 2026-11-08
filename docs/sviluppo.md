@@ -1,6 +1,6 @@
 # Sviluppo
 
-[← README](../README.md) · **Italiano** · [English](en/development.md)
+[← README](../README.md) · [<img src="flags/it.svg" alt="" height="14"> **Italiano**](sviluppo.md) · [<img src="flags/gb.svg" alt="" height="14"> English](en/development.md)
 
 Per chi vuole contribuire: vedi anche [CONTRIBUTING.md](../CONTRIBUTING.md).
 

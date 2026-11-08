@@ -1,6 +1,6 @@
 # Configuration
 
-[← README](../../README.en.md) · [Italiano](../configurazione.md) · **English**
+[← README](../../README.en.md) · [<img src="../flags/it.svg" alt="" height="14"> Italiano](../configurazione.md) · [<img src="../flags/gb.svg" alt="" height="14"> **English**](configuration.md)
 
 This page is about the Rust version on PC and Raspberry Pi. The Python version, which is frozen,
 reads the same file but only knows the CLASSIC and EVO keys (`resolution`, `ball`, `paddle`,
