@@ -1984,6 +1984,7 @@ impl Play {
         let p = &self.game.params;
         let (w, h) = (r.world_w, r.world_h);
         let (invert, shake) = NextFx::hit_stop(&self.game, h / 240.0);
+        let shake = shake + self.fx.as_ref().map_or(0.0, |fx| fx.kick_shake(h / 240.0));
         if invert {
             r.fill(white); // hit-stop del SUPER: un istante a schermo invertito
             return;
@@ -2373,6 +2374,8 @@ impl Play {
         self.game.score = [6, 5];
         if let Some(fx) = &mut self.fx {
             fx.show_special(0, Special::Straight, 2, true);
+            // il giro delle schermate scatta dopo 30 frame (0,5 s): lì il colpo è a 0,1 s
+            fx.show_kick(0, Special::Straight, 2, 0.1 - 0.5);
         }
     }
 

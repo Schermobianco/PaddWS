@@ -53,7 +53,10 @@ module next_render (
     input  wire signed [31:0] ball_y,
     input  wire signed [31:0] ball_r,
     input  wire signed [31:0] ball_boost,
-    input  wire signed [31:0] pad0_x,       // x disegnata (scatto animato) e y del core
+    input  wire signed [31:0] ball_vx,      // verso della palla: la coda riparte a ogni colpo
+    input  wire [6:0]  kick0,               // colpo di una mossa: {MAX, RISING STRIKE, frame rimasti}
+    input  wire [6:0]  kick1,
+    input  wire signed [31:0] pad0_x,      // x disegnata (scatto animato) e y del core
     input  wire signed [31:0] pad0_y,
     input  wire signed [31:0] pad1_x,
     input  wire signed [31:0] pad1_y,
@@ -138,6 +141,10 @@ localparam [2:0] KP_NONE = 3'd0, KP_BODY = 3'd1, KP_MARK = 3'd2, KP_DETAIL = 3'd
 // l'accento al 18, 36 e 54% (come su PC, alpha 0,18 * k sul nero)
 localparam [2:0] KP_GHOST1 = 3'd5, KP_GHOST2 = 3'd6, KP_GHOST3 = 3'd7;
 localparam [23:0] GHOST1 = 24'h2E2607, GHOST2 = 24'h5C4C0D, GHOST3 = 24'h8A7114;
+// colpo di una mossa (draw_kick di next_ui.rs), KICK_FRAMES frame come in pong_top: l'onda d'urto
+// sfuma con l'accento a 2/3 e 1/3; le immagini della racchetta della MAX all'accento al 50 e 25%
+localparam integer KICK_FRAMES = 18;
+localparam [23:0] KICK2 = 24'hAA8C18, KICK1 = 24'h55460C, KICK_IMG1 = 24'h806912, KICK_IMG2 = 24'h403409;
 // TWIST: inclinazione a gradini (fino a circa 20 gradi) dalla velocità della racchetta
 localparam signed [31:0] TILT1 = P_PAD_MAX_SPEED / 6, TILT2 = P_PAD_MAX_SPEED / 2,
                          TILT3 = P_PAD_MAX_SPEED * 5 / 6;
@@ -317,7 +324,13 @@ reg [3:0]  arm [0:1];
 reg        spin [0:1];
 reg [9:0]  pcx [0:1];                  // centro delle racchette
 reg [9:0]  pcy [0:1];
-reg [9:0]  bx, by, bside;              // palla: angolo e lato
+reg [9:0]  bx, by, bside;              // palla: centro (arrotondato come in pong_render) e lato
+reg        bleft;                      // la palla va verso sinistra
+// palla con un effetto (boost, CURVE, STEER, SUPER, SLOW, mossa in volo, BULLET): ha la coda
+wire       fx_on = nxt && (ball_boost != 32'sd65536 || curve != 0 || next_flags[5] || next_flags[2] ||
+                           slow_timer != 0 || next_flags[10:9] != 2'd0 || bullet);
+// la palla ha cambiato verso dal frame prima: un colpo (o una nuova battuta)
+wire       vflip = (ball_vx < 0) != bleft;
 reg        comet, trail_on, ring_on, cap_blink;
 reg        ghost_on, bhide;                // GHOST in corso; palla nascosta in questo frame
 reg        steer_on, steer_side;          // STEER: palla guidata e chi la guida
@@ -355,6 +368,9 @@ reg        mrise [0:1];               // la mossa armata è RISING STRIKE
 reg        mmax [0:1];                // mossa armata di livello 2: racchetta gialla
 reg        mok [0:1];                 // mossa possibile adesso
 reg [1:0]  mspf;                      // tiro della mossa in volo
+reg [4:0]  ckt [0:1];                 // colpo di una mossa: frame rimasti (KICK_FRAMES di pong_top)
+reg        ckr [0:1];                 // ... con RISING STRIKE
+reg        ckm [0:1];                 // ... con la MAX
 reg        rbon;                      // RISING STRIKE impennata: quadrato in (rbx, rby)
 reg [9:0]  rbx, rby;
 
@@ -392,6 +408,25 @@ end
 
 function [9:0] px_of(input signed [31:0] v);
     px_of = v[25:16];
+endfunction
+
+// centro della palla in pixel, arrotondato come la disegna pong_render: col_of(x - r) = ball_col(x) - r
+// e row_first(y + r) = ball_row(y) - r con il raggio intero. Con px_of (troncato) coda, righe e buco
+// della palla finivano un pixel accanto alla palla quando la parte frazionaria superava 0,5
+function [9:0] ball_col(input signed [31:0] v);
+    reg signed [31:0] t;
+    begin
+        t = (v + 32'sd32767) >>> 16;
+        ball_col = t[9:0];
+    end
+endfunction
+
+function [9:0] ball_row(input signed [31:0] v);
+    reg signed [31:0] t;
+    begin
+        t = ((P_HEIGHT - 32'sd32768 - v) >>> 16) + 32'sd1;
+        ball_row = t[9:0];
+    end
 endfunction
 
 // bordi del rettangolo di una racchetta come in pong_render (col_of e row_first)
@@ -513,6 +548,7 @@ always @(posedge clk) begin
                 gv[i] <= gv[i - 1];
             end
         end
+        if (vflip) gv <= {GHOSTS{1'b0}};   // come la coda, ripartono a ogni colpo
         pcx[0] <= px_of(pad0_x);
         pcy[0] <= H - px_of(pad0_y);
         pcx[1] <= px_of(pad1_x);
@@ -544,13 +580,16 @@ always @(posedge clk) begin
             mrise[i] <= (i ? super1[9:8] : super0[9:8]) == 2'd0;
             mmax[i] <= nxt && sup && (i ? (super1[9] || super1[11]) : (super0[9] || super0[11]));
             mok[i] <= nxt && move_ok[i];
+            ckt[i] <= nxt ? (i ? kick1[4:0] : kick0[4:0]) : 5'd0;
+            ckr[i] <= i ? kick1[5] : kick0[5];
+            ckm[i] <= i ? kick1[6] : kick0[6];
         end
         msup <= nxt && sup;
         // impennata di RISING STRIKE: il punto è dove si trova la palla nel primo frame
         rbon <= nxt && sup && rise_flash;
         if (!rbon) begin
-            rbx <= px_of(ball_x);
-            rby <= H - px_of(ball_y);
+            rbx <= ball_col(ball_x);
+            rby <= ball_row(ball_y);
         end
         mspf <= nxt ? next_flags[10:9] : 2'd0;
         for (i = 0; i < 8; i = i + 1) begin
@@ -561,8 +600,7 @@ always @(posedge clk) begin
         cap_blink <= tick[5];
         // palla cometa più grande, con la scia lunga; scia a puntini per gli altri effetti
         comet <= nxt && next_flags[2] && next_flags[4:3] == 2'd2;
-        trail_on <= nxt && (ball_boost != 32'sd65536 || curve != 0 || next_flags[5] || next_flags[2] || slow_timer != 0 ||
-                            next_flags[10:9] != 2'd0 || bullet);
+        trail_on <= fx_on;
         steer_on <= nxt && next_flags[5];
         // GHOST: niente code né immagini della palla (la tradirebbero), come su PC; da nascosta neanche
         // la testa della cometa e le righe di STRAIGHT SHOT
@@ -571,18 +609,20 @@ always @(posedge clk) begin
         steer_side <= next_flags[6];
         ring_on <= nxt && slow_timer != 0 && tick[4];
         bside <= (next_flags[2] && next_flags[4:3] == 2'd2) ? (px_of(ball_r) * 16) / 5 : px_of(ball_r) * 2;
-        bx <= px_of(ball_x);
-        by <= H - px_of(ball_y);
-        hx[0] <= px_of(ball_x);
-        hy[0] <= H - px_of(ball_y);
-        hv <= {hv[HIST-2:0], nxt && (ball_boost != 32'sd65536 || curve != 0 || next_flags[5] || next_flags[2] || slow_timer != 0 ||
-                                     next_flags[10:9] != 2'd0 || bullet)};
+        bx <= ball_col(ball_x);
+        by <= ball_row(ball_y);
+        bleft <= ball_vx < 0;
+        hx[0] <= ball_col(ball_x);
+        hy[0] <= ball_row(ball_y);
+        // a ogni colpo (la palla cambia verso) la coda riparte da qui: altrimenti per qualche frame
+        // resterebbe piegata sul percorso d'arrivo, e nel colore del nuovo tiro
+        hv <= vflip ? {{(HIST-1){1'b0}}, fx_on} : {hv[HIST-2:0], fx_on};
         for (i = 1; i < HIST; i = i + 1) begin
             hx[i] <= hx[i - 1];
             hy[i] <= hy[i - 1];
         end
-        mx[1] <= (px_of(ball_x) + hx[0]) >> 1;
-        my[1] <= (H - px_of(ball_y) + hy[0]) >> 1;
+        mx[1] <= (ball_col(ball_x) + hx[0]) >> 1;
+        my[1] <= (ball_row(ball_y) + hy[0]) >> 1;
         for (i = 2; i <= TRAIL; i = i + 1) begin
             mx[i] <= mx[i - 1];
             my[i] <= my[i - 1];
@@ -621,6 +661,7 @@ reg signed [11:0] sy;
 reg        w_col, w_line;
 reg [2:0]  kc;
 reg signed [11:0] kx, ky, kq, kr, ka;
+reg signed [11:0] ke, kf, kv, kb, ko;  // colpo di una mossa: frame dal colpo, davanti, dal centro, dietro
 reg [2:0]  kcur;
 reg [9:0]  kcx;
 reg [2:0]  pk;                         // sfilata del finale: colonna e suo centro
@@ -897,6 +938,48 @@ always @(*) begin
                         on = 1'b1;
                         col = (k + kfade[p] == 5) ? GHOST3 : (k + kfade[p] == 4) ? GHOST2 : GHOST1;
                     end
+            // colpo di una mossa (draw_kick di next_ui.rs; il rinculo è già nella x di pong_top):
+            // davanti alla faccia l'onda d'urto, due righe per STRAIGHT SHOT o un gallone a 45 gradi
+            // per RISING STRIKE, che si allontana e sfuma; con la MAX due immagini gialle della
+            // racchetta dietro di lei; nei primi frame la racchetta lampeggia (giallo, con la MAX
+            // giallo e bianco a scatti)
+            if (ckt[p] != 5'd0 && !spin[p] && !(wv && wsd == p)) begin
+                ke = KICK_FRAMES - $signed({7'd0, ckt[p]});
+                kf = (p == 0) ? $signed({2'b0, x}) - (kl[p] + PW) : (kl[p] - 1) - $signed({2'b0, x});
+                kb = (p == 0) ? kl[p] - 1 - $signed({2'b0, x}) : $signed({2'b0, x}) - (kl[p] + PW);
+                kv = $signed({2'b0, y}) - $signed({2'b0, pcy[p]});
+                if (ckr[p]) begin
+                    ko = 4 + ke + (ke >>> 2) + (ke >>> 4) - kf;          // dietro la punta
+                    if (ko >= 0 && ko < 6 + ((ke * 5) >>> 4) && (kv == ko || kv == -ko)) begin
+                        on = 1'b1;
+                        col = (ckt[p] > 5'd12) ? ACCENT : (ckt[p] > 5'd6) ? KICK2 : KICK1;
+                    end
+                end else begin
+                    ko = kf - (2 + ke + (ke >>> 1) + (ke >>> 3));        // dall'inizio delle righe
+                    if (ko >= 0 && ko < 2 + (($signed({7'd0, ckt[p]}) * 11) >>> 4) &&
+                        (kv == ($signed({2'b0, kh[p]}) >>> 2) || kv == -($signed({2'b0, kh[p]}) >>> 2))) begin
+                        on = 1'b1;
+                        col = (ckt[p] > 5'd12) ? ACCENT : (ckt[p] > 5'd6) ? KICK2 : KICK1;
+                    end
+                end
+                if (ckm[p] && sy - kt[p] >= 0 && sy - kt[p] < $signed({2'b0, kh[p]})) begin
+                    ko = kb - (ke >>> 2);                                // prima immagine, a 4 pixel
+                    if (ko >= 0 && ko < PW) begin
+                        on = 1'b1;
+                        col = (ckt[p] > 5'd9) ? KICK_IMG1 : KICK_IMG2;
+                    end
+                    ko = kb - 4 - (ke >>> 1);                            // seconda, a 8
+                    if (ko >= 0 && ko < PW) begin
+                        on = 1'b1;
+                        col = (ckt[p] > 5'd9) ? KICK_IMG2 : GHOST1;
+                    end
+                end
+                if ((ckm[p] ? ke < 8 : ke < 4) && $signed({2'b0, x}) - kl[p] >= 0 && $signed({2'b0, x}) - kl[p] < PW &&
+                    sy - kt[p] >= 0 && sy - kt[p] < $signed({2'b0, kh[p]})) begin
+                    on = 1'b1;
+                    col = (ckm[p] && ke[1]) ? WHITE : ACCENT;
+                end
+            end
             // GUARDIAN: muro tratteggiato a settori sotto la banda delle riserve, solo i settori in
             // piedi; quello che rimanda la palla lampeggia, poi sparisce
             if (kd[p] == K_GUARDIAN && x - ((p == 0) ? BARRIER_X - 1 : W - BARRIER_X - 1) < 2 && wall_row &&
@@ -1040,7 +1123,7 @@ always @(*) begin
         end
         // STRAIGHT SHOT in volo: due righe di velocità gialle dietro la palla, sui suoi bordi alto e basso
         if (mspf == 2'd1 && !bhide && (y == by - bside / 2 || y == by + bside / 2 - 1) &&
-            ((bx > hx[1]) ? (bx - bside / 2 - 2) - x < 26 : x - (bx + bside / 2 + 2) < 26)) begin
+            (!bleft ? (bx - bside / 2 - 2) - x < 26 : x - (bx + bside / 2 + 2) < 26)) begin
             on = 1'b1;
             col = ACCENT;
         end

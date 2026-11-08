@@ -44,6 +44,8 @@ pub fn params_inc() -> String {
         q.kspeed_2p = p.kspeed_2p;
         q.kspeed_next = p.kspeed_next;
         q.max_ball_speed_next = p.max_ball_speed_next;
+        q.super_min_vx_straight = p.super_min_vx_straight;
+        q.super_min_vx_rise = p.super_min_vx_rise;
         assert_eq!(q, p, "un parametro dipende dalla difficoltà");
     }
     let mut s = String::new();
@@ -112,6 +114,13 @@ pub fn params_inc() -> String {
     table(&mut s, "T_MAX_2P", &by_d(|p| p.max_ball_speed_2p), "");
     table(&mut s, "T_KSPEED_NEXT", &by_d(|p| p.kspeed_next), "NEXT");
     table(&mut s, "T_MAX_NEXT", &by_d(|p| p.max_ball_speed_next), "");
+    table(
+        &mut s,
+        "T_SM_MIN_STRAIGHT",
+        &by_d(|p| p.super_min_vx_straight),
+        "mosse speciali: velocità orizzontale minima al colpo, STRAIGHT SHOT",
+    );
+    table(&mut s, "T_SM_MIN_RISE", &by_d(|p| p.super_min_vx_rise), "RISING STRIKE");
 
     // NEXT: capsule, bonus, tipi di racchetta (in tick a 50 Hz e Fx)
     assert!(!p.blaster_dash, "sul C64 il BLASTER spara con il tasto dello scatto");

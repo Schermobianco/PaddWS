@@ -90,6 +90,7 @@ buoni si riportano poi nel core Rust e nel MiSTer).
 | `super_meter_max`, `super_cost` | `64`, `32` | barra delle mosse speciali (sempre accese; la vecchia chiave `super_moves` sparisce dal file) e costo di una mossa |
 | `super_gain_hit`, `super_gain_dash`, `super_gain_conceded` | `2`, `4`, `8` | barra guadagnata con un colpo, con lo scatto che intercetta, con un punto subito |
 | `super_straight_multiplier` | `2` | spinta del tiro con STRAIGHT SHOT MAX (1 + 1/2ⁿ: 2, 1,5, 1,25…); la mossa normale ha la metà dell'aggiunta |
+| `super_min_speed_straight`, `super_min_speed_rise` | `0.5`, `0.375` | velocità orizzontale minima della palla al colpo di STRAIGHT SHOT e di RISING STRIKE, in frazione della massima della difficoltà: una mossa a inizio scambio non parte più lenta |
 
 I tipi di racchetta sono nella sezione `next.paddles`.
 

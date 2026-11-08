@@ -583,6 +583,18 @@ fn away_from(pad: &Paddle, y: Fx, speed: Fx) -> Fx {
     if pad.y > y { -speed } else { speed }
 }
 
+/// Mosse speciali: la palla appena colpita da `side` va almeno a `min` in orizzontale (solo un
+/// confronto e una copia, come sul C64). Il verso è quello di chi ha colpito.
+#[inline(never)]
+fn raise_vx(ball: &mut Ball, side: Side, min: Fx) {
+    if ball.vx.abs() < min {
+        ball.vx = match side {
+            Side::Left => min,
+            Side::Right => -min,
+        };
+    }
+}
+
 fn coming_toward(ball: &Ball, side: Side) -> bool {
     match side {
         Side::Left => ball.vx < 0,
@@ -1121,7 +1133,8 @@ impl Match {
             // lo intercetta con lo scatto (`forward_boost`)
             let level = core::mem::take(&mut pl.straight);
             b.vy = 0;
-            b.boost += b.boost >> (p.super_straight_shift + (MAX_SPECIAL_LEVEL - level) as u32);
+            raise_vx(b, side, p.super_min_vx_straight);
+            b.boost +=b.boost >> (p.super_straight_shift + (MAX_SPECIAL_LEVEL - level) as u32);
             n.special_flight = Some(Special::Straight);
             n.special_level = level;
             events.add(Event::SpecialHit);
@@ -1130,6 +1143,7 @@ impl Match {
             // 2), contati da chi ha colpito: vedi `ball_motion`
             let level = core::mem::take(&mut pl.rise);
             b.vy = 0;
+            raise_vx(b, side, p.super_min_vx_rise);
             let ahead = if level >= MAX_SPECIAL_LEVEL {
                 p.width - (p.width >> 3)
             } else {

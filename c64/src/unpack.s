@@ -39,6 +39,10 @@ BOOT_RAM    = $F800
     sta __LOWCODE_RUN__ - 1,x
     dex
     bne :-
+    ; animazione del colpo di una mossa (supers.s) ferma dall'accensione: NEXTBSS non si azzera
+    lda #0
+    sta sm_kick
+    sta sm_kick + 4
     ; routine dell'avvio al loro posto, dalla flash
     lda #BOOT_SRC
     sta ef_src+2

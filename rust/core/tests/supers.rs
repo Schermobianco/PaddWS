@@ -197,6 +197,37 @@ fn straight_shot_is_flat_and_faster_for_one_shot() {
 }
 
 #[test]
+fn moves_leave_at_least_their_minimum_speed() {
+    // la palla di prova (3 px/tick) è più lenta dei minimi: la mossa la porta al suo minimo, prima
+    // del boost, e RISING STRIKE ha il minimo più basso
+    let straight = straight_shot(1);
+    let p = &straight.params;
+    assert!(p.super_min_vx_rise < p.super_min_vx_straight);
+    assert!(p.super_min_vx_straight < p.max_ball_speed_next);
+    assert_eq!(straight.ball.vx, p.super_min_vx_straight);
+    assert_eq!(rising_shot(1).ball.vx, p.super_min_vx_rise);
+    // da destra, verso sinistra
+    let mut m = make(true);
+    fill(&mut m, Side::Right, 1);
+    aim_at_paddle(&mut m, Side::Right);
+    assert!(special(&mut m, Side::Right, Special::Straight).has(Event::Straight));
+    assert!(until_hit(&mut m).has(Event::SpecialHit));
+    assert_eq!(m.ball.vx, -m.params.super_min_vx_straight);
+    // una palla già più veloce del minimo resta com'è
+    let mut slow = make(true);
+    let mut fast = make(true);
+    for m in [&mut slow, &mut fast] {
+        aim_at_paddle(m, Side::Left);
+        m.ball.vx = -m.params.super_min_vx_straight * 3 / 2;
+    }
+    fill(&mut fast, Side::Left, 1);
+    assert!(special(&mut fast, Side::Left, Special::Straight).has(Event::Straight));
+    until_hit(&mut slow);
+    until_hit(&mut fast);
+    assert_eq!(fast.ball.vx, slow.ball.vx);
+}
+
+#[test]
 fn straight_shot_is_lost_at_a_point() {
     let mut m = make(true);
     fill(&mut m, Side::Left, 1);

@@ -103,6 +103,10 @@ power-ups can be activated).
 | **STRAIGHT SHOT** | the next shot goes straight, with no angle, at one and a half times the push of the hit (twice with the MAX); it lasts one shot only, and is lost if the opponent intercepts it with the dash |
 | **RISING STRIKE** | the next shot goes straight and, past 5/8 of the field (7/8 with the MAX), suddenly rises at 45° away from the opponent's paddle: it fools whoever had already moved into its path |
 
+A move never leaves slowly, even at the start of a rally: when it is hit, the ball goes at least at
+half the difficulty's top speed with STRAIGHT SHOT (so the MAX at least at the top speed) and at 3/8
+with RISING STRIKE.
+
 | command | STRAIGHT SHOT | RISING STRIKE |
 |---|---|---|
 | keyboard | down, up + dash | up, down + dash |
@@ -139,7 +143,7 @@ the first level to the GUARDIAN of the final boss. Matches are NEXT, to 5 points
   in `padd_scores.json` next to the configuration, in the browser in `localStorage`, on the C64 in
   the cartridge flash; on the MiSTer on the SD card (`PaddWS.nvm`, automatically with the OSD
   option *Autosave scores* or with *Save settings*), if the core is started from the `.mra`.
-- **New challenger**, as in Street Fighter 2: during the introduction of a level, the match against
+- **New challenger**: during the introduction of a level, the match against
   the CPU or the level cleared screen, a second player with a credit (or in Free Play) presses their
   Start (on PC `2`, or `1` if the champion plays on the right) and **HERE COMES A NEW CHALLENGER!**
   appears. On touch screens they hold a finger for a second on the free half, and during the match

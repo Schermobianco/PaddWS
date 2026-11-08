@@ -344,6 +344,8 @@ pub struct Next {
     pub super_gain_conceded: u32,
     pub super_cost: u32,
     pub super_straight_multiplier: f64,
+    pub super_min_speed_straight: f64,
+    pub super_min_speed_rise: f64,
     pub paddles: NextPaddles,
 }
 
@@ -471,6 +473,8 @@ impl Default for Next {
             super_gain_conceded: t.super_gain_conceded,
             super_cost: t.super_cost,
             super_straight_multiplier: t.super_straight_multiplier,
+            super_min_speed_straight: t.super_min_speed_straight,
+            super_min_speed_rise: t.super_min_speed_rise,
             paddles: NextPaddles::default(),
         }
     }
@@ -506,6 +510,8 @@ impl Next {
             super_gain_conceded: self.super_gain_conceded,
             super_cost: self.super_cost,
             super_straight_multiplier: self.super_straight_multiplier,
+            super_min_speed_straight: self.super_min_speed_straight,
+            super_min_speed_rise: self.super_min_speed_rise,
             paddles: self.paddles.tuning(),
         }
     }

@@ -71,6 +71,9 @@ RISE_2 = P_WIDTH - (P_WIDTH >> 3)
 ; gesto del joystick: tempi a 50 Hz di move_gesture (mister/rtl/pong_top.v)
 STEP_F    = 15                  ; 0,3 s tra due direzioni
 BTN_F     = 13                  ; 0,25 s dall'ultima al fuoco
+; colpo di una mossa sulla racchetta di chi l'ha fatto (KICK_SECONDS di next_ui.rs): rinculo e
+; lampo per 0,3 s; con la MAX il doppio (31 frame: rinculo più ampio, due lampi)
+KICK_FRAMES = 15
 
 .segment "BSS"
 cfg_super: .res 1               ; mosse speciali accese: 1 dall'accensione (play_main), 0 solo nei banchi di prova
@@ -94,9 +97,83 @@ sm_icons:  .res 1               ; icone già preparate
 SM_VARS = * - sm_vars
 .assert SM_VARS <= 128, error, "stato delle mosse speciali: next_init lo azzera con un byte"
 
+.segment "NEXTBSS"
+sm_kick:   .res 5               ; colpo di una mossa: frame dell'animazione della racchetta, per n_side (0, 4)
+
 ; ------------------------------------------------------------------------------------ programma
 
 .segment "CODE"
+
+; Velocità orizzontale minima al colpo della mossa Y (1-2 STRAIGHT SHOT, 3-4 RISING STRIKE) di
+; n_side (raise_vx di next.rs): sotto, |vx| diventa il minimo della difficoltà, nel verso di chi ha
+; colpito. Nella MAIN perché SMCODE è pieno; conserva Y, X torna n_side. Circa 160 cicli al più. I
+; cicli vanno da X = $FC a 0 (inx non tocca il riporto) su ball_vx + 4, che in pagina zero torna a
+; ball_vx.
+.proc sm_floor
+    sty m_t
+    lda cfg_diff
+    asl a
+    asl a
+    cpy #3
+    bcc :+
+    adc #16 - 1                 ; RISING STRIKE: la seconda tabella (C = 1)
+:   tay
+    ldx #$fc
+    lda n_side
+    bne right
+    sec                         ; da sinistra vx > 0: vx - minimo, con il prestito vx < minimo
+:   lda ball_vx + 4,x
+    sbc min_tab,y
+    iny
+    inx
+    bne :-
+    bcs done
+    jsr back
+:   lda min_tab,y               ; vx = minimo
+    sta ball_vx + 4,x
+    iny
+    inx
+    bne :-
+    beq done
+right:
+    clc                         ; da destra vx < 0: vx + minimo, con il riporto |vx| <= minimo
+:   lda ball_vx + 4,x           ; (a |vx| = minimo la copia non cambia nulla)
+    adc min_tab,y
+    iny
+    inx
+    bne :-
+    bcc done
+    jsr back
+    sec
+:   lda #0                      ; vx = -minimo
+    sbc min_tab,y
+    sta ball_vx + 4,x
+    iny
+    inx
+    bne :-
+done:
+    ldy m_t
+    ldx n_side
+    ; animazione del colpo sulla racchetta (pad_sprite): KICK_FRAMES frame, il doppio con la MAX
+    ; (codice pari), che rincula di più e lampeggia due volte
+    tya
+    lsr a
+    lda #KICK_FRAMES
+    bcs :+
+    lda #KICK_FRAMES * 2 + 1
+:   sta sm_kick,x
+    rts
+back:                           ; di nuovo al primo byte del minimo
+    dey
+    dey
+    dey
+    dey
+    ldx #$fc
+    rts
+; per difficoltà: STRAIGHT SHOT, poi RISING STRIKE (Params::super_min_vx_*)
+min_tab: .dword T_SM_MIN_STRAIGHT, T_SM_MIN_RISE
+.endproc
+.assert ball_vx < $100 - 4, error, "sm_floor: ball_vx deve stare in pagina zero"
 
 ; Pagina A del codice delle mosse speciali dalla cartuccia a SM_RUN (circa 3.800 cicli).
 .proc sm_page
@@ -322,8 +399,9 @@ done:
 .endproc
 
 ; Fine di Match::next_on_hit (colpo di n_side, scatto nel bit 7 di sm_dash): la barra cresce, poi
-; il tiro della mossa armata. STRAIGHT SHOT: orizzontale e più veloce (boost += boost >> (shift +
-; 2 - livello)); RISING STRIKE: orizzontale, poi s'impenna alla soglia (sm_motion).
+; il tiro della mossa armata, almeno alla velocità minima della mossa. STRAIGHT SHOT: orizzontale e
+; più veloce (boost += boost >> (shift + 2 - livello)); RISING STRIKE: orizzontale, poi s'impenna
+; alla soglia (sm_motion).
 .proc sm_hit
     lda sm_on
     beq done
@@ -346,6 +424,7 @@ done:
     event_hi EV_SPECIAL_HI
     lda #SFX_SPECIAL
     sta sm_fxp
+    jsr sm_floor
     cpy #3
     bcs rise
     mov32 n_t, ball_boost

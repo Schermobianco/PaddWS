@@ -89,6 +89,7 @@ out new tunings (good values are then carried over to the Rust core and the MiST
 | `super_meter_max`, `super_cost` | `64`, `32` | special move meter (always on; the old `super_moves` key disappears from the file) and cost of a move |
 | `super_gain_hit`, `super_gain_dash`, `super_gain_conceded` | `2`, `4`, `8` | meter gained with a hit, with a dash that intercepts the ball, with a point conceded |
 | `super_straight_multiplier` | `2` | push of the STRAIGHT SHOT MAX (1 + 1/2ⁿ: 2, 1.5, 1.25…); the normal move adds half as much |
+| `super_min_speed_straight`, `super_min_speed_rise` | `0.5`, `0.375` | minimum horizontal ball speed when a STRAIGHT SHOT or RISING STRIKE is hit, as a fraction of the difficulty's top speed: a move at the start of a rally no longer leaves slowly |
 
 The paddle types are in the `next.paddles` section.
 

@@ -90,6 +90,11 @@ pub struct NextTuning {
     /// 1,25, ...) perché il core lo applica con uno shift e una somma; gli altri valori vanno al
     /// più vicino
     pub super_straight_multiplier: f64,
+    /// velocità orizzontale minima della palla al colpo di una mossa, in frazione della massima della
+    /// difficoltà (`ball_max_speed`): sotto, la palla la raggiunge prima del boost della mossa. Così
+    /// la mossa conta anche a inizio scambio, con la palla ancora lenta; lo scambio poi continua da lì
+    pub super_min_speed_straight: f64,
+    pub super_min_speed_rise: f64,
     /// tipi di racchetta
     pub paddles: PaddleTuning,
 }
@@ -208,6 +213,10 @@ impl Default for NextTuning {
             super_gain_conceded: 8,
             super_cost: 32,
             super_straight_multiplier: 2.0,
+            // MAX STRAIGHT SHOT almeno alla velocità massima dello scambio (0,5 x 2); RISING STRIKE
+            // vale per la sorpresa più che per la velocità e ha una soglia più bassa
+            super_min_speed_straight: 0.5,
+            super_min_speed_rise: 0.375,
             paddles: PaddleTuning::default(),
         }
     }
@@ -398,6 +407,10 @@ pub struct Params {
     pub super_cost: u8,
     /// STRAIGHT SHOT: boost += boost >> shift (0 = doppio, 1 = una volta e mezza, ...)
     pub super_straight_shift: u32,
+    /// velocità orizzontale minima al colpo di STRAIGHT SHOT e di RISING STRIKE (vedi
+    /// `NextTuning::super_min_speed_straight`), già per la difficoltà
+    pub super_min_vx_straight: Fx,
+    pub super_min_vx_rise: Fx,
 
     /// tipi di racchetta di NEXT, nell'ordine di `PaddleKind`
     pub kinds: [PaddleParams; PaddleKind::COUNT],
@@ -582,6 +595,10 @@ impl Params {
                     off(a).total_cmp(&off(b))
                 })
                 .unwrap_or(0),
+            // in virgola fissa dalla velocità massima: nel firmware del MiSTer, che calcola i
+            // parametri di ogni difficoltà, la virgola mobile emulata costerebbe centinaia di byte
+            super_min_vx_straight: fixed::mul(speed(maxn * s), fixed::from_f64(n.super_min_speed_straight)),
+            super_min_vx_rise: fixed::mul(speed(maxn * s), fixed::from_f64(n.super_min_speed_rise)),
             kinds: PaddleKind::ALL.map(kind),
             arcade_cooldown_ticks: ticks(k.arcade_cooldown_seconds),
             arcade_spawn_ticks: ticks(k.arcade_spawn_seconds).max(1),

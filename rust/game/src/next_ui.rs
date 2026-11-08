@@ -168,6 +168,12 @@ const LABEL_SECONDS: f64 = 1.2;
 /// RISING STRIKE e quadrato che si allarga sul colpo speciale.
 const SPECIAL_ZOOM_SECONDS: f64 = 0.15;
 const BURST_SECONDS: f64 = 0.3;
+/// Colpo di una mossa speciale, sulla racchetta di chi l'ha fatto: rinculo e onda d'urto (con la MAX
+/// anche le immagini della racchetta), lampo nei primi `KICK_FLASH_SECONDS` e scossa dello schermo
+/// della MAX per `KICK_SHAKE_SECONDS`.
+const KICK_SECONDS: f64 = 0.3;
+const KICK_FLASH_SECONDS: f64 = 0.07;
+const KICK_SHAKE_SECONDS: f64 = 0.15;
 /// Coda della palla con boost, curva, STEER e SLOW: posizioni dei tick precedenti (240 al secondo,
 /// quindi 0,1 s), larghe quanto la palla, che sfumano dal grigio al nero.
 const TRAIL_TICKS: usize = 24;
@@ -284,6 +290,53 @@ pub fn draw_bits(rows: &[&str; 9], x: f32, y: f32, u: f32, mirror: bool, color: 
 /// Icona della mossa speciale, rivolta verso l'avversario di `side` (0 = sinistro).
 pub fn draw_special_icon(special: Special, x: f32, y: f32, u: f32, side: usize, color: Color) {
     draw_bits(&SPECIAL_ICONS[special as usize - 1], x, y, u, side == 1, color);
+}
+
+/// Onda d'urto del colpo di una mossa davanti alla racchetta in (x, y) (coordinate del core), a
+/// `k` (0..1) della sua durata; `back` è il verso del fondo del campo di chi colpisce. STRAIGHT
+/// SHOT: due righe orizzontali che partono dalla faccia e corrono avanti accorciandosi; RISING
+/// STRIKE: un gallone a 45 gradi, come l'impennata, che si allontana (aperto in su e in giù: non
+/// dice da che parte la palla s'impennerà). Con la MAX anche due immagini della racchetta dietro.
+#[allow(clippy::too_many_arguments)]
+fn draw_kick(
+    r: &Renderer,
+    special: Special,
+    max: bool,
+    k: f32,
+    (x, y): (f32, f32),
+    (pw, ph): (f32, f32),
+    back: f32,
+    u: f32,
+    accent: Color,
+) {
+    let fwd = -back;
+    let face = x + fwd * pw / 2.0;
+    let fade = Color { a: 1.0 - k, ..accent };
+    match special {
+        Special::Straight => {
+            let len = 12.0 * u * (1.0 - k) + 2.0 * u;
+            let from = face + fwd * (2.0 * u + 30.0 * u * k);
+            for dy in [-ph / 4.0, ph / 4.0] {
+                r.rect_centered(from + fwd * len / 2.0, y + dy, len, u, fade);
+            }
+        }
+        Special::Rise => {
+            let tip = face + fwd * (4.0 * u + 24.0 * u * k);
+            let arm = ((6.0 + 6.0 * k) as u32).max(1);
+            for i in 0..arm {
+                let d = i as f32 * u;
+                r.rect_centered(tip - fwd * d, y + d, u, u, fade);
+                r.rect_centered(tip - fwd * d, y - d, u, u, fade);
+            }
+        }
+    }
+    if max {
+        for i in 1..=2 {
+            let off = back * i as f32 * 4.0 * u * (1.0 + k);
+            let a = (1.0 - k) * 0.5 / i as f32;
+            r.rect_centered(x + off, y, pw, ph, Color { a, ..accent });
+        }
+    }
 }
 
 /// Barra delle mosse speciali: rettangolo (x, y, w, h) in coordinate di disegno, riempito per
@@ -709,6 +762,10 @@ pub struct NextFx {
     special_label: [Option<(Special, u8, bool, f64)>; 2],
     rise_pending: bool,
     burst: Option<(f32, f32, f64)>,
+    /// verso della palla al tick prima: la coda riparte a ogni colpo
+    ball_left: bool,
+    /// colpo di una mossa speciale per racchetta: mossa, livello e secondi dall'inizio
+    kick: [Option<(Special, u8, f64)>; 2],
 }
 
 impl NextFx {
@@ -728,6 +785,8 @@ impl NextFx {
             special_label: [None; 2],
             rise_pending: false,
             burst: None,
+            ball_left: false,
+            kick: [None; 2],
         }
     }
 
@@ -740,6 +799,12 @@ impl NextFx {
     /// o, con `hit`, al colpo.
     pub fn show_special(&mut self, side: usize, special: Special, level: u8, hit: bool) {
         self.special_label[side] = Some((special, level, hit, LABEL_SECONDS));
+    }
+
+    /// Colpo di una mossa sulla racchetta del giocatore `side`, già avanti di `seconds` (per le
+    /// schermate di verifica; in partita parte dall'evento del colpo).
+    pub fn show_kick(&mut self, side: usize, special: Special, level: u8, seconds: f64) {
+        self.kick[side] = Some((special, level, seconds));
     }
 
     /// Da chiamare prima di ogni tick: serve a capire chi ha attivato un bonus.
@@ -794,6 +859,7 @@ impl NextFx {
             let side = if b.vx > 0 { 0 } else { 1 };
             self.show_special(side, special, n.special_level, true);
             self.burst = Some((to_f32(b.x), to_f32(b.y), BURST_SECONDS));
+            self.kick[side] = Some((special, n.special_level, 0.0));
         }
         // RISING STRIKE: un altro quadrato dove la palla s'impenna
         if self.rise_pending && n.rise_break.is_none() && n.special_flight == Some(Special::Rise) {
@@ -808,6 +874,12 @@ impl NextFx {
             || n.special_flight.is_some()
             || n.slow_timer > 0
             || n.bullet_on;
+        // a ogni colpo (la palla cambia verso) la coda riparte: altrimenti resterebbe piegata sul
+        // percorso d'arrivo, e nel colore del nuovo tiro
+        if (b.vx < 0) != self.ball_left {
+            self.ball_left = b.vx < 0;
+            self.trail.clear();
+        }
         if effect {
             self.trail.push_back((to_f32(b.x), to_f32(b.y)));
             if self.trail.len() > BULLET_GHOST_TICKS {
@@ -887,6 +959,14 @@ impl NextFx {
             *t -= dt;
             if *t <= 0.0 {
                 self.burst = None;
+            }
+        }
+        for kick in &mut self.kick {
+            if let Some((_, _, t)) = kick {
+                *t += dt;
+                if *t >= KICK_SECONDS {
+                    *kick = None;
+                }
             }
         }
         let decay = (0.04f32).powf(dt as f32); // i trattini tornano al loro posto in circa un secondo
@@ -1130,6 +1210,16 @@ impl NextFx {
         } else {
             x
         };
+        // colpo di una mossa: la racchetta rincula verso il fondo e torna (di più con la MAX)
+        let back = if side == 0 { -1.0 } else { 1.0 };
+        let kick = self.kick[side].map(|(special, level, t)| (special, level >= MAX_SPECIAL_LEVEL, t));
+        let x = match kick {
+            Some((_, max, t)) => {
+                let k = (t / KICK_SECONDS) as f32;
+                x + back * if max { 5.0 } else { 3.0 } * u * (1.0 - k) * (1.0 - k)
+            }
+            None => x,
+        };
         let steering = n.steer.is_some_and(|s| s as usize == side);
         // RUSH: immagini dello scatto dalla posizione di casa, che sfumano
         let dash = (self.rush_ghost[side] > 0.0)
@@ -1170,6 +1260,14 @@ impl NextFx {
                 r.rect_centered(bx, base + k as f32 * step, 2.0 * u, h, accent);
             }
         }
+        // colpo di una mossa: lampo della racchetta (giallo; con la MAX giallo e bianco a scatti)
+        let mut flash = None;
+        if let Some((special, max, t)) = kick {
+            draw_kick(r, special, max, (t / KICK_SECONDS) as f32, (x, y), (pw, ph), back, u, accent);
+            if t < KICK_FLASH_SECONDS * if max { 2.0 } else { 1.0 } {
+                flash = Some(if max && (t * 30.0) as u32 % 2 == 1 { white } else { accent });
+            }
+        }
         match pl.armed {
             // STEER: racchetta ferma (grigia) con il volante accanto finché si guida la palla
             _ if steering => {
@@ -1208,8 +1306,17 @@ impl NextFx {
                 let ix = if side == 0 { x + pw + 3.0 * u } else { x - pw - 12.0 * u };
                 draw_special_icon(special, ix, r.screen_y(y) - 4.5 * u, u, side, accent);
             }
-            _ => body(white),
+            _ => body(flash.unwrap_or(white)),
         }
+    }
+
+    /// Scossa orizzontale dello schermo dopo il colpo di una mossa MAX (si somma a quella del SUPER).
+    pub fn kick_shake(&self, u: f32) -> f32 {
+        self.kick
+            .iter()
+            .flatten()
+            .find(|&&(_, level, t)| level >= MAX_SPECIAL_LEVEL && t < KICK_SHAKE_SECONDS)
+            .map_or(0.0, |&(_, _, t)| if ((t * 30.0) as u32).is_multiple_of(2) { 1.5 * u } else { -1.5 * u })
     }
 
     /// Riserve in alto, barre delle mosse speciali e capsule in volo (le scritte: `draw_labels`).

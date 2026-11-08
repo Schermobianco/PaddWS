@@ -1112,7 +1112,30 @@ done:
     lda bit_of+SPN_BAND,y
     ora sh_msb
     sta sh_msb
-:   lda v_n
+:   ; colpo di una mossa (sm_kick, da sm_floor): la racchetta rincula verso il fondo di sm_kick / 4
+    ; pixel e torna, un frame alla volta (X = side, come prima)
+    ldx side
+    lda sm_kick,x
+    beq kicked
+    dec sm_kick,x
+    lsr a
+    lsr a
+    cpy #0                      ; C = 1
+    bne kick_right
+    eor #$ff                    ; a sinistra: v - A
+    adc v_n
+    sta v_n
+    bcs kicked
+    dec v_col
+    bcc kicked
+kick_right:
+    clc                         ; a destra: v + A
+    adc v_n
+    sta v_n
+    bcc kicked
+    inc v_col
+kicked:
+    lda v_n
     sec
     sbc #PAD_BODY_X
     sta sh_x+SPN_PAD,y
@@ -1260,6 +1283,14 @@ gray:
     lda #COL_GRAY
     bne color
 white:
+    ; lampo giallo del colpo di una mossa: i primi 4 frame, e con la MAX (31) anche dal 16° al 19°
+    lda sm_kick,x
+    and #%1100
+    cmp #%1100
+    bne :+
+    lda egg_yel
+    bne color
+:
     lda #COL_WHITE
 color:
     sta sh_col+SPN_PAD,y

@@ -929,6 +929,7 @@ fn hiscore(m: &mut Machine) -> Result<String, String> {
 }
 
 /// Scene del programma C64 (`state` in play.s).
+const ST_MENU: u8 = 5;
 const ST_COUNT: u8 = 6;
 const ST_PLAY: u8 = 7;
 const ST_PICK: u8 = 9;
@@ -1673,6 +1674,9 @@ fn frames(m: &mut Machine) -> bool {
         s.2 += 1;
         s.3 += (c > FRAME_BUDGET) as u32;
         let now = m.read_u8("state", 0);
+        if c > FRAME_BUDGET {
+            println!("  frame oltre il budget: stato {state} -> {now}, {c} cicli");
+        }
         let mut b = border.get();
         let brd = m.read_u8("sh_brd", 0);
         if matches!(now, 4 | 6 | 7 | 8) {
@@ -1784,6 +1788,11 @@ fn frames(m: &mut Machine) -> bool {
     let joy = |m: &mut Machine, rng: &mut Rng| {
         let mut joy = 0xFFu8;
         let diff = fixed::floor(m.read_i32("ball_y", 0)) - fixed::floor(m.read_i32("pad_y", 0));
+        // a partita finita (attract e menu) il joystick resta fermo: il fuoco nelle strisce
+        // aprirebbe il menu, che qui non si misura
+        if m.read_u8("state", 0) <= ST_MENU {
+            return joy;
+        }
         if m.read_u8("state", 0) >= 9 {
             joy &= match rng.below(40) {
                 37 => !0x01,

@@ -38,6 +38,10 @@ P_BOOST_LEVELS         = $00000009   ; livelli dell'area boost
 .define T_KSPEED_NEXT $00010F5C, $0001199A, $000123D7, $00012E14
 ; 
 .define T_MAX_NEXT $00036E14, $0004E666, $000563D7, $00065EB8
+; mosse speciali: velocità orizzontale minima al colpo, STRAIGHT SHOT
+.define T_SM_MIN_STRAIGHT $0001B70A, $00027333, $0002B1EB, $00032F5C
+; RISING STRIKE
+.define T_SM_MIN_RISE $00014947, $0001D666, $00020570, $00026385
 ; NEXT
 P_CAP_HALF             = $00050000   ; metà lato della capsula
 P_CAP_SPEED            = $0001399A   ; velocità orizzontale della capsula

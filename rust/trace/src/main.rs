@@ -362,6 +362,14 @@ fn tuning(a: &Args, difficulty: u8) -> Tuning {
                 n.super_straight_multiplier = *v;
                 continue;
             }
+            "super_min_speed_straight" => {
+                n.super_min_speed_straight = *v;
+                continue;
+            }
+            "super_min_speed_rise" => {
+                n.super_min_speed_rise = *v;
+                continue;
+            }
             _ => None,
         };
         if let Some(c) = count {

@@ -511,6 +511,8 @@ fn arcade(px: &Px, (cx, cy): (i32, i32), label: &str, pressed: bool, small: bool
         None,
     );
     let top = base - 2 - if pressed { 1 } else { 3 };
+    // fianco del cilindro: chiuso in basso da un'ellisse (con il solo rettangolo sembrava tagliato)
+    px.ellipse(cx - r + 2, base - 1 - r / 2, cx + r - 2, base - 1 + r / 2, Some(RED_DARK), None);
     px.rect(cx - r + 2, top, cx + r - 2, base - 1, RED_DARK);
     px.ellipse(
         cx - r + 2,

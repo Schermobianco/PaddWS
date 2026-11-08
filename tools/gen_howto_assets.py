@@ -126,6 +126,8 @@ def button(img: Image.Image, cx: int, cy: int, label: str, pressed: bool, small:
     d.ellipse((cx - r - 1, base_y - r // 2 - 1, cx + r + 1, base_y + r // 2 + 1), fill=S_HOLE)
     h = 1 if pressed else 3
     top = base_y - 2 - h
+    # fianco del cilindro: chiuso in basso da un'ellisse (con il solo rettangolo sembrava tagliato)
+    d.ellipse((cx - r + 2, base_y - 1 - r // 2, cx + r - 2, base_y - 1 + r // 2), fill=S_RED_DARK)
     d.rectangle((cx - r + 2, top, cx + r - 2, base_y - 1), fill=S_RED_DARK)
     d.ellipse((cx - r + 2, top - r // 2, cx + r - 2, top + r // 2), fill=S_RED_LIGHT if pressed else S_RED,
               outline=S_WHITE if pressed else None)

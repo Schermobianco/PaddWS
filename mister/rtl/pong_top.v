@@ -1656,8 +1656,44 @@ endfunction
 reg signed [31:0] draw0_x = 32'sd0, draw1_x = 32'sd0;
 wire signed [31:0] next0_x = dash_snap[0] ? pad0_x : slide(draw0_x, pad0_x);
 wire signed [31:0] next1_x = dash_snap[1] ? pad1_x : slide(draw1_x, pad1_x);
-wire signed [31:0] show0_x = next0_x + (rush_kind[0] ? rush_shake : 32'sd0);
-wire signed [31:0] show1_x = next1_x + (rush_kind[1] ? rush_shake : 32'sd0);
+// colpo di una mossa speciale (come KICK_SECONDS di next_ui.rs): per KICK_FRAMES frame la
+// racchetta di chi l'ha fatto rincula verso il fondo e torna; lampo, onda d'urto e (MAX) immagini
+// della racchetta li disegna next_render
+localparam [4:0] KICK_FRAMES = 5'd18;
+reg [4:0] kick_t [0:1];
+reg       kick_rise [0:1], kick_max [0:1];
+initial begin
+    kick_t[0] = 5'd0;
+    kick_t[1] = 5'd0;
+end
+always @(posedge clk) begin
+    if (match_reset) begin
+        kick_t[0] <= 5'd0;
+        kick_t[1] <= 5'd0;
+    end else begin
+        if (frame_start && kick_t[0] != 5'd0) kick_t[0] <= kick_t[0] - 5'd1;
+        if (frame_start && kick_t[1] != 5'd0) kick_t[1] <= kick_t[1] - 5'd1;
+        // chi ha colpito manda la palla verso l'altro
+        if (sound_trigger && sup && sound_events[12]) begin
+            kick_t[ball_vx < 0] <= KICK_FRAMES;
+            kick_rise[ball_vx < 0] <= next_flags[10:9] == 2'd2;
+            kick_max[ball_vx < 0] <= super0[13];
+        end
+    end
+end
+// rinculo in pixel: ampiezza (3, 5 con la MAX) per (frame rimasti / KICK_FRAMES)^2, circa
+function [3:0] recoil(input [4:0] t, input mx);
+    reg [11:0] q;
+    begin
+        q = {7'd0, t} * {7'd0, t};
+        q = mx ? (q << 2) + q : (q << 1) + q;
+        recoil = q[11:8];
+    end
+endfunction
+wire signed [31:0] kick0_dx = -$signed({12'd0, recoil(kick_t[0], kick_max[0]), 16'd0});
+wire signed [31:0] kick1_dx = $signed({12'd0, recoil(kick_t[1], kick_max[1]), 16'd0});
+wire signed [31:0] show0_x = next0_x + (rush_kind[0] ? rush_shake : 32'sd0) + (nxt ? kick0_dx : 32'sd0);
+wire signed [31:0] show1_x = next1_x + (rush_kind[1] ? rush_shake : 32'sd0) + (nxt ? kick1_dx : 32'sd0);
 always @(posedge clk) begin
     if (snapshot) begin
         draw0_x <= next0_x;
@@ -1712,7 +1748,8 @@ next_render next_draw (
     .intro(mode == M_INTRO), .intro_kind(rung_kind(ch_level)), .intro_right(ch_side),
     .parade(end_parade), .parade_n(end_parade_n),
     .nxt(nxt && (mode == M_GAME || mode == M_GAME_OVER || mode == M_DEMO)),
-    .ball_x(ball_x), .ball_y(ball_y), .ball_r(ball_r), .ball_boost(ball_boost),
+    .ball_x(ball_x), .ball_y(ball_y), .ball_r(ball_r), .ball_boost(ball_boost), .ball_vx(ball_vx),
+    .kick0({kick_max[0], kick_rise[0], kick_t[0]}), .kick1({kick_max[1], kick_rise[1], kick_t[1]}),
     .pad0_x(show0_x), .pad0_y(pad0_y), .pad1_x(show1_x), .pad1_y(pad1_y),
     .slow_timer(slow_timer), .curve(curve), .next_flags(next_flags), .player0(player0), .player1(player1),
     .caps_x(caps_x), .caps_y(caps_y), .caps_flags(caps_flags), .tick(logic_tick),

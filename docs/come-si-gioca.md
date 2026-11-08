@@ -100,6 +100,10 @@ non si attivano bonus).
 | **STRAIGHT SHOT** | il prossimo tiro parte dritto, senza angolo, a una volta e mezza la spinta del colpo (il doppio la MAX); vale un tiro solo, e si perde se l'avversario lo intercetta con lo scatto |
 | **RISING STRIKE** | il prossimo tiro parte dritto e, passati i 5/8 del campo (i 7/8 la MAX), s'impenna di colpo a 45° lontano dalla racchetta avversaria: inganna chi si era già messo sulla traiettoria |
 
+Anche a inizio scambio una mossa non parte lenta: al colpo la palla va almeno a metà della velocità
+massima della difficoltà con STRAIGHT SHOT (la MAX quindi almeno alla velocità massima) e ai 3/8 con
+RISING STRIKE.
+
 | comando | STRAIGHT SHOT | RISING STRIKE |
 |---|---|---|
 | tastiera | giù, su + scatto | su, giù + scatto |
@@ -136,7 +140,7 @@ livello al GUARDIAN del boss finale. Le partite sono NEXT a 5 punti.
   `padd_scores.json` accanto alla configurazione, nel browser nel `localStorage`, sul C64 nella
   flash della cartuccia; sul MiSTer nella SD (`PaddWS.nvm`, da solo con l'OSD *Autosave scores*
   o con *Save settings*), se il core è avviato dal `.mra`.
-- **Nuovo sfidante**, come in Street Fighter 2: durante la presentazione di un livello, la partita
+- **Nuovo sfidante**: durante la presentazione di un livello, la partita
   contro la CPU o il livello superato, un secondo giocatore con un credito (o in Free Play) preme
   il suo Start (sul PC `2`, o `1` se il campione gioca a destra) e compare **HERE COMES A NEW
   CHALLENGER!**. Sul touch tiene il dito per un secondo nella metà libera, e in partita dietro la
