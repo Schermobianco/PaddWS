@@ -14,6 +14,8 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+## [4.0.1] - 2026-11-08
+
 ### Corretto
 - PC, Raspberry e web: alla fine della partita, al posto di YOU WIN e del GAME OVER, lo schermo
   restava bianco per tutti i 3 secondi della schermata: il lampo del punto decisivo non si spegneva
@@ -1012,5 +1014,6 @@ Ricostruite dalle cartelle di backup in `archive/` (date indicative).
 - **1.5** (2020-08) – versione per Raspberry Pi con encoder rotativi.
 - **1.1 – 1.4** (2020-08) – prime versioni pygame: menu, modalità CLASSIC ed EVO, suoni, splash.
 
-[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.0.0...HEAD
+[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.0.1...HEAD
+[4.0.1]: https://github.com/Schermobianco/PaddWS/compare/v4.0.0...v4.0.1
 [4.0.0]: https://github.com/Schermobianco/PaddWS/compare/v4.0.0-beta.22...v4.0.0
