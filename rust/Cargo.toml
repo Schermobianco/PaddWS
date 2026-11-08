@@ -6,7 +6,7 @@ exclude = ["vendor"]
 
 [workspace.package]
 # La versione Rust sarà la prossima major del progetto (vedi CHANGELOG.md)
-version = "4.0.0-beta.22"
+version = "4.0.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/Schermobianco/PaddWS"
