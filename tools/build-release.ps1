@@ -62,16 +62,36 @@ if ($Publish) {
     if (-not (git ls-remote --tags origin $tag)) { Fail "il tag $tag non è su GitHub (git push --follow-tags)" }
 }
 
-function Reachable { ssh -o BatchMode=yes -o ConnectTimeout=5 $vm true 2>$null; return $LASTEXITCODE -eq 0 }
+# $sshOpts va in ogni ssh e scp: a volte il DHCP di VMware dà a forge un altro indirizzo (FollowIp)
+$sshOpts = @()
+function Reachable { ssh @sshOpts -o BatchMode=yes -o ConnectTimeout=5 $vm true 2>$null; return $LASTEXITCODE -eq 0 }
+# se ssh non risponde, l'indirizzo di forge lo sa VMware (open-vm-tools): se è cambiato si usa quello
+function FollowIp {
+    if (-not $cfg.Vmx -or $script:sshOpts) { return }
+    $ip = (& $vmrun -T ws getGuestIPAddress $cfg.Vmx 2>$null | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or $ip -notmatch '^\d+\.\d+\.\d+\.\d+$') { return }
+    $known = (ssh -G $vm 2>$null | Where-Object { $_ -like 'hostname *' } | Select-Object -First 1) -replace '^hostname ', ''
+    if ($ip -ne $known) {
+        $script:sshOpts = @('-o', "HostName=$ip")
+        Write-Host "  forge ora ha l'indirizzo $ip, non ${known}: conviene correggere HostName in ~/.ssh/config" -ForegroundColor Yellow
+    }
+}
 $started = $false
 if (-not (Reachable)) {
     if (-not $cfg.Vmx) { Fail "forge ($vm) non risponde e forge.local.psd1 non dice dov'è la VM (Vmx): va accesa a mano" }
-    Step "accensione di forge ($($cfg.Vmx))"
-    & $vmrun -T ws start $cfg.Vmx nogui
-    if ($LASTEXITCODE -ne 0) { Fail "vmrun non ha acceso la VM" }
-    $started = $true
+    if (-not (Test-Path $vmrun)) { Fail "manca $vmrun (VMware Workstation)" }
+    $vmxPath = (Resolve-Path $cfg.Vmx).Path
+    if (& $vmrun -T ws list | Where-Object { $_ -ieq $vmxPath }) {
+        Step "forge è accesa ma ssh non risponde"
+    } else {
+        Step "accensione di forge ($($cfg.Vmx))"
+        & $vmrun -T ws start $cfg.Vmx nogui
+        if ($LASTEXITCODE -ne 0) { Fail "vmrun non ha acceso la VM" }
+        $started = $true
+    }
     $t = 0
     while (-not (Reachable)) {
+        FollowIp
         Start-Sleep -Seconds 5
         $t += 5
         if ($t -ge 180) { Fail "forge accesa ma ssh non risponde dopo 3 minuti" }
@@ -86,11 +106,11 @@ try {
     # PowerShell 5 rovinerebbe i byte del tar
     $tar = Join-Path $env:TEMP "paddws-forge-$commit.tar"
     git -c core.autocrlf=false archive --format=tar -o $tar $source
-    scp -q $tar "${vm}:forge/src.tar"
+    scp @sshOpts -q $tar "${vm}:forge/src.tar"
     if ($LASTEXITCODE -ne 0) { throw "copia dei sorgenti" }
     Remove-Item $tar
     # cartella nuova e scambio alla fine: la vista della console legge status.sh da lì
-    ssh $vm "set -e; cd ~/forge; rm -rf src.new; mkdir src.new; tar -xf src.tar -C src.new; rm src.tar; echo 'commit $commit ($version)' > src.new/.source; rm -rf src; mv src.new src"
+    ssh @sshOpts $vm "set -e; cd ~/forge; rm -rf src.new; mkdir src.new; tar -xf src.tar -C src.new; rm src.tar; echo 'commit $commit ($version)' > src.new/.source; rm -rf src; mv src.new src"
     if ($LASTEXITCODE -ne 0) { throw "estrazione dei sorgenti su forge" }
 
     $opts = @()
@@ -98,17 +118,17 @@ try {
     if ($CheckOnly) { $opts += "--check-only" }
     if ($SkipMister) { $opts += "--no-mister" }
     if ($Synth) { $opts += "--synth" }
-    ssh $vm "sh ~/forge/src/tools/forge/build.sh $($opts -join ' ')"
+    ssh @sshOpts $vm "sh ~/forge/src/tools/forge/build.sh $($opts -join ' ')"
     if ($LASTEXITCODE -ne 0) { throw "build su forge (forge-stato sulla VM per lo stato)" }
 
     if (-not $CheckOnly) {
         Step "pacchetti in $dist"
         if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
         New-Item -ItemType Directory $dist | Out-Null
-        scp -q "${vm}:forge/out/*.zip" "${vm}:forge/out/*.tar.gz" $dist
+        scp @sshOpts -q "${vm}:forge/out/*.zip" "${vm}:forge/out/*.tar.gz" $dist
         if ($LASTEXITCODE -ne 0) { throw "copia dei pacchetti da forge" }
         # l'immagine del Deck c'è solo se forge ha ~/forge/deck-cache (tools/forge/build.sh)
-        scp -q "${vm}:forge/out/*.img.xz" $dist 2>$null
+        scp @sshOpts -q "${vm}:forge/out/*.img.xz" $dist 2>$null
         Get-ChildItem $dist | ForEach-Object { "  {0,-45} {1,10:N0} byte" -f $_.Name, $_.Length }
     }
     $ok = $true

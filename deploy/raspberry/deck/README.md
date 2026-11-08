@@ -89,8 +89,9 @@ systemd) e `journalctl -u paddws` (le successive).
 
 ## Costruire l'immagine
 
-Su Linux x86 (per esempio la VM forge), come root, con `qemu-user-static`, `rsync`, `parted` e
-`dosfstools`:
+Sulla VM forge lo fa la release, dopo che `tools/forge/deck-cache.sh` ha preparato una volta Lite,
+Mesa e kernel ([tools/forge](../../../tools/forge/README.md)). A mano, su Linux x86, come root,
+con `qemu-user-static`, `rsync`, `parted` e `dosfstools`:
 
 ```sh
 curl -LO https://downloads.raspberrypi.com/raspios_lite_armhf/images/raspios_lite_armhf-2026-10-06/2026-10-06-raspios-trixie-armhf-lite.img.xz

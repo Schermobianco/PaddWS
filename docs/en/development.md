@@ -144,8 +144,9 @@ and `-beta.N` previews leave the entries under **Non rilasciato**), creates the 
 `vX.Y.Z`. The packages are then built in one of two ways:
 
 - `build_onforge.bat` runs the checks and builds the packages locally, in `dist\`, on the *forge* virtual
-  machine ([tools/forge](../../tools/forge/README.md)): it starts and stops it by itself, and the PC
-  only needs git and ssh. `build_onforge.bat -Publish` then publishes the release of the tag with `gh` and
+  machine ([tools/forge](../../tools/forge/README.en.md)): it starts and stops it by itself, and the PC
+  only needs git and ssh. The VM is created once with `create_forge.bat` (VMware Workstation, about
+  ten minutes, no questions asked). `build_onforge.bat -Publish` then publishes the release of the tag with `gh` and
   the web version on GitHub Pages. The release notes come from the changelog
   (`tools/release_notes.py X.Y.Z`): for previews, only the entries added or changed since the
   previous tag.

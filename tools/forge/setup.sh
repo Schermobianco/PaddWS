@@ -3,8 +3,8 @@
 #   - nome host forge; Docker (get.docker.com), open-vm-tools (spegnimento pulito da VMware, anche da
 #     build_onforge.bat) e ora sincronizzata, se mancano; l'utente nel gruppo docker;
 #   - /etc/motd vuoto: la scritta e lo stato li stampa una volta /etc/profile.d/forge-status.sh a ogni
-#     accesso interattivo, che definisce anche forge-stato (vista dal vivo), forge-build (release) e
-#     forge-sintesi (solo il core MiSTer);
+#     accesso interattivo, che definisce anche forge-stato (vista dal vivo), forge-build (release),
+#     forge-sintesi (solo il core MiSTer) e forge-deck (tools/forge/deck-cache.sh);
 #   - /etc/issue (schermata di accesso) con la scritta, l'indirizzo IP e il comando ssh;
 #   - sulla prima console, dall'avvio e senza accesso, la vista dal vivo (status.sh --console) come
 #     l'utente; l'accesso passa alla seconda console (Alt+F2);
@@ -30,8 +30,10 @@ if [ "$old" != forge ]; then
     sed -i "s/\b$old\b/forge/g" /etc/hosts
     echo "ok: nome host forge (era $old)"
 fi
+export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-for p in curl ca-certificates open-vm-tools systemd-timesyncd; do
+# console-setup: manca nelle immagini cloud di Debian (create_vm.py), serve per il font della console
+for p in curl ca-certificates open-vm-tools systemd-timesyncd console-setup; do
     dpkg -s "$p" >/dev/null 2>&1 || { apt-get install -y -qq "$p" >/dev/null; echo "ok: installato $p"; }
 done
 timedatectl set-ntp true
@@ -75,13 +77,14 @@ cat >/etc/profile.d/forge-status.sh <<'STATUS'
 # forge-status.sh - scritto da tools/forge/setup.sh (macchina di build forge, non modificare): scritta e
 # stato della macchina a ogni accesso interattivo, e i comandi forge-stato (vista dal vivo, ridisegnata
 # ogni 2 s finché resta aperta), forge-build (release dai sorgenti in ~/forge/src, pacchetti in
-# ~/forge/out) e forge-sintesi (solo il core MiSTer). Sulla console lo schermo si pulisce prima, così
+# ~/forge/out), forge-sintesi (solo il core MiSTer) e forge-deck (cache dell'immagine del Deck). Sulla console lo schermo si pulisce prima, così
 # la scritta della schermata di accesso non si ripete.
 case $- in *i*) ;; *) return 0 ;; esac
 case "$(tty 2>/dev/null)" in /dev/tty[0-9]*) printf '\033[H\033[2J' ;; esac
 alias forge-stato='sh "$HOME/forge/src/tools/forge/status.sh" --watch'
 alias forge-build='sh "$HOME/forge/src/tools/forge/build.sh"'
 alias forge-sintesi='sh "$HOME/forge/src/mister/synth.sh"'
+alias forge-deck='sh "$HOME/forge/src/tools/forge/deck-cache.sh"'
 if [ -r "$HOME/forge/src/tools/forge/status.sh" ]; then
     sh "$HOME/forge/src/tools/forge/status.sh"
     printf '  %s\n\n' "Vista dal vivo: forge-stato (Ctrl+C per uscire)   Release: forge-build   MiSTer: forge-sintesi"
@@ -89,7 +92,7 @@ else
     printf '  %s\n\n' "forge: nessun sorgente in ~/forge/src (li manda build_onforge.bat dal PC)"
 fi
 STATUS
-echo "ok: /etc/profile.d/forge-status.sh (stato a ogni accesso; forge-stato, forge-build, forge-sintesi)"
+echo "ok: /etc/profile.d/forge-status.sh (stato a ogni accesso; forge-stato, forge-build, forge-sintesi, forge-deck)"
 
 # agetty sostituisce da sé \4{scheda} con l'indirizzo IP e \e{colore} con i colori: niente script all'avvio.
 # Quando la rete cambia (all'avvio l'indirizzo arriva dopo) agetty ristampa la schermata: comincia

@@ -14,6 +14,18 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+### Aggiunto
+- Sviluppo: **`create_forge.bat`** crea da zero la VM forge in VMware Workstation, senza domande.
+  Scarica l'immagine cloud di Debian 13, la configura con cloud-init (utente con la chiave ssh del
+  PC, `sudo` senza password), lancia `tools/forge/setup.sh` e alla fine aggiunge forge a
+  `~/.ssh/config` e scrive `forge.local.psd1`. `tools/forge/deck-cache.sh` (o `--deck`, o
+  `forge-deck` sulla VM) prepara la cache per l'immagine della SD del Deck: Raspberry Pi OS Lite,
+  kernel e Mesa. Guida di forge anche in inglese.
+
+### Modificato
+- `build_onforge.bat`: se forge non risponde perché il DHCP di VMware le ha dato un altro indirizzo,
+  lo chiede a VMware e va avanti con quello; se forge è già accesa non prova più ad accenderla.
+
 ## [4.0.1] - 2026-11-08
 
 ### Aggiunto
