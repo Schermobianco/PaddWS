@@ -1,4 +1,4 @@
-﻿# Release online, alternativa a build.bat: le GitHub Action, avviate da qui sul tag, costruiscono
+﻿# Release online, alternativa a build_onforge.bat: le GitHub Action, avviate da qui sul tag, costruiscono
 # i pacchetti, sintesi del core MiSTer compresa, e li allegano alla release; alla fine questo script
 # mette le note dal changelog (tools/release_notes.py) e la versione web su GitHub Pages. Manca
 # solo l'immagine della SD del Deck, che costruisce forge (tools/forge/build.sh, con deck-cache).
@@ -13,7 +13,7 @@
 # con gh workflow run.
 #   -NoCheck  salta i controlli locali (gli stessi della CI, da tools\build-release.ps1)
 #   -NoWait   non aspetta la fine delle Action
-# I controlli locali girano sulla macchina forge (build.bat -CheckOnly). Richiede gh in
+# I controlli locali girano sulla macchina forge (build_onforge.bat -CheckOnly). Richiede gh in
 # C:\DEV\@Compiler\gh (autenticato) e Python.
 
 param([string]$Version, [switch]$NoCheck, [switch]$NoWait)
@@ -77,7 +77,7 @@ if (-not $runs) { Fail "nessuna Action partita per $tag" }
 $blocked = $runs | Where-Object { $_.status -eq "completed" -and $_.conclusion -eq "failure" } | Select-Object -First 1
 if ($blocked) {
     $why = & $gh run view $blocked.databaseId 2>&1 | Select-String "not started|billing|spending" | Select-Object -First 1
-    if ($why) { Fail "GitHub non avvia i job: $($why.Line.Trim()) - per costruire in locale: build.bat -Publish" }
+    if ($why) { Fail "GitHub non avvia i job: $($why.Line.Trim()) - per costruire in locale: build_onforge.bat -Publish" }
 }
 $runs | ForEach-Object { "  {0,-8} {1}" -f $_.workflowName, $_.status }
 if ($NoWait) {
@@ -105,7 +105,7 @@ if ($LASTEXITCODE -ne 0) { Fail "tools/release_notes.py" }
 if ($LASTEXITCODE -ne 0) { Fail "note della release" }
 Remove-Item $notes
 
-# publish-pages.ps1 prende lo zip web da dist\, come dopo build.bat
+# publish-pages.ps1 prende lo zip web da dist\, come dopo build_onforge.bat
 Step "versione web su GitHub Pages"
 $dist = Join-Path $root "dist"
 New-Item -ItemType Directory -Force $dist | Out-Null
@@ -116,4 +116,4 @@ if ($LASTEXITCODE -ne 0) { Fail "pubblicazione su GitHub Pages" }
 
 Step "release $tag"
 & $gh release view $tag --json url,assets --jq '.url, (.assets[] | "  \(.name)")'
-Write-Host "  l'immagine della SD del Deck non c'è: la costruisce solo forge (build.bat -Publish)"
+Write-Host "  l'immagine della SD del Deck non c'è: la costruisce solo forge (build_onforge.bat -Publish)"

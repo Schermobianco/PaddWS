@@ -78,7 +78,7 @@ JavaScript di miniquad e quad-snd viene dalle loro copie in `rust/vendor`. Dal t
 stessa rete si prova con `-Serve` (il firewall di Windows deve lasciar passare la porta 8080).
 
 Online è su GitHub Pages, <https://schermobianco.github.io/PaddWS/>, dal ramo `gh-pages`:
-`build.bat -Publish` ci mette, dopo la release, il contenuto dello zip web
+`build_onforge.bat -Publish` ci mette, dopo la release, il contenuto dello zip web
 ([`tools/publish-pages.ps1`](../tools/publish-pages.ps1), lanciabile anche da solo).
 
 ## Test e verifiche
@@ -95,7 +95,7 @@ Le GitHub Action `Python`, `Rust`, `MiSTer` e `C64` eseguono gli stessi controll
 sintetizza anche il core con Quartus 17.0.2, la `C64` assembla il programma con cc65 e lo prova nel
 banco di prova (vedi [c64/README.md](../c64/README.md)). Partono solo a mano (*Run workflow*, `gh
 workflow run` o `build_ongithub.bat`). Gli stessi controlli girano in locale con
-`build.bat -CheckOnly`, oppure, sui file non ancora committati, con `forge-check.bat`.
+`build_onforge.bat -CheckOnly`, oppure, sui file non ancora committati, con `check_onforge.bat`.
 
 ## Fluidità e latenza (versione Rust)
 
@@ -129,9 +129,9 @@ Lo script aggiorna la versione di Python e Rust (con `Cargo.lock`) e il changelo
 `-beta.N` lasciano le voci in **Non rilasciato**), crea il commit e il tag `vX.Y.Z`. I pacchetti
 si costruiscono poi in uno di questi due modi:
 
-- `build.bat` fa i controlli e i pacchetti in locale, in `dist\`, sulla macchina virtuale *forge*
+- `build_onforge.bat` fa i controlli e i pacchetti in locale, in `dist\`, sulla macchina virtuale *forge*
   ([tools/forge](../tools/forge/README.md)): la accende e la spegne da solo, e sul PC bastano git
-  e ssh. `build.bat -Publish` pubblica poi la release del tag con `gh` e la versione web su GitHub
+  e ssh. `build_onforge.bat -Publish` pubblica poi la release del tag con `gh` e la versione web su GitHub
   Pages. Le note della release vengono dal changelog (`tools/release_notes.py X.Y.Z`): per le
   anteprime solo le voci nuove o cambiate dal tag precedente.
 - `build_ongithub.bat VERSIONE` fa tutto online: controlli, `tools/release.py`, push, avvia le

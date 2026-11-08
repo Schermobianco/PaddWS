@@ -3,7 +3,7 @@
 # MiSTer compreso) e questo PC li riprende in dist\. Sul PC servono solo git, ssh e, per pubblicare, gh.
 # Se forge è spenta la accende (VMware, senza finestra) e alla fine la rispegne.
 #
-# Uso:  build.bat [-Publish] [-NoCheck] [-CheckOnly] [-SkipMister] [-KeepVm] [-WorkingTree [-Synth]]
+# Uso:  build_onforge.bat [-Publish] [-NoCheck] [-CheckOnly] [-SkipMister] [-KeepVm] [-WorkingTree [-Synth]]
 #   -Publish     pubblica la release vX.Y.Z su GitHub con gh (anteprima se la versione ha un "-"):
 #                serve il tag vX.Y.Z sul commit attuale, già inviato (tools/release.py e git push);
 #                poi la versione web su GitHub Pages (tools\publish-pages.ps1)
@@ -11,7 +11,7 @@
 #   -SkipMister  senza la sintesi del core MiSTer (circa 16 minuti)
 #   -KeepVm      lascia forge accesa anche se l'ha accesa questo script
 #   -WorkingTree i file come sono ora, modifiche e file nuovi compresi, senza commit: solo i
-#                controlli (forge-check.bat), lontano dall'antivirus di questo PC
+#                controlli (check_onforge.bat), lontano dall'antivirus di questo PC
 #   -Synth       con -WorkingTree anche la sintesi del core MiSTer (ALM e slack), senza pacchetti
 # Configurazione in forge.local.psd1 (non versionato), per esempio:
 #   @{ Host = 'forge'; Vmx = 'D:\VM\forge\forge.vmx' }
@@ -55,7 +55,7 @@ if ($WorkingTree) {
     Fail "-Synth va con -WorkingTree (la release fa sempre la sintesi)"
 }
 Write-Host "PADD WS $version (commit $commit) su $vm"
-if (-not $WorkingTree -and (git status --porcelain)) { Fail "il repository ha modifiche non committate: forge riceve il commit, non i file modificati (per provarle: forge-check.bat)" }
+if (-not $WorkingTree -and (git status --porcelain)) { Fail "il repository ha modifiche non committate: forge riceve il commit, non i file modificati (per provarle: check_onforge.bat)" }
 if ($Publish) {
     $at = git rev-list -n 1 $tag 2>$null
     if (-not $at -or $at.Trim() -ne (git rev-parse HEAD).Trim()) { Fail "il tag $tag non è sul commit attuale (python tools/release.py ...)" }

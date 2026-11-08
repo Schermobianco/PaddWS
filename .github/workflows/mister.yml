@@ -10,7 +10,7 @@
 name: MiSTer
 
 # Solo a mano (gh workflow run, build_ongithub.bat): le release si costruiscono di solito sulla
-# macchina forge con build.bat, le Action sono la strada alternativa
+# macchina forge con build_onforge.bat, le Action sono la strada alternativa
 on:
   workflow_dispatch:
 

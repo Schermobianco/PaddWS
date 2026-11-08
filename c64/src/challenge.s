@@ -7,7 +7,7 @@
 ; Punti arcade come `Score::on_tick`: colpi, scatti riusciti e SUPER di chi gioca, punti segnati,
 ; con il moltiplicatore che sale di uno ogni CH_RALLY_STEP colpi dello scambio.
 ;
-; Nuovo sfidante, come in Street Fighter II (challenge_ui.rs): nella presentazione, nella partita
+; Nuovo sfidante (challenge_ui.rs): nella presentazione, nella partita
 ; contro la CPU e nel livello superato (non l'ultimo) entra il giocatore del lato libero con il
 ; fuoco del suo joystick (porta 2 a sinistra, porta 1 a destra; con i paddle il pulsante del suo
 ; paddle), se c'è un credito o in Free Play. HERE COMES A NEW CHALLENGER!, poi lo sfidante sceglie

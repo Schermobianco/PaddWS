@@ -1,7 +1,7 @@
 ﻿# Pubblica la versione web su GitHub Pages (https://schermobianco.github.io/PaddWS/): il contenuto
 # di dist\paddws-X.Y.Z-web.zip diventa un commit nuovo del ramo gh-pages, figlio del precedente, e
 # si invia. Il commit si costruisce con un indice temporaneo: il ramo attuale e i file di lavoro non
-# cambiano. La prima volta attiva anche Pages sul ramo gh-pages. Lo chiama build.bat -Publish dopo
+# cambiano. La prima volta attiva anche Pages sul ramo gh-pages. Lo chiama build_onforge.bat -Publish dopo
 # la release; si può lanciare anche da solo, con lo zip della versione attuale in dist\.
 # Uso:  powershell -File tools\publish-pages.ps1
 
@@ -14,7 +14,7 @@ function Fail($msg) { Write-Host "ERRORE: $msg" -ForegroundColor Red; exit 1 }
 Set-Location $root
 $version = (Select-String -Path "$root\rust\Cargo.toml" -Pattern '^version = "(.*)"' | Select-Object -First 1).Matches[0].Groups[1].Value
 $zip = Join-Path $root "dist\paddws-$version-web.zip"
-if (-not (Test-Path $zip)) { Fail "$zip non c'è (build.bat)" }
+if (-not (Test-Path $zip)) { Fail "$zip non c'è (build_onforge.bat)" }
 
 # il sito: i file dello zip (che stanno in una cartella paddws-X.Y.Z-web) più .nojekyll, perché
 # GitHub serva i file così come sono

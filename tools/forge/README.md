@@ -2,7 +2,7 @@
 
 *forge* è una macchina virtuale Debian con Docker che costruisce la release come le GitHub Action,
 anche quando le Action non ci sono (per esempio con i minuti di GitHub finiti). Dal PC si lancia
-`build.bat`, che:
+`build_onforge.bat`, che:
 
 1. accende forge se è spenta (VMware Workstation, `vmrun`, senza finestra);
 2. le manda i sorgenti del commit attuale, con i fine riga del repository come il checkout della CI;
@@ -76,7 +76,7 @@ accesso, anche con `ssh forge`, si hanno i comandi:
    ```powershell
    @{
        Host = 'forge'
-       Vmx  = 'D:\VM\forge\forge.vmx'   # per accenderla e spegnerla da build.bat
+       Vmx  = 'D:\VM\forge\forge.vmx'   # per accenderla e spegnerla da build_onforge.bat
    }
    ```
 

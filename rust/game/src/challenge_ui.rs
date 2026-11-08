@@ -2,7 +2,7 @@
 //! a gettoni, iniziali per la classifica e classifica (anche nell'attract). La logica dei
 //! livelli e dei punti è nel core (`paddws_core::challenge`).
 //!
-//! Nuovo sfidante, come in Street Fighter II: durante la presentazione di un livello, la partita
+//! Nuovo sfidante: durante la presentazione di un livello, la partita
 //! contro la CPU e il livello superato (non dopo l'ultimo) un secondo giocatore entra con un
 //! credito, o in Free Play, premendo lo Start del lato libero: il tasto 1 o 2 (quello del lato,
 //! come nei cabinati MAME), il click del suo encoder sul cabinato, sul touch un tocco prolungato

@@ -15,6 +15,11 @@ crea il commit e il tag `vX.Y.Z`.
 ## [Non rilasciato]
 
 ### Aggiunto
+- NEXT, mosse speciali: **animazione della racchetta** al colpo della mossa. La racchetta rincula verso
+  il fondo e torna, lampeggia in giallo e lancia un'onda d'urto davanti a sé: due righe per STRAIGHT
+  SHOT, un gallone a 45 gradi per RISING STRIKE (che non dice da che parte s'impennerà). Con la MAX
+  il rinculo è più ampio, il lampo va a scatti giallo e bianco, dietro restano due immagini della
+  racchetta e lo schermo trema un istante (solo PC). Sul C64 rinculo e lampo (due con la MAX).
 - Raspberry Pi: l'eseguibile **`paddws-X.Y.Z-linux-armv7.tar.gz`** per Raspberry Pi OS a 32 bit, che serve
   al Pi 2 v1.1 (processore solo a 32 bit) e a chi usa un Pi 3 o 4 con il sistema a 32 bit. Lo
   costruisce forge come l'aarch64, in compilazione incrociata (`arm-linux-gnueabihf`, glibc al massimo
@@ -298,7 +303,7 @@ crea il commit e il tag `vX.Y.Z`.
   giallo, la palla lascia una scia di immagini e i suoni scendono di un'ottava. Parametri
   `next.bullet_*`; `paddws-trace --bonus-stats` misura palle e punti salvati. Nelle tracce MiSTer
   i bonus della riserva sono ora codici a 4 bit (8 = vuoto).
-- CHALLENGE: **HERE COMES A NEW CHALLENGER!** come in Street Fighter 2 (Rust, MiSTer e C64).
+- CHALLENGE: **HERE COMES A NEW CHALLENGER!**: un secondo giocatore entra e sfida chi sta giocando (Rust, MiSTer e C64).
   Durante la presentazione di un livello, la partita contro la CPU o il livello superato (tranne
   l'ultimo) un secondo giocatore entra con un credito (o in Free Play) premendo lo Start del lato
   libero: `2` o `1` sul PC, il click dell'encoder sul Raspberry, un dito tenuto 1 s nella metà
@@ -341,7 +346,7 @@ crea il commit e il tag `vX.Y.Z`.
   digest in `mister/quartus-image.txt`): `mister/synth.ps1` (Docker Desktop) e `mister/synth.sh`
   (Linux o macchina virtuale, circa 16 minuti con 4 core). In CI la sintesi parte solo sui tag o
   a mano.
-- Release in locale, senza GitHub Action: `build.bat` manda il commit alla macchina virtuale
+- Release in locale, senza GitHub Action: `build_onforge.bat` manda il commit alla macchina virtuale
   *forge* (Debian 13 con Docker, `tools/forge`), che fa gli stessi controlli e gli stessi pacchetti
   della CI nell'immagine `paddws-build` (Ubuntu 22.04 con Rust, MinGW, compilazione incrociata
   aarch64, wasm, PowerShell, cc65, Icarus Verilog, Python) e sintetizza il core MiSTer con Quartus;
@@ -472,6 +477,13 @@ crea il commit e il tag `vX.Y.Z`.
   bonus. Quando è acceso il mouse non fa più da dito nel browser.
 
 ### Corretto
+- MiSTer: la **coda della palla** con un effetto restava per qualche frame piegata sul percorso
+  d'arrivo dopo il colpo (e nel colore del nuovo tiro), per esempio con STRAIGHT SHOT sulla palla di
+  un RISING STRIKE; ora riparte a ogni colpo, anche su PC. Nel frame del colpo le righe di velocità di
+  STRAIGHT SHOT comparivano davanti alla palla, e coda e righe potevano stare un pixel accanto alla
+  palla (arrotondamento diverso da quello del disegno della palla).
+- HOW TO PLAY delle mosse speciali (PC, MiSTer e C64): i **pulsanti** sembravano tagliati sotto; il
+  fianco del pulsante ora si chiude con un bordo curvo dentro il suo incavo.
 - MiSTer: con un filtro **gamma** del framework acceso (qualsiasi curva) i colori si rovinavano: il
   giallo diventava quasi bianco e comparivano frange colorate. Il `gamma_corr` di `arcade_video`
   legge R, G e B uno dopo l'altro e vuole almeno 4 colpi di clock per pixel, il core ne dà 3: B
@@ -640,6 +652,14 @@ crea il commit e il tag `vX.Y.Z`.
   Ora si vede solo a lampi come su PC e MiSTer, senza effetti né coda, che la tradirebbero.
 
 ### Modificato
+- Script della release: `build.bat` si chiama ora **`build_onforge.bat`** e `forge-check.bat`
+  **`check_onforge.bat`**, accanto a `build_ongithub.bat`.
+- NEXT, mosse speciali: **velocità minima del tiro**. A inizio scambio, con la palla ancora lenta,
+  una mossa partiva quasi ferma: ora al colpo la velocità orizzontale sale almeno a metà della
+  massima della difficoltà con STRAIGHT SHOT (la MAX parte così almeno alla velocità massima dello
+  scambio) e ai 3/8 con RISING STRIKE, che conta più sulla sorpresa. Prima del boost della mossa; da
+  lì lo scambio continua a quella velocità. Opzioni `super_min_speed_straight` e
+  `super_min_speed_rise` (0,5 e 0,375). Uguale nel core, sul MiSTer e sul C64.
 - Struttura: la versione Python sta tutta in **`python/`** (il pacchetto `python/paddws`, i test,
   `main.py`, `pyproject.toml`, `requirements.txt`), accanto a `rust/`, `c64/` e `mister/`; asset e
   `padd_config.json` restano nella radice, comuni a tutte le versioni. Il nome del pacchetto non cambia
@@ -788,7 +808,7 @@ crea il commit e il tag `vX.Y.Z`.
     36-38%.
   - Opzioni `super_rise_max` e `super_rise_seconds` tolte.
 - Controlli prima di un push anche sulla macchina forge con i file non ancora committati:
-  `forge-check.bat` (`-Synth` per la sintesi del MiSTer), lontano dall'antivirus del PC.
+  `check_onforge.bat` (`-Synth` per la sintesi del MiSTer), lontano dall'antivirus del PC.
 - NEXT: il **BULLET** cambia. Attivato resta armato finché la palla entra nella metà campo di
   chi l'ha lanciato venendo verso di lui (provato anche l'ultimo terzo: durava troppo poco); allora scatta e dura fino alla ribattuta o al punto, non più
   2 secondi fissi (rampa solo in entrata; un punto prima dello scatto non lo consuma). Il gioco

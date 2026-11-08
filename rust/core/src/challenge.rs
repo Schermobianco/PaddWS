@@ -9,7 +9,7 @@
 //! con la lunghezza dello scambio; alla vittoria un premio che cresce con il livello, più uno se
 //! l'avversario non ha fatto punti. Classifica dei 10 punteggi migliori con le iniziali.
 //!
-//! Nuovo sfidante (come in Street Fighter II): durante la presentazione di un livello, la
+//! Nuovo sfidante: durante la presentazione di un livello, la
 //! partita contro la CPU o il livello superato un secondo giocatore può entrare con un credito.
 //! I due giocano una partita NEXT a `Rung::points` con la velocità della palla del livello in
 //! corso; il vincitore riprende quel livello da 0-0 dal suo lato (`Rung::sides`) con

@@ -23,5 +23,5 @@ mister/sim/rv/*
 !mister/sim/rv/rv.ps1
 mister/sim/sid/obj_writes/
 
-# configurazione locale della macchina forge (build.bat)
+# configurazione locale della macchina forge (build_onforge.bat)
 forge.local.psd1

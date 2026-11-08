@@ -83,7 +83,7 @@ JavaScript of miniquad and quad-snd comes from their copies in `rust/vendor`. Yo
 phone on the same network with `-Serve` (the Windows firewall must let port 8080 through).
 
 It is online on GitHub Pages, <https://schermobianco.github.io/PaddWS/>, from the `gh-pages`
-branch: after the release, `build.bat -Publish` puts the contents of the web zip there
+branch: after the release, `build_onforge.bat -Publish` puts the contents of the web zip there
 ([`tools/publish-pages.ps1`](../../tools/publish-pages.ps1), which can also be run on its own).
 
 ## Tests and checks
@@ -100,7 +100,7 @@ The GitHub Actions `Python`, `Rust`, `MiSTer` and `C64` run the same checks; `Mi
 synthesises the core with Quartus 17.0.2, `C64` assembles the program with cc65 and tries it in the
 test bench (see [c64/README.md](../../c64/README.md), in Italian). They only run manually (*Run
 workflow*, `gh workflow run` or `build_ongithub.bat`). The same checks run locally with
-`build.bat -CheckOnly`, or, on files not committed yet, with `forge-check.bat`.
+`build_onforge.bat -CheckOnly`, or, on files not committed yet, with `check_onforge.bat`.
 
 ## Smoothness and latency (Rust version)
 
@@ -135,9 +135,9 @@ The script updates the Python and Rust version (with `Cargo.lock`) and the chang
 and `-beta.N` previews leave the entries under **Non rilasciato**), creates the commit and the tag
 `vX.Y.Z`. The packages are then built in one of two ways:
 
-- `build.bat` runs the checks and builds the packages locally, in `dist\`, on the *forge* virtual
+- `build_onforge.bat` runs the checks and builds the packages locally, in `dist\`, on the *forge* virtual
   machine ([tools/forge](../../tools/forge/README.md)): it starts and stops it by itself, and the PC
-  only needs git and ssh. `build.bat -Publish` then publishes the release of the tag with `gh` and
+  only needs git and ssh. `build_onforge.bat -Publish` then publishes the release of the tag with `gh` and
   the web version on GitHub Pages. The release notes come from the changelog
   (`tools/release_notes.py X.Y.Z`): for previews, only the entries added or changed since the
   previous tag.

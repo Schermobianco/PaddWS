@@ -27,7 +27,7 @@ senza attract; l'attract è verificato in simulazione).
   `sh synth.sh` (Linux o una macchina virtuale con Docker). L'immagine è pubblica su Docker Hub
   (circa 3 GB): non serve l'account Altera/Intel. Il `.rbf` esce in `output_files/`.
 - La macchina virtuale di build della release, *forge* ([tools/forge](../tools/forge/README.md)),
-  sintetizza il core con lo stesso container: `build.bat` dal PC, o `forge-sintesi` sulla VM.
+  sintetizza il core con lo stesso container: `build_onforge.bat` dal PC, o `forge-sintesi` sulla VM.
 
 Installazione sulla SD: scompattare `PaddWS_MiSTer_AAAAMMGG.zip` (dalla release o dalla run)
 nella radice della SD, `/media/fat/`: mette `PaddWS.mra` in `_Arcade/` e `PaddWS_AAAAMMGG.rbf` in

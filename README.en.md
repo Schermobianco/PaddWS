@@ -33,11 +33,11 @@ More screenshots in [How to play](docs/en/how-to-play.md#screenshots).
   intercepts the ball and sends it back.
 - **NEXT**: before the match each player picks 3 power-ups out of 6 (TELEPORT, SMASH, SLOW, CURVE,
   GHOST, STEER) and one of seven paddle types; power-ups arrive in capsules to be collected. There
-  are also two special moves, performed with a gesture on the controller.
+  are also two special moves, performed with a specific sequence of inputs.
 - **VS CPU**: every mode, alone against the computer.
 - **CHALLENGE**: alone against 7 ever stronger CPU opponents, with arcade scoring, continues, a
-  high-score table and an ending. A second player can join in, as in Street Fighter 2: *HERE COMES
-  A NEW CHALLENGER!*
+  high-score table and an ending. A second player can join in and challenge whoever is playing:
+  *HERE COMES A NEW CHALLENGER!*
 
 Rules, power-ups, paddles, moves and controls: **[How to play](docs/en/how-to-play.md)**.
 

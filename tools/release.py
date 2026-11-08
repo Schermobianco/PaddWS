@@ -8,7 +8,7 @@ Passi: controlla che il repository sia pulito e che il changelog abbia voci
 crea il commit "Versione X.Y.Z" e il tag annotato vX.Y.Z. Per una versione definitiva
 sposta le voci "Non rilasciato" nella nuova sezione del changelog con la data di oggi;
 le anteprime (X.Y.Z-alpha.N) le lasciano dove sono. I pacchetti li costruiscono
-build.bat (in locale) o build_ongithub.bat (Action avviate sul tag). La pubblicazione resta
+build_onforge.bat (in locale) o build_ongithub.bat (Action avviate sul tag). La pubblicazione resta
 manuale: git push --follow-tags
 """
 

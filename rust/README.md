@@ -22,7 +22,7 @@ cd rust && cargo run --release
 ```
 
 Gli eseguibili delle release (Windows, Linux x86_64, ARM64 e ARM a 32 bit) li costruisce la
-macchina virtuale *forge* con `build.bat` ([tools/forge](../tools/forge/README.md)), insieme al core
+macchina virtuale *forge* con `build_onforge.bat` ([tools/forge](../tools/forge/README.md)), insieme al core
 per MiSTer, con la data di compilazione nel nome come vuole la convenzione MiSTer (es.
 `PaddWS_20261028.rbf`), e al suo `PaddWS.mra`, insieme in `PaddWS_MiSTer_AAAAMMGG.zip`. La GitHub
 Action `Rust`, lanciata a mano da `build_ongithub.bat`, fa gli stessi controlli e pacchetti.

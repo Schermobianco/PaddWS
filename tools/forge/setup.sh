@@ -1,7 +1,7 @@
 #!/bin/sh
 # setup.sh - prepara la macchina forge (Debian 13 con systemd), la VM che costruisce la release:
 #   - nome host forge; Docker (get.docker.com), open-vm-tools (spegnimento pulito da VMware, anche da
-#     build.bat) e ora sincronizzata, se mancano; l'utente nel gruppo docker;
+#     build_onforge.bat) e ora sincronizzata, se mancano; l'utente nel gruppo docker;
 #   - /etc/motd vuoto: la scritta e lo stato li stampa una volta /etc/profile.d/forge-status.sh a ogni
 #     accesso interattivo, che definisce anche forge-stato (vista dal vivo), forge-build (release) e
 #     forge-sintesi (solo il core MiSTer);
@@ -86,7 +86,7 @@ if [ -r "$HOME/forge/src/tools/forge/status.sh" ]; then
     sh "$HOME/forge/src/tools/forge/status.sh"
     printf '  %s\n\n' "Vista dal vivo: forge-stato (Ctrl+C per uscire)   Release: forge-build   MiSTer: forge-sintesi"
 else
-    printf '  %s\n\n' "forge: nessun sorgente in ~/forge/src (li manda build.bat dal PC)"
+    printf '  %s\n\n' "forge: nessun sorgente in ~/forge/src (li manda build_onforge.bat dal PC)"
 fi
 STATUS
 echo "ok: /etc/profile.d/forge-status.sh (stato a ogni accesso; forge-stato, forge-build, forge-sintesi)"
@@ -116,12 +116,12 @@ cat >/usr/local/sbin/forge-console <<CONSOLE
 # forge-console - scritto da tools/forge/setup.sh (macchina di build forge, non modificare): la vista
 # dal vivo sulla prima console (status.sh --console, come $user); accesso sulla seconda. Lo avvia
 # getty@tty1 (override in /etc/systemd/system/getty@tty1.service.d/forge.conf), che lo riavvia quando
-# finisce. Senza sorgenti (forge appena accesa, prima che build.bat li mandi) li aspetta.
+# finisce. Senza sorgenti (forge appena accesa, prima che build_onforge.bat li mandi) li aspetta.
 f=$status
 trap '' INT QUIT TSTP
 stty sane -echo 2>/dev/null
 while [ ! -r "\$f" ]; do
-    printf '\033[H\033[2J\033[?25l\n  \033[94mFORGE\033[0m  in attesa dei sorgenti da build.bat (ssh forge)\n\n  Per accedere: Alt+F2\n'
+    printf '\033[H\033[2J\033[?25l\n  \033[94mFORGE\033[0m  in attesa dei sorgenti da build_onforge.bat (ssh forge)\n\n  Per accedere: Alt+F2\n'
     sleep 5
 done
 runuser -u $user -- /bin/sh "\$f" --console

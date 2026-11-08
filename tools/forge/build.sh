@@ -1,5 +1,5 @@
 #!/bin/sh
-# Release sulla macchina forge, dai sorgenti di un commit in ~/forge/src (li manda build.bat):
+# Release sulla macchina forge, dai sorgenti di un commit in ~/forge/src (li manda build_onforge.bat):
 #   1. immagine paddws-build (tools/forge/Dockerfile), ricostruita solo quando cambia;
 #   2. controlli e pacchetti nel container forge-build (tools/forge/build-all.sh);
 #   3. core MiSTer: sintesi con Quartus (mister/synth.sh, container quartus-synth) e zip della SD;
@@ -7,7 +7,7 @@
 # I pacchetti vanno in ~/forge/out, con BUILD.txt (versione, commit, esito) per lo stato della console.
 #
 #   sh build.sh [--no-check] [--check-only] [--no-mister] [--synth]
-# --synth: con --check-only anche la sintesi del core MiSTer, senza pacchetti (forge-check.bat -Synth).
+# --synth: con --check-only anche la sintesi del core MiSTer, senza pacchetti (check_onforge.bat -Synth).
 set -e
 src=$(cd "$(dirname "$0")/../.." && pwd)
 out=$HOME/forge/out

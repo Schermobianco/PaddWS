@@ -91,7 +91,7 @@ work() {
         esac
         printf '   %-10s %s\n' "Stato" "${G}■ sintesi MiSTer: $ph${N}  ${D}da $(dur "$s")${N}"
     else
-        printf '   %-10s %s\n' "Stato" "${D}fermo: build.bat dal PC, o forge-build e forge-sintesi${N}"
+        printf '   %-10s %s\n' "Stato" "${D}fermo: build_onforge.bat dal PC, o forge-build e forge-sintesi${N}"
     fi
 }
 
@@ -163,7 +163,7 @@ status() {
     rule "Macchina"
     printf '   %-10s %s%-30s%s %-7s %s\n' "Indirizzo" "$W" "${ip:-nessuno}" "$N" "Sistema" \
         "${sys:-Linux} $(cat /etc/debian_version 2>/dev/null), acceso da $(up)"
-    # i sorgenti mandati dal PC: commit e versione (scritti in .source da build.bat)
+    # i sorgenti mandati dal PC: commit e versione (scritti in .source da build_onforge.bat)
     src=$(cat "$root/.source" 2>/dev/null || echo "${D}nessuno ancora${N}")
     if docker info >/dev/null 2>&1; then
         printf '   %-10s %s%-30s%s %-7s %s\n' "Docker" "$G" "attivo $(docker version --format '{{.Server.Version}}' 2>/dev/null)" "$N" \
