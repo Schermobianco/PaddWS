@@ -14,6 +14,12 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+### Aggiunto
+- **`check_ongithub.bat`**: i controlli prima di un push con le GitHub Action, per chi non ha la
+  macchina forge. I file come sono ora, anche non committati, vanno in un commit temporaneo su un
+  ramo `check/...`; partono Rust, Python, C64 e MiSTer (sintesi compresa, `-NoSynth` per saltarla) e
+  lo script le segue fino alla fine, poi cancella il ramo. Sui rami le Action non pubblicano nulla.
+
 ## [4.0.1] - 2026-11-08
 
 ### Corretto

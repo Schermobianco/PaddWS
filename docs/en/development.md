@@ -99,8 +99,16 @@ cd rust && cargo run --release -p paddws-c64 -- game   # against the Rust core
 The GitHub Actions `Python`, `Rust`, `MiSTer` and `C64` run the same checks; `MiSTer` also
 synthesises the core with Quartus 17.0.2, `C64` assembles the program with cc65 and tries it in the
 test bench (see [c64/README.md](../../c64/README.md), in Italian). They only run manually (*Run
-workflow*, `gh workflow run` or `build_ongithub.bat`). The same checks run locally with
-`build_onforge.bat -CheckOnly`, or, on files not committed yet, with `check_onforge.bat`.
+workflow*, `gh workflow run`, `build_ongithub.bat` or `check_ongithub.bat`). The same checks run
+locally with `build_onforge.bat -CheckOnly`, or, on files not committed yet, with `check_onforge.bat`.
+
+Without the *forge* machine, `check_ongithub.bat` runs the same checks with the Actions: it puts the
+files as they are now (uncommitted ones too) in a temporary commit on a `check/...` branch, starts
+the four Actions, follows them to the end (on an error it shows the last lines of the failed job)
+and deletes the branch. `-NoSynth` skips the MiSTer synthesis (about half an hour less), `-NoWait`
+exits right after starting them. The branch and the commit leave the current branch and the index
+alone; the repository is public, so for a few minutes the uncommitted files are visible on GitHub.
+On branches the Actions publish nothing: they attach the packages to the release only on tags.
 
 ## Smoothness and latency (Rust version)
 

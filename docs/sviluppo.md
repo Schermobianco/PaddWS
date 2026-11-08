@@ -94,8 +94,16 @@ cd rust && cargo run --release -p paddws-c64 -- game   # contro il core Rust
 Le GitHub Action `Python`, `Rust`, `MiSTer` e `C64` eseguono gli stessi controlli; la `MiSTer`
 sintetizza anche il core con Quartus 17.0.2, la `C64` assembla il programma con cc65 e lo prova nel
 banco di prova (vedi [c64/README.md](../c64/README.md)). Partono solo a mano (*Run workflow*, `gh
-workflow run` o `build_ongithub.bat`). Gli stessi controlli girano in locale con
+workflow run`, `build_ongithub.bat` o `check_ongithub.bat`). Gli stessi controlli girano in locale con
 `build_onforge.bat -CheckOnly`, oppure, sui file non ancora committati, con `check_onforge.bat`.
+
+Senza la macchina *forge*, `check_ongithub.bat` fa gli stessi controlli con le Action: mette i file
+come sono ora (anche quelli non committati) in un commit temporaneo su un ramo `check/...`, avvia le
+quattro Action, le segue fino alla fine (con un errore mostra le ultime righe del job fallito) e
+cancella il ramo. `-NoSynth` salta la sintesi del MiSTer (circa mezz'ora in meno), `-NoWait` esce
+subito dopo l'avvio. Il ramo e il commit non toccano il ramo attuale né l'indice; il repository è
+pubblico, quindi per qualche minuto i file non committati sono visibili su GitHub. Sui rami le
+Action non pubblicano nulla: allegano i pacchetti alla release solo sui tag.
 
 ## Fluidità e latenza (versione Rust)
 
