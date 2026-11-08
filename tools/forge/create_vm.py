@@ -320,7 +320,9 @@ def ssh_base(ip, user, key):
 def ssh_config(name, ip, user, key):
     """Il blocco "Host NOME" in ~/.ssh/config, aggiunto o sostituito (copia in config.bak)."""
     cfg = Path.home() / ".ssh" / "config"
-    text = cfg.read_text(encoding="utf-8") if cfg.exists() else ""
+    raw = cfg.read_bytes().decode("utf-8") if cfg.exists() else ""
+    eol = "\r\n" if "\r\n" in raw else "\n"   # i fine riga del file restano quelli che ha
+    text = raw.replace("\r\n", "\n")
     private = key.with_suffix("")
     ident = ("~/" + private.relative_to(Path.home()).as_posix() if private.is_relative_to(Path.home())
              else private.as_posix())
@@ -334,7 +336,7 @@ def ssh_config(name, ip, user, key):
     else:
         text = (text.rstrip("\n") + "\n\n" if text.strip() else "") + block
         say(f"~/.ssh/config: aggiunto Host {name}")
-    cfg.write_text(text, encoding="utf-8", newline="\n")
+    cfg.write_bytes(text.replace("\n", eol).encode("utf-8"))
 
 
 # ---------------------------------------------------------------- main
