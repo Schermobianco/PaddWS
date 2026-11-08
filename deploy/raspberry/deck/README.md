@@ -1,3 +1,5 @@
+[<img src="../../../docs/flags/it.svg" alt="" height="14"> **Italiano**](README.md) · [<img src="../../../docs/flags/gb.svg" alt="" height="14"> English](README.en.md)
+
 # Sistema del Deck
 
 Immagine della microSD per il [Deck](../../../hardware/deck/README.md): Raspberry Pi 2 a 32 bit, display

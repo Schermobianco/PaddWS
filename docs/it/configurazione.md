@@ -1,6 +1,6 @@
 # Configurazione
 
-[← README](../README.md) · [<img src="flags/it.svg" alt="" height="14"> **Italiano**](configurazione.md) · [<img src="flags/gb.svg" alt="" height="14"> English](en/configuration.md)
+[← README](../../README.md) · [<img src="../flags/it.svg" alt="" height="14"> **Italiano**](configurazione.md) · [<img src="../flags/gb.svg" alt="" height="14"> English](../en/configuration.md)
 
 Riguarda la versione Rust su PC e Raspberry Pi. La versione Python, congelata, legge lo stesso
 file ma conosce solo le chiavi di CLASSIC ed EVO (`resolution`, `ball`, `paddle`, `boost`,
@@ -98,4 +98,4 @@ I tipi di racchetta sono nella sezione `next.paddles`.
 
 Sul cabinato gira la versione Python oppure quella Rust (con NEXT, la CPU e gli encoder letti
 direttamente dai GPIO, anche sul Pi 5), ciascuna con il suo servizio systemd. Installazione e
-schema di collegamento di encoder e pulsanti: [deploy/raspberry/README.md](../deploy/raspberry/README.md).
+schema di collegamento di encoder e pulsanti: [deploy/raspberry/README.md](../../deploy/raspberry/README.md).

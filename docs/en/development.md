@@ -1,6 +1,6 @@
 # Development
 
-[← README](../../README.en.md) · [<img src="../flags/it.svg" alt="" height="14"> Italiano](../sviluppo.md) · [<img src="../flags/gb.svg" alt="" height="14"> **English**](development.md)
+[← README](../../README.en.md) · [<img src="../flags/it.svg" alt="" height="14"> Italiano](../it/sviluppo.md) · [<img src="../flags/gb.svg" alt="" height="14"> **English**](development.md)
 
 Contributors: see also [CONTRIBUTING.en.md](../../CONTRIBUTING.en.md).
 
@@ -36,12 +36,12 @@ hardware/        3D-printable console: the Deck (SolidCraft model and STEP, Bamb
 tools/           release, portable Rust environment, generators for icons, attract, sounds and MiSTer
                  ROMs, SID music (gen_sid_music.py, played by the Rust SID in rust/sid), CHALLENGE
                  texts, forge VM for releases
-docs/            documentation, screenshots and icons
+docs/            documentation: it/ and en/ (pages and PDFs), shared screenshots, icons and flags
 ```
 
-Each version has its own README (in Italian): [Rust](../../rust/README.md),
-[MiSTer](../../mister/README.md), [Commodore 64](../../c64/README.md),
-[Raspberry Pi](../../deploy/raspberry/README.md).
+Each version has its own README: [Rust](../../rust/README.md),
+[MiSTer](../../mister/README.md) and [Commodore 64](../../c64/README.md) in Italian,
+[Raspberry Pi](../../deploy/raspberry/README.en.md) in English too.
 
 ## Running from source
 
@@ -145,8 +145,8 @@ and `-beta.N` previews leave the entries under **Non rilasciato**), creates the 
 
 - `build_onforge.bat` runs the checks and builds the packages locally, in `dist\`, on the *forge* virtual
   machine ([tools/forge](../../tools/forge/README.en.md)): it starts and stops it by itself, and the PC
-  only needs git and ssh. The VM is created once with `create_forge.bat` (VMware Workstation, about
-  ten minutes, no questions asked). `build_onforge.bat -Publish` then publishes the release of the tag with `gh` and
+  only needs git and ssh. The VM is created once with `create_forge.bat` (VMware Workstation, a few
+  minutes, no questions asked). `build_onforge.bat -Publish` then publishes the release of the tag with `gh` and
   the web version on GitHub Pages. The release notes come from the changelog
   (`tools/release_notes.py X.Y.Z`): for previews, only the entries added or changed since the
   previous tag.

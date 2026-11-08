@@ -1,6 +1,6 @@
 # Come si gioca
 
-[← README](../README.md) · [<img src="flags/it.svg" alt="" height="14"> **Italiano**](come-si-gioca.md) · [<img src="flags/gb.svg" alt="" height="14"> English](en/how-to-play.md)
+[← README](../../README.md) · [<img src="../flags/it.svg" alt="" height="14"> **Italiano**](come-si-gioca.md) · [<img src="../flags/gb.svg" alt="" height="14"> English](../en/how-to-play.md)
 
 - [L'attract e la partita](#lattract-e-la-partita)
 - [Modalità](#modalità) e [bonus di NEXT](#bonus-di-next)
@@ -46,14 +46,14 @@ Ogni capsula mostra il simbolo del suo bonus:
 
 | bonus | effetto |
 |:---:|---|
-| <img src="icons/teleport.png" alt="" width="40" height="40"><br>**TELEPORT** | quando la palla in arrivo supera la metà campo, la racchetta entra in un portale ed esce da un altro nel punto in cui arriverà la palla, in tempo per prenderla |
-| <img src="icons/smash.png" alt="" width="40" height="40"><br>**SMASH** | il prossimo tiro parte più veloce e angolato, lontano dall'avversario |
-| <img src="icons/slow.png" alt="" width="40" height="40"><br>**SLOW** | la palla perde un terzo della velocità finché chi l'ha usato non la colpisce: allora riparte alla velocità di prima |
-| <img src="icons/curve.png" alt="" width="40" height="40"><br>**CURVE** | il prossimo tiro curva, e la curva si inverte a ogni rimbalzo |
-| <img src="icons/ghost.png" alt="" width="40" height="40"><br>**GHOST** | dopo il prossimo tiro la palla si vede solo a lampi |
-| <img src="icons/steer.png" alt="" width="40" height="40"><br>**STEER** | dopo il prossimo tiro i comandi su e giù guidano la palla, con una sterzata limitata, fino a 3/4 del campo (segnati in giallo sui bordi); intanto la racchetta resta ferma |
-| <img src="icons/super.png" alt="" width="40" height="40"><br>**SUPER** | raro, solo dalle capsule: tiro velocissimo, con un'animazione a caso tra racchetta che ruota, hit-stop e cometa che spacca la rete |
-| <img src="icons/bullet.png" alt="" width="40" height="40"><br>**BULLET** | raro, solo dalle capsule (circa una su 16): bullet time difensivo. Una volta attivato resta armato (il bordo giallo della racchetta lampeggia) finché la palla non entra nella propria metà campo, diretta verso di sé; allora, con un'entrata graduale, tutto va a metà velocità (palla con CURVE e STEER, racchetta avversaria, capsule, colpi del BLASTER avversario) tranne la propria racchetta, fino alla ribattuta o al punto. Il resto del gioco diventa grigio e sfocato (sul MiSTer con bordi sfumati, sul C64 solo grigio) e la palla lascia una scia di immagini. Se si subisce un punto prima che scatti, il bonus non si consuma; se ne usa uno alla volta |
+| <img src="../icons/teleport.png" alt="" width="40" height="40"><br>**TELEPORT** | quando la palla in arrivo supera la metà campo, la racchetta entra in un portale ed esce da un altro nel punto in cui arriverà la palla, in tempo per prenderla |
+| <img src="../icons/smash.png" alt="" width="40" height="40"><br>**SMASH** | il prossimo tiro parte più veloce e angolato, lontano dall'avversario |
+| <img src="../icons/slow.png" alt="" width="40" height="40"><br>**SLOW** | la palla perde un terzo della velocità finché chi l'ha usato non la colpisce: allora riparte alla velocità di prima |
+| <img src="../icons/curve.png" alt="" width="40" height="40"><br>**CURVE** | il prossimo tiro curva, e la curva si inverte a ogni rimbalzo |
+| <img src="../icons/ghost.png" alt="" width="40" height="40"><br>**GHOST** | dopo il prossimo tiro la palla si vede solo a lampi |
+| <img src="../icons/steer.png" alt="" width="40" height="40"><br>**STEER** | dopo il prossimo tiro i comandi su e giù guidano la palla, con una sterzata limitata, fino a 3/4 del campo (segnati in giallo sui bordi); intanto la racchetta resta ferma |
+| <img src="../icons/super.png" alt="" width="40" height="40"><br>**SUPER** | raro, solo dalle capsule: tiro velocissimo, con un'animazione a caso tra racchetta che ruota, hit-stop e cometa che spacca la rete |
+| <img src="../icons/bullet.png" alt="" width="40" height="40"><br>**BULLET** | raro, solo dalle capsule (circa una su 16): bullet time difensivo. Una volta attivato resta armato (il bordo giallo della racchetta lampeggia) finché la palla non entra nella propria metà campo, diretta verso di sé; allora, con un'entrata graduale, tutto va a metà velocità (palla con CURVE e STEER, racchetta avversaria, capsule, colpi del BLASTER avversario) tranne la propria racchetta, fino alla ribattuta o al punto. Il resto del gioco diventa grigio e sfocato (sul MiSTer con bordi sfumati, sul C64 solo grigio) e la palla lascia una scia di immagini. Se si subisce un punto prima che scatti, il bonus non si consuma; se ne usa uno alla volta |
 
 ## Tipi di racchetta (NEXT)
 
@@ -62,7 +62,7 @@ sua). Ogni tipo ha un vantaggio, un piccolo prezzo e un segno che lo fa riconosc
 giallo nell'immagine, con le racchette in proporzione). I tipi sono bilanciati perché ognuno vinca
 circa metà dei punti contro la racchetta normale.
 
-![I sette tipi di racchetta, in proporzione, con i loro segni](icons/paddles.png)
+![I sette tipi di racchetta, in proporzione, con i loro segni](../icons/paddles.png)
 
 | tipo | vantaggio | prezzo |
 |---|---|---|
@@ -122,7 +122,7 @@ persona.
 Sul C64 il fuoco che chiude la mezzaluna usa la mossa se può partire, altrimenti il bonus
 selezionato (lo scatto è il joystick verso l'avversario); con i paddle non ci sono gesti, la demo
 dell'attract resta EVO e non c'è la schermata HOW TO PLAY. Barra, icona della mossa armata, scritta
-"P1 MAX STRAIGHT SHOT!" e suoni ci sono, le voci urlate no (vedi [c64/README.md](../c64/README.md)).
+"P1 MAX STRAIGHT SHOT!" e suoni ci sono, le voci urlate no (vedi [c64/README.md](../../c64/README.md)).
 
 ## CHALLENGE
 
@@ -214,7 +214,7 @@ speciali, **B** seleziona e **C** (X o Y) usa il bonus, come nella HOW TO PLAY; 
 Start, **Select** gettone. Nei menu si usano le direzioni, **A** conferma e **B** torna indietro;
 in pausa **A** riprende e **B** torna al menu. Funzionano anche gli stick arcade USB e le schede
 encoder dei cabinati, che non hanno la levetta analogica (vedi
-[rust/README.md](../rust/README.md#gamepad-e-stick-arcade)).
+[rust/README.md](../../rust/README.md#gamepad-e-stick-arcade)).
 
 **Mouse come spinner** (PC e web, menu **MOUSE SPINNER: ON** o `mouse.spinner` nella
 configurazione, spento di default): il mouse diventa la manopola del giocatore di sinistra, come
@@ -229,7 +229,7 @@ Pointer Lock dopo il primo clic sulla pagina; `Esc` lo rilascia e un altro clic 
 ### Cabinato Raspberry Pi
 
 Encoder rotativi: rotazione = posizione della racchetta, click = scatto, click lungo = menu; nel
-menu la manopola gira la ruota. Collegamenti in [deploy/raspberry/README.md](../deploy/raspberry/README.md).
+menu la manopola gira la ruota. Collegamenti in [deploy/raspberry/README.md](../../deploy/raspberry/README.md).
 
 ### Telefoni e tablet
 
@@ -267,7 +267,7 @@ seleziona e usa il bonus (NEXT), **Start**, **Select** gettone; da tastiera `5` 
 speciali si fanno con le mezzelune del joystick + **A**. Le opzioni (modalità, giocatori, Free
 Play, difficoltà, punteggi dritti o verso i giocatori, suoni dell'attract, SID 8580 o 6581, volumi
 di musica ed effetti, salvataggio della classifica, luminosità del bianco, joystick, paddle o
-spinner e la sua velocità) sono nell'OSD. Dettagli in [mister/README.md](../mister/README.md).
+spinner e la sua velocità) sono nell'OSD. Dettagli in [mister/README.md](../../mister/README.md).
 
 ### Commodore 64
 
@@ -281,7 +281,7 @@ muovono la racchetta, il joystick verso l'avversario scatta in avanti (e spara c
 il fuoco in NEXT usa il bonus selezionato, che cambia da solo ogni secondo tra quelli in riserva,
 e in EVO scatta in avanti. Con i paddle il pulsante scatta, e i bonus si scelgono e si usano con
 `F` / `C` (sinistra) e `.` / `-` (destra). Tasto **5** gettone, fuoco o **RETURN** Start, **RUN/STOP** pausa, **Q**
-menu. Solo PAL; finora provata in VICE. Dettagli in [c64/README.md](../c64/README.md).
+menu. Solo PAL; finora provata in VICE. Dettagli in [c64/README.md](../../c64/README.md).
 
 ## Funzioni per versione
 
@@ -304,19 +304,19 @@ menu. Solo PAL; finora provata in VICE. Dettagli in [c64/README.md](../c64/READM
 
 | | |
 |---|---|
-| ![Titolo dell'attract con il filtro CRT](screenshots/attract-crt.jpg) | ![Conto alla rovescia prima del servizio](screenshots/countdown.png) |
+| ![Titolo dell'attract con il filtro CRT](../screenshots/attract-crt.jpg) | ![Conto alla rovescia prima del servizio](../screenshots/countdown.png) |
 | Titolo dell'attract, con il filtro CRT | Conto alla rovescia prima del servizio |
-| ![NEXT: scelta dei bonus](screenshots/next-pick.png) | ![NEXT: riserve, capsule e SUPER armato](screenshots/next-game.png) |
+| ![NEXT: scelta dei bonus](../screenshots/next-pick.png) | ![NEXT: riserve, capsule e SUPER armato](../screenshots/next-game.png) |
 | NEXT: ognuno sceglie 3 bonus su 6 | NEXT: riserve in alto, capsule in volo, racchetta che ruota con il SUPER |
-| ![NEXT: presentazione delle mosse speciali](screenshots/next-howto.png) | ![NEXT: STRAIGHT SHOT in volo](screenshots/next-supers.png) |
+| ![NEXT: presentazione delle mosse speciali](../screenshots/next-howto.png) | ![NEXT: STRAIGHT SHOT in volo](../screenshots/next-supers.png) |
 | NEXT: HOW TO PLAY, le mosse speciali prima della partita | NEXT: barre delle mosse accanto alle riserve, STRAIGHT SHOT in volo |
-| ![CHALLENGE: presentazione dell'avversario](screenshots/challenge-intro.png) | ![CHALLENGE: nuovo sfidante](screenshots/challenge-challenger.png) |
+| ![CHALLENGE: presentazione dell'avversario](../screenshots/challenge-intro.png) | ![CHALLENGE: nuovo sfidante](../screenshots/challenge-challenger.png) |
 | CHALLENGE: presentazione del sesto avversario, RUSH | CHALLENGE: entra un secondo giocatore |
-| ![Core MiSTer: titolo](screenshots/mister-title.png) | ![Core MiSTer: demo NEXT](screenshots/mister-demo.png) |
+| ![Core MiSTer: titolo](../screenshots/mister-title.png) | ![Core MiSTer: demo NEXT](../screenshots/mister-demo.png) |
 | Core MiSTer a 320×240: titolo dopo il gettone | Core MiSTer: demo CPU contro CPU della modalità scelta (qui NEXT) |
-| ![Commodore 64: titolo](screenshots/c64-title.png) | ![Commodore 64: partita NEXT](screenshots/c64-next.png) |
+| ![Commodore 64: titolo](../screenshots/c64-title.png) | ![Commodore 64: partita NEXT](../screenshots/c64-next.png) |
 | Commodore 64: titolo in Free Play | Commodore 64: NEXT contro la CPU, con la capsula di CURVE |
-| ![Commodore 64: scelta dei bonus](screenshots/c64-pick.png) | ![Commodore 64: CHALLENGE](screenshots/c64-challenge.png) |
+| ![Commodore 64: scelta dei bonus](../screenshots/c64-pick.png) | ![Commodore 64: CHALLENGE](../screenshots/c64-challenge.png) |
 | Commodore 64: scelta dei bonus (la CPU ha già scelto) | Commodore 64: presentazione del primo avversario di CHALLENGE |
 
 Le schermate PC vengono da `paddws --screenshot-tour DIR` (versione Rust), quelle MiSTer dalla

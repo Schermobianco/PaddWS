@@ -24,7 +24,7 @@ gamepad o mouse.
 | ![Core MiSTer: demo NEXT](docs/screenshots/mister-demo.png) | ![Commodore 64: partita NEXT](docs/screenshots/c64-next.png) |
 | Core MiSTer a 320×240 | Commodore 64: NEXT contro la CPU |
 
-Altre schermate in [Come si gioca](docs/come-si-gioca.md#schermate).
+Altre schermate in [Come si gioca](docs/it/come-si-gioca.md#schermate).
 
 ## Modalità
 
@@ -39,7 +39,7 @@ Altre schermate in [Come si gioca](docs/come-si-gioca.md#schermate).
   classifica e il finale. Un secondo giocatore può entrare e sfidare chi sta giocando: *HERE COMES
   A NEW CHALLENGER!*
 
-Regole, bonus, racchette, mosse e comandi: **[Come si gioca](docs/come-si-gioca.md)**.
+Regole, bonus, racchette, mosse e comandi: **[Come si gioca](docs/it/come-si-gioca.md)**.
 
 ## Versioni
 
@@ -53,7 +53,7 @@ Regole, bonus, racchette, mosse e comandi: **[Come si gioca](docs/come-si-gioca.
 
 Tutto è nelle [release](https://github.com/Schermobianco/PaddWS/releases). La versione Python è
 congelata: ha CLASSIC ed EVO, senza CPU, NEXT né CHALLENGE. Cosa c'è su ogni versione:
-[tabella](docs/come-si-gioca.md#funzioni-per-versione).
+[tabella](docs/it/come-si-gioca.md#funzioni-per-versione).
 
 La logica di gioco di riferimento è il core Rust: deterministico, solo interi in virgola fissa.
 Il core MiSTer e la versione C64 ne riproducono lo stato tick per tick, verificato bit per bit.
@@ -71,7 +71,7 @@ Il core MiSTer e la versione C64 ne riproducono lo stato tick per tick, verifica
 | Commodore 64 | joystick nelle porte 2 e 1, oppure due paddle nella porta 1 |
 
 Tutti i comandi, mouse come spinner ed encoder del cabinato compresi:
-[Come si gioca](docs/come-si-gioca.md#comandi).
+[Come si gioca](docs/it/come-si-gioca.md#comandi).
 
 ## Console da stampare
 
@@ -91,11 +91,13 @@ nelle release): parte nel gioco in circa 8 secondi e si spegne togliendo la corr
 
 ## Documentazione
 
-- [Come si gioca](docs/come-si-gioca.md): modalità, bonus, racchette, mosse speciali, CHALLENGE,
+- [Come si gioca](docs/it/come-si-gioca.md): modalità, bonus, racchette, mosse speciali, CHALLENGE,
   suono, comandi di ogni versione.
-- [Configurazione](docs/configurazione.md): `padd_config.json`, difficoltà, parametri di NEXT,
+- [Configurazione](docs/it/configurazione.md): `padd_config.json`, difficoltà, parametri di NEXT,
   cabinato Raspberry Pi.
-- [Sviluppo](docs/sviluppo.md): struttura, compilazione, test e verifiche, release.
+- [Sviluppo](docs/it/sviluppo.md): struttura, compilazione, test e verifiche, release.
+- [L'angolo della palla](docs/it/angolo-palla.pdf) (PDF): come si sceglie la direzione al lancio e al
+  colpo, la racchetta TWIST e il confronto con il Pong del 1972.
 - Le singole versioni: [Rust](rust/README.md), [core MiSTer](mister/README.md),
   [Commodore 64](c64/README.md), [cabinato Raspberry Pi](deploy/raspberry/README.md).
 - [Console da stampare](hardware/README.md): il Deck, pezzi, componenti e montaggio.

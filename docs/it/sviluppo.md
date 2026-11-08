@@ -1,8 +1,8 @@
 # Sviluppo
 
-[← README](../README.md) · [<img src="flags/it.svg" alt="" height="14"> **Italiano**](sviluppo.md) · [<img src="flags/gb.svg" alt="" height="14"> English](en/development.md)
+[← README](../../README.md) · [<img src="../flags/it.svg" alt="" height="14"> **Italiano**](sviluppo.md) · [<img src="../flags/gb.svg" alt="" height="14"> English](../en/development.md)
 
-Per chi vuole contribuire: vedi anche [CONTRIBUTING.md](../CONTRIBUTING.md).
+Per chi vuole contribuire: vedi anche [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
 ## Un solo gioco, cinque versioni
 
@@ -36,16 +36,16 @@ hardware/        console da stampare in 3D: il Deck (modello SolidCraft e STEP, 
 tools/           rilascio, ambiente Rust portable, generatori di icone, attract, suoni e ROM MiSTer,
                  musiche del SID (gen_sid_music.py, suonate dal SID Rust di rust/sid), scritte di
                  CHALLENGE, VM forge per le release
-docs/            documentazione, schermate e icone
+docs/            documentazione: it/ e en/ (pagine e PDF), schermate, icone e bandiere in comune
 ```
 
-Ogni versione ha il suo README: [Rust](../rust/README.md), [MiSTer](../mister/README.md),
-[Commodore 64](../c64/README.md), [Raspberry Pi](../deploy/raspberry/README.md).
+Ogni versione ha il suo README: [Rust](../../rust/README.md), [MiSTer](../../mister/README.md),
+[Commodore 64](../../c64/README.md), [Raspberry Pi](../../deploy/raspberry/README.md).
 
 ## Avvio dai sorgenti
 
 Versione Rust (su Windows con la toolchain portable; Linux e dettagli in
-[rust/README.md](../rust/README.md)):
+[rust/README.md](../../rust/README.md)):
 
 ```powershell
 . .\tools\rust-env.ps1
@@ -72,14 +72,14 @@ Opzioni: `--config FILE`, `--fullscreen` / `--windowed`, `--crt` / `--no-crt`, `
 ```
 
 La prima volta serve il target WebAssembly: `rustup target add wasm32-unknown-unknown` (dopo
-`. .\tools\rust-env.ps1`). La pagina è in [`rust/web/`](../rust/web/): `index.html` e i plugin
+`. .\tools\rust-env.ps1`). La pagina è in [`rust/web/`](../../rust/web/): `index.html` e i plugin
 JavaScript del gioco (musica del SID, gamepad, `localStorage`, schermo intero sul touch); il
 JavaScript di miniquad e quad-snd viene dalle loro copie in `rust/vendor`. Dal telefono sulla
 stessa rete si prova con `-Serve` (il firewall di Windows deve lasciar passare la porta 8080).
 
 Online è su GitHub Pages, <https://schermobianco.github.io/PaddWS/>, dal ramo `gh-pages`:
 `build_onforge.bat -Publish` ci mette, dopo la release, il contenuto dello zip web
-([`tools/publish-pages.ps1`](../tools/publish-pages.ps1), lanciabile anche da solo).
+([`tools/publish-pages.ps1`](../../tools/publish-pages.ps1), lanciabile anche da solo).
 
 ## Test e verifiche
 
@@ -93,7 +93,7 @@ cd rust && cargo run --release -p paddws-c64 -- game   # contro il core Rust
 
 Le GitHub Action `Python`, `Rust`, `MiSTer` e `C64` eseguono gli stessi controlli; la `MiSTer`
 sintetizza anche il core con Quartus 17.0.2, la `C64` assembla il programma con cc65 e lo prova nel
-banco di prova (vedi [c64/README.md](../c64/README.md)). Partono solo a mano (*Run workflow*, `gh
+banco di prova (vedi [c64/README.md](../../c64/README.md)). Partono solo a mano (*Run workflow*, `gh
 workflow run`, `build_ongithub.bat` o `check_ongithub.bat`). Gli stessi controlli girano in locale con
 `build_onforge.bat -CheckOnly`, oppure, sui file non ancora committati, con `check_onforge.bat`.
 
@@ -124,7 +124,7 @@ Numerazione [Semantic Versioning](https://semver.org/lang/it/), una sola per tut
 Python (`python/paddws/__init__.py`), Rust (`rust/Cargo.toml`), core MiSTer e versione C64 escono insieme
 con lo stesso numero (un test controlla che quelli di Python e Rust coincidano). La versione
 compare nel menu, nel log all'avvio e con `--version`. Le modifiche sono descritte in
-[CHANGELOG.md](../CHANGELOG.md).
+[CHANGELOG.md](../../CHANGELOG.md).
 
 Per rilasciare: aggiungere le voci sotto **Non rilasciato** nel changelog, poi
 
@@ -138,8 +138,8 @@ Lo script aggiorna la versione di Python e Rust (con `Cargo.lock`) e il changelo
 si costruiscono poi in uno di questi due modi:
 
 - `build_onforge.bat` fa i controlli e i pacchetti in locale, in `dist\`, sulla macchina virtuale *forge*
-  ([tools/forge](../tools/forge/README.md)): la accende e la spegne da solo, e sul PC bastano git
-  e ssh. La VM si crea una volta con `create_forge.bat` (VMware Workstation, una decina di minuti,
+  ([tools/forge](../../tools/forge/README.md)): la accende e la spegne da solo, e sul PC bastano git
+  e ssh. La VM si crea una volta con `create_forge.bat` (VMware Workstation, pochi minuti,
   senza domande). `build_onforge.bat -Publish` pubblica poi la release del tag con `gh` e la versione web su GitHub
   Pages. Le note della release vengono dal changelog (`tools/release_notes.py X.Y.Z`): per le
   anteprime solo le voci nuove o cambiate dal tag precedente.

@@ -13,8 +13,8 @@ lavora.
 - Commenti e docstring sono in italiano, come il resto del codice. Una PR con i commenti in inglese
   va bene lo stesso: si traducono durante la revisione.
 - Le pagine principali della documentazione hanno la versione italiana e quella inglese
-  (`README.md` e `README.en.md`, `docs/` e `docs/en/`, `hardware/deck`). Chi ne cambia una aggiorna
-  anche l'altra; se non può, lo scrive nella PR.
+  (`README.md` e `README.en.md`, `docs/it/` e `docs/en/`, `hardware/deck`, `deploy/raspberry`,
+  `tools/forge`). Chi ne cambia una aggiorna anche l'altra; se non può, lo scrive nella PR.
 
 ## Prima di cominciare
 
@@ -49,7 +49,7 @@ piena: vedi [c64/README.md](c64/README.md).
 
 ## Compilare e verificare
 
-Le istruzioni complete sono in [docs/sviluppo.md](docs/sviluppo.md). In breve, da `rust/`:
+Le istruzioni complete sono in [docs/it/sviluppo.md](docs/it/sviluppo.md). In breve, da `rust/`:
 
 ```sh
 cargo test --workspace
@@ -67,6 +67,10 @@ E poi, secondo la parte toccata:
 Gli script per Windows cercano gli strumenti portable in `C:\DEV\@Compiler`, oppure nella cartella
 indicata dalla variabile `PADDWS_COMPILERS`. Le GitHub Action partono solo a mano: sulle PR le avvia
 il maintainer. Non serve far girare tutto; basta dire nella PR che cosa si è provato.
+
+Per fare tutti i controlli insieme senza installare gli strumenti sul PC c'è la macchina virtuale
+*forge*: `create_forge.bat` la crea in VMware Workstation in pochi minuti e `check_onforge.bat` ci
+prova i file come sono, anche non committati ([tools/forge](tools/forge/README.md)).
 
 ## Pull request
 

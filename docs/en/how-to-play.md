@@ -1,6 +1,6 @@
 # How to play
 
-[← README](../../README.en.md) · [<img src="../flags/it.svg" alt="" height="14"> Italiano](../come-si-gioca.md) · [<img src="../flags/gb.svg" alt="" height="14"> **English**](how-to-play.md)
+[← README](../../README.en.md) · [<img src="../flags/it.svg" alt="" height="14"> Italiano](../it/come-si-gioca.md) · [<img src="../flags/gb.svg" alt="" height="14"> **English**](how-to-play.md)
 
 - [Attract mode and matches](#attract-mode-and-matches)
 - [Modes](#modes) and [NEXT power-ups](#next-power-ups)
@@ -231,8 +231,7 @@ first click on the page; `Esc` releases it and another click captures it again.
 ### Raspberry Pi cabinet
 
 Rotary encoders: rotation = paddle position, click = dash, long click = menu; in the menu the knob
-turns the wheel. Wiring in [deploy/raspberry/README.md](../../deploy/raspberry/README.md) (in
-Italian).
+turns the wheel. Wiring in [deploy/raspberry/README.en.md](../../deploy/raspberry/README.en.md).
 
 ### Phones and tablets
 

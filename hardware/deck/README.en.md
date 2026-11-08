@@ -81,7 +81,7 @@ hidden behind the console.
 
 | qty | what |
 |---|---|
-| 1 | Raspberry Pi 2, with the Deck SD card image ([deploy/raspberry/deck](../../deploy/raspberry/deck/README.md), in Italian: a trimmed-down 32-bit Raspberry Pi OS, with the `linux-armv7` executable) |
+| 1 | Raspberry Pi 2, with the Deck SD card image ([deploy/raspberry/deck](../../deploy/raspberry/deck/README.en.md): a trimmed-down 32-bit Raspberry Pi OS, with the `linux-armv7` executable) |
 | 1 | official Raspberry Pi 7" display (800 × 480), with the DSI cable |
 | 2 | LPD3806-600BM-G5-24C optical encoders |
 | 2 | 24 mm snap-in arcade buttons (DASH): they clip into the top plate, thinned to 2 mm around the hole by a recess from below |
@@ -101,8 +101,8 @@ hidden behind the console.
 | 2 | M3 × 5 grub screws for the knobs |
 | 4 | M12 washers (24 × 13 × 2.5), two per knob: they act as a flywheel |
 
-Encoder wiring and configuration: [deploy/raspberry/README.md](../../deploy/raspberry/README.md)
-(in Italian), optical encoder diagram (`pulses_per_revolution: 600`, `debounce_us: 0`).
+Encoder wiring and configuration: [deploy/raspberry/README.en.md](../../deploy/raspberry/README.en.md),
+optical encoder diagram (`pulses_per_revolution: 600`, `debounce_us: 0`).
 
 ## Assembly
 

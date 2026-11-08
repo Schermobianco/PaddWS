@@ -37,7 +37,7 @@ From the root of the repository:
 create_forge.bat
 ```
 
-In about ten minutes, without asking anything, it:
+In a few minutes (six or seven, download included), without asking anything, it:
 
 1. downloads the Debian 13 cloud image (about 300 MB) and checks its SHA-512; it stays in
    `%LOCALAPPDATA%\PaddWS\forge` for next time;
@@ -49,8 +49,8 @@ In about ten minutes, without asking anything, it:
    in `config.bak`) and writes `forge.local.psd1` in the root of the repository.
 
 From then on `build_onforge.bat` is all you need. The first build downloads the Quartus image (about
-3 GB) and builds the `paddws-build` image, so it takes longer; from the second time on only what
-changed is rebuilt.
+3 GB) and builds the `paddws-build` image, so it takes longer: a little under an hour. From the
+second time on only what changed is rebuilt.
 
 `create_forge.bat --help` lists the options. The most useful ones:
 
@@ -128,8 +128,8 @@ done is not redone. Without the cache the release only skips the Deck image.
 3. synthesizes the MiSTer core with Quartus (`mister/synth.sh`, image pinned by digest in
    `mister/quartus-image.txt`) and makes the SD card zip;
 4. if the Deck cache is there, builds the Deck SD card image from the armv7 package,
-   `paddws-X.Y.Z-deck-pi2.img.xz` ([deploy/raspberry/deck](../../deploy/raspberry/deck/README.md),
-   in Italian, about 10 minutes, with `sudo`).
+   `paddws-X.Y.Z-deck-pi2.img.xz` ([deploy/raspberry/deck](../../deploy/raspberry/deck/README.en.md),
+   about 10 minutes, with `sudo`).
 
 The packages stay in `~/forge/out` with `BUILD.txt` (version, commit, result). The crates and the
 `target` folder stay in the Docker volumes `forge-cargo` and `forge-target`: from the second time on

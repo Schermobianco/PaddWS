@@ -13,8 +13,8 @@ is done.
 - Comments and docstrings are in Italian, like the rest of the code. A PR with English comments is
   fine all the same: they get translated during the review.
 - The main documentation pages exist in Italian and in English (`README.md` and `README.en.md`,
-  `docs/` and `docs/en/`, `hardware/deck`). If you change one, update the other too; if you can't,
-  say so in the PR.
+  `docs/it/` and `docs/en/`, `hardware/deck`, `deploy/raspberry`, `tools/forge`). If you change
+  one, update the other too; if you can't, say so in the PR.
 
 ## Before you start
 
@@ -68,6 +68,10 @@ Then, depending on what you touched:
 The Windows scripts look for portable tools in `C:\DEV\@Compiler`, or in the folder named by the
 `PADDWS_COMPILERS` environment variable. GitHub Actions only run manually: the maintainer starts
 them on pull requests. You don't need to run everything; just say in the PR what you tested.
+
+To run all the checks together without installing the tools on your PC there is the *forge* virtual
+machine: `create_forge.bat` creates it in VMware Workstation in a few minutes and `check_onforge.bat`
+tests your files as they are, even uncommitted ([tools/forge](tools/forge/README.en.md)).
 
 ## Pull requests
 

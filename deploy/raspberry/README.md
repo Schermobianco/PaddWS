@@ -1,3 +1,5 @@
+[<img src="../../docs/flags/it.svg" alt="" height="14"> **Italiano**](README.md) · [<img src="../../docs/flags/gb.svg" alt="" height="14"> English](README.en.md)
+
 # Installazione su Raspberry Pi
 
 Per il Deck (Pi 2 a 32 bit con il display da 7") c'è un'immagine della SD già pronta, che parte

@@ -1,6 +1,6 @@
 # Configuration
 
-[← README](../../README.en.md) · [<img src="../flags/it.svg" alt="" height="14"> Italiano](../configurazione.md) · [<img src="../flags/gb.svg" alt="" height="14"> **English**](configuration.md)
+[← README](../../README.en.md) · [<img src="../flags/it.svg" alt="" height="14"> Italiano](../it/configurazione.md) · [<img src="../flags/gb.svg" alt="" height="14"> **English**](configuration.md)
 
 This page is about the Rust version on PC and Raspberry Pi. The Python version, which is frozen,
 reads the same file but only knows the CLASSIC and EVO keys (`resolution`, `ball`, `paddle`,
@@ -97,5 +97,4 @@ The paddle types are in the `next.paddles` section.
 
 The cabinet runs either the Python version or the Rust one (with NEXT, the CPU and the encoders read
 directly from the GPIO, on the Pi 5 too), each with its own systemd service. Installation and
-wiring of encoders and buttons: [deploy/raspberry/README.md](../../deploy/raspberry/README.md) (in
-Italian).
+wiring of encoders and buttons: [deploy/raspberry/README.en.md](../../deploy/raspberry/README.en.md).

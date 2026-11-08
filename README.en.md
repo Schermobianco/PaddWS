@@ -81,8 +81,8 @@ The [Deck](hardware/deck/README.en.md) is a 3D-printable table-top console: a Ra
 the official 7" display, a knob on an optical encoder at each end and the DASH, SELECT and USE
 buttons. It comes with the SolidCraft model and a STEP file, the Bambu Studio project with the
 parts already split into plates (no supports, one colour per plate) and the assembly instructions.
-For the Pi 2 there is a ready-made [SD card image](deploy/raspberry/deck/README.md) (in Italian;
-`paddws-X.Y.Z-deck-pi2.img.xz` in the releases): it boots into the game in about 8 seconds and is
+For the Pi 2 there is a ready-made [SD card image](deploy/raspberry/deck/README.en.md)
+(`paddws-X.Y.Z-deck-pi2.img.xz` in the releases): it boots into the game in about 8 seconds and is
 switched off by pulling the plug.
 
 | | |
@@ -97,9 +97,12 @@ switched off by pulling the plug.
 - [Configuration](docs/en/configuration.md): `padd_config.json`, difficulty, NEXT parameters,
   Raspberry Pi cabinet.
 - [Development](docs/en/development.md): structure, building, tests and checks, releases.
+- [Ball angle](docs/en/ball-angle.pdf) (PDF): how the direction is chosen at launch and on hits,
+  the TWIST paddle and a comparison with the 1972 Pong.
 - [The Deck](hardware/deck/README.en.md): the console to print, parts, components and assembly.
+- [Raspberry Pi cabinet](deploy/raspberry/README.en.md): models, encoder wiring, installation.
 - The individual versions (in Italian): [Rust](rust/README.md), [MiSTer core](mister/README.md),
-  [Commodore 64](c64/README.md), [Raspberry Pi cabinet](deploy/raspberry/README.md).
+  [Commodore 64](c64/README.md).
 - What's new in each version (in Italian): [CHANGELOG.md](CHANGELOG.md).
 
 ## Contributing

@@ -35,7 +35,7 @@ Dalla radice del repository:
 create_forge.bat
 ```
 
-In una decina di minuti, senza domande:
+In pochi minuti (sei o sette, scaricamento compreso), senza domande:
 
 1. scarica l'immagine cloud di Debian 13 (circa 300 MB) e ne controlla lo SHA-512; resta in
    `%LOCALAPPDATA%\PaddWS\forge` per la volta dopo;
@@ -47,8 +47,8 @@ In una decina di minuti, senza domande:
    in `config.bak`) e scrive `forge.local.psd1` nella radice del repository.
 
 Da lì basta `build_onforge.bat`. La prima build scarica l'immagine di Quartus (circa 3 GB) e
-costruisce l'immagine `paddws-build`, quindi dura di più; dalla seconda volta si ricompila solo
-quello che è cambiato.
+costruisce l'immagine `paddws-build`, quindi dura di più: poco meno di un'ora. Dalla seconda volta
+si ricompila solo quello che è cambiato.
 
 Le opzioni si vedono con `create_forge.bat --help`. Quelle che servono di più:
 

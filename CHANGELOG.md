@@ -21,8 +21,12 @@ crea il commit e il tag `vX.Y.Z`.
   `~/.ssh/config` e scrive `forge.local.psd1`. `tools/forge/deck-cache.sh` (o `--deck`, o
   `forge-deck` sulla VM) prepara la cache per l'immagine della SD del Deck: Raspberry Pi OS Lite,
   kernel e Mesa. Guida di forge anche in inglese.
+- Documentazione in inglese anche per il cabinato Raspberry Pi (`deploy/raspberry`) e per l'immagine
+  della SD del Deck.
 
 ### Modificato
+- Documentazione: le guide sono in `docs/it/` e `docs/en/`, ognuna con il suo PDF sull'angolo della
+  palla, ora collegato dal README; schermate, icone e bandiere restano in comune in `docs/`.
 - `build_onforge.bat`: se forge non risponde perché il DHCP di VMware le ha dato un altro indirizzo,
   lo chiede a VMware e va avanti con quello; se forge è già accesa non prova più ad accenderla.
 
