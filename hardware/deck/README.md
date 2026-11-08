@@ -16,7 +16,7 @@ solo colore e si stampa senza supporti; tutti i pezzi entrano sul piatto da 256 
 |---|---|
 | `deck.sc` | il modello per SolidCraft, con la timeline e i parametri principali |
 | `deck.step` | tutti i pezzi da stampare, per altri CAD |
-| `parts/*.3mf` | gli stessi pezzi separati, un file per gruppo, nel verso del modello |
+| `parts/*.3mf` | gli stessi pezzi separati, un file per gruppo, nel verso del modello, con le placche della presa di ricambio |
 | `deck-bambu-studio.3mf` | il progetto per Bambu Studio (X1 Carbon, 0,20 mm Standard): tutti i pezzi già girati nel verso di stampa e divisi in 6 piatti, uno per colore e materiale |
 
 Nel file `.sc` si cambiano dalla finestra dei parametri `lunghezza`, `larghezza`, `raggio`,
@@ -34,7 +34,7 @@ cambia solo il filamento tra un piatto e l'altro, mai durante una stampa.
 | 2 | metà G2 del piano, 2 manopole (capovolte) | 1: PETG nero |
 | 3 | cornice del vetro (flangia sulla piastra), 4 barre del display | 1: PETG nero |
 | 4 | metà G1 della vasca (dritta), 2 anelli delle tacche, 2 indicatori, 8 lettere di DASH | 2: PETG giallo |
-| 5 | metà G2 della vasca | 2: PETG giallo |
+| 5 | metà G2 della vasca, placca della presa micro-USB (a faccia in giù) | 2: PETG giallo |
 | 6 | 8 piedini | 3: TPU 95A |
 
 Il piano si stampa a faccia in giù: il sopra è la faccia sulla piastra e ne prende la finitura, per
@@ -51,6 +51,27 @@ Il progetto usa il PETG (Bambu PETG Basic nero e giallo, TPU 95A HF per i piedin
 gioco per lato; sul PETG l'Attack (cianoacrilato) tiene poco da solo: meglio con il suo primer per
 plastiche difficili, oppure stampare i pezzi da incollare in PLA.
 
+## Placca della presa
+
+La presa di alimentazione sta su una placca intercambiabile, nel fianco posteriore. La placca riempie
+una tacca della parete, aperta verso l'alto, e dietro ha due ali che scorrono in guide a C. Si
+infila dall'alto prima di chiudere il piano, che poi la tiene giù. Quando si spinge la spina la
+reggono le guide e un appoggio al centro, in basso; quando la si tira, la parete. Le guide hanno
+zoccoli e squadrette sul fondo.
+
+La faccia è larga 43,6 mm e alta 34,3, spessa come la parete (2,5 mm). Dietro, tra le ali, restano
+40 mm di larghezza per la presa; sotto il centro c'è l'appoggio, alto 5 mm.
+
+| file | presa |
+|---|---|
+| `parts/power-plate-micro-usb.3mf` | prolunga micro-USB da pannello con due viti M3 a 28 mm (è quella del progetto Bambu Studio) |
+| `parts/power-plate-usb-c.3mf` | presa USB-C rotonda con il dado, foro Ø12,2 (filetto M12) |
+| `parts/power-plate-dc-jack.3mf` | jack DC 5,5 × 2,1 con filetto da 8 mm e interruttore a levetta da 6 mm |
+| `parts/power-plate-blank.3mf` | piena: da forare, o da ridisegnare partendo da `deck.step` |
+
+Le placche si stampano a faccia in giù, così il lato in vista viene liscio. Nel modello le placche di
+ricambio sono nascoste, dietro la console.
+
 ## Da comprare
 
 | q.tà | cosa |
@@ -60,8 +81,9 @@ plastiche difficili, oppure stampare i pezzi da incollare in PLA.
 | 2 | encoder ottici LPD3806-600BM-G5-24C |
 | 2 | pulsanti arcade da 24 mm a scatto (DASH): si agganciano al piano, assottigliato a 2 mm attorno al foro da un incavo da sotto |
 | 4 | pulsanti momentanei da pannello Ø16 mm con il dado (SELECT, USE), normalmente aperti, con almeno 6 mm di filetto; sotto il piano c'è posto per 35 mm |
-| 1 | prolunga micro-USB da pannello (foro 9 × 4, viti a 28 mm: da adattare al connettore) |
-| 1 | amplificatore PAM8403 e 2 altoparlanti sottili Ø28 (8 Ω, 2 W, spessi fino a 5,4 mm), a incastro nelle guide del fianco posteriore |
+| 1 | prolunga micro-USB da pannello con due viti M3 a 28 mm (oppure un'altra presa, con la sua placca: vedi sopra) |
+| 1 | cavo sdoppiatore micro-USB (a Y): dalla prolunga al Pi 2 e alla micro-USB del display; così i pin 5V e GND del display restano liberi, senza cavetti verso la GPIO |
+| 1 | amplificatore PAM8403 e 2 altoparlanti sottili Ø28 (8 Ω, 2 W, spessi fino a 5,4 mm), a incastro nelle guide dei fianchi corti, uno davanti a ogni giocatore |
 | 1 | cavo audio con spina jack 3,5 mm stereo maschio a 3 poli (TRS, non a 4 poli), 20-30 cm (un cavo audio tagliato o un cavetto "jack 3,5 mm a fili liberi"): dalla presa audio del Pi 2 all'ingresso del PAM8403 (punta = L, anello = R, corpo = GND) |
 | 1 | alimentatore micro-USB 5,1 V 2,5 A, oppure powerbank con uscita USB-A da almeno 2,4 A |
 | 1 | microSD da almeno 8 GB |
@@ -96,8 +118,9 @@ schema degli encoder ottici (`pulses_per_revolution: 600`, `debounce_us: 0`).
 5. Encoder da sotto, con 3 viti dall'alto ciascuno; SELECT e USE con il dado; DASH si aggancia a
    scatto nel suo foro; il Raspberry dietro al display, sui suoi distanziali.
 6. Vasca: calare la metà G2 sulla G1 dall'alto, facendo entrare le code di rondine nelle sedi.
-   Montare la presa sul fianco posteriore e infilare dall'alto gli altoparlanti nelle loro guide,
-   con il cono verso le feritoie. Il bordo appoggia su due distanziali della parete, così la
+   Avvitare la presa alla sua placca e infilare la placca dall'alto nelle guide del fianco
+   posteriore. Infilare dall'alto gli altoparlanti nelle guide dei fianchi corti, con il cono verso
+   le feritoie. Il bordo appoggia su due distanziali della parete, così la
    membrana resta a 1,5 mm dalla plastica; le costole sul labbro si schiacciano e li tengono fermi,
    senza vibrare. Se il bordo è più sottile della gola (5,7 mm), un anello di gommapiuma adesiva
    sul bordo, dalla parte del labbro, prende il gioco.
@@ -123,6 +146,7 @@ schema degli encoder ottici (`pulses_per_revolution: 600`, `debounce_us: 0`).
 - **Spessore degli altoparlanti** (ora 5,4 mm, lo spessore totale dichiarato): conta quello nei 2 mm
   esterni, dove li tiene il labbro delle guide. Se è più sottile, un anello di gommapiuma sul bordo
   prende il gioco; oppure si adattano le guide allo spessore misurato.
-- **Connettore di alimentazione**: foro e viti sono per una prolunga micro-USB tipica.
+- **Presa di alimentazione**: la placca micro-USB è per una prolunga con le viti a 28 mm. Con
+  un'altra presa si usa o si rifà un'altra placca: il resto della console non cambia.
 - **Encoder**: misure dei venditori (corpo Ø38 × 35,5, collare Ø20 × 5, albero Ø6 × 13 con il piano,
   fori M3 sul cerchio Ø30).
