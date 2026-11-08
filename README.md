@@ -1,3 +1,5 @@
+**Italiano** · [English](README.en.md)
+
 # PADD WS
 
 Pong da tavolo per due giocatori seduti ai lati opposti dello schermo, con l'attract dei cabinati
@@ -62,7 +64,7 @@ Il core MiSTer e la versione C64 ne riproducono lo stato tick per tick, verifica
 |---|---|
 | PC, giocatore sinistro | `W` / `S` su e giù, `D` scatto, `F` / `C` seleziona e usa il bonus |
 | PC, giocatore destro | `↑` / `↓`, `←` scatto, `.` / `-` bonus |
-| PC, generali | `5` gettone, `Invio` o `1` Start, `P` pausa, `Esc` menu, `F11` schermo intero, `C` filtro CRT |
+| PC, generali | `5` gettone, `Invio` o `1` Start, `P` pausa, `Esc` menu, `F11` schermo intero, `C` filtro CRT (fuori da NEXT) |
 | gamepad e stick arcade | levetta o croce, **A** scatto, **B** / **C** bonus, **Start**, **Select** gettone |
 | telefono e tablet | la racchetta segue il dito, un secondo dito fa lo scatto, un tocco su ❚❚ mette in pausa |
 | MiSTer | joystick, paddle o spinner; opzioni nell'OSD |
@@ -98,6 +100,14 @@ nelle release): parte nel gioco in circa 8 secondi e si spegne togliendo la corr
   [Commodore 64](c64/README.md), [cabinato Raspberry Pi](deploy/raspberry/README.md).
 - [Console da stampare](hardware/README.md): il Deck, pezzi, componenti e montaggio.
 - Le novità di ogni versione: [CHANGELOG.md](CHANGELOG.md).
+
+## Contribuire
+
+Errori e proposte si segnalano con una issue, le modifiche con una pull request, in italiano o in
+inglese. Come si lavora e quali controlli servono è spiegato in [CONTRIBUTING.md](CONTRIBUTING.md). Per le domande ci sono
+le [Discussions](https://github.com/Schermobianco/PaddWS/discussions); chi partecipa segue il
+[codice di condotta](CODE_OF_CONDUCT.md), e i problemi di sicurezza si segnalano in privato
+([SECURITY.md](SECURITY.md)).
 
 ## Licenza
 

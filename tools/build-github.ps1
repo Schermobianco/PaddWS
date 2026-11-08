@@ -1,5 +1,7 @@
-﻿# Release online, come prima di build.bat: le GitHub Action, avviate da qui sul tag, costruiscono
-# tutti i pacchetti, sintesi del core MiSTer compresa, e li allegano alla release.
+﻿# Release online, alternativa a build.bat: le GitHub Action, avviate da qui sul tag, costruiscono
+# i pacchetti, sintesi del core MiSTer compresa, e li allegano alla release; alla fine questo script
+# mette le note dal changelog (tools/release_notes.py) e la versione web su GitHub Pages. Manca
+# solo l'immagine della SD del Deck, che costruisce forge (tools/forge/build.sh, con deck-cache).
 #
 # Uso:  build_ongithub.bat VERSIONE [-NoCheck] [-NoWait]
 #         VERSIONE: patch, minor, major, X.Y.Z o X.Y.Z-beta.N (come tools/release.py): controlli
@@ -7,8 +9,8 @@
 #       build_ongithub.bat [-NoWait]
 #         senza versione: il tag vX.Y.Z è già sul commit attuale (per esempio fatto quando le
 #         Action erano ferme): lo invia se manca su GitHub, rilancia le Action fallite del tag
-# I workflow non partono da soli (repository privato, minuti a pagamento): li avvia questo script
-# sul tag con gh workflow run.
+# I workflow non partono da soli (di solito le release le fa forge): li avvia questo script sul tag
+# con gh workflow run.
 #   -NoCheck  salta i controlli locali (gli stessi della CI, da tools\build-release.ps1)
 #   -NoWait   non aspetta la fine delle Action
 # I controlli locali girano sulla macchina forge (build.bat -CheckOnly). Richiede gh in
@@ -78,7 +80,11 @@ if ($blocked) {
     if ($why) { Fail "GitHub non avvia i job: $($why.Line.Trim()) - per costruire in locale: build.bat -Publish" }
 }
 $runs | ForEach-Object { "  {0,-8} {1}" -f $_.workflowName, $_.status }
-if ($NoWait) { Write-Host "`nLe Action continuano su GitHub: $gh run list --branch $tag"; exit 0 }
+if ($NoWait) {
+    Write-Host "`nLe Action continuano su GitHub: $gh run list --branch $tag"
+    Write-Host "Note e GitHub Pages: build_ongithub.bat senza versione, a Action finite"
+    exit 0
+}
 
 Write-Host "  si aspetta la fine (la sintesi MiSTer dura circa mezz'ora)..."
 do {
@@ -88,5 +94,26 @@ do {
 } while ($open)
 $runs | ForEach-Object { "  {0,-8} {1}" -f $_.workflowName, $_.conclusion }
 if ($runs | Where-Object { $_.conclusion -ne "success" }) { Fail "Action non riuscite: $gh run view --log-failed" }
+
+Step "note della release dal changelog"
+$python = Join-Path $root ".venv\Scripts\python.exe"
+if (-not (Test-Path $python)) { $python = "python" }
+$notes = Join-Path $env:TEMP "paddws-notes-$v.md"
+& $python tools\release_notes.py $v --output $notes
+if ($LASTEXITCODE -ne 0) { Fail "tools/release_notes.py" }
+& $gh release edit $tag --notes-file $notes | Out-Null
+if ($LASTEXITCODE -ne 0) { Fail "note della release" }
+Remove-Item $notes
+
+# publish-pages.ps1 prende lo zip web da dist\, come dopo build.bat
+Step "versione web su GitHub Pages"
+$dist = Join-Path $root "dist"
+New-Item -ItemType Directory -Force $dist | Out-Null
+& $gh release download $tag --pattern "paddws-$v-web.zip" --dir $dist --clobber
+if ($LASTEXITCODE -ne 0) { Fail "download dello zip web" }
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "publish-pages.ps1")
+if ($LASTEXITCODE -ne 0) { Fail "pubblicazione su GitHub Pages" }
+
 Step "release $tag"
 & $gh release view $tag --json url,assets --jq '.url, (.assets[] | "  \(.name)")'
+Write-Host "  l'immagine della SD del Deck non c'è: la costruisce solo forge (build.bat -Publish)"

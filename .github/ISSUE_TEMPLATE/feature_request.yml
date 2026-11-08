@@ -1,0 +1,36 @@
+name: Proposta / Feature request
+description: Un'idea per il gioco, una nuova piattaforma, un miglioramento. / An idea for the game, a new platform, an improvement.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Si può scrivere in italiano o in inglese. / Italian or English are both fine.
+        Le regole di gioco valgono per la versione Rust, il MiSTer e il C64 insieme, tick per tick: le idee si discutono prima di scrivere codice. La versione Python è congelata.
+        Game rules apply to the Rust, MiSTer and C64 versions together, tick by tick: ideas are discussed before writing code. The Python version is frozen.
+  - type: textarea
+    id: idea
+    attributes:
+      label: La proposta / The idea
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Perché / Why
+      description: Che problema risolve o che cosa aggiunge alla partita. / What problem it solves or what it adds to the game.
+  - type: checkboxes
+    id: editions
+    attributes:
+      label: Versioni interessate / Editions affected
+      options:
+        - label: Rust (PC, Raspberry Pi, web)
+        - label: MiSTer
+        - label: Commodore 64
+        - label: Deck (hardware)
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Contributo / Contribution
+      options:
+        - label: Posso lavorarci io con una pull request. / I can work on it with a pull request.

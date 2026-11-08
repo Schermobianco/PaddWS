@@ -33,7 +33,7 @@ if [ -z "$CHECKONLY" ]; then
     step "pacchetto Python"
     # la cartella python/ intera, come nel repository: il pacchetto trova asset e configurazione due
     # cartelle sopra di sé
-    stage python python assets deploy padd_config.json README.md \
+    stage python python assets deploy padd_config.json README.md README.en.md \
         CHANGELOG.md LICENSE THIRD_PARTY.md
     zipdir "paddws-$version-python"
 fi

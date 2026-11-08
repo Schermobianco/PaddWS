@@ -1,3 +1,5 @@
+**Italiano** · [English](README.en.md)
+
 # Deck
 
 Console da tavolo per PADD WS: una scatola piatta di 320 × 160 × 47,5 mm con lo schermo ufficiale da 7" al
@@ -16,8 +18,8 @@ solo colore e si stampa senza supporti; tutti i pezzi entrano sul piatto da 256 
 |---|---|
 | `deck.sc` | il modello per SolidCraft, con la timeline e i parametri principali |
 | `deck.step` | tutti i pezzi da stampare, per altri CAD |
-| `parts/*.3mf` | gli stessi pezzi separati, un file per gruppo, nel verso del modello, con le placche della presa di ricambio |
-| `deck-bambu-studio.3mf` | il progetto per Bambu Studio (X1 Carbon, 0,20 mm Standard): tutti i pezzi già girati nel verso di stampa e divisi in 6 piatti, uno per colore e materiale |
+| `parts/*.3mf` | gli stessi pezzi separati, un file per gruppo, nel verso del modello, con le placche della presa di ricambio; le metà G1 e G2 di piano e vasca sono i file `-P1` e `-P2` |
+| `deck-bambu-studio.3mf` | il progetto per Bambu Studio (X1 Carbon, 0,20 mm Standard): tutti i pezzi già girati nel verso di stampa e divisi in 6 piatti, ognuno di un solo colore e materiale |
 
 Nel file `.sc` si cambiano dalla finestra dei parametri `lunghezza`, `larghezza`, `raggio`,
 `parete` e `vetro_sp`.
@@ -25,7 +27,7 @@ Nel file `.sc` si cambiano dalla finestra dei parametri `lunghezza`, `larghezza`
 ## Pezzi da stampare
 
 Tutto sta in `deck-bambu-studio.3mf`, il progetto per Bambu Studio: i pezzi sono già girati nel verso di
-stampa (nessuno richiede supporti) e divisi in sei piatti, uno per colore e materiale. Si
+stampa (nessuno richiede supporti) e divisi in sei piatti, ognuno di un solo colore e materiale. Si
 cambia solo il filamento tra un piatto e l'altro, mai durante una stampa.
 
 | piatto | pezzi | filamento |
@@ -47,8 +49,8 @@ Il progetto è per la X1 Carbon con ugello da 0,4 mm e il profilo 0.20mm Standar
 Bambu PETG Basic e TPU 95A HF; se si usano altri filamenti si cambiano nell'elenco a sinistra.
 Piano, cornice, vasca e manopole hanno già 3 perimetri e il 15% di riempimento.
 
-Il progetto usa il PETG (Bambu PETG Basic nero e giallo, TPU 95A HF per i piedini). I pezzi da incollare sono spessi 1,2 mm ed entrano per 0,6 mm in sedi con 0,15 mm di
-gioco per lato; sul PETG l'Attack (cianoacrilato) tiene poco da solo: meglio con il suo primer per
+I pezzi da incollare sono spessi 1,2 mm ed entrano per 0,6 mm in sedi con 0,15 mm di gioco per
+lato; sul PETG l'Attack (cianoacrilato) tiene poco da solo: meglio con il suo primer per
 plastiche difficili, oppure stampare i pezzi da incollare in PLA.
 
 ## Placca della presa
@@ -120,8 +122,8 @@ schema degli encoder ottici (`pulses_per_revolution: 600`, `debounce_us: 0`).
 6. Vasca: calare la metà G2 sulla G1 dall'alto, facendo entrare le code di rondine nelle sedi.
    Avvitare la presa alla sua placca e infilare la placca dall'alto nelle guide del fianco
    posteriore. Infilare dall'alto gli altoparlanti nelle guide dei fianchi corti, con il cono verso
-   le feritoie. Il bordo appoggia su due distanziali della parete, così la
-   membrana resta a 1,5 mm dalla plastica; le costole sul labbro si schiacciano e li tengono fermi,
+   le feritoie. Il bordo appoggia su due distanziali della parete, così la membrana resta a 1,5 mm
+   dalla plastica; le costole sul labbro si schiacciano e li tengono fermi,
    senza vibrare. Se il bordo è più sottile della gola (5,7 mm), un anello di gommapiuma adesiva
    sul bordo, dalla parte del labbro, prende il gioco.
 7. Cablare, appoggiare il piano sulla vasca e avvitarlo da sotto con le 12 viti M3 × 35, che passano

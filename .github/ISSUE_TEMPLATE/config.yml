@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Domande e idee / Questions and ideas
+    url: https://github.com/Schermobianco/PaddWS/discussions
+    about: Per domande, idee ancora da discutere e foto del vostro Deck. / For questions, ideas still to discuss and photos of your Deck.
+  - name: Problema di sicurezza / Security issue
+    url: https://github.com/Schermobianco/PaddWS/security/advisories/new
+    about: Segnalazione privata, mai in una issue pubblica. / Private report, never in a public issue.

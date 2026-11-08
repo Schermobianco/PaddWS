@@ -1,6 +1,8 @@
 # Sviluppo
 
-[← README](../README.md)
+[← README](../README.md) · **Italiano** · [English](en/development.md)
+
+Per chi vuole contribuire: vedi anche [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Un solo gioco, cinque versioni
 
@@ -14,7 +16,8 @@ in WebAssembly. La versione Python è la prima ed è congelata: solo correzioni.
 
 ```
 rust/            versione Rust: core deterministico (core), gioco anche web (game, web), SID (sid),
-                 tracce (trace) e firmware RISC-V (mister-fw) del MiSTer, banco di prova del C64 (c64)
+                 tracce (trace) e firmware RISC-V (mister-fw) del MiSTer, banco di prova del C64 (c64),
+                 copie modificate di miniquad e quad-snd (vendor)
 mister/          core MiSTer: RTL Verilog, simulazione, progetto Quartus (framework Template_MiSTer)
 c64/             versione Commodore 64 in 6502 (anteprima), verificata contro il core Rust
 python/          versione Python
@@ -28,7 +31,7 @@ python/          versione Python
     hardware.py      encoder (pigpio), rilevamento Raspberry Pi, spegnimento
   tests/           test pytest
 assets/          font, immagini, suoni, icone, bitmap e tempi dell'attract (comuni a tutte le versioni)
-deploy/raspberry servizio systemd e configurazione di boot
+deploy/raspberry servizio systemd e configurazione di boot; immagine della SD del Deck (deck)
 hardware/        console da stampare in 3D: il Deck (modello SolidCraft e STEP, progetto Bambu Studio)
 tools/           rilascio, ambiente Rust portable, generatori di icone, attract, suoni e ROM MiSTer,
                  musiche del SID (gen_sid_music.py, suonate dal SID Rust di rust/sid), scritte di
@@ -71,7 +74,7 @@ Opzioni: `--config FILE`, `--fullscreen` / `--windowed`, `--crt` / `--no-crt`, `
 La prima volta serve il target WebAssembly: `rustup target add wasm32-unknown-unknown` (dopo
 `. .\tools\rust-env.ps1`). La pagina è in [`rust/web/`](../rust/web/): `index.html` e i plugin
 JavaScript del gioco (musica del SID, gamepad, `localStorage`, schermo intero sul touch); il
-JavaScript di miniquad e quad-snd è quello delle versioni di `Cargo.lock`. Dal telefono sulla
+JavaScript di miniquad e quad-snd viene dalle loro copie in `rust/vendor`. Dal telefono sulla
 stessa rete si prova con `-Serve` (il firewall di Windows deve lasciar passare la porta 8080).
 
 Online è su GitHub Pages, <https://schermobianco.github.io/PaddWS/>, dal ramo `gh-pages`:
@@ -81,10 +84,11 @@ Online è su GitHub Pages, <https://schermobianco.github.io/PaddWS/>, dal ramo `
 ## Test e verifiche
 
 ```sh
-pytest                                  # versione Python
+pytest -q python                        # versione Python
 cd rust && cargo test                   # core e gioco Rust
 .\mister\sim\run.ps1                    # logica HDL contro il core Rust (sim/run.sh su Linux)
-cd rust && cargo run --release -p paddws-c64 -- game   # versione C64 contro il core Rust
+.\c64\build.ps1                         # versione C64 (c64/build.sh su Linux), poi:
+cd rust && cargo run --release -p paddws-c64 -- game   # contro il core Rust
 ```
 
 Le GitHub Action `Python`, `Rust`, `MiSTer` e `C64` eseguono gli stessi controlli; la `MiSTer`
@@ -102,7 +106,8 @@ workflow run` o `build_ongithub.bat`). Gli stessi controlli girano in locale con
 - Sincronizzazione con la GPU dopo ogni frame: niente frame accodati dal driver, ~1 frame di
   latenza (disattivata da sola se con il compositor in uso farebbe perdere frame).
 - Filtro CRT calcolato al massimo a 720p e poi ingrandito: a 1440p/4K resta nel budget del frame.
-- Audio, glifi e GC "pre-riscaldati" all'avvio: nessuno scatto alla prima occorrenza.
+- Audio "pre-riscaldato" all'avvio (ogni suono suonato una volta a volume zero): nessuno scatto
+  alla prima occorrenza.
 - Collisioni continue: la palla non può attraversare la racchetta a nessuna velocità.
 
 ## Versioni e release
@@ -120,14 +125,16 @@ python tools/release.py minor      # oppure patch / major / X.Y.Z / X.Y.Z-beta.N
 git push --follow-tags
 ```
 
-Lo script aggiorna la versione di Python e Rust e il changelog (le anteprime `-alpha.N` e
+Lo script aggiorna la versione di Python e Rust (con `Cargo.lock`) e il changelog (le anteprime `-alpha.N` e
 `-beta.N` lasciano le voci in **Non rilasciato**), crea il commit e il tag `vX.Y.Z`. I pacchetti
 si costruiscono poi in uno di questi due modi:
 
 - `build.bat` fa i controlli e i pacchetti in locale, in `dist\`, sulla macchina virtuale *forge*
   ([tools/forge](../tools/forge/README.md)): la accende e la spegne da solo, e sul PC bastano git
   e ssh. `build.bat -Publish` pubblica poi la release del tag con `gh` e la versione web su GitHub
-  Pages.
+  Pages. Le note della release vengono dal changelog (`tools/release_notes.py X.Y.Z`): per le
+  anteprime solo le voci nuove o cambiate dal tag precedente.
 - `build_ongithub.bat VERSIONE` fa tutto online: controlli, `tools/release.py`, push, avvia le
   GitHub Action sul tag e le segue fino alla release (core MiSTer compreso); senza versione rilancia
-  le Action del tag già presente sul commit.
+  le Action fallite del tag già presente sul commit. Alla fine mette le note e la versione web su
+  GitHub Pages; manca solo l'immagine della SD del Deck, che fa solo *forge*.

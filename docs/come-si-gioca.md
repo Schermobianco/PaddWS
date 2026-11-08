@@ -1,6 +1,6 @@
 # Come si gioca
 
-[← README](../README.md)
+[← README](../README.md) · **Italiano** · [English](en/how-to-play.md)
 
 - [L'attract e la partita](#lattract-e-la-partita)
 - [Modalità](#modalità) e [bonus di NEXT](#bonus-di-next)
@@ -70,7 +70,7 @@ circa metà dei punti contro la racchetta normale.
 | **TITAN** | più alta (1,2) | più lenta (0,8) |
 | **HAMMER** | i tiri partono più veloci (×1,25, se la palla non ha già un boost) | lenta (0,75) |
 | **TWIST** | passa alla palla metà della sua velocità verticale: colpendo in movimento si dà angolo; si inclina con la velocità | — |
-| **BLASTER** | spara: caricatore di 4 colpi veloci da sparare di fila, mostrati come rettangolini gialli dietro la racchetta (si ricarica 3 s dopo il primo colpo); i colpi raccolgono le capsule, anche quelle dirette all'avversario | niente scatto in avanti: spara con quel tasto |
+| **BLASTER** | un po' più alta (1,1) e spara: caricatore di 4 colpi veloci da sparare di fila, mostrati come rettangolini gialli dietro la racchetta (si ricarica 3 s dopo il primo colpo); i colpi raccolgono le capsule, anche quelle dirette all'avversario | niente scatto in avanti: spara con quel tasto |
 | **RUSH** | scatto in avanti più lungo (×1,5), che prende la palla più spesso; dalla posizione avanzata i tiri partono più veloci (×1,15, anche lo scatto che intercetta la palla) e più vicini all'avversario; la racchetta avanzata è anche più rapida (×1,15) | più corta (0,85) |
 | **GUARDIAN** | un muro a 5 settori dietro la racchetta, uno per partita: ogni palla mancata rimbalza sul settore all'altezza della palla, che poi sparisce | più corta (0,8) |
 
@@ -122,19 +122,20 @@ dell'attract resta EVO e non c'è la schermata HOW TO PLAY. Barra, icona della m
 
 ## CHALLENGE
 
-Da soli contro 7 avversari CPU (menu **PLAYERS: CHALLENGE**, sul MiSTer OSD *Players: Challenge*).
+Da soli contro 7 avversari CPU (menu **PLAYERS: CHALLENGE**, sul MiSTer OSD *Game type: Challenge*).
 Si scelgono una volta bonus e racchetta, poi ogni livello presenta il suo avversario: un tipo di
 racchetta diverso per livello, i suoi 3 bonus e una CPU sempre più forte, dall'ARCADE del primo
 livello al GUARDIAN del boss finale. Le partite sono NEXT a 5 punti.
 
 - **Punti arcade**: colpi, scatti riusciti, SUPER e punti segnati, con un moltiplicatore che sale
-  negli scambi lunghi (fino a ×8); a ogni livello vinto un premio, doppio se l'avversario non ha
-  fatto punti.
+  negli scambi lunghi (fino a ×8); a ogni livello vinto un premio, più un premio doppio per la
+  partita perfetta, se l'avversario non ha fatto punti.
 - **Continue**: perso un livello, 10 secondi per inserire un gettone (o premere Start in Free
   Play) e riprovare lo stesso livello, con i punti da zero.
 - **Classifica**: i 10 migliori con le iniziali, mostrata anche nell'attract. Sul PC si salva in
   `padd_scores.json` accanto alla configurazione, nel browser nel `localStorage`, sul C64 nella
-  flash della cartuccia; sul MiSTer resta finché il core è acceso.
+  flash della cartuccia; sul MiSTer nella SD (`PaddWS.nvm`, da solo con l'OSD *Autosave scores*
+  o con *Save settings*), se il core è avviato dal `.mra`.
 - **Nuovo sfidante**, come in Street Fighter 2: durante la presentazione di un livello, la partita
   contro la CPU o il livello superato, un secondo giocatore con un credito (o in Free Play) preme
   il suo Start (sul PC `2`, o `1` se il campione gioca a destra) e compare **HERE COMES A NEW
@@ -257,8 +258,9 @@ browser (`localStorage`).
 Joystick su/giù (oppure paddle o spinner), **A** scatto in avanti, **B** rapido, **X** / **Y**
 seleziona e usa il bonus (NEXT), **Start**, **Select** gettone; da tastiera `5` e `1`. Le mosse
 speciali si fanno con le mezzelune del joystick + **A**. Le opzioni (modalità, giocatori, Free
-Play, difficoltà, punteggi dritti o verso i giocatori, suoni dell'attract, luminosità del bianco,
-paddle o spinner, mosse speciali) sono nell'OSD. Dettagli in [mister/README.md](../mister/README.md).
+Play, difficoltà, punteggi dritti o verso i giocatori, suoni dell'attract, SID 8580 o 6581, volumi
+di musica ed effetti, salvataggio della classifica, luminosità del bianco, joystick, paddle o
+spinner e la sua velocità) sono nell'OSD. Dettagli in [mister/README.md](../mister/README.md).
 
 ### Commodore 64
 
@@ -268,8 +270,10 @@ tutto in un file, avvio immediato e voce della CHALLENGE senza caricamenti; la c
 nella flash della cartuccia e resta anche da spenti (in VICE con `-easyflashcrtwrite`).
 
 Joystick nella porta 2 (sinistra) e 1 (destra), oppure una coppia di paddle nella porta 1. Su e giù
-muovono la racchetta, il fuoco scatta in avanti (e spara con il BLASTER); in NEXT sinistra sceglie
-il bonus e destra lo usa. Tasto **5** gettone, fuoco o **RETURN** Start, **RUN/STOP** pausa, **Q**
+muovono la racchetta, il joystick verso l'avversario scatta in avanti (e spara con il BLASTER);
+il fuoco in NEXT usa il bonus selezionato, che cambia da solo ogni secondo tra quelli in riserva,
+e in EVO scatta in avanti. Con i paddle il pulsante scatta, e i bonus si scelgono e si usano con
+`F` / `C` (sinistra) e `.` / `-` (destra). Tasto **5** gettone, fuoco o **RETURN** Start, **RUN/STOP** pausa, **Q**
 menu. Solo PAL; finora provata in VICE. Dettagli in [c64/README.md](../c64/README.md).
 
 ## Funzioni per versione
@@ -284,7 +288,7 @@ menu. Solo PAL; finora provata in VICE. Dettagli in [c64/README.md](../c64/READM
 | CHALLENGE, classifica e nuovo sfidante | ✓ | ✓ | ✓ | — |
 | demo nell'attract | modalità scelta | modalità scelta | EVO | — |
 | musiche del SID | SID in Rust | SID del core C64 | SID vero | — |
-| voci "da SID" | ✓ | ✓ | nome dell'avversario, READY? e GO! | — |
+| voci "da SID" | ✓ | ✓ | nome dell'avversario, READY?, GO! e YOU WIN! | — |
 | filtro CRT | ✓ | uscita a 15 kHz | — | ✓ |
 | controlli | tastiera, gamepad, mouse, encoder, touch | joystick, paddle, spinner | joystick, paddle | tastiera, encoder |
 

@@ -1,0 +1,58 @@
+name: Errore / Bug report
+description: Qualcosa non funziona come dovrebbe. / Something doesn't work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Si può scrivere in italiano o in inglese. / Italian or English are both fine.
+        I problemi di sicurezza vanno segnalati in privato: vedi SECURITY.md. / Report security issues privately: see SECURITY.md.
+  - type: dropdown
+    id: edition
+    attributes:
+      label: Versione del gioco / Game edition
+      options:
+        - Web (browser)
+        - Windows
+        - Linux x86_64
+        - Raspberry Pi (Linux ARM64 / ARM 32 bit)
+        - Deck (immagine della SD / SD card image)
+        - MiSTer
+        - Commodore 64
+        - Python
+        - Altro / Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Numero di versione / Version number
+      description: Nel menu o con --version. Per il MiSTer, la data nel nome del file .rbf. / In the menu or with --version. For the MiSTer, the date in the .rbf file name.
+      placeholder: 4.0.0-beta.22
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Dispositivo e sistema / Device and system
+      placeholder: "Windows 11, gamepad Xbox; iPhone 15, Safari; VICE 3.9; C64 Ultimate…"
+  - type: textarea
+    id: what
+    attributes:
+      label: Che cosa succede / What happens
+      description: E che cosa ci si aspettava. / And what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Come riprodurlo / Steps to reproduce
+      description: Modalità (CLASSIC, EVO, NEXT, CHALLENGE), giocatori, comandi usati. / Mode, players, controls used.
+      placeholder: |
+        1. ...
+        2. ...
+  - type: textarea
+    id: extra
+    attributes:
+      label: Schermate, log, configurazione / Screenshots, logs, configuration
+      description: Il log della versione Rust e il padd_config.json aiutano molto. / The Rust version's log and padd_config.json help a lot.

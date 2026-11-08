@@ -1,17 +1,24 @@
 # Configurazione
 
-[← README](../README.md)
+[← README](../README.md) · **Italiano** · [English](en/configuration.md)
 
-Riguarda le versioni Rust e Python su PC e Raspberry Pi. Il MiSTer ha le opzioni nell'OSD, il
-Commodore 64 nel menu; nel browser le scelte del menu restano nel `localStorage`.
+Riguarda la versione Rust su PC e Raspberry Pi. La versione Python, congelata, legge lo stesso
+file ma conosce solo le chiavi di CLASSIC ed EVO (`resolution`, `ball`, `paddle`, `boost`,
+`encoder`, `crt_effects`, `colors` e le chiavi di base di `game`): modalità, giocatori, volumi,
+bianco, zoom, punteggi, colore di accento, mouse e la sezione `next` sono solo della versione Rust.
+Il MiSTer ha le opzioni nell'OSD, il Commodore 64 nel menu; nel browser le scelte del menu restano
+nel `localStorage`.
 
 ## padd_config.json
 
-`padd_config.json` viene letto all'avvio, accanto all'eseguibile o nella cartella corrente; le
-chiavi mancanti prendono il valore di default, quelle sconosciute vengono segnalate e ignorate.
+`padd_config.json` viene letto all'avvio: la versione Rust lo cerca accanto all'eseguibile, poi
+nella cartella corrente e in quella superiore; la versione Python nella cartella che contiene
+`python/`. Con `--config FILE` se ne usa un altro. Le chiavi mancanti prendono il valore di default,
+quelle sconosciute vengono ignorate (la versione Python le segnala nel log); la versione Rust
+aggiunge al file le chiavi nuove, con i loro default.
 Dimensioni e velocità sono espresse per la risoluzione di riferimento 800×480 e scalate su
 `resolution`. Dal menu si cambiano e si salvano modalità e giocatori, schermo intero, filtro CRT,
-difficoltà, volumi della musica e degli effetti, suoni dell'attract, luminosità del bianco,
+difficoltà, volumi della musica e degli effetti, suoni dell'attract, luminosità del bianco, zoom,
 punteggi e mouse come spinner.
 
 Con `resolution.width = 0` (default) il campo prende le proporzioni del monitor con l'altezza
@@ -21,6 +28,7 @@ proporzioni diverse compaiono le bande nere (`game.keep_aspect`) invece della de
 
 | chiave | default | |
 |---|---|---|
+| `game.fullscreen`, `crt_effects.enabled` | `false` | schermo intero (`F11`) e filtro CRT (`C`); il `padd_config.json` del pacchetto li accende |
 | `game.free_play` | `true` | senza gettoni; con `false` serve un credito per partita (tasto `5`) |
 | `game.points_to_win` | `11` | punti per vincere in due |
 | `game.lives` | `3` | palle in singolo |
@@ -38,10 +46,11 @@ proporzioni diverse compaiono le bande nere (`game.keep_aspect`) invece della de
 | `mouse.spinner` | `false` | il mouse come spinner del giocatore di sinistra (menu **MOUSE SPINNER**); con gli encoder del cabinato non conta |
 | `mouse.travel_pixels` | `1000` | pixel di movimento del mouse per portare la racchetta da un bordo all'altro |
 | `game.vsync`, `game.keep_aspect`, `game.serve_delay` | | sincronia verticale, bande nere, attesa alla battuta |
-| `crt_effects.resolution_scale` | `2.5` | righe emulate dal filtro CRT: 3 × altezza del campo / valore (576 a 480 righe). Il default di prima, `1.0`, passa da solo a `2.5` |
+| `crt_effects.resolution_scale` | `2.5` | versione Rust: righe emulate dal filtro CRT: 3 × altezza del campo / valore (576 a 480 righe). Il default di prima, `1.0`, passa da solo a `2.5` |
 
-Le altre sezioni (`ball`, `paddle`, `boost`, `encoder`, `crt_effects`) sono nel `padd_config.json`
-del pacchetto, con i valori di default.
+Le altre sezioni (`ball`, `paddle`, `boost`, `encoder`, `crt_effects`, `colors`) sono nel
+`padd_config.json` del pacchetto, che in qualche punto si scosta dai default del codice (filtro CRT
+acceso, curvatura dello schermo, grigio chiaro).
 
 ## Difficoltà
 
@@ -50,10 +59,10 @@ frame a 800×480); in singolo accelerano solo i colpi del giocatore, non il muro
 
 | difficoltà | singolo | in due | NEXT |
 |---|---|---|---|
-| EASY | +5% / 8 | +15% / 6 | +4% / 6 |
-| NORMAL | +10% / 10 | +25% / 8 | +7% / 7 |
-| HARD | +15% / 12 | +25% / 10 | +9% / 8 |
-| EXPERT | +25% / 15 | +30% / 12 | +12% / 9 |
+| EASY | +5% / 8 | +15% / 6 | +6% / 7 |
+| NORMAL | +10% / 10 | +25% / 8 | +10% / 10 |
+| HARD | +15% / 12 | +25% / 10 | +14% / 11 |
+| EXPERT | +25% / 15 | +30% / 12 | +18% / 13 |
 
 ## Parametri di NEXT
 
@@ -77,7 +86,7 @@ buoni si riportano poi nel core Rust e nel MiSTer).
 | `slow_multiplier`, `slow_seconds` | `0.65`, `1` | velocità che resta con SLOW; `slow_seconds` non conta più (l'alone dura quanto il rallentamento) |
 | `curve_accel` | `0.3` | effetto di CURVE |
 | `steer_accel` | `0.3` | sterzata di STEER con su o giù premuti (la palla guidata arriva al massimo a circa 63°) |
-| `hitstop_seconds` | `0.167` | fermo del gioco del SUPER con hit-stop |
+| `hitstop_seconds` | `0.1667` (1/6 s) | fermo del gioco del SUPER con hit-stop |
 | `super_meter_max`, `super_cost` | `64`, `32` | barra delle mosse speciali (sempre accese; la vecchia chiave `super_moves` sparisce dal file) e costo di una mossa |
 | `super_gain_hit`, `super_gain_dash`, `super_gain_conceded` | `2`, `4`, `8` | barra guadagnata con un colpo, con lo scatto che intercetta, con un punto subito |
 | `super_straight_multiplier` | `2` | spinta del tiro con STRAIGHT SHOT MAX (1 + 1/2ⁿ: 2, 1,5, 1,25…); la mossa normale ha la metà dell'aggiunta |

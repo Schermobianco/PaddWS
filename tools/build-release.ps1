@@ -125,17 +125,24 @@ if (-not $ok) { exit 1 }
 if ($Publish) {
     Step "release $tag su GitHub"
     $files = (Get-ChildItem $dist).FullName
+    # note dal CHANGELOG (tools/release_notes.py): per le anteprime le voci nuove dal tag precedente
+    $python = Join-Path $root ".venv\Scripts\python.exe"
+    if (-not (Test-Path $python)) { $python = "python" }
+    $notes = Join-Path $env:TEMP "paddws-notes-$version.md"
+    & $python (Join-Path $PSScriptRoot "release_notes.py") $version --output $notes
+    if ($LASTEXITCODE -ne 0) { Fail "note della release (tools/release_notes.py)" }
     & $gh release view $tag *> $null
     if ($LASTEXITCODE -eq 0) {
         & $gh release upload $tag @files --clobber
+        if ($LASTEXITCODE -eq 0) { & $gh release edit $tag --notes-file $notes | Out-Null }
     } else {
         # @(...): un if che restituisce un array di un elemento lo srotola in una stringa, che @pre
-        # passerebbe a gh un carattere alla volta. Note vuote con "--notes=": PowerShell 5.1 non
-        # passa a gh un argomento ""
+        # passerebbe a gh un carattere alla volta
         $pre = @(if ($version.Contains("-")) { "--prerelease" })
-        & $gh release create $tag @files --title $tag "--notes=" @pre
+        & $gh release create $tag @files --title $tag --notes-file $notes @pre
     }
     if ($LASTEXITCODE -ne 0) { Fail "pubblicazione della release" }
+    Remove-Item $notes
     & $gh release view $tag --json url --jq .url
     # la versione web anche su GitHub Pages (tools\publish-pages.ps1)
     Step "versione web su GitHub Pages"

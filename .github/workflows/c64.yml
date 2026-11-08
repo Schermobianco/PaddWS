@@ -6,8 +6,8 @@
 
 name: C64
 
-# Solo a mano (gh workflow run, build_ongithub.bat): il repository è privato e i minuti delle
-# Action si pagano; le release si costruiscono in locale con build.bat
+# Solo a mano (gh workflow run, build_ongithub.bat): le release si costruiscono di solito sulla
+# macchina forge con build.bat, le Action sono la strada alternativa
 on:
   workflow_dispatch:
 

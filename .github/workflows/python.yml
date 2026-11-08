@@ -4,8 +4,8 @@
 
 name: Python
 
-# Solo a mano (gh workflow run, build_ongithub.bat): il repository è privato e i minuti delle
-# Action si pagano; le release si costruiscono in locale con build.bat
+# Solo a mano (gh workflow run, build_ongithub.bat): le release si costruiscono di solito sulla
+# macchina forge con build.bat, le Action sono la strada alternativa
 on:
   workflow_dispatch:
 
@@ -35,7 +35,7 @@ jobs:
           dir="paddws-$version-python"
           # solo i file del repository: niente cache, ambienti virtuali o file di sviluppo
           git archive --format=zip --prefix="$dir/" -o "$dir.zip" HEAD \
-            python assets deploy padd_config.json README.md CHANGELOG.md             LICENSE THIRD_PARTY.md
+            python assets deploy padd_config.json README.md README.en.md CHANGELOG.md             LICENSE THIRD_PARTY.md
           echo "archive=$dir.zip" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
 

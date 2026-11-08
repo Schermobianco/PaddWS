@@ -1,7 +1,7 @@
 # PADD WS – versione Rust
 
 Versione nativa del gioco: un unico eseguibile (font, suoni e grafica dell'attract inclusi), per
-Windows, Linux x86_64, Linux ARM64 e ARM a 32 bit (Raspberry Pi). Stato: **4.0.0-alpha.2**.
+Windows, Linux x86_64, Linux ARM64 e ARM a 32 bit (Raspberry Pi).
 
 ## Compilare ed eseguire
 
@@ -21,11 +21,11 @@ sudo apt install libx11-dev libxi-dev libgl1-mesa-dev libasound2-dev libudev-dev
 cd rust && cargo run --release
 ```
 
-Le build per le tre piattaforme vengono fatte anche dalla GitHub Action `Rust`; su un tag
-`vX.Y.Z` uguale alla versione di `Cargo.toml` gli eseguibili vengono allegati alla release, e la
-Action `MiSTer` ci aggiunge il core per MiSTer, con la data di compilazione nel nome come
-vuole la convenzione MiSTer (es. `PaddWS_20261028.rbf`), e il suo `PaddWS.mra`, insieme in
-`PaddWS_MiSTer_AAAAMMGG.zip`.
+Gli eseguibili delle release (Windows, Linux x86_64, ARM64 e ARM a 32 bit) li costruisce la
+macchina virtuale *forge* con `build.bat` ([tools/forge](../tools/forge/README.md)), insieme al core
+per MiSTer, con la data di compilazione nel nome come vuole la convenzione MiSTer (es.
+`PaddWS_20261028.rbf`), e al suo `PaddWS.mra`, insieme in `PaddWS_MiSTer_AAAAMMGG.zip`. La GitHub
+Action `Rust`, lanciata a mano da `build_ongithub.bat`, fa gli stessi controlli e pacchetti.
 
 ## Uso
 
