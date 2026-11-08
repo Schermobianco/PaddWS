@@ -14,6 +14,11 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+### Corretto
+- PC, Raspberry e web: alla fine della partita, al posto di YOU WIN e del GAME OVER, lo schermo
+  restava bianco per tutti i 3 secondi della schermata: il lampo del punto decisivo non si spegneva
+  più, perché a partita finita il suo tempo non scendeva.
+
 ## [4.0.0] - 2026-11-08
 
 ### Aggiunto

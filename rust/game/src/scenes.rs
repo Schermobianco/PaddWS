@@ -1767,6 +1767,9 @@ impl Play {
     }
 
     fn update(&mut self, app: &mut App, dt: f64) -> Option<Scene> {
+        // il lampo del punto si spegne anche a partita finita: quello del punto decisivo, se si
+        // fermasse qui, coprirebbe di bianco tutto il GAME OVER (e YOU WIN)
+        self.flash = (self.flash - dt).max(0.0);
         if let Some(left) = &mut self.game_over {
             *left -= dt;
             if *left > 0.0 {
@@ -1858,7 +1861,6 @@ impl Play {
                 return None;
             }
         }
-        self.flash = (self.flash - dt).max(0.0);
         if let Some(fx) = &mut self.fx {
             fx.update(dt);
         }
