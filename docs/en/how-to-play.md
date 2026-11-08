@@ -257,6 +257,9 @@ the first tap. In a desktop browser the mouse acts as a finger (or as a spinner)
 gamepad work as on PC. Menu preferences and the high-score table are kept in the browser
 (`localStorage`).
 
+On a phone screen the ball and paddles are thin: **ZOOM** in the menu (125% or 150%) makes them
+thicker; the playfield and the paddle height stay the same.
+
 ### MiSTer
 
 Joystick up/down (or paddle or spinner), **A** forward dash, **B** fast, **X** / **Y** select and use
@@ -296,6 +299,7 @@ used with `F` / `C` (left) and `.` / `-` (right). Key **5** coin, fire or **RETU
 | SID music | SID in Rust | SID of the C64 core | real SID | — |
 | "SID-style" voices | ✓ | ✓ | opponent's name, READY?, GO! and YOU WIN! | — |
 | CRT filter | ✓ | 15 kHz output | — | ✓ |
+| ZOOM (thicker ball and paddles) | ✓ | — | — | — |
 | controls | keyboard, gamepad, mouse, encoder, touch | joystick, paddle, spinner | joystick, paddle | keyboard, encoder |
 
 ## Screenshots

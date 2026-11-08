@@ -253,6 +253,9 @@ L'audio parte al primo tocco. Nel browser del computer il mouse fa da dito (o da
 tastiera e gamepad funzionano come su PC. Le preferenze del menu e la classifica restano nel
 browser (`localStorage`).
 
+Sullo schermo di un telefono pallina e racchette sono sottili: **ZOOM** nel menu (125% o 150%) le
+fa più spesse; il campo e l'altezza delle racchette restano gli stessi.
+
 ### MiSTer
 
 Joystick su/giù (oppure paddle o spinner), **A** scatto in avanti, **B** rapido, **X** / **Y**
@@ -290,6 +293,7 @@ menu. Solo PAL; finora provata in VICE. Dettagli in [c64/README.md](../c64/READM
 | musiche del SID | SID in Rust | SID del core C64 | SID vero | — |
 | voci "da SID" | ✓ | ✓ | nome dell'avversario, READY?, GO! e YOU WIN! | — |
 | filtro CRT | ✓ | uscita a 15 kHz | — | ✓ |
+| ZOOM (pallina e racchette più spesse) | ✓ | — | — | — |
 | controlli | tastiera, gamepad, mouse, encoder, touch | joystick, paddle, spinner | joystick, paddle | tastiera, encoder |
 
 ## Schermate
