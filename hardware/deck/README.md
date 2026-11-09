@@ -13,7 +13,12 @@ solo colore e si stampa senza supporti; tutti i pezzi entrano sul piatto da 256 
 
 | | |
 |---|---|
-| ![Dall'alto](previews/top.png) | ![Dentro, con il piano trasparente](previews/inside.png) |
+| ![Dall'alto](previews/top.png) | ![Dentro, senza il piano e il display](previews/inside.png) |
+
+Vista esplosa, con i pezzi nell'ordine di montaggio. Display, scheda con il Pi ed encoder, in grigio
+trasparente, sono componenti da comprare e non si stampano.
+
+![Vista esplosa del Deck](previews/exploded.gif)
 
 ## File
 

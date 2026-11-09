@@ -13,7 +13,12 @@ colour and prints without supports; all parts fit on the 256 mm build plate.
 
 | | |
 |---|---|
-| ![From above](previews/top.png) | ![Inside, with a transparent top](previews/inside.png) |
+| ![From above](previews/top.png) | ![Inside, without the top plate and the display](previews/inside.png) |
+
+Exploded view, with the parts in assembly order. The display, the board with the Pi and the
+encoders, in transparent grey, are bought parts and are not printed.
+
+![Exploded view of the Deck](previews/exploded.gif)
 
 The parameter and part names in the model are in Italian: *piano* is the top plate, *vasca* the
 tray (the bottom shell), *cornice* the glass frame. G1 and G2 are the two halves, one per player.
