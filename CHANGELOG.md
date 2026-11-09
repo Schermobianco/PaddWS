@@ -23,12 +23,26 @@ crea il commit e il tag `vX.Y.Z`.
   kernel e Mesa. Guida di forge anche in inglese.
 - Documentazione in inglese anche per il cabinato Raspberry Pi (`deploy/raspberry`) e per l'immagine
   della SD del Deck.
+- PC, Raspberry, web e MiSTer: **PERFECT** quando un giocatore vince senza che l'avversario faccia
+  un punto, come il bonus PERFECT dei livelli della CHALLENGE. Contro la CPU la scritta PERFECT
+  prende il posto di YOU WIN; in due va al posto di GAME OVER, sopra P1 WINS o P2 WINS (sul MiSTer,
+  con le scritte ruotate verso i giocatori, solo dal lato di chi ha vinto). In tutti e due i casi lo
+  urla una voce nuova, "PEEERFECT!" come nei picchiaduro (`assets/sounds/voice/perfect.*`). Non vale
+  quando vince la CPU. Il C64 resta com'è: il set di
+  caratteri è pieno e nel programma restano 7 byte.
 
 ### Modificato
+- NEXT: la palla e la sua scia passano **sopra** le scritte del bonus e delle mosse speciali, invece
+  di finirci sotto (sul C64 era già così: la palla è uno sprite). Sul PC la palla si ridisegna solo
+  quando tocca una scritta, così nel bullet time resta sfocata con il campo.
 - Documentazione: le guide sono in `docs/it/` e `docs/en/`, ognuna con il suo PDF sull'angolo della
   palla, ora collegato dal README; schermate, icone e bandiere restano in comune in `docs/`.
 - `build_onforge.bat`: se forge non risponde perché il DHCP di VMware le ha dato un altro indirizzo,
   lo chiede a VMware e va avanti con quello; se forge è già accesa non prova più ad accenderla.
+
+### Corretto
+- MiSTer: la classifica di CHALLENGE ha l'elenco centrato sullo schermo come il titolo; era spostato
+  di 14 pixel a sinistra.
 
 ## [4.0.1] - 2026-11-08
 

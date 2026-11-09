@@ -622,7 +622,7 @@ impl Continue {
         );
         app.renderer.fill(BLACK);
         if self.over.is_some() {
-            crate::attract::draw_game_over(&app.attract, &app.renderer, true, None, white);
+            crate::attract::draw_game_over(&app.attract, &app.renderer, Some("game_over"), None, white);
             return;
         }
         text(app, "CONTINUE?", 56.0, 120.0, accent);

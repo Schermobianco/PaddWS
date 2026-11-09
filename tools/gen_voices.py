@@ -17,8 +17,8 @@ serve solo per rifarli. Per ogni tipo di racchetta (in ordine di `PaddleKind`):
 Per il core MiSTer `mister/rtl/gen/sid_voices.hex` (i .raw4 uno dopo l'altro, un byte per riga) e
 `sid_voices.vh` (inizio e lunghezza in byte di ogni voce, frequenza dei campioni, numeri delle voci
 di partita): li legge `rtl/pong_sid.v`. Voci 0-6 i nomi degli avversari (`PaddleKind`), suonati
-scrivendo il volume del SID; 7-8 le urla delle mosse (`Special`), 9 READY, 10 GO e 11 YOU WIN,
-sommati come campioni all'uscita audio senza toccare il SID (indirizzi a 15 bit: la ROM supera i
+scrivendo il volume del SID; 7-8 le urla delle mosse (`Special`), 9 READY, 10 GO, 11 YOU WIN e
+12 PERFECT, sommati come campioni all'uscita audio senza toccare il SID (indirizzi a 15 bit: la ROM supera i
 16 KB).
 
 Voce "urlata" scelta dall'utente (al posto di quella grave e lenta di prima): espeak-ng
@@ -72,7 +72,11 @@ CALLS = [("ready", "READY?", {}),
          ("you_win",
           '<prosody rate="medium" pitch="-10%">YOU</prosody><break time="120ms"/>'
           '<prosody rate="slow" pitch="+15%">WIN</prosody>',
-          {"PITCH": 35, "SPEED": 150, "RANGE": 90, "DRIVE": 3.0, "SHOUT_BREATH": 0.12})]
+          {"PITCH": 35, "SPEED": 150, "RANGE": 90, "DRIVE": 3.0, "SHOUT_BREATH": 0.12}),
+         # vittoria senza punti dell'avversario, al posto di YOU WIN: "PEEERFECT!" da picchiaduro,
+         # scritta in fonemi di espeak per allungare la prima vocale (scelta dall'utente)
+         ("perfect", "[[p'3::::::::f@kt]]",
+          {"PITCH": 50, "SPEED": 190, "RANGE": 99, "DRIVE": 5.0, "SHOUT_BREATH": 0.2})]
 
 
 def speak(text: str, path: Path) -> None:
@@ -178,7 +182,8 @@ def write_wav(q: list[int], path: Path) -> None:
 
 def write_mister() -> None:
     """ROM delle voci del core MiSTer dai file .raw4: i nomi nell'ordine di `PaddleKind`, poi le urla
-    delle mosse nell'ordine di `Special`, READY, GO e YOU WIN (indice a 4 bit, indirizzi a 15 bit)."""
+    delle mosse nell'ordine di `Special`, READY, GO, YOU WIN e PERFECT (indice a 4 bit, indirizzi a
+    15 bit)."""
     voices = ([(name.lower(), name) for name in NAMES] + [(name, text) for name, text in MOVES] +
               [(name, text) for name, text, _ in CALLS])
     rom = bytearray()
@@ -196,7 +201,8 @@ def write_mister() -> None:
         "// Generato da tools/gen_voices.py: non modificare a mano.",
         "// Voci \"da SID\", campioni a 4 bit (8 = silenzio), due per byte, prima il nibble alto: 0-6 i nomi",
         "// degli avversari della CHALLENGE (`PaddleKind`), 7-8 le urla delle mosse speciali (`Special`),",
-        "// 9 READY e 10 GO della CHALLENGE, 11 YOU WIN (vittoria contro la CPU e finale della CHALLENGE).",
+        "// 9 READY e 10 GO della CHALLENGE, 11 YOU WIN (vittoria contro la CPU e finale della CHALLENGE),",
+        "// 12 PERFECT (vittoria di un giocatore senza punti dell'avversario).",
         f"localparam VOICE_RATE = {RATE};",
         f"localparam VOICE_ROM_SIZE = {len(rom)};",
         f"localparam [3:0] VOICE_STRAIGHT = 4'd{first_move};",
@@ -204,9 +210,10 @@ def write_mister() -> None:
         f"localparam [3:0] VOICE_READY = 4'd{first_move + len(MOVES)};",
         f"localparam [3:0] VOICE_GO = 4'd{first_move + len(MOVES) + 1};",
         f"localparam [3:0] VOICE_YOU_WIN = 4'd{first_move + len(MOVES) + 2};",
+        f"localparam [3:0] VOICE_PERFECT = 4'd{first_move + len(MOVES) + 3};",
         "function [14:0] voice_start(input [3:0] id);",
         "    case (id)",
-        *[f"        4'd{i}: voice_start = 15'd{s};   // {voices[i][1].split('<')[0] or 'YOU WIN'}"
+        *[f"        4'd{i}: voice_start = 15'd{s};   // {voices[i][1].split('<')[0].split('[')[0] or voices[i][0].upper().replace('_', ' ')}"
           for i, s in enumerate(starts)],
         "        default: voice_start = 15'd0;",
         "    endcase",

@@ -114,7 +114,10 @@ Musica: la canzone `ending` della ROM del SID se c'è, altrimenti `champion`: le
 per nome in `sid_music.vh` (`Song::number`), così una canzone nuova non sposta le altre. La voce
 "YOU WIN!" (`assets/sounds/voice/you_win.wav`) si sente anche quando si vince una partita contro
 la CPU (Classic, EVO, NEXT, livelli della CHALLENGE), insieme alla scritta del GAME OVER, quando
-nessun'altra voce parla; all'ultimo livello la dice il finale.
+nessun'altra voce parla; all'ultimo livello la dice il finale. Se un giocatore vince senza punti
+dell'avversario (anche in due, mai la CPU) la scritta e la voce sono PERFECT
+(`assets/sounds/voice/perfect.wav`): da sola al posto di YOU WIN, o al posto di GAME OVER sopra chi
+ha vinto.
 
 ### Contro il computer
 

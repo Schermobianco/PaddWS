@@ -418,9 +418,9 @@ riferimento del C64 e del player Rust (`c64/test/sid_reference.txt`).
 **Voce della CHALLENGE**: nella presentazione di ogni livello una voce digitalizzata dice il nome
 dell'avversario, 0,5 s dopo l'inizio come su PC (`ANNOUNCE_AFTER`). I campioni sono quelli del
 gioco Rust (`assets/sounds/voice/*.raw4`, 5000 Hz, 4 bit, 8 = silenzio), nella ROM
-`rtl/gen/sid_voices.hex` (17.086 byte, `python tools/gen_voices.py --mister`; 12 voci con l'indice a
+`rtl/gen/sid_voices.hex` (18.370 byte, `python tools/gen_voices.py --mister`; 13 voci con l'indice a
 4 bit e gli indirizzi a 15 bit: 0-6 i nomi nell'ordine di `PaddleKind`, 7-8 le urla delle mosse
-nell'ordine di `Special`, 9 READY, 10 GO, 11 YOU WIN; numeri in `VOICE_*` di `sid_voices.vh`). `pong_sid.v` li suona
+nell'ordine di `Special`, 9 READY, 10 GO, 11 YOU WIN, 12 PERFECT; numeri in `VOICE_*` di `sid_voices.vh`). `pong_sid.v` li suona
 con il trucco del registro del volume del C64 ($D418): ogni campione diventa il volume del SID,
 che moltiplica anche l'offset DC dell'uscita. Il SID di `rtl/sid` lo riproduce come i chip veri:
 il 6581 ha un DC suo, l'8580 no; per questo, come i player di campioni per l'8580, le voci 2 e 3
@@ -435,7 +435,11 @@ bit 10 e 11 di `sound_events`, anche nella demo se ha i suoni) l'urlo con il nom
 insieme all'effetto SID della mossa; in CHALLENGE (contro la CPU e nella sfida) "READY?" al primo
 frame del conto alla rovescia e "GO!" al via, al posto del suo effetto (i bip dei secondi restano);
 "YOU WIN!" con la scritta YOU WIN (da sola, al posto di GAME OVER) quando un giocatore batte la CPU (Classic, EVO, NEXT e i
-livelli della CHALLENGE, non l'ultimo: lì la dice il finale, un secondo dopo CONGRATULATIONS!).
+livelli della CHALLENGE, non l'ultimo: lì la dice il finale, un secondo dopo CONGRATULATIONS!);
+"PERFECT!" quando un giocatore vince senza punti dell'avversario, anche in due (mai la CPU), con la
+scritta PERFECT da sola al posto di YOU WIN o al posto di GAME OVER sopra chi ha vinto (`over_perfect`;
+con le scritte ruotate verso i giocatori solo dal lato di chi ha vinto, dall'altro resta GAME OVER).
+Simulatore dei frame: scenari `perfect` e `perfectup`.
 Non usano il trucco del volume: un secondo player in `pong_sid.v` legge la stessa ROM dal secondo
 porto delle M10K e dà il campione a 4 bit (`call_level`), che `pong_top` somma all'uscita del SID,
 con l'8580 e con il 6581, come `(livello - 8) << 11` (±16.384, sopra effetti e musica del SID, che

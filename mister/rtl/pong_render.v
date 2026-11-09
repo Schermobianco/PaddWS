@@ -38,8 +38,10 @@ module pong_render (
     input  wire        show_lives,
     input  wire [1:0]  overlay,         // 0 nessuna, 1 demo (crediti e scritta), 2 GAME OVER
     input  wire [1:0]  demo_mode,       // modalità della demo: 0 CLASSIC, 1 EVO, 2 NEXT, 3 CHALLENGE
-    input  wire [2:0]  winner,          // sotto GAME OVER: 0 nessuno, 1 P1 WINS, 2 P2 WINS, 3 YOU WIN, 4 CPU WINS
+    input  wire [2:0]  winner,          // sotto GAME OVER: 0 nessuno, 1 P1 WINS, 2 P2 WINS, 3 YOU WIN, 4 CPU WINS,
+                                        // 5 PERFECT (da solo, al posto di YOU WIN)
     input  wire        win_solo,        // chi ha vinto da solo, al posto di GAME OVER (YOU WIN, livello perso)
+    input  wire        perfect,         // vinta senza punti dell'avversario: PERFECT al posto di GAME OVER
     input  wire        winner_accent,   // NEXT: chi ha vinto nel colore di accento
     input  wire        ball_accent,     // NEXT: palla del SUPER in volo nel colore di accento
     input  wire        free_play,
@@ -56,7 +58,8 @@ module pong_render (
 
     output reg  [23:0] rgb,
     output reg         top,             // scritta sovrapposta: sopra anche alle aggiunte di NEXT
-    output reg         bg               // pixel di sfondo (nero, senza alone): ci va l'alone delle capsule
+    output reg         bg,              // pixel di sfondo (nero, senza alone): ci va l'alone delle capsule
+    output reg         ball             // pixel della palla: sta sopra alla scritta del bonus di NEXT
 );
 
 `include "pong_params.vh"
@@ -98,6 +101,7 @@ localparam integer UB_Y0 = UT_Y0 + TEXT_H + 4;
 
 // scritte sovrapposte (scala 2): centrate, oppure una per metà campo ruotata verso il giocatore
 localparam integer IC_W2 = 2 * INSERT_COIN_W, PS_W2 = 2 * PRESS_START_W, GO_W2 = 2 * GAME_OVER_W;
+localparam integer PF_W2 = 2 * PERFECT_W;
 localparam integer GO_BOX_X = (W - GO_W2 - 12) / 2;
 // (centri a metà tra la racchetta avanzata, a P_PAD_FWD_POS dal bordo, e la mezzeria)
 localparam integer FWD_X = P_PAD_FWD_POS >>> 16;
@@ -243,6 +247,7 @@ function [5:0] winner_w(input [2:0] w);
         3'd2: winner_w = P2_WINS_W;
         3'd3: winner_w = YOU_WIN_W;
         3'd4: winner_w = CPU_WINS_W;
+        3'd5: winner_w = PERFECT_W;
         default: winner_w = 6'd0;
     endcase
 endfunction
@@ -252,6 +257,7 @@ function winner_lit(input [2:0] w, input [9:0] dx, input [9:0] dy);
         3'd2: winner_lit = p2_wins_lit(dx, dy);
         3'd3: winner_lit = you_win_lit(dx, dy);
         3'd4: winner_lit = cpu_wins_lit(dx, dy);
+        3'd5: winner_lit = perfect_lit(dx, dy);
         default: winner_lit = 1'b0;
     endcase
 endfunction
@@ -499,6 +505,20 @@ always @(*) begin
                      (show_rs && wr[20] && winner_lit(winner, wr[19:10], wr[9:0]));
     end else if (winner != 3'd0) begin
         go_box = x >= GO_BOX_X && x < GO_BOX_X + GO_W2 + 12 && y >= AT_GAME_OVER_Y - 5 && y < AT_WINNER_Y + 19;
+        // vinta senza punti dell'avversario: PERFECT al posto di GAME OVER, nello stesso riquadro;
+        // ruotata solo verso chi ha vinto (P1 a sinistra, P2 a destra), dall'altra parte GAME OVER
+        if (perfect) begin
+            go_px = perfect_lit((x - (W - PF_W2) / 2) >> 1, (y - AT_GAME_OVER_Y) >> 1);
+            if (winner == 3'd1) begin
+                lc = rot_coord(1'b0, x, y, ROT_CX_L, PF_W2);
+                go_rot_px = (lc[20] && perfect_lit(lc[19:10], lc[9:0])) ||
+                            (show_rs && rc[20] && game_over_lit(rc[19:10], rc[9:0]));
+            end else begin
+                rc = rot_coord(1'b1, x, y, ROT_CX_R, PF_W2);
+                go_rot_px = (lc[20] && game_over_lit(lc[19:10], lc[9:0])) ||
+                            (show_rs && rc[20] && perfect_lit(rc[19:10], rc[9:0]));
+            end
+        end
         win_px = winner_lit(winner, (x - ((W - win_w2) >>> 1)) >> 1, (y - AT_WINNER_Y) >> 1);
         wl = rot_coord(1'b0, x, y, ROT_CX_L - WIN_STEP, win_w2);
         wr = rot_coord(1'b1, x, y, ROT_CX_R + WIN_STEP, win_w2);
@@ -599,6 +619,8 @@ always @(posedge clk) begin
           !in_rect(2, x, y) && !in_rect(3, x, y) && !(in_rect(0, x, y) && !pad_hide[0]) &&
           !(in_rect(1, x, y) && !pad_hide[1]) && !(overlay == 2'd1 && credit_px) && !text_px && !line_px &&
           halo_q == 2'd0;
+    ball <= !cd_box && !(overlay == 2'd2 && (upright ? go_box : go_rot_box)) &&
+            !(overlay == 2'd1 && (upright ? label_box : label_rot_box)) && !flash_q && in_rect(4, x, y);
 end
 
 endmodule

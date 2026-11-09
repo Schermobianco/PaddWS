@@ -58,6 +58,10 @@ localparam integer JOIN_Y = 2, JOIN_W = 2 * C + 4 + CH_PRESS_W;
 localparam integer JOIN_XL = W / 4 - JOIN_W / 2, JOIN_XR = 3 * W / 4 - JOIN_W / 2;
 localparam integer COIN_XL = W / 4 - CH_COIN_W / 2, COIN_XR = 3 * W / 4 - CH_COIN_W / 2;
 localparam [5:0] G_P = 6'd25;
+// classifica: colonne di posizione, iniziali, punti (7 cifre) e livello ("ALL", 3 celle), l'elenco
+// centrato sull'inchiostro (l'ultima colonna della cella è lo spazio fra i caratteri)
+localparam integer TB_NAMES = 36, TB_SCORE = 80, TB_LEVEL = 160, TB_SPAN = TB_LEVEL + 3 * C - 1;
+localparam integer TB_X = (W - TB_SPAN) / 2;
 
 wire [9:0] x = hc;
 wire [9:0] y = vc;
@@ -235,22 +239,22 @@ always @(*) begin
             if (y >= 36 && y < 36 + 18 * 10) begin
                 // posizione: 1-10
                 if (row == 4'd9) begin
-                    put(10'd56, 10'd36 + 18 * 9, 6'd1, 2'd0, (highlight == row) ? ACCENT : WHITE);
-                    put(10'd56 + C, 10'd36 + 18 * 9, 6'd0, 2'd0, (highlight == row) ? ACCENT : WHITE);
+                    put(TB_X, 10'd36 + 18 * 9, 6'd1, 2'd0, (highlight == row) ? ACCENT : WHITE);
+                    put(TB_X + C, 10'd36 + 18 * 9, 6'd0, 2'd0, (highlight == row) ? ACCENT : WHITE);
                 end else
-                    put(10'd56 + C, 10'd36 + 18 * row, {2'd0, row} + 6'd1, 2'd0, (highlight == row) ? ACCENT : WHITE);
+                    put(TB_X + C, 10'd36 + 18 * row, {2'd0, row} + 6'd1, 2'd0, (highlight == row) ? ACCENT : WHITE);
                 for (j = 0; j < 3; j = j + 1)
-                    put(10'd92 + C * j, 10'd36 + 18 * row, table_names[18 * row + 6 * j +: 6], 2'd0,
+                    put(TB_X + TB_NAMES + C * j, 10'd36 + 18 * row, table_names[18 * row + 6 * j +: 6], 2'd0,
                          (highlight == row) ? ACCENT : WHITE);
-                digits7(10'd136, 10'd36 + 18 * row, table_bcd[28 * row +: 28], (highlight == row) ? ACCENT : WHITE);
+                digits7(TB_X + TB_SCORE, 10'd36 + 18 * row, table_bcd[28 * row +: 28], (highlight == row) ? ACCENT : WHITE);
                 if (table_levels[4 * row +: 4] > 4'd7) begin
                     // scala finita: ALL
-                    put(10'd216, 10'd36 + 18 * row, 6'd10, 2'd0, (highlight == row) ? ACCENT : GRAY);
-                    put(10'd216 + C, 10'd36 + 18 * row, G_L, 2'd0, (highlight == row) ? ACCENT : GRAY);
-                    put(10'd216 + 2 * C, 10'd36 + 18 * row, G_L, 2'd0, (highlight == row) ? ACCENT : GRAY);
+                    put(TB_X + TB_LEVEL, 10'd36 + 18 * row, 6'd10, 2'd0, (highlight == row) ? ACCENT : GRAY);
+                    put(TB_X + TB_LEVEL + C, 10'd36 + 18 * row, G_L, 2'd0, (highlight == row) ? ACCENT : GRAY);
+                    put(TB_X + TB_LEVEL + 2 * C, 10'd36 + 18 * row, G_L, 2'd0, (highlight == row) ? ACCENT : GRAY);
                 end else begin
-                    put(10'd216, 10'd36 + 18 * row, G_L, 2'd0, (highlight == row) ? ACCENT : GRAY);
-                    put(10'd216 + C, 10'd36 + 18 * row, {2'd0, table_levels[4 * row +: 4]}, 2'd0,
+                    put(TB_X + TB_LEVEL, 10'd36 + 18 * row, G_L, 2'd0, (highlight == row) ? ACCENT : GRAY);
+                    put(TB_X + TB_LEVEL + C, 10'd36 + 18 * row, {2'd0, table_levels[4 * row +: 4]}, 2'd0,
                          (highlight == row) ? ACCENT : GRAY);
                 end
             end

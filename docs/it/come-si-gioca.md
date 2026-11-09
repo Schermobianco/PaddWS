@@ -153,7 +153,8 @@ livello al GUARDIAN del boss finale. Le partite sono NEXT a 5 punti.
   campione (la vittoria dell'ultimo livello, più la partita perfetta), "YOU ARE THE PADD WS
   CHAMPION" con i fuochi d'artificio, i titoli di coda e THE END, in circa un minuto, con una
   musica tutta sua; poi le iniziali. Start lo salta. La voce "YOU WIN!" si sente anche a ogni
-  partita vinta contro la CPU.
+  partita vinta contro la CPU. Se chi vince non ha lasciato neanche un punto all'avversario, al posto
+  di YOU WIN (o di GAME OVER, in due) compare PERFECT, urlato dalla voce (non sul C64).
 - **Voce**: nella presentazione una voce digitalizzata "da SID" annuncia il nome dell'avversario
   (su C64 e MiSTer con il trucco del registro del volume del SID; sul C64 dalla cartuccia).
 - **Musiche degli avversari**: in partita contro la CPU ogni avversario ha il suo tema, sulle prime

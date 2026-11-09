@@ -1713,12 +1713,18 @@ endfunction
 
 wire [23:0] game_rgb, attract_rgb, next_rgb;
 wire        next_opaque, game_top, game_bg;
+wire        next_label, game_ball;              // la scritta del bonus di NEXT e la palla che le passa sopra
 wire [1:0]  next_halo;
 wire [8:0]  game_hc = hc + shake[8:0];                    // scossa dell'hit-stop
 // GAME OVER: in due chi ha vinto, contro la CPU dal punto di vista del giocatore (in CHALLENGE
-// anche a destra): 1 P1 WINS, 2 P2 WINS, 3 YOU WIN, 4 CPU WINS
-wire [2:0]  over_winner = !two ? 3'd0 : match_cpu ? (((score0 >= score1) != ch_cpu_left) ? 3'd3 : 3'd4) :
-                          (score0 >= score1 ? 3'd1 : 3'd2);
+// anche a destra): 1 P1 WINS, 2 P2 WINS, 3 YOU WIN, 4 CPU WINS, 5 PERFECT. PERFECT quando vince un
+// giocatore (non la CPU) senza punti dell'avversario: al posto di YOU WIN, o di GAME OVER sopra chi
+// ha vinto (over_perfect), come il bonus PERFECT dei livelli della CHALLENGE
+wire [2:0]  over_base = !two ? 3'd0 : match_cpu ? (((score0 >= score1) != ch_cpu_left) ? 3'd3 : 3'd4) :
+                        (score0 >= score1 ? 3'd1 : 3'd2);
+wire        over_zero = (score0 == 16'd0) != (score1 == 16'd0);
+wire        over_perfect = over_zero && over_base != 3'd0 && over_base != 3'd4;
+wire [2:0]  over_winner = (over_perfect && over_base == 3'd3) ? 3'd5 : over_base;
 
 pong_render render (
     .clk(clk), .snapshot(snapshot), .hc(game_hc), .vc(vc),
@@ -1730,12 +1736,13 @@ pong_render render (
     .score0(score0), .score1(score1), .best(best),
     .lives(lives), .show_lives(!two && (mode == M_GAME || mode == M_GAME_OVER)),
     .overlay(mode == M_DEMO ? 2'd1 : mode == M_GAME_OVER ? 2'd2 : 2'd0), .demo_mode(demo_kind),
-    .winner(over_winner), .win_solo(over_winner == 3'd3 || (ch_active && !duel && over_winner == 3'd4)),
+    .winner(over_winner), .win_solo(over_winner == 3'd3 || over_winner == 3'd5 || (ch_active && !duel && over_winner == 3'd4)),
+    .perfect(over_perfect),
     .winner_accent(nxt), .ball_accent(nxt && (next_flags[2] || next_flags[10:9] != 2'd0)),
     .free_play(free_play), .credits(credits), .blink(blink), .upright(upright), .countdown(countdown),
     .pad_hide(pad_spin | warp_hide | twist_kind), .pad_gray(pad_gray), .dash_off(dash_off), .field_gray(bul_on),
     .blur(bul_blur), .blur_pads(bul_cold),
-    .rgb(game_rgb), .top(game_top), .bg(game_bg)
+    .rgb(game_rgb), .top(game_top), .bg(game_bg), .ball(game_ball)
 );
 
 next_render next_draw (
@@ -1763,7 +1770,7 @@ next_render next_draw (
     .bullet(bul_on), .bullet_armed(bul_arm), .bullet_side(bul_side), .bullet_ramp(bul_ramp),
     .ball_hidden(ghost_hidden),
     .bullet_blur(bul_blur),
-    .rgb(next_rgb), .opaque(next_opaque), .halo(next_halo)
+    .rgb(next_rgb), .opaque(next_opaque), .label(next_label), .halo(next_halo)
 );
 
 // schermata HOW TO PLAY delle mosse speciali: due cicli di ritardo, il pixel ne dura tre
@@ -1866,7 +1873,8 @@ challenge_render challenge_draw (
     .rgb(ch_rgb), .opaque(ch_opaque)
 );
 
-// il lampo bianco (punto o hit-stop) copre anche le aggiunte di NEXT, come nel gioco Rust; l'alone
+// il lampo bianco (punto o hit-stop) copre anche le aggiunte di NEXT, come nel gioco Rust; la palla
+// passa sopra alla scritta del bonus attivato (next_label), non al resto di NEXT; l'alone
 // delle capsule del bullet time va solo sullo sfondo nero del campo (gli stessi grigi di pong_render)
 reg flash_q = 1'b0;
 always @(posedge clk) flash_q <= flash_count != 2'd0 || hit_flash;
@@ -1878,7 +1886,7 @@ assign rgb_mix = (mode <= M_TITLE) ? attract_rgb :
                  // finale: i timbri sopra le racchette della sfilata, le racchette sopra il resto
                  (mode == M_ENDING) ? ((end_top || !next_opaque) ? end_rgb : next_rgb) :
                  (mode >= M_INTRO || (ch_opaque && !flash_q)) ? ch_rgb :
-                 (next_opaque && !game_top && (mode == M_PICK || !flash_q)) ? next_rgb :
+                 (next_opaque && !game_top && !(next_label && game_ball) && (mode == M_PICK || !flash_q)) ? next_rgb :
                  (game_bg && next_halo != 2'd0) ? halo_rgb : game_rgb;
 // easter egg: giallo e rosso scambiati sull'uscita, dopo la scelta del renderer
 egg_swap swap (.on(egg), .rgb_in(rgb_mix), .rgb_out(rgb));
@@ -1941,16 +1949,22 @@ wire [3:0] sid_song = ch_join || music_off ? 4'd0 :
 // effetti) e in CHALLENGE (contro la CPU e nella sfida) "READY?" all'inizio del conto alla rovescia
 // e "GO!" al via, al posto del suo effetto. "YOU WIN!" quando un giocatore batte la CPU (Classic, EVO,
 // NEXT e i livelli della CHALLENGE), con la scritta del GAME OVER; dopo l'ultimo livello la dice invece
-// il finale, un secondo dopo CONGRATULATIONS!. Non passano per il SID: musica ed effetti continuano.
+// il finale, un secondo dopo CONGRATULATIONS!. "PERFECT!" al suo posto quando un giocatore vince
+// senza punti dell'avversario, anche in due. Non passano per il SID: musica ed effetti continuano.
 reg        call_go = 1'b0;
 reg  [3:0] call_id = VOICE_READY;
 wire [3:0] call_level;
 wire [6:0] fx_gain;                    // volume degli effetti (pong_sid), 64 = 1: anche per le voci di partita
-wire       you_win = game_over_now && mode == M_GAME && two && match_cpu && ((score0 >= score1) != ch_cpu_left) &&
-                     !(ch_active && ch_level == CH_LEVELS - 1);
+wire       human_win = game_over_now && mode == M_GAME && two && (!match_cpu || ((score0 >= score1) != ch_cpu_left)) &&
+                       !(ch_active && !duel && ch_level == CH_LEVELS - 1);
+wire       you_win = human_win && match_cpu && !over_zero;
+wire       perfect_win = human_win && over_zero;
 always @(posedge clk) begin
     call_go <= 1'b0;
-    if (you_win || end_say) begin
+    if (perfect_win) begin
+        call_go <= 1'b1;
+        call_id <= VOICE_PERFECT;
+    end else if (you_win || end_say) begin
         call_go <= 1'b1;
         call_id <= VOICE_YOU_WIN;
     end else if (game_sound && (sound_events[10] || sound_events[11])) begin

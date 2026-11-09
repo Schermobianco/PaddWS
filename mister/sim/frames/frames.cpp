@@ -15,7 +15,9 @@
 // PONG_KINDS ("4,6" se manca: BLASTER contro GUARDIAN, codici di `PaddleKind`) e il giocatore
 // conferma con Y; salva la scelta in kpick_*.ppm e la partita ogni 40 frame in k_*.ppm.
 // Argomenti "win" e "winup": partita a due portata a 10-10, salva il GAME OVER con il vincitore
-// (punteggi verso i giocatori o dritti).
+// (punteggi verso i giocatori o dritti). "perfect" e "perfectup": la stessa portata a 11-0, che il primo
+// suono della partita chiude: il GAME OVER con PERFECT al posto di GAME OVER sopra P1 WINS; stampa le
+// voci PERFECT (attesa 1).
 // Argomenti "paddle" e "spin": partita a un giocatore con la racchetta comandata dal paddle (avanti e
 // indietro su tutta la corsa) o dallo spinner (3 passi per frame in un verso, poi nell'altro, poi
 // fermo con il joystick su): stampa la posizione attesa e quella della racchetta.
@@ -243,7 +245,8 @@ int main(int argc, char** argv) {
     int howto_at = -1, qcf_at = -1, dp_at = -1;   // "supers": schermata HOW TO PLAY e gesti
     int bul_at = -1;                              // "bullet": frame in cui il giocatore lo attiva
     int bul_end = -1, bul_state = 0;              // frame in cui finisce, stato al frame prima
-    const bool win_test = arg == "win" || arg == "winup";
+    const bool perfect_test = arg == "perfect" || arg == "perfectup";
+    const bool win_test = arg == "win" || arg == "winup" || perfect_test;
     const bool paddle_test = arg == "paddle", spin_test = arg == "spin";
     const bool demo_test = arg == "demo";
     const bool nv_test = arg == "nvram";
@@ -278,7 +281,7 @@ int main(int argc, char** argv) {
     top.game_type = (ch_test || chal_test || end_test || egg_test) ? 3 : (next_test || howto_test) ? 2 : 0;
     top.free_play = 0;
     top.difficulty = 1;
-    top.upright = upright || arg == "up" || arg == "cdup" || arg == "winup";
+    top.upright = upright || arg == "up" || arg == "cdup" || arg == "winup" || arg == "perfectup";
     top.joy0 = top.joy1 = 0;
     top.ps2_key = 0;
     top.control = paddle_test ? 1 : spin_test ? 2 : 0;
@@ -426,6 +429,11 @@ int main(int argc, char** argv) {
             you_wins++;
             std::printf("frame %d: voce YOU WIN! nel modo %d\n", frames, int(r->pong_top__DOT__mode));
         }
+        // "perfect": la voce "PERFECT!" (voce 12) con il GAME OVER, e nessuna YOU WIN (11)
+        if (perfect_test && r->pong_top__DOT__call_go &&
+            (r->pong_top__DOT__call_id == 12 || r->pong_top__DOT__call_id == 11))
+            std::printf("frame %d: voce %s nel modo %d\n", frames,
+                        r->pong_top__DOT__call_id == 12 ? "PERFECT!" : "YOU WIN!", int(r->pong_top__DOT__mode));
         if (music_test) {
             if ((sid_active & 7) != 0 || r->pong_top__DOT__sid__DOT__song_q != 0) music_cycles++;
             if (sid_active & 8) fx_cycles++;
@@ -567,8 +575,8 @@ int main(int argc, char** argv) {
                 }
             }
             if (win_test && frames == start_at + 400) {
-                set_score(r, 0, 10);
-                set_score(r, 1, 10);
+                set_score(r, 0, perfect_test ? 11 : 10);
+                set_score(r, 1, perfect_test ? 0 : 10);
             }
             if (music_test && r->pong_top__DOT__mode == 6 && ++over_frames == 120) break;
             if (win_test && r->pong_top__DOT__mode == 6 && ++over_frames == 30) {

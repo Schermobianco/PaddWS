@@ -71,6 +71,8 @@ pub struct Assets {
     pub go: Sound,
     /// "YOU WIN!": partita vinta contro la CPU e finale della CHALLENGE (tools/gen_voices.py)
     pub you_win: Sound,
+    /// "PERFECT!": partita vinta da un giocatore senza punti dell'avversario (tools/gen_voices.py)
+    pub perfect: Sound,
 }
 
 /// Musiche del SID (tools/gen_sid_music.py), suonate in tempo reale dal SID Rust (`music`).
@@ -1923,9 +1925,12 @@ impl Play {
             if over {
                 self.game_over = Some(app.attract.game_over_seconds());
                 // vittoria contro la CPU: la voce "YOU WIN!" con la scritta (all'ultimo livello
-                // della CHALLENGE la dice il finale, poco dopo)
+                // della CHALLENGE la dice il finale, poco dopo); "PERFECT!" se un giocatore vince
+                // senza punti dell'avversario, anche in due
                 let last = self.challenge.is_some_and(|(level, _)| level + 1 == LEVELS);
-                if self.winner() == Some("you_win") && !last {
+                if !last && self.perfect() {
+                    app.say(&app.assets.perfect);
+                } else if self.winner() == Some("you_win") && !last {
                     app.say(&app.assets.you_win);
                 }
                 break;
@@ -2123,7 +2128,7 @@ impl Play {
             if let Some(b) = bullet {
                 fx.draw_pad(app, &self.game, pos[b.side], shake, b.side);
             }
-            fx.draw_labels(app, &self.game);
+            fx.draw_labels(app, &self.game, pos[2], shake);
         }
         if pause_hint {
             self.draw_pause_hint(app);
@@ -2159,10 +2164,17 @@ impl Play {
             let winner_color = if self.fx.is_some() { colors.accent } else { colors.white };
             let winner = self.winner();
             // solo chi ha vinto: YOU WIN, o CPU WINS a un livello perso della CHALLENGE (il GAME
-            // OVER viene dopo, se il CONTINUE scade)
+            // OVER viene dopo, se il CONTINUE scade); vinta senza punti dell'avversario, PERFECT al
+            // posto di YOU WIN, o di GAME OVER sopra chi ha vinto
             let lost_level = self.challenge.is_some() && self.duel.is_none() && winner == Some("cpu_wins");
-            let game_over = winner != Some("you_win") && !lost_level;
-            attract::draw_game_over(&app.attract, r, game_over, winner, App::color(winner_color));
+            let (title, winner) = match (winner, self.perfect()) {
+                (Some("you_win"), true) => (None, Some("perfect")),
+                (Some("you_win"), false) => (None, winner),
+                (_, true) => (Some("perfect"), winner),
+                _ if lost_level => (None, winner),
+                _ => (Some("game_over"), winner),
+            };
+            attract::draw_game_over(&app.attract, r, title, winner, App::color(winner_color));
         }
     }
 
@@ -2249,6 +2261,13 @@ impl Play {
             (false, _, true) => "p1_wins",
             (false, _, false) => "p2_wins",
         })
+    }
+
+    /// Partita vinta da un giocatore (non dalla CPU) senza punti dell'avversario: PERFECT, scritto e
+    /// detto, come il bonus PERFECT dei livelli della CHALLENGE.
+    fn perfect(&self) -> bool {
+        let [left, right] = self.game.score;
+        matches!(self.winner(), Some("you_win" | "p1_wins" | "p2_wins")) && left.min(right) == 0 && left.max(right) > 0
     }
 
     /// Per la verifica automatica e il benchmark: niente conto alla rovescia.

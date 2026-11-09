@@ -167,6 +167,7 @@ const BITMAPS: &[(&str, &[u8])] = bitmaps!(
     "p2_wins",
     "you_win",
     "cpu_wins",
+    "perfect",
     "mode_classic",
     "mode_evo",
     "mode_next",
@@ -566,18 +567,21 @@ impl Attract {
     }
 }
 
-/// Fine partita al centro, su un riquadro nero sopra la partita: con `game_over` GAME OVER e,
+/// Fine partita al centro, su un riquadro nero sopra la partita: con `title` (`game_over`, o
+/// `perfect` quando un giocatore vince senza punti dell'avversario) quella scritta in bianco e,
 /// sotto, chi ha vinto (`p1_wins`, `p2_wins`, `cpu_wins`; nessuno in singolo) nel colore
-/// `winner_color`; senza, solo chi ha vinto, al posto di GAME OVER e nel colore `winner_color`
-/// (YOU WIN, o CPU WINS a un livello perso della CHALLENGE, dove si può ancora continuare).
-pub fn draw_game_over(art: &AttractArt, r: &Renderer, game_over: bool, winner: Option<&str>, winner_color: Color) {
+/// `winner_color`, su un riquadro largo come GAME OVER (come sul MiSTer); senza, solo chi ha
+/// vinto, al posto di GAME OVER e nel colore `winner_color` (YOU WIN o PERFECT, o CPU WINS a un
+/// livello perso della CHALLENGE, dove si può ancora continuare).
+pub fn draw_game_over(art: &AttractArt, r: &Renderer, title: Option<&str>, winner: Option<&str>, winner_color: Color) {
     let s = &art.spec;
     let view = View::of(r);
-    let (bm, label_color, win) = match (game_over, winner) {
-        (false, Some(name)) => (art.bm(name), winner_color, None),
-        _ => (art.bm("game_over"), rgb(s.colors.white), winner.map(|name| art.bm(name))),
+    let (bm, label_color, win) = match (title, winner) {
+        (None, Some(name)) => (art.bm(name), winner_color, None),
+        _ => (art.bm(title.unwrap_or("game_over")), rgb(s.colors.white), winner.map(|name| art.bm(name))),
     };
-    let text_w = win.map_or(bm.width(), |b| b.width().max(bm.width()));
+    let wide = art.bm("game_over").width();
+    let text_w = win.map_or(bm.width(), |b| b.width().max(wide));
     let bottom = if win.is_some() {
         s.game_over.winner_y
     } else {

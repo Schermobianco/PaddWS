@@ -155,7 +155,9 @@ the first level to the GUARDIAN of the final boss. Matches are NEXT, to 5 points
   parade of the seven opponents with the DEFEATED stamp, the final score with the champion's prize
   (the win of the last level, plus the perfect match), "YOU ARE THE PADD WS CHAMPION" with
   fireworks, the credits and THE END, in about a minute, with its own music; then the initials.
-  Start skips it. The voice "YOU WIN!" is also heard at every match won against the CPU.
+  Start skips it. The voice "YOU WIN!" is also heard at every match won against the CPU. If the
+  winner didn't let the opponent score a single point, PERFECT replaces YOU WIN (or GAME OVER, with
+  two players), shouted by the voice (not on the C64).
 - **Voice**: in the introduction a digitised "SID-style" voice announces the opponent's name (on the
   C64 and MiSTer with the trick of the SID volume register; on the C64 from the cartridge).
 - **Opponent themes**: in the match against the CPU each opponent has its own theme, on the first

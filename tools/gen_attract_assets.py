@@ -38,6 +38,8 @@ STRINGS = {
     "p2_wins": "P2 WINS",
     "you_win": "YOU WIN",
     "cpu_wins": "CPU WINS",
+    # vittoria senza punti dell'avversario: al posto di YOU WIN, o di GAME OVER sopra chi ha vinto
+    "perfect": "PERFECT",
     "balls": "BALLS ",
     # modalità della demo, alternate a INSERT COIN / PRESS START
     "mode_classic": "CLASSIC",

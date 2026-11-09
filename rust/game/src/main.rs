@@ -234,6 +234,7 @@ async fn load_assets() -> Assets {
         ready: sound(include_bytes!("../../../assets/sounds/voice/ready.wav")).await,
         go: sound(include_bytes!("../../../assets/sounds/voice/go.wav")).await,
         you_win: sound(include_bytes!("../../../assets/sounds/voice/you_win.wav")).await,
+        perfect: sound(include_bytes!("../../../assets/sounds/voice/perfect.wav")).await,
     }
 }
 
@@ -542,7 +543,7 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         app.set_egg(true);
         scene
     }
-    let shots: [(&str, MakeScene); 62] = [
+    let shots: [(&str, MakeScene); 64] = [
         ("1_demo_classic", |app| demo_at(app, DemoMode::Classic)),
         ("1_demo_evo", |app| demo_at(app, DemoMode::Evo)),
         ("1_demo_next", |app| demo_at(app, DemoMode::Next)),
@@ -799,6 +800,28 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
             let mut play = Play::new(app);
             play.skip_countdown();
             play.set_scores([11, 6], 0);
+            play.show_game_over();
+            app.cpu = false;
+            Scene::Game(Box::new(play))
+        }),
+        ("5_game_over_perfect", |app| {
+            // in due, vinta senza punti dell'avversario: PERFECT sopra P1 WINS
+            app.players = 2;
+            app.evo = false;
+            let mut play = Play::new(app);
+            play.skip_countdown();
+            play.set_scores([11, 0], 0);
+            play.show_game_over();
+            Scene::Game(Box::new(play))
+        }),
+        ("5_game_over_perfect_cpu", |app| {
+            // contro la CPU: solo PERFECT, al posto di YOU WIN
+            app.players = 2;
+            app.cpu = true;
+            app.evo = false;
+            let mut play = Play::new(app);
+            play.skip_countdown();
+            play.set_scores([11, 0], 0);
             play.show_game_over();
             app.cpu = false;
             Scene::Game(Box::new(play))

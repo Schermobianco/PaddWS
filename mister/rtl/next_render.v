@@ -112,6 +112,8 @@ module next_render (
 
     output reg  [23:0] rgb,
     output reg         opaque,
+    // pixel della scritta del bonus attivato: pong_top ci mette sopra la palla di pong_render
+    output reg         label,
     // bullet time: alone delle capsule (1-3 pixel dal bordo, 0 = niente); pong_top lo mette solo
     // sullo sfondo nero di pong_render
     output reg  [1:0]  halo
@@ -649,7 +651,7 @@ function cap_px(input [9:0] px, input [9:0] py, input [9:0] sx, input [9:0] sy, 
     end
 endfunction
 
-reg        on, gray_px;
+reg        on, gray_px, lb;
 reg [23:0] col;
 reg [9:0]  dx, dy, sx, cxl;
 reg [1:0]  t_count;
@@ -677,6 +679,7 @@ always @(*) begin
     on = 1'b0;
     col = WHITE;
     gray_px = 1'b0;
+    lb = 1'b0;
     trow = 5'd0;
     dx = 10'd0;
     dy = 10'd0;
@@ -1085,6 +1088,20 @@ always @(*) begin
                 col = BLACK;
             end
 
+        // scritta del bonus attivato, su un riquadro nero in basso, sotto alla palla e alla sua scia:
+        // la coprono le scie, le righe dello STRAIGHT, la cometa e l'alone qui sotto, e la palla di
+        // pong_render in pong_top (`label`, acceso anche sotto la scia: lì la palla non c'è)
+        if (label_on && x >= label_x - 6 && x < label_x + 2 * label_w + 6 && y >= 212 && y < 236) begin
+            on = 1'b1;
+            lb = 1'b1;
+            col = BLACK;
+            if ((label_player ? nx_p2_lit((x - label_x) >> 1, (y - 216) >> 1) : nx_p1_lit((x - label_x) >> 1, (y - 216) >> 1)) ||
+                (label_mx && nx_max_lit((x - label_x - 2 * (NX_P1_W + 3)) >> 1, (y - 216) >> 1)) ||
+                (label_move != 2'd0 ? mv_on : name_lit(label_bonus, (x - label_x - 2 * (NX_P1_W + 3)) >> 1, (y - 216) >> 1)) ||
+                nx_bang_lit((x - label_x - 2 * (NX_P1_W + 3 + label_name_w + 1)) >> 1, (y - 216) >> 1))
+                col = ACCENT;
+        end
+
         // scie: lunga e piena per la cometa; per gli altri effetti una coda larga quanto la palla che
         // sfuma dal grigio al nero (dalla più vecchia, così le nuove la coprono), fuori dalla palla:
         // questo livello sta sopra a pong_render, che la disegna
@@ -1139,17 +1156,6 @@ always @(*) begin
             on = 1'b1;
             col = GRAY;
         end
-
-        // scritta del bonus attivato, su un riquadro nero in basso
-        if (label_on && x >= label_x - 6 && x < label_x + 2 * label_w + 6 && y >= 212 && y < 236) begin
-            on = 1'b1;
-            col = BLACK;
-            if ((label_player ? nx_p2_lit((x - label_x) >> 1, (y - 216) >> 1) : nx_p1_lit((x - label_x) >> 1, (y - 216) >> 1)) ||
-                (label_mx && nx_max_lit((x - label_x - 2 * (NX_P1_W + 3)) >> 1, (y - 216) >> 1)) ||
-                (label_move != 2'd0 ? mv_on : name_lit(label_bonus, (x - label_x - 2 * (NX_P1_W + 3)) >> 1, (y - 216) >> 1)) ||
-                nx_bang_lit((x - label_x - 2 * (NX_P1_W + 3 + label_name_w + 1)) >> 1, (y - 216) >> 1))
-                col = ACCENT;
-        end
     end
 end
 
@@ -1173,6 +1179,7 @@ end
 always @(posedge clk) begin
     rgb <= col;
     opaque <= on;
+    label <= lb;
     halo <= (bon && bblur != 2'd0 && cgm <= {2'd0, bblur}) ? cgm[1:0] : 2'd0;
 end
 

@@ -528,6 +528,28 @@ function cpu_wins_lit(input [9:0] dx, input [9:0] dy);
     end
 endfunction
 
+localparam PERFECT_W = 30;
+localparam PERFECT_H = 7;
+function [29:0] perfect_row(input [2:0] row);
+    case (row)
+        3'd0: perfect_row = 30'b111001110111001110111001101110;
+        3'd1: perfect_row = 30'b100101000100101000100010000100;
+        3'd2: perfect_row = 30'b100101000100101000100010000100;
+        3'd3: perfect_row = 30'b111001110111001110111010000100;
+        3'd4: perfect_row = 30'b100001000100101000100010000100;
+        3'd5: perfect_row = 30'b100001000100101000100010000100;
+        3'd6: perfect_row = 30'b100001110100101000111001100100;
+        default: perfect_row = 30'd0;
+    endcase
+endfunction
+function perfect_lit(input [9:0] dx, input [9:0] dy);
+    reg [29:0] r;
+    begin
+        r = perfect_row(dy[2:0]);
+        perfect_lit = (dx < 30 && dy < 7) ? r[29 - dx] : 1'b0;
+    end
+endfunction
+
 localparam BALLS_W = 25;
 localparam BALLS_H = 7;
 function [24:0] balls_row(input [2:0] row);

@@ -1004,7 +1004,6 @@ impl NextFx {
         let white = App::color(app.cfg.colors.white);
         let gray = App::color(app.cfg.colors.lgray);
         let accent = App::color(app.cfg.colors.accent);
-        let blink = (game.tick / 16).is_multiple_of(2);
         // bullet time: il bianco diventa grigio tranne per la racchetta (e i colpi) di chi l'ha attivato
         let time = bullet_time(game);
         let owner = time.map(|b| b.side);
@@ -1073,20 +1072,34 @@ impl NextFx {
             draw_rectangle(lx - u, r.world_h - 6.0 * u, 2.0 * u, 6.0 * u, accent);
         }
 
-        // scie della palla: lunga e piena per la COMETA; per gli altri effetti una coda larga quanto
-        // la palla che sfuma dal grigio al nero (dalla più vecchia, così le nuove la coprono)
-        let ball = &game.ball;
-        let d = to_f32(ball.radius) * 2.0;
+        self.draw_trail(app, game, shake);
+        self.draw_ball(app, game, pos[2], shake);
+        // colpo speciale: un quadrato che si allarga dal punto del colpo
+        let d = to_f32(game.ball.radius) * 2.0;
+        if let Some((cx, cy, t)) = self.burst {
+            let k = 1.0 - (t / BURST_SECONDS) as f32;
+            let side = d * (1.5 + 5.0 * k);
+            let color = Color { a: 1.0 - k, ..accent };
+            draw_rectangle_lines(cx + shake - side / 2.0, r.screen_y(cy) - side / 2.0, side, side, u, color);
+        }
+    }
+
+    /// Scie della palla: lunga e piena per la COMETA; per gli altri effetti una coda larga quanto la
+    /// palla che sfuma dal grigio al nero (dalla più vecchia, così le nuove la coprono), e nel
+    /// bullet time le immagini della palla lungo la scia.
+    fn draw_trail(&self, app: &App, game: &Match, shake: f32) {
+        let Some(n) = &game.next else { return };
+        let r = &app.renderer;
+        let u = unit(app);
+        let gray = App::color(app.cfg.colors.lgray);
+        let accent = App::color(app.cfg.colors.accent);
+        let time = bullet_time(game);
+        let owner = time.map(|b| b.side);
+        let d = to_f32(game.ball.radius) * 2.0;
         let comet = n.super_flight == Some(SuperAnim::Comet);
-        // la palla del SUPER e delle mosse speciali in volo (e la testa della cometa) ha il colore
-        // di accento, e la coda delle mosse sfuma dall'accento invece che dal grigio
-        let special = n.special_flight;
-        let ball_color = if n.super_flight.is_some() || special.is_some() {
-            accent
-        } else {
-            white
-        };
-        let tail = if special.is_some() { accent } else { gray };
+        // la coda delle mosse speciali in volo sfuma dall'accento invece che dal grigio (la palla:
+        // `draw_ball`)
+        let tail = if n.special_flight.is_some() { accent } else { gray };
         let black = App::color(app.cfg.colors.black);
         // con GHOST la coda non si disegna: tradirebbe la palla quando è nascosta
         let len = if n.ghost.is_some() { 0 } else { self.trail.len() };
@@ -1121,46 +1134,63 @@ impl NextFx {
                 r.rect_centered(tx + shake, ty, d, d, c);
             }
         }
+    }
+
+    /// La palla in (x, y) (coordinate del core, già interpolate), con le righe dello STRAIGHT SHOT e
+    /// l'alone di SLOW (niente quando lampeggia al servizio o GHOST la nasconde).
+    fn draw_ball(&self, app: &App, game: &Match, (x, y): (f32, f32), shake: f32) {
+        let Some(n) = &game.next else { return };
         let serve_blink = game.serving() && (game.serve_timer * 8 / paddws_core::TICK_HZ) % 2 == 1;
-        if !serve_blink && !n.ball_hidden(&game.params, game.tick) {
-            let size = if comet { d * 1.6 } else { d };
-            let (bx, by) = (pos[2].0 + shake, pos[2].1);
-            match special {
-                // STRAIGHT SHOT: righe di velocità orizzontali dietro la palla
-                Some(Special::Straight) => {
-                    let back = if ball.vx > 0 { -1.0 } else { 1.0 };
-                    for (dy, len) in [(-d, 5.0 * d), (0.0, 9.0 * d), (d, 5.0 * d)] {
-                        let lx = bx + back * (d + len / 2.0);
-                        r.rect_centered(lx, by + dy, len, u, Color { a: 0.8, ..accent });
-                    }
-                    r.rect_centered(bx, by, size, size, ball_color);
-                }
-                // RISING STRIKE: la palla girata di 45 gradi, un rombo
-                Some(Special::Rise) => {
-                    draw_rectangle_ex(
-                        bx,
-                        r.screen_y(by),
-                        size * 1.2,
-                        size * 1.2,
-                        DrawRectangleParams {
-                            offset: vec2(0.5, 0.5),
-                            rotation: std::f32::consts::FRAC_PI_4,
-                            color: ball_color,
-                        },
-                    );
-                }
-                None => r.rect_centered(bx, by, size, size, ball_color),
-            }
-            if n.slow_timer > 0 && blink {
-                draw_rectangle_lines(bx - d * 1.5, r.screen_y(by) - d * 1.5, d * 3.0, d * 3.0, u, gray);
-            }
+        if serve_blink || n.ball_hidden(&game.params, game.tick) {
+            return;
         }
-        // colpo speciale: un quadrato che si allarga dal punto del colpo
-        if let Some((cx, cy, t)) = self.burst {
-            let k = 1.0 - (t / BURST_SECONDS) as f32;
-            let side = d * (1.5 + 5.0 * k);
-            let color = Color { a: 1.0 - k, ..accent };
-            draw_rectangle_lines(cx + shake - side / 2.0, r.screen_y(cy) - side / 2.0, side, side, u, color);
+        let r = &app.renderer;
+        let u = unit(app);
+        let white = App::color(app.cfg.colors.white);
+        let gray = App::color(app.cfg.colors.lgray);
+        let accent = App::color(app.cfg.colors.accent);
+        let blink = (game.tick / 16).is_multiple_of(2);
+        let ball = &game.ball;
+        let d = to_f32(ball.radius) * 2.0;
+        let comet = n.super_flight == Some(SuperAnim::Comet);
+        // la palla del SUPER e delle mosse speciali in volo (e la testa della cometa) ha il colore
+        // di accento
+        let special = n.special_flight;
+        let ball_color = if n.super_flight.is_some() || special.is_some() {
+            accent
+        } else {
+            white
+        };
+        let size = if comet { d * 1.6 } else { d };
+        let (bx, by) = (x + shake, y);
+        match special {
+            // STRAIGHT SHOT: righe di velocità orizzontali dietro la palla
+            Some(Special::Straight) => {
+                let back = if ball.vx > 0 { -1.0 } else { 1.0 };
+                for (dy, len) in [(-d, 5.0 * d), (0.0, 9.0 * d), (d, 5.0 * d)] {
+                    let lx = bx + back * (d + len / 2.0);
+                    r.rect_centered(lx, by + dy, len, u, Color { a: 0.8, ..accent });
+                }
+                r.rect_centered(bx, by, size, size, ball_color);
+            }
+            // RISING STRIKE: la palla girata di 45 gradi, un rombo
+            Some(Special::Rise) => {
+                draw_rectangle_ex(
+                    bx,
+                    r.screen_y(by),
+                    size * 1.2,
+                    size * 1.2,
+                    DrawRectangleParams {
+                        offset: vec2(0.5, 0.5),
+                        rotation: std::f32::consts::FRAC_PI_4,
+                        color: ball_color,
+                    },
+                );
+            }
+            None => r.rect_centered(bx, by, size, size, ball_color),
+        }
+        if n.slow_timer > 0 && blink {
+            draw_rectangle_lines(bx - d * 1.5, r.screen_y(by) - d * 1.5, d * 3.0, d * 3.0, u, gray);
         }
     }
 
@@ -1393,13 +1423,17 @@ impl NextFx {
         }
     }
 
-    /// Scritte della mossa speciale e del bonus attivato: sopra tutto, nitide anche nel bullet time.
-    pub fn draw_labels(&self, app: &App, game: &Match) {
+    /// Scritte della mossa speciale e del bonus attivato: sopra tutto, nitide anche nel bullet time,
+    /// tranne la palla in `ball` (coordinate del core) e la sua scia, che si ridisegnano sopra
+    /// quelle che toccano.
+    pub fn draw_labels(&self, app: &App, game: &Match, ball: (f32, f32), shake: f32) {
         let r = &app.renderer;
         let (w, h) = (r.world_w, r.world_h);
         let s = app.scale();
         let white = App::color(app.cfg.colors.white);
         let accent = App::color(app.cfg.colors.accent);
+        // riquadri delle scritte disegnate in questo frame
+        let mut boxes: [Option<Rect>; 3] = [None; 3];
         if game.next.as_ref().is_some_and(|n| n.super_moves) {
             let p = &game.params;
             let font = &app.assets.font_text;
@@ -1429,7 +1463,10 @@ impl NextFx {
                     accent
                 };
                 let cx = if side == 0 { w / 4.0 } else { 3.0 * w / 4.0 };
-                r.text_centered_zoom(&special_title(special, level), font, size, raster, cx, y, color);
+                let title = special_title(special, level);
+                r.text_centered_zoom(&title, font, size, raster, cx, y, color);
+                let tw = r.text_width(&title, font, size);
+                boxes[side] = Some(Rect::new(cx - tw / 2.0, y - size / 2.0, tw, size));
             }
         }
 
@@ -1438,8 +1475,22 @@ impl NextFx {
         {
             let font = &app.assets.font_text;
             let y = h - 34.0 * s;
-            draw_rectangle(w / 2.0 - 120.0 * s, y - 20.0 * s, 240.0 * s, 40.0 * s, BLACK);
+            let back = Rect::new(w / 2.0 - 120.0 * s, y - 20.0 * s, 240.0 * s, 40.0 * s);
+            draw_rectangle(back.x, back.y, back.w, back.h, BLACK);
             r.text_centered(text, font, 32.0 * s, w / 2.0, y, 0.0, accent);
+            boxes[2] = Some(back);
+        }
+
+        // palla e scia stanno sopra alle scritte: si ridisegnano solo quando ne toccano una, così
+        // nel bullet time restano sfocate con il resto del campo finché non ci passano sopra
+        let d = to_f32(game.ball.radius) * 3.0; // anche il rombo del RISING e la testa della cometa
+        let near = |(x, y): (f32, f32)| {
+            let at = Rect::new(x + shake - d / 2.0, r.screen_y(y) - d / 2.0, d, d);
+            boxes.iter().flatten().any(|b| b.overlaps(&at))
+        };
+        if near(ball) || self.trail.iter().any(|&p| near(p)) {
+            self.draw_trail(app, game, shake);
+            self.draw_ball(app, game, ball, shake);
         }
     }
 }
