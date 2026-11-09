@@ -5,7 +5,7 @@
 //!
 //! - `rom`: la ROM della musica di `tools/gen_sid_music.py`, la stessa del MiSTer e del C64.
 //! - `player`: il player, con le stesse scritture ai registri del player Verilog.
-//! - `chip`: il SID (tre voci, quattro forme d'onda, ADSR, niente filtro).
+//! - `chip`: il SID (tre voci, quattro forme d'onda, ADSR, il filtro dell'8580).
 //! - `engine`: player e SID insieme, ricampionati per il dispositivo audio; le regole di tempo.
 
 pub mod chip;

@@ -1,12 +1,46 @@
 //! Parole di stato della partita e codifica dei comandi di un tick.
 //!
-//! Le parole 0-70 sono quelle delle tracce di paddws-trace (`trace_state.hex`, formato in
-//! `mister/README.md`): il firmware le scrive tutte, sempre, nei registri di `pong_logic_rv.v`,
-//! che le porta sulle sue uscite verso `pong_top.v` e i renderer. Fuori da NEXT, o senza tipi di
-//! racchetta, le parole che mancano nelle tracce hanno valori fissi (capsula al primo
-//! intervallo, riserve vuote, nessun tipo).
+//! Le parole 0-76 sono quelle delle tracce di paddws-trace (`trace_state.hex`, formato qui
+//! sotto): il firmware le scrive tutte, sempre, nei registri di `pong_logic_rv.v`, che le porta
+//! sulle sue uscite verso `pong_top.v` e i renderer. Fuori da NEXT, o senza tipi di racchetta, le
+//! parole che mancano nelle tracce hanno valori fissi (capsula al primo intervallo, riserve vuote,
+//! nessun tipo).
 //! Seguono alcune parole che non sono nelle tracce ma escono da `pong_logic_rv.v` (altezze,
 //! `Ball::dx`, tick, modalità) e i comandi effettivi del tick, per i banchi di prova.
+//!
+//! # Formato delle tracce
+//!
+//! Ogni traccia ha `pong_params.vh`, `trace_config.vh` (`P_SEED`, `P_PLAYERS`, `P_EVO`,
+//! `P_DIFFICULTY`, `P_CPU_SIDES`, `P_CONTROL`, `P_KINDS` con 3 bit per lato e 7 = nessuno,
+//! `P_SUPERS`), `trace_input.hex` e `trace_state.hex` (lo stato dopo ogni tick).
+//!
+//! Comandi, 32 bit per tick: bit 0-7 il sinistro, 8-15 il destro (0 su, 1 giù, 2 rapido, 3 scatto
+//! per un tick, 4 seleziona, 5 attiva il bonus, 6 posizione dall'encoder in questo tick, 7 sparo
+//! del BLASTER); 16-23 e 24-31 la posizione dell'encoder (pixel dal bordo alto, `top_offset`). Con
+//! `--supers` 40 bit: mossa del sinistro nei bit 32-33, del destro nei 34-35 (1 STRAIGHT, 2 RISING).
+//!
+//! Stato, parole da 32 bit:
+//! - 0-5 palla x, y, vx, vy, boost, raggio; 6-9 e 10-13 racchette x, y, velocità, flag (bit 0-7
+//!   direzione int8, 8 rapido, 16-23 livello dell'area boost); 14 punteggi (sinistro 0-15, destro
+//!   16-31); 15 record del singolo; 16 attesa della battuta; 17 eventi; 18 RNG.
+//! - Eventi: 0 muro, 1 colpo, 2 boost, 3 punto, 4 capsula, 5 bonus attivato, 6 SUPER, 7 salto del
+//!   TELEPORT, 8 sparo del BLASTER, 9 rimbalzo sul muro del GUARDIAN (in `pong_top`, nei
+//!   `sound_events`, anche 10 Straight e 11 Rise).
+//! - NEXT (19-44): 19 tick alla prossima capsula; 20 bit 0-15 alone di SLOW, 16-31 rampa del
+//!   BULLET; 21 accelerazione di CURVE; 22 effetti (0 fantasma, 1 suo lato, 2 SUPER in volo, 3-4
+//!   animazione, 5 STEER, 6 lato di chi guida, 7 su, 8 giù, 9-10 tiro della mossa, 11 BULLET
+//!   armato o in corso, 12 attivato dal destro, 13 BULLET scattato, 16-31 fermo); 23-24 giocatori
+//!   (riserva 3×4 bit con 8 = vuoto, 12-13 selezionato, 14-15 animazione del SUPER, 16-19 armato
+//!   con 8 = nessuno, 20-31 pausa); 25-44 capsule 0-3: x, y, vx, vy, flag (bit 3 presente, 0-2
+//!   bonus; BULLET = 15).
+//! - Tipi di racchetta (45-74): 45-46 bit 0-2 tipo, 3 muro del GUARDIAN in piedi, 4-7 colpi in
+//!   volo, 8-10 caricatore, 16-31 ricarica; 47-48 bit 0-7 settori del muro (bit 0 in alto, 5
+//!   settori), 16-31 pausa; 49-72 colpi del BLASTER, 4 per lato (prima il sinistro): x, y, vx;
+//!   73-74 `Paddle::motion`.
+//! - Mosse speciali (75-76): bit 0-7 barra, 8-9 STRAIGHT armato, 10-11 RISING armata (2 = MAX);
+//!   solo nel sinistro 12-13 livello del tiro in volo, 14 impennata ancora da arrivare.
+//! - Bonus: 0 TELEPORT, 1 SMASH, 2 SLOW, 3 CURVE, 4 GHOST, 5 SUPER, 6 STEER, 7 BULLET
+//!   (`bonus_code`). Tipi: 0 ARCADE, 1 TITAN, 2 HAMMER, 3 TWIST, 4 BLASTER, 5 RUSH, 6 GUARDIAN.
 
 use paddws_core::next::MAX_SHOTS;
 use paddws_core::{Bonus, Input, Match, PlayerInput, Side, Special};
@@ -140,7 +174,7 @@ pub fn encode_state<S: Sink>(m: &Match, events: u16, w: &mut S) {
     w.put(17, events as u32);
     w.put(18, m.rng.state());
 
-    // NEXT: timer, effetti, riserve e capsule (vedi mister/README.md). Fuori da NEXT valori fissi:
+    // NEXT: timer, effetti, riserve e capsule (vedi il formato in testa al file). Fuori da NEXT valori fissi:
     // capsula al primo intervallo, riserve vuote, nessun tipo
     let none_player = 0x888 | BONUS_NONE << 16;
     match &m.next {

@@ -26,11 +26,14 @@ VOICE_GO_SRC = $E00B            ; nel file del primo livello: quello che il file
 ; "YOU WIN!" (banco WIN_BANK della cartuccia, tools/make_crt.py): 16 pagine da WIN_RUN, cioè il
 ; player e READY come da VOICE_RES (in CHALLENGE già lì), i campioni a WIN_SAMPLES (al posto
 ; delle tabelle dei quadrati e del tema) con il descrittore per VOICE_SAY a WIN_DESC, e la pagina
-; degli NMI del player da $FA00. Per il GAME OVER contro la CPU e il finale di CHALLENGE.
+; degli NMI del player da $FA00. Per il GAME OVER contro la CPU e il finale di CHALLENGE. Nelle
+; WIN_PAGES pagine dopo, nello stesso banco, la stessa immagine con "PERFECT!" al posto di YOU WIN
+; (WIN_PERFECT), per il GAME OVER vinto da un giocatore con l'avversario a 0 punti.
 WIN_RUN     = $EB00
 WIN_SAMPLES = $F000
 WIN_DESC    = $F9FC
 WIN_PAGES   = 16
+WIN_PERFECT = $80 + WIN_PAGES   ; prima pagina dell'immagine di PERFECT nella ROML ($8000 YOU WIN)
 
 ; Conto alla rovescia (play.s): jsr VOICE_COUNT a ogni frame con A = frame rimasti (da COUNT_FRAMES
 ; a 1). È un RTS (start_game) finché il file del primo livello non ci mette il salto al suo conto:

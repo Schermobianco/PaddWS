@@ -154,7 +154,7 @@ livello al GUARDIAN del boss finale. Le partite sono NEXT a 5 punti.
   CHAMPION" con i fuochi d'artificio, i titoli di coda e THE END, in circa un minuto, con una
   musica tutta sua; poi le iniziali. Start lo salta. La voce "YOU WIN!" si sente anche a ogni
   partita vinta contro la CPU. Se chi vince non ha lasciato neanche un punto all'avversario, al posto
-  di YOU WIN (o di GAME OVER, in due) compare PERFECT, urlato dalla voce (non sul C64).
+  di YOU WIN (o di GAME OVER, in due) compare PERFECT, urlato dalla voce.
 - **Voce**: nella presentazione una voce digitalizzata "da SID" annuncia il nome dell'avversario
   (su C64 e MiSTer con il trucco del registro del volume del SID; sul C64 dalla cartuccia).
 - **Musiche degli avversari**: in partita contro la CPU ogni avversario ha il suo tema, sulle prime
@@ -296,7 +296,7 @@ menu. Solo PAL; finora provata in VICE. Dettagli in [c64/README.md](../../c64/RE
 | CHALLENGE, classifica e nuovo sfidante | ✓ | ✓ | ✓ | — |
 | demo nell'attract | modalità scelta | modalità scelta | EVO | — |
 | musiche del SID | SID in Rust | SID del core C64 | SID vero | — |
-| voci "da SID" | ✓ | ✓ | nome dell'avversario, READY?, GO! e YOU WIN! | — |
+| voci "da SID" | ✓ | ✓ | nome dell'avversario, READY?, GO!, YOU WIN! e PERFECT! | — |
 | filtro CRT | ✓ | uscita a 15 kHz | — | ✓ |
 | ZOOM (pallina e racchette più spesse) | ✓ | — | — | — |
 | controlli | tastiera, gamepad, mouse, encoder, touch | joystick, paddle, spinner | joystick, paddle | tastiera, encoder |

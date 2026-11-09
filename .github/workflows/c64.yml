@@ -59,7 +59,7 @@ jobs:
           dir="paddws-$version-c64"
           mkdir -p "$dir"
           cp c64/build/paddws.crt "$dir/"
-          cp c64/README.md LICENSE THIRD_PARTY.md assets/fonts/OFL-Munro.txt "$dir/"
+          cp LICENSE THIRD_PARTY.md assets/fonts/OFL-Munro.txt "$dir/"
           zip -r -X "$dir.zip" "$dir"
           echo "dir=$dir" >> "$GITHUB_OUTPUT"
           echo "zip=$dir.zip" >> "$GITHUB_OUTPUT"

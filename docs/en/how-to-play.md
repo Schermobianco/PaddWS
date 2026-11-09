@@ -125,7 +125,7 @@ On the C64 the fire that ends the quarter-circle uses the move if it can start, 
 selected power-up (the dash is the joystick towards the opponent); with paddles there are no
 gestures, the attract mode demo stays EVO and there is no HOW TO PLAY screen. The meter, the icon of
 the armed move, the "P1 MAX STRAIGHT SHOT!" caption and the sounds are there, the shouted voices are
-not (see [c64/README.md](../../c64/README.md), in Italian).
+not (see [c64/README.en.md](../../c64/README.en.md)).
 
 ## CHALLENGE
 
@@ -157,7 +157,7 @@ the first level to the GUARDIAN of the final boss. Matches are NEXT, to 5 points
   fireworks, the credits and THE END, in about a minute, with its own music; then the initials.
   Start skips it. The voice "YOU WIN!" is also heard at every match won against the CPU. If the
   winner didn't let the opponent score a single point, PERFECT replaces YOU WIN (or GAME OVER, with
-  two players), shouted by the voice (not on the C64).
+  two players), shouted by the voice.
 - **Voice**: in the introduction a digitised "SID-style" voice announces the opponent's name (on the
   C64 and MiSTer with the trick of the SID volume register; on the C64 from the cartridge).
 - **Opponent themes**: in the match against the CPU each opponent has its own theme, on the first
@@ -217,8 +217,7 @@ d-pad to move (the analog stick with diagonals, for the moves), **A** dash and s
 selects and **C** (X or Y) uses the power-up, as in the HOW TO PLAY; **Start** pause and Start,
 **Select** coin. In the menus you use the directions, **A** confirms and **B** goes back; in pause
 **A** resumes and **B** goes back to the menu. USB arcade sticks and cabinet encoder boards, which
-have no analog stick, work too (see [rust/README.md](../../rust/README.md#gamepad-e-stick-arcade),
-in Italian).
+have no analog stick, work too (see [rust/README.en.md](../../rust/README.en.md#gamepads-and-arcade-sticks)).
 
 **Mouse as a spinner** (PC and web, menu **MOUSE SPINNER: ON** or `mouse.spinner` in the
 configuration, off by default): the mouse becomes the left player's knob, like the cabinet's
@@ -272,7 +271,7 @@ the power-up (NEXT), **Start**, **Select** coin; on the keyboard `5` and `1`. Th
 done with joystick quarter-circles + **A**. The options (mode, players, Free Play, difficulty,
 scores upright or facing the players, attract sound, SID 8580 or 6581, music and effects volumes,
 high-score saving, white level, joystick, paddle or spinner and its speed) are in the OSD. Details
-in [mister/README.md](../../mister/README.md) (in Italian).
+in [mister/README.en.md](../../mister/README.en.md).
 
 ### Commodore 64
 
@@ -288,7 +287,7 @@ in NEXT uses the selected power-up, which changes by itself every second among t
 and in EVO does the forward dash. With paddles the button dashes, and power-ups are selected and
 used with `F` / `C` (left) and `.` / `-` (right). Key **5** coin, fire or **RETURN** Start,
 **RUN/STOP** pause, **Q** menu. PAL only; so far tested in VICE. Details in
-[c64/README.md](../../c64/README.md) (in Italian).
+[c64/README.en.md](../../c64/README.en.md).
 
 ## Features by version
 
@@ -302,7 +301,7 @@ used with `F` / `C` (left) and `.` / `-` (right). Key **5** coin, fire or **RETU
 | CHALLENGE, high scores and new challenger | ✓ | ✓ | ✓ | — |
 | attract mode demo | chosen mode | chosen mode | EVO | — |
 | SID music | SID in Rust | SID of the C64 core | real SID | — |
-| "SID-style" voices | ✓ | ✓ | opponent's name, READY?, GO! and YOU WIN! | — |
+| "SID-style" voices | ✓ | ✓ | opponent's name, READY?, GO!, YOU WIN! and PERFECT! | — |
 | CRT filter | ✓ | 15 kHz output | — | ✓ |
 | ZOOM (thicker ball and paddles) | ✓ | — | — | — |
 | controls | keyboard, gamepad, mouse, encoder, touch | joystick, paddle, spinner | joystick, paddle | keyboard, encoder |

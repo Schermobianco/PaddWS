@@ -123,6 +123,12 @@ BAR_CHARS = 5
 .define SUPER_ICONS $00, $00, $04, $06, $FF, $06, $04, $00, $00, $00, $20, $60, $FF, $60, $20, $00, $00, $07, $03, $05, $08, $F0, $00, $00, $00, $E0, $C0, $A0, $10, $0F, $00, $00
 .define SID_TRACK_MOVE $71, $93, $80, $28, $2B, $08, $80, $3C, $32, $0A, $FF
 .define SID_TRACK_SPECIAL $75, $54, $03, $76, $54, $02, $4F, $02, $4C, $02, $48, $02, $43, $02, $40, $02, $3C, $03, $37, $03, $30, $08, $FF
+; PERFECT del GAME OVER: i caratteri PERFECT_C0... (di INSERT COIN e PRESS START) con PERFECT
+; solo nel GAME OVER (ov_enter, gen/perfect_chars.bin), la demo rimette gli originali (demo_enter)
+BIG_PERFECT_W = 8
+.define BIG_PERFECT 124, 140, 141, 142, 143, 144, 145, 146, 131, 147, 148, 149, 150, 151, 152, 94
+PERFECT_C0 = 140
+PERFECT_CHARS = 13
 PICK_FIRST = 64    ; scelta dei bonus: caratteri sostituiti (pagine intere)
 PICK_PAGES = 3
 SPRITE_BANDS = 10

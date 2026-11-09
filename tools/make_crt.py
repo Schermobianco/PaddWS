@@ -26,7 +26,8 @@ Banchi e indirizzi in c64/src/ef.inc:
   del primo livello, i campioni a WIN_SAMPLES con il loro descrittore a WIN_DESC (inizio, fine),
   $FF a $FA00 (la fine della terza traccia del tema) e da VOICE_GO la prima pagina di quello che il
   file del primo livello copia lì (gli NMI del player). In CHALLENGE il player e i suoi NMI sono già
-  in memoria e restano uguali.
+  in memoria e restano uguali. Nelle 16 pagine dopo ($9000) la stessa immagine con "PERFECT!"
+  (c64/gen/perfect.bin) al posto di YOU WIN, per il GAME OVER vinto con l'avversario a 0 punti.
 
 La ROML del banco HI_BANK resta cancellata: è il settore della classifica, che il programma scrive.
 Nella ROMH dello stesso banco ci sono solo i vettori, che puntano a un RTI: mentre il programma
@@ -81,6 +82,8 @@ WIN_RUN = const("WIN_RUN", "voice.inc")
 WIN_SAMPLES = const("WIN_SAMPLES", "voice.inc")
 WIN_DESC = const("WIN_DESC", "voice.inc")
 YOU_WIN = SRC.parent / "gen" / "you_win.bin"
+PERFECT = SRC.parent / "gen" / "perfect.bin"
+WIN_PAGES = const("WIN_PAGES", "voice.inc")
 
 
 def chip(bank: int, addr: int, data: bytes) -> bytes:
@@ -97,18 +100,19 @@ def prg(path: Path, start: int) -> bytes:
     return data[2:]
 
 
-def win_bank(first: bytes) -> bytes:
-    """Banco della vittoria: le 16 pagine da WIN_RUN a VOICE_GO + $FF (vedi sopra)."""
-    image = bytearray(16 * 256)
+def win_image(first: bytes, voice: Path) -> bytes:
+    """Un'immagine del banco della vittoria con la voce `voice`: le WIN_PAGES pagine da WIN_RUN a
+    VOICE_GO + $FF (vedi sopra)."""
+    image = bytearray(WIN_PAGES * 256)
     res, go = VOICE_RES - WIN_RUN, VOICE_GO - WIN_RUN
     tail = first[VOICE_RES - VOICE_BASE:]
     if len(tail) > WIN_SAMPLES - VOICE_RES:
         sys.exit("player e READY oltre WIN_SAMPLES")
     image[res:res + len(tail)] = tail
-    samples = YOU_WIN.read_bytes()
+    samples = voice.read_bytes()
     at = WIN_SAMPLES - WIN_RUN
     if not samples or WIN_SAMPLES + len(samples) > WIN_DESC:
-        sys.exit(f"{YOU_WIN}: {len(samples)} byte, oltre WIN_DESC")
+        sys.exit(f"{voice}: {len(samples)} byte, oltre WIN_DESC")
     image[at:at + len(samples)] = samples
     end = WIN_SAMPLES + len(samples)
     image[WIN_DESC - WIN_RUN:WIN_DESC - WIN_RUN + 4] = bytes([WIN_SAMPLES & 0xFF, WIN_SAMPLES >> 8, end & 0xFF, end >> 8])
@@ -119,6 +123,14 @@ def win_bank(first: bytes) -> bytes:
         sys.exit("pagina degli NMI del player fuori posto")
     image[go:] = page
     return bytes(image)
+
+
+def win_bank(first: bytes) -> bytes:
+    """Banco della vittoria: l'immagine di YOU WIN, poi quella di PERFECT (la ROML intera)."""
+    bank = win_image(first, YOU_WIN) + win_image(first, PERFECT)
+    if len(bank) != HALF:
+        sys.exit(f"banco della vittoria: {len(bank)} byte invece di {HALF}")
+    return bank
 
 
 def main() -> None:

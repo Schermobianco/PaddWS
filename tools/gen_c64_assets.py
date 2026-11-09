@@ -28,6 +28,10 @@ Uscite in c64/gen/ (vanno nel repository, così l'assemblaggio non richiede Pyth
                 file voce dell'avversario del primo livello
   you_win.bin   "YOU WIN!": il banco della vittoria della cartuccia (tools/make_crt.py), per il
                 GAME OVER contro la CPU e il finale di CHALLENGE
+  perfect.bin   "PERFECT!": nello stesso banco, per il GAME OVER vinto da un giocatore con
+                l'avversario a 0 punti
+  perfect_chars.bin  la pagina del set di caratteri con la scritta PERFECT del GAME OVER al posto
+                di caratteri di INSERT COIN e PRESS START (src/play.s, ov_enter)
   ending_chars.bin, ending.inc  set di caratteri del finale di CHALLENGE (src/ending.s): il font
                 monospazio ai suoi codici, le lettere a scala 2, il timbro DEFEATED e i punti
                 multicolore dei fuochi d'artificio
@@ -162,6 +166,12 @@ def text_font(cs: Charset) -> list[int]:
 
 def big_text(cs: Charset, name: str) -> tuple[int, list[int]]:
     """Bitmap dell'attract a scala 2, centrata in una fascia di caratteri alta 2: (larghezza, codici)."""
+    w_chars, tiles = big_tiles(name)
+    return w_chars, [cs.add(t) for t in tiles]
+
+
+def big_tiles(name: str) -> tuple[int, list[Tile]]:
+    """Come big_text, senza il set di caratteri: (larghezza, caratteri della riga alta e della bassa)."""
     im = Image.open(ATTRACT / f"{name}.png").convert("RGBA")
     w, h = im.size
     w_chars = (2 * w + 2 + 7) // 8
@@ -175,7 +185,51 @@ def big_text(cs: Charset, name: str) -> tuple[int, list[int]]:
                     for dx in range(2):
                         pixels[oy + 2 * y + dy][ox + 2 * x + dx] = True
     rows = tiles_of(pixels, w_chars, 2)
-    return w_chars, [cs.add(t) for row in rows for t in row]
+    return w_chars, [t for row in rows for t in row]
+
+
+def perfect_text(cs: Charset, lines: list[str], stable: set[int], free: list[int],
+                 in_next: dict[int, Tile], changing: set[int]) -> bytes:
+    """PERFECT (assets/attract/perfect.png) del GAME OVER, che nel set di caratteri pieno non c'è.
+
+    I caratteri uguali a uno di `stable` (quelli che nel GAME OVER sono sempre gli originali)
+    restano quelli; gli altri prendono, nell'ordine, i codici `free`, che fuori dalla demo non si
+    vedono. Contigui e in una pagina sola del set: il GAME OVER (play.s, ov_enter) ci copia dalla
+    cartuccia la pagina restituita qui (perfect_chars.bin), con PERFECT, i caratteri della demo
+    che in NEXT diventano altro (`in_next`: lì si vedono solo in NEXT) già come in NEXT e gli altri
+    originali; la demo rimette la pagina originale (demo_enter) prima di INSERT COIN e PRESS START.
+    Nella pagina non ci devono essere altri caratteri che cambiano (`changing`)."""
+    w, tiles = big_tiles("perfect")
+    reuse = {cs.tiles[c]: c for c in sorted(stable, reverse=True)}
+    new: list[Tile] = []
+    codes = []
+    for t in tiles:
+        if t in reuse:
+            codes.append(reuse[t])
+            continue
+        if t not in new:
+            new.append(t)
+        codes.append(free[new.index(t)])
+    assert len(new) <= len(free), f"PERFECT: {len(new)} caratteri nuovi, liberi {len(free)}"
+    used = free[: len(new)]
+    assert used == list(range(used[0], used[0] + len(used))), f"PERFECT: caratteri non contigui {used}"
+    first = used[0] // 32 * 32
+    assert used[-1] < first + 32, f"PERFECT: caratteri su due pagine del set {used}"
+    assert not set(used) & stable and not set(used) & set(in_next)
+    page_codes = range(first, first + 32)
+    assert not set(page_codes) & (changing - set(in_next)), "PERFECT: nella pagina un carattere che cambia"
+    page = bytearray()
+    for c in page_codes:
+        t = new[c - used[0]] if c in used else in_next.get(c, cs.tiles[c])
+        page += bytes(t)
+    assert all(bytes(page[8 * (c - first) : 8 * (c - first) + 8]) == bytes(cs.tiles[c]) for c in codes if c not in used and c in page_codes)
+    lines.append("; PERFECT del GAME OVER: i caratteri PERFECT_C0... (di INSERT COIN e PRESS START) con PERFECT")
+    lines.append("; solo nel GAME OVER (ov_enter, gen/perfect_chars.bin), la demo rimette gli originali (demo_enter)")
+    lines.append(f"BIG_PERFECT_W = {w}")
+    lines.append(".define BIG_PERFECT " + ", ".join(str(c) for c in codes))
+    lines.append(f"PERFECT_C0 = {used[0]}")
+    lines.append(f"PERFECT_CHARS = {len(used)}")
+    return bytes(page)
 
 
 SPRITE_BANDS = 10  # altezze della banda grigia EVO (la più alta: area di 8 pixel, 9 righe)
@@ -469,7 +523,7 @@ def bar_glyph(px: int) -> bytes:
     return bytes((0xFF, fill, fill, fill, 0xFF, 0, 0, 0))
 
 
-def supers_assets(lines: list[str], charset: bytes, demo_only: set[int], pick_range: range) -> bytes:
+def supers_assets(lines: list[str], charset: bytes, demo_only: set[int], pick_range: range) -> tuple[bytes, list[int]]:
     """Barra, icone e tracce degli effetti delle mosse speciali (definizioni in assets.inc).
 
     Il set di caratteri è pieno: la barra prende in NEXT il posto di BAR_CHARS caratteri di PRESS
@@ -477,7 +531,8 @@ def supers_assets(lines: list[str], charset: bytes, demo_only: set[int], pick_ra
     supers.s li scrive a inizio partita, bullet_chars rimette gli originali (restituiti qui, per la
     pagina $FF00) nelle altre partite. Le tracce MOVE e SPECIAL sono quelle della ROM della musica
     (tools/gen_sid_music.py le mette in fondo, dopo i temi, fuori da sid_music.bin): qui si
-    prendono da sid_music.hex, con gli indirizzi di sid_music.vh (SID_GEN)."""
+    prendono da sid_music.hex, con gli indirizzi di sid_music.vh (SID_GEN). Restituisce anche i
+    codici della barra."""
     free = sorted(c for c in demo_only if c >= pick_range.stop)
     bar = free[:BAR_CHARS]
     assert bar == list(range(bar[0], bar[0] + BAR_CHARS)), f"caratteri della barra non contigui: {bar}"
@@ -512,7 +567,7 @@ def supers_assets(lines: list[str], charset: bytes, demo_only: set[int], pick_ra
         track = rom[start:end]
         assert track and start >= param("SID_ROM_BASE_SIZE"), name
         lines.append(f".define SID_TRACK_{name} " + ", ".join(f"${b:02X}" for b in track))
-    return bytes(charset[8 * bar[0] : 8 * (bar[0] + BAR_CHARS)])
+    return bytes(charset[8 * bar[0] : 8 * (bar[0] + BAR_CHARS)]), bar
 
 
 def sprite(w: int, h: int) -> bytes:
@@ -1027,8 +1082,8 @@ def voice_files() -> dict[str, bytes]:
         assert raw, name    # (che con il player stia in VOICE_PAGES pagine lo controlla voice.s)
         files[f"voice{kind}.bin"] = raw
     # READY e GO del conto alla rovescia, uguali per tutti: solo nel file del primo livello; YOU
-    # WIN nel banco della vittoria (tools/make_crt.py), per il GAME OVER e il finale
-    for name in ("ready", "go", "you_win"):
+    # WIN e PERFECT nel banco della vittoria (tools/make_crt.py), per il GAME OVER e il finale
+    for name in ("ready", "go", "you_win", "perfect"):
         raw = (VOICES / f"{name}.raw4").read_bytes()
         assert raw, name
         files[f"{name}.bin"] = raw
@@ -1263,7 +1318,17 @@ def main() -> None:
     page = bytearray(256)
     page[0x40:0xC0] = bullet_bytes
     page[0xC0] = 0x60
-    page[BAR_ORIG : BAR_ORIG + 8 * BAR_CHARS] = supers_assets(lines, charset, demo_only, pick_range)
+    bar_orig, bar = supers_assets(lines, charset, demo_only, pick_range)
+    page[BAR_ORIG : BAR_ORIG + 8 * BAR_CHARS] = bar_orig
+    # PERFECT del GAME OVER: sui caratteri della demo dentro le pagine della scelta (non quelli
+    # della barra delle mosse, che stanno dopo, né quello preso dal BULLET), riusando quelli che
+    # nel GAME OVER sono sempre gli originali (non della demo né presi dal BULLET in NEXT); nella
+    # sua pagina il carattere del BULLET (e quelli della barra, se ci fossero) come in NEXT
+    stable = set(range(len(cs.tiles))) - demo_only - set(spare)
+    perfect_free = sorted(c for c in demo_only if c in pick_range and c != spare[-1] and c not in bar)
+    in_next = {spare[-1]: cap_tiles(B_BULLET)[len(spare) - 1]}
+    in_next |= {c: tuple(bar_glyph(2 * i)) for i, c in enumerate(bar)}
+    files["perfect_chars.bin"] = perfect_text(cs, lines, stable, perfect_free, in_next, set(spare) | set(bar))
     title = files["title.bin"]
     assert len(title) <= 0x800
     (OUT / "pick_bank.bin").write_bytes(bytes(pick) + bytes(page) + title + bytes(0x800 - len(title)))

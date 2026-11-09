@@ -102,8 +102,8 @@ will change in the next revisions.
   the TWIST paddle and a comparison with the 1972 Pong.
 - [The Deck](hardware/deck/README.en.md): the console to print, parts, components and assembly.
 - [Raspberry Pi cabinet](deploy/raspberry/README.en.md): models, encoder wiring, installation.
-- The individual versions (in Italian): [Rust](rust/README.md), [MiSTer core](mister/README.md),
-  [Commodore 64](c64/README.md).
+- The individual versions: [Rust](rust/README.en.md), [MiSTer core](mister/README.en.md),
+  [Commodore 64](c64/README.en.md).
 - What's new in each version (in Italian): [CHANGELOG.md](CHANGELOG.md).
 
 ## Contributing

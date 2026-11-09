@@ -263,6 +263,13 @@ fn ui(m: &mut Machine) -> bool {
             return false;
         }
     }
+    match perfect_ui(m) {
+        Ok(s) => println!("  {s}"),
+        Err(e) => {
+            println!("FAIL: PERFECT nel GAME OVER: {e}");
+            return false;
+        }
+    }
     // GHOST (Next::ball_hidden): palla nascosta nei tick in cui non si vede, e mai la coda, che la
     // tradirebbe; senza GHOST, con il boost, la coda c'è
     m.write_u8("m_next", 0, 1);
@@ -4045,6 +4052,7 @@ fn dash(m: &mut Machine) -> Result<String, String> {
 const ST_ENDING: u8 = 16;
 const ST_OVER: u8 = 8;
 const ST_CONT: u8 = 12;
+const ST_DEMO: u8 = 4;
 const SID_SONG_ENDING: u8 = 8;
 /// canzone del titolo e quella dell'easter egg delle iniziali (il finale letto dalla cartuccia)
 const SID_SONG_TITLE: u8 = 1;
@@ -4088,7 +4096,12 @@ fn quiet_inputs(m: &mut Machine) {
 
 /// Quante volte YOU WIN! (gen/you_win.bin) compare intera nelle scritture in $D418.
 fn you_win_count(got: &[u8]) -> Result<usize, String> {
-    let (want, _) = voice_writes("you_win.bin")?;
+    voice_count(got, "you_win.bin")
+}
+
+/// Quante volte la voce `file` (in c64/gen) compare intera nelle scritture in $D418.
+fn voice_count(got: &[u8], file: &str) -> Result<usize, String> {
+    let (want, _) = voice_writes(file)?;
     Ok(got.windows(want.len()).filter(|w| *w == &want[..]).count())
 }
 
@@ -4569,6 +4582,251 @@ fn ending_ui(m: &mut Machine) -> Result<String, String> {
         "finale saltato con il fuoco (frame giocati: {}), sempre con l'uscita pulita; YOU WIN nel GAME OVER solo se vince chi gioca contro la CPU (da sola e centrata), detta non all'ultimo livello; CPU WINS da sola a un livello perso, GAME OVER quando il continue scade ({} frame, poi iniziali o classifica)",
         lines.join(", "),
         left - over_at
+    ))
+}
+
+/// Scritta PERFECT del GAME OVER (play.s, OV_PERFECT: la mappa sta nel codice del GAME OVER, che
+/// enter_over copia dalla cartuccia).
+const OV_PERFECT: u8 = 5;
+const OV_P1_WINS: u8 = 2;
+/// win_pg a voce finita, con le tabelle dei quadrati da rifare (WIN_SAID di play.s).
+const WIN_SAID: u8 = 19;
+
+/// Lista `.define NOME ...` di c64/gen/assets.inc (numeri decimali o `$` esadecimali).
+fn assets_list(name: &str) -> Vec<u8> {
+    let inc = std::fs::read_to_string(c64_dir().join("gen/assets.inc")).unwrap_or_default();
+    let prefix = format!(".define {name} ");
+    inc.lines()
+        .find_map(|l| l.strip_prefix(prefix.as_str()))
+        .map(|l| {
+            l.split(',')
+                .filter_map(|v| {
+                    let v = v.trim();
+                    match v.strip_prefix('$') {
+                        Some(h) => u8::from_str_radix(h, 16).ok(),
+                        None => v.parse().ok(),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// La scritta grande `codes` (2 righe di `codes.len() / 2` caratteri) è nel primo schermo dalla
+/// riga `row`, centrata.
+fn big_codes_at(m: &Machine, codes: &[u8], row: u16) -> bool {
+    let w = codes.len() as u16 / 2;
+    let col = (40 - w) / 2;
+    (0..2).all(|r| (0..w).all(|c| m.cpu.mem[(0xC000 + (row + r) * 40 + col + c) as usize] == codes[(r * w + c) as usize]))
+}
+
+/// PERFECT nel GAME OVER, come sul PC e sul MiSTer: vinta da un giocatore (non dalla CPU) con chi
+/// perde a 0 punti, PERFECT da sola al posto di YOU WIN contro la CPU, al posto di GAME OVER sopra
+/// P1 / P2 WINS in due; la voce PERFECT una volta al posto di YOU WIN (anche in due, non
+/// all'ultimo livello di CHALLENGE). Le altre partite come prima. Ogni GAME OVER dal frame con
+/// l'ultimo punto (enter_over copia il suo codice dalla cartuccia), nel budget; cambia solo la
+/// pagina del set di caratteri con PERFECT, e solo con PERFECT; finita la voce le tabelle dei
+/// quadrati si rifanno già nel GAME OVER. Poi, dopo un PERFECT, l'attract fino alla demo: INSERT COIN e PRESS START con i
+/// loro caratteri.
+fn perfect_ui(m: &mut Machine) -> Result<String, String> {
+    let inc = std::fs::read_to_string(c64_dir().join("gen/assets.inc")).map_err(|e| format!("assets.inc: {e}"))?;
+    let charset = std::fs::read(c64_dir().join("gen/charset.bin")).map_err(|e| format!("charset.bin: {e}"))?;
+    let (Some(c0), Some(n)) = (inc_const(&inc, "PERFECT_C0"), inc_const(&inc, "PERFECT_CHARS")) else {
+        return Err("assets.inc: manca PERFECT_C0 o PERFECT_CHARS".into());
+    };
+    let perfect = assets_list("BIG_PERFECT");
+    if perfect.len() != 2 * inc_const(&inc, "BIG_PERFECT_W").unwrap_or(0) {
+        return Err("assets.inc: BIG_PERFECT della lunghezza sbagliata".into());
+    }
+    // la pagina del set di caratteri che il GAME OVER copia con PERFECT: diversa da quella
+    // originale solo nei caratteri di PERFECT e in quelli che in NEXT sono del BULLET (lì come in
+    // NEXT, gen/pick_bank.bin a $FF40: fuori da NEXT nel GAME OVER non si vedono)
+    let page = std::fs::read(c64_dir().join("gen/perfect_chars.bin")).map_err(|e| format!("perfect_chars.bin: {e}"))?;
+    let pick = std::fs::read(c64_dir().join("gen/pick_bank.bin")).map_err(|e| format!("pick_bank.bin: {e}"))?;
+    let first = c0 / 32 * 32;
+    if page.len() != 256 || c0 + n > first + 32 || pick.len() < 0x900 {
+        return Err("perfect_chars.bin o pick_bank.bin della lunghezza sbagliata, o PERFECT su due pagine".into());
+    }
+    for c in first..first + 32 {
+        let bullet = (0..8).find(|&i| inc_const(&inc, &format!("BULLET_C{i}")) == Some(c));
+        let want = match bullet {
+            Some(i) => &pick[0x840 + 8 * i..0x848 + 8 * i],
+            None => &charset[8 * c..8 * c + 8],
+        };
+        if !(c0..c0 + n).contains(&c) && page[8 * (c - first)..8 * (c - first) + 8] != *want {
+            return Err(format!("perfect_chars.bin: carattere {c} diverso da quello che deve restare"));
+        }
+    }
+    // ogni carattere della scritta: della pagina copiata o, fuori, l'originale
+    let tile_of = |code: u8| -> Vec<u8> {
+        let c = code as usize;
+        if (first..first + 32).contains(&c) { page[8 * (c - first)..8 * (c - first) + 8].to_vec() } else { charset[8 * c..8 * c + 8].to_vec() }
+    };
+    if perfect.iter().any(|&c| !(c0..c0 + n).contains(&(c as usize)) && tile_of(c)[..] != charset[8 * c as usize..8 * c as usize + 8]) {
+        return Err("PERFECT: un carattere riusato non è l'originale".into());
+    }
+    const CHARSET: usize = 0xC800;
+    const OV_RUN: usize = 0xF800;
+    m.call("math_ensure");
+    let squares: Vec<u8> = m.cpu.mem[0xF000..0xF800].to_vec();
+    let (mut worst_enter, mut worst) = (0u64, 0u64);
+    for (cg, level, cpu, players, left, right, next, labels, voice, what) in [
+        (0u8, 0u8, 4u8, 2u8, 11u8, 0u8, 0u8, &[OV_PERFECT][..], Some("perfect.bin"), "contro la CPU 11 a 0"),
+        (0, 0, 0, 2, 0, 11, 1, &[OV_PERFECT][..], Some("perfect.bin"), "NEXT contro la CPU, chi gioca a destra, 0 a 11"),
+        (0, 0, 0xFF, 2, 0, 11, 0, &[OV_PERFECT, OV_P2_WINS][..], Some("perfect.bin"), "in due 0 a 11"),
+        (0, 0, 0xFF, 2, 11, 0, 1, &[OV_PERFECT, OV_P1_WINS][..], Some("perfect.bin"), "NEXT in due 11 a 0"),
+        (0, 0, 4, 2, 11, 3, 0, &[OV_YOU_WIN][..], Some("you_win.bin"), "contro la CPU 11 a 3"),
+        (0, 0, 4, 2, 0, 11, 0, &[OV_GAME_OVER, OV_CPU_WINS][..], None, "la CPU vince 11 a 0"),
+        (0, 0, 0xFF, 2, 3, 11, 0, &[OV_GAME_OVER, OV_P2_WINS][..], None, "in due 3 a 11"),
+        (0, 0, 0xFF, 1, 0, 0, 0, &[OV_GAME_OVER][..], None, "in singolo"),
+        (1, 2, 4, 2, 5, 0, 1, &[OV_PERFECT][..], Some("perfect.bin"), "livello 3 di CHALLENGE 5 a 0"),
+        (1, 2, 4, 2, 0, 5, 1, &[OV_CPU_WINS][..], None, "livello 3 di CHALLENGE perso 0 a 5"),
+        (2, 6, 0xFF, 2, 5, 0, 1, &[OV_PERFECT, OV_P1_WINS][..], Some("perfect.bin"), "sfida di CHALLENGE all'ultimo livello 5 a 0"),
+        (1, 6, 4, 2, 5, 0, 1, &[OV_PERFECT][..], None, "ultimo livello di CHALLENGE 5 a 0"),
+    ] {
+        quiet_inputs(m);
+        m.cpu.a = m.read_u8("rung_kind", 0);
+        m.call("ef_voice");
+        m.call("math_ensure");
+        for (name, v) in [
+            ("cg_active", cg),
+            ("ch_level", level),
+            ("ch_side", 0),
+            ("cpu_side", cpu),
+            ("m_players", players),
+            ("m_next", next),
+            ("ch_phase", 0),
+            ("lives", 0),
+        ] {
+            m.write_u8(name, 0, v);
+        }
+        for (o, v) in [(0u16, left), (1, 0), (4, right), (5, 0)] {
+            m.write_u8("score", o, v);
+        }
+        m.call("clear_screen");
+        // i caratteri di PERFECT originali (come dopo la demo), il codice del GAME OVER cancellato
+        // (BRK): deve copiarlo enter_over
+        m.cpu.mem[CHARSET + 8 * c0..CHARSET + 8 * (c0 + n)].copy_from_slice(&charset[8 * c0..8 * (c0 + n)]);
+        m.cpu.mem[OV_RUN..OV_RUN + 0x200].fill(0);
+        let before: Vec<u8> = m.cpu.mem[CHARSET..CHARSET + 0x800].to_vec();
+        // il frame dopo l'ultimo punto
+        m.write_u8("state", 0, ST_PLAY);
+        m.write_u8("over_next", 0, 1);
+        m.cpu.watch = Some((0xD418, 0xD418));
+        m.cpu.writes.clear();
+        let c = full_frame(m).map_err(|e| format!("{what}: frame del GAME OVER: {e}"))?;
+        if m.read_u8("state", 0) != ST_OVER || c > FRAME_BUDGET {
+            return Err(format!("{what}: frame del GAME OVER con lo stato {} e {c} cicli", m.read_u8("state", 0)));
+        }
+        worst_enter = worst_enter.max(c);
+        over_labels(m, labels).map_err(|e| format!("{what}: {e}"))?;
+        let shown = labels[0] == OV_PERFECT;
+        if shown != big_codes_at(m, &perfect, 10) {
+            return Err(format!("{what}: PERFECT {} nelle righe 10-11", if shown { "non" } else { "di troppo" }));
+        }
+        for code in 0..256usize {
+            let want = if shown && (first..first + 32).contains(&code) { tile_of(code as u8) } else { before[8 * code..8 * code + 8].to_vec() };
+            if m.cpu.mem[CHARSET + 8 * code..CHARSET + 8 * code + 8] != want[..] {
+                return Err(format!("{what}: carattere {code} cambiato dal GAME OVER"));
+            }
+        }
+        if shown && perfect.iter().any(|&code| m.cpu.mem[CHARSET + 8 * code as usize..CHARSET + 8 * code as usize + 8] != tile_of(code)[..]) {
+            return Err(format!("{what}: caratteri di PERFECT sbagliati"));
+        }
+        let mut frames = 0;
+        let mut rebuilt = None;
+        while m.read_u8("state", 0) == ST_OVER && frames < 200 {
+            if m.read_u8("timer", 0) == 1 {
+                rebuilt = Some(m.read_u8("math_ready", 0) != 0 && m.cpu.mem[0xF000..0xF800] == squares[..]);
+            }
+            let ef = m.cpu.ef_cycles;
+            let c = full_frame(m).map_err(|e| format!("{what}, frame {frames} (win_pg {}): {e}", m.read_u8("win_pg", 0)))?;
+            // (dopo la sfida la presentazione: la copia del file voce è un caricamento, come in frames)
+            let c = if m.read_u8("state", 0) == ST_INTRO { c - (m.cpu.ef_cycles - ef) } else { c };
+            if c > FRAME_BUDGET {
+                return Err(format!("{what}: frame {frames} del GAME OVER di {c} cicli"));
+            }
+            worst = worst.max(c);
+            frames += 1;
+        }
+        let got: Vec<u8> = m.cpu.writes.iter().map(|w| w.1).collect();
+        m.cpu.watch = None;
+        for file in ["perfect.bin", "you_win.bin"] {
+            let said = voice_count(&got, file)?;
+            let want = (voice == Some(file)) as usize;
+            if said != want {
+                return Err(format!("{what}: {file} detta {said} volte invece di {want}"));
+            }
+        }
+        if m.cpu.read16(0xFFFA) != m.addr("nmi_handler") || m.cpu.cia2.running {
+            return Err(format!("{what}: NMI della voce ancora acceso"));
+        }
+        // con la voce (campioni sulle tabelle dei quadrati) le tabelle rifatte prima della fine;
+        // senza, mai toccate
+        if rebuilt != Some(true) || (voice.is_some() && m.read_u8("win_pg", 0) != WIN_SAID) {
+            return Err(format!(
+                "{what}: tabelle dei quadrati {} all'ultimo frame del GAME OVER (win_pg {})",
+                if rebuilt.is_none() { "non viste" } else { "non pronte" },
+                m.read_u8("win_pg", 0)
+            ));
+        }
+        // dall'ultimo livello si va al finale: lo si chiude (dopo la copia)
+        if m.read_u8("state", 0) == ST_ENDING {
+            while m.read_u8("e_part", 0) == 0 {
+                full_frame(m)?;
+            }
+            m.call("close_enter");
+            while m.read_u8("state", 0) == ST_ENDING {
+                full_frame(m)?;
+            }
+        }
+    }
+    // dopo un PERFECT l'attract, fino alla demo: INSERT COIN e PRESS START con i loro caratteri
+    quiet_inputs(m);
+    m.call("math_ensure");
+    let free = m.read_u8("opt_free", 0);
+    for (name, v) in [("cg_active", 0u8), ("cpu_side", 4), ("m_players", 2), ("m_next", 0), ("ch_phase", 0), ("opt_free", 0), ("credits", 0)] {
+        m.write_u8(name, 0, v);
+    }
+    for (o, v) in [(0u16, 11u8), (1, 0), (4, 0), (5, 0)] {
+        m.write_u8("score", o, v);
+    }
+    m.write_u8("state", 0, ST_PLAY);
+    m.write_u8("over_next", 0, 1);
+    full_frame(m)?;
+    if !big_codes_at(m, &perfect, 10) {
+        return Err("prima della demo: PERFECT non a schermo".into());
+    }
+    let labels = [assets_list("BIG_INSERT_COIN"), assets_list("BIG_PRESS_START")];
+    let mut frames = 0u32;
+    let mut seen = [false; 2];
+    while frames < 12_000 && !seen[0] {
+        full_frame(m).map_err(|e| format!("verso la demo, frame {frames} (stato {}): {e}", m.read_u8("state", 0)))?;
+        frames += 1;
+        if m.read_u8("state", 0) != ST_DEMO {
+            continue;
+        }
+        for code in labels.iter().flatten() {
+            let c = *code as usize;
+            if m.cpu.mem[CHARSET + 8 * c..CHARSET + 8 * c + 8] != charset[8 * c..8 * c + 8] {
+                return Err(format!("demo: carattere {c} di INSERT COIN / PRESS START non originale"));
+            }
+        }
+        let label = m.read_u8("demo_label", 0);
+        if (1..=2).contains(&label) {
+            if !big_codes_at(m, &labels[label as usize - 1], 11) {
+                return Err(format!("demo: scritta {label} non a schermo"));
+            }
+            seen[label as usize - 1] = true;
+        }
+    }
+    if !seen[0] {
+        return Err(format!("demo senza INSERT COIN dopo {frames} frame (stato {})", m.read_u8("state", 0)));
+    }
+    m.write_u8("opt_free", 0, free);
+    m.call("math_ensure");
+    Ok(format!(
+        "PERFECT nel GAME OVER da solo contro la CPU e sopra P1 / P2 WINS in due, con la voce (non all'ultimo livello di CHALLENGE); YOU WIN, CPU WINS, GAME OVER come prima; solo la pagina di PERFECT del set di caratteri cambia; frame dell'ultimo punto al più {worst_enter} cicli, GAME OVER al più {worst}; poi la demo con INSERT COIN e i caratteri originali (dopo {frames} frame)"
     ))
 }
 

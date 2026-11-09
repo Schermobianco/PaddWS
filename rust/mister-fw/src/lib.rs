@@ -4,7 +4,7 @@
 //!
 //! - [`map`]: indirizzi della memoria e dei registri MMIO, gli stessi di `pong_logic_rv.v`;
 //! - [`words`]: parole di stato (il formato delle tracce di paddws-trace, vedi
-//!   `mister/README.md`) e codifica dei comandi: un'unica codifica per le tracce e il firmware;
+//!   `words.rs`) e codifica dei comandi: un'unica codifica per le tracce e il firmware;
 //! - [`engine`]: il ciclo del firmware (nuova partita, tick con le CPU), generico sul bus, così
 //!   gira uguale nel firmware vero e nei banchi di prova sul PC.
 

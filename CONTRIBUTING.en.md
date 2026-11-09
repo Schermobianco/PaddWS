@@ -44,7 +44,7 @@ Some files are generated and must not be edited by hand: `mister/rtl/gen/*.vh` (
 `assets/attract/` (from `tools/gen_attract_assets.py`). Change the generator and regenerate them.
 
 On the C64 a frame can't take more than 18,000 cycles (`paddws-c64 frames` checks it) and the zero
-page is full: see [c64/README.md](c64/README.md) (in Italian).
+page is full: see [c64/README.en.md](c64/README.en.md).
 
 ## Building and checking
 

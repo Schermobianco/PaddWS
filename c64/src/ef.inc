@@ -19,7 +19,8 @@ PRG_BANK    = 1                 ; 1-4: il programma da $0800 a $CFFF, poi l'imma
 VOICE_BANK0 = 5                 ; 5-11: la voce del tipo 0 (ARCADE), poi una per tipo
 PICK_BANK   = 12                ; i caratteri della scelta dei bonus, la pagina $FF00 e il titolo
                                 ; (gen/pick_bank.bin)
-WIN_BANK    = 13                ; "YOU WIN!" con il player delle voci (voice.inc, WIN_RUN)
+WIN_BANK    = 13                ; "YOU WIN!" con il player delle voci (voice.inc, WIN_RUN), poi
+                                ; lo stesso con "PERFECT!" (WIN_PERFECT)
 END_BANK    = 14                ; 14-15: il finale di CHALLENGE (src/ending.s)
 HI_BANK     = 16                ; la classifica di CHALLENGE: settore 2 della ROML (banchi 16-23),
                                 ; solo per lei; nella ROMH dello stesso banco i vettori (un RTI)

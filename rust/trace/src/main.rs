@@ -7,8 +7,8 @@
 //!
 //! Le prove del firmware (`paddws-fw-sim`, `mister/sim/rv`) rigiocano input e stato e confrontano,
 //! tick per tick, il proprio stato con quello atteso: devono coincidere bit per bit.
-//! Il formato è descritto in `mister/README.md`, tranne le novità del BULLET, documentate qui in
-//! `state_words` (riserva a 4 bit per posto, timer e lato del BULLET).
+//! Il formato è descritto in `rust/mister-fw/src/words.rs`, tranne le novità del BULLET,
+//! documentate qui in `state_words` (riserva a 4 bit per posto, timer e lato del BULLET).
 
 use std::fmt::Write as _;
 use std::fs;
@@ -333,7 +333,7 @@ impl Script {
     }
 }
 
-/// Stato dopo un tick: parole a 32 bit nell'ordine documentato in mister/README.md. La codifica
+/// Stato dopo un tick: parole a 32 bit nell'ordine documentato in `rust/mister-fw/src/words.rs`. La codifica
 /// è quella del firmware del core MiSTer (`paddws_mister_fw::words`), con le novità del BULLET.
 fn state_words(m: &Match, events: u16) -> Vec<u32> {
     let mut w = [0; words::TRACE_WORDS];

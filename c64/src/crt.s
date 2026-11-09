@@ -1,7 +1,8 @@
 ; Avvio della cartuccia EasyFlash (paddws.crt, tools/make_crt.py): all'accensione copia il
-; programma in RAM e lo avvia, poi si spegne. Nella flash restano le 7 voci di CHALLENGE, i
-; caratteri della scelta dei bonus e la classifica: le routine del programma che li leggono e la
-; scrivono (src/ef.s) stanno nella RAM della cartuccia, dove le copia la fine di questo avvio.
+; programma in RAM e lo avvia, poi si spegne. Nella flash restano le voci, i caratteri della
+; scelta dei bonus, il finale, la HOW TO PLAY e la classifica: le routine del programma che li
+; leggono e la scrivono (src/ef.s) stanno nella RAM della cartuccia, dove le copia la fine di
+; questo avvio.
 ;
 ; Banchi da 16 KB (nel modo a 16K ROML a $8000, ROMH a $A000; costanti in src/ef.inc):
 ;   0      ROMH: questo avvio (a $E000 nel modo Ultimax dell'accensione), il nome e i vettori
@@ -10,7 +11,10 @@
 ;   5-11   ROML: il file voce di ogni tipo di racchetta (voice.s, senza l'indirizzo di caricamento;
 ;          da VOICE_RES la parte che resta del file del primo livello)
 ;   12     ROML: il set di caratteri della scelta dei bonus, la pagina $FF00 e il titolo (gen/pick_bank.bin)
+;   13     ROML: il banco della vittoria, "YOU WIN!" e "PERFECT!" con il player delle voci
+;   14-15  ROML: il finale di CHALLENGE (src/ending.s)
 ;   16     ROML: la classifica (si scrive); ROMH: i vettori, per gli NMI durante la scrittura
+;   24-25  ROML: la HOW TO PLAY delle mosse speciali (gen/howto.bin)
 ;
 ; A $DF00-$DFFF 256 byte di RAM, sempre visibili con l'I/O acceso: prima il caricatore (che gira
 ; mentre i banchi cambiano), poi le routine di src/ef.s. La loro copia, l'ultima cosa che fa il

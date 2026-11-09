@@ -62,7 +62,7 @@ jobs:
           dir="paddws-$version-${{ matrix.name }}"
           mkdir -p "$dir"
           cp "target/release/${{ matrix.exe }}" "$dir/"
-          cp ../padd_config.json README.md ../LICENSE ../THIRD_PARTY.md ../assets/fonts/OFL-Munro.txt "$dir/"
+          cp ../padd_config.json ../LICENSE ../THIRD_PARTY.md ../assets/fonts/OFL-Munro.txt "$dir/"
           if [ "$RUNNER_OS" = "Windows" ]; then 7z a "$dir.zip" "$dir" > /dev/null; archive="$dir.zip"
           else tar czf "$dir.tar.gz" "$dir"; archive="$dir.tar.gz"; fi
           echo "archive=rust/$archive" >> "$GITHUB_OUTPUT"
@@ -137,7 +137,7 @@ jobs:
           dir="paddws-$version-linux-armv7"
           mkdir -p "$dir"
           cp target/armv7-unknown-linux-gnueabihf/release/paddws "$dir/"
-          cp ../padd_config.json README.md ../LICENSE ../THIRD_PARTY.md ../assets/fonts/OFL-Munro.txt "$dir/"
+          cp ../padd_config.json ../LICENSE ../THIRD_PARTY.md ../assets/fonts/OFL-Munro.txt "$dir/"
           tar czf "$dir.tar.gz" "$dir"
           echo "archive=rust/$dir.tar.gz" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"

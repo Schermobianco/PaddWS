@@ -39,14 +39,14 @@ tools/           release, portable Rust environment, generators for icons, attra
 docs/            documentation: it/ and en/ (pages and PDFs), shared screenshots, icons and flags
 ```
 
-Each version has its own README: [Rust](../../rust/README.md),
-[MiSTer](../../mister/README.md) and [Commodore 64](../../c64/README.md) in Italian,
-[Raspberry Pi](../../deploy/raspberry/README.en.md) in English too.
+Each version has its own README: [Rust](../../rust/README.en.md),
+[MiSTer](../../mister/README.en.md), [Commodore 64](../../c64/README.en.md) and
+[Raspberry Pi](../../deploy/raspberry/README.en.md).
 
 ## Running from source
 
 Rust version (on Windows with the portable toolchain; Linux and details in
-[rust/README.md](../../rust/README.md)):
+[rust/README.en.md](../../rust/README.en.md)):
 
 ```powershell
 . .\tools\rust-env.ps1
@@ -98,7 +98,7 @@ cd rust && cargo run --release -p paddws-c64 -- game   # against the Rust core
 
 The GitHub Actions `Python`, `Rust`, `MiSTer` and `C64` run the same checks; `MiSTer` also
 synthesises the core with Quartus 17.0.2, `C64` assembles the program with cc65 and tries it in the
-test bench (see [c64/README.md](../../c64/README.md), in Italian). They only run manually (*Run
+test bench (see [c64/README.en.md](../../c64/README.en.md)). They only run manually (*Run
 workflow*, `gh workflow run`, `build_ongithub.bat` or `check_ongithub.bat`). The same checks run
 locally with `build_onforge.bat -CheckOnly`, or, on files not committed yet, with `check_onforge.bat`.
 

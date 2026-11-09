@@ -23,13 +23,14 @@ crea il commit e il tag `vX.Y.Z`.
   kernel e Mesa. Guida di forge anche in inglese.
 - Documentazione in inglese anche per il cabinato Raspberry Pi (`deploy/raspberry`) e per l'immagine
   della SD del Deck.
-- PC, Raspberry, web e MiSTer: **PERFECT** quando un giocatore vince senza che l'avversario faccia
-  un punto, come il bonus PERFECT dei livelli della CHALLENGE. Contro la CPU la scritta PERFECT
-  prende il posto di YOU WIN; in due va al posto di GAME OVER, sopra P1 WINS o P2 WINS (sul MiSTer,
-  con le scritte ruotate verso i giocatori, solo dal lato di chi ha vinto). In tutti e due i casi lo
-  urla una voce nuova, "PEEERFECT!" come nei picchiaduro (`assets/sounds/voice/perfect.*`). Non vale
-  quando vince la CPU. Il C64 resta com'è: il set di
-  caratteri è pieno e nel programma restano 7 byte.
+- **PERFECT** quando un giocatore vince senza che l'avversario faccia un punto, come il bonus
+  PERFECT dei livelli della CHALLENGE, su tutte le versioni tranne Python. Contro la CPU la scritta
+  PERFECT prende il posto di YOU WIN; in due va al posto di GAME OVER, sopra P1 WINS o P2 WINS (sul
+  MiSTer, con le scritte ruotate verso i giocatori, solo dal lato di chi ha vinto). In tutti e due i
+  casi lo urla una voce nuova, "PEEERFECT!" come nei picchiaduro (`assets/sounds/voice/perfect.*`).
+  Non vale quando vince la CPU. Sul C64 la scelta fra YOU WIN e PERFECT è passata nella cartuccia,
+  come la classifica e il finale, e la scritta usa per il GAME OVER i caratteri di INSERT COIN e
+  PRESS START: nel programma i byte liberi passano da 7 a 88.
 
 ### Modificato
 - NEXT: la palla e la sua scia passano **sopra** le scritte del bonus e delle mosse speciali, invece

@@ -70,7 +70,8 @@ over_next: .res 1               ; partita finita: GAME OVER al prossimo frame
 fx_pend:   .res 1               ; effetti sonori rimandati dal frame prima (già avanti)
 match_song: .res 1              ; musica della prossima partita: il tema di CHALLENGE, o 0
 cpu_side:  .res 1               ; lato della CPU in partita * 4 ($ff nessuna)
-win_pg:    .res 1               ; YOU WIN nel GAME OVER: 0 no, 1-16 prossima pagina + 1, poi detta
+win_pg:    .res 1               ; YOU WIN o PERFECT nel GAME OVER: 0 no, 1-16 prossima pagina + 1,
+                                ; poi da dire, detta, finita (WIN_SAID)
 
 .segment "CODE"
 
@@ -158,6 +159,46 @@ win_pg:    .res 1               ; YOU WIN nel GAME OVER: 0 no, 1-16 prossima pag
     jmp ch_after
 .endproc
 .segment "CODE"
+.elseif .defined(OVERTEST)
+; Build per le schermate del GAME OVER (-Define OVERTEST=n): una partita EVO che finisce subito,
+; al primo frame. n = 1 contro la CPU vinta 11 a 0 (PERFECT), 2 in due 0 a 11 (PERFECT e P2 WINS),
+; 3 contro la CPU vinta 11 a 3 (YOU WIN), 4 contro la CPU persa 0 a 11; senza FREE PLAY, così la demo
+; dopo mostra INSERT COIN. Tra le routine dell'avvio.
+.segment "BOOTCODE"
+.proc overtest_setup
+    lda #3
+    .if ::OVERTEST = 2
+    lda #2
+    .endif
+    sta opt_players
+    lda #1
+    sta opt_mode
+    lda #0                      ; nella demo dopo, INSERT COIN
+    sta opt_free
+    jsr start_game
+    .if ::OVERTEST = 1
+    lda #11
+    sta score
+    .elseif ::OVERTEST = 2
+    lda #11
+    sta score+4
+    .elseif ::OVERTEST = 3
+    lda #11
+    sta score
+    lda #3
+    sta score+4
+    .else
+    lda #11
+    sta score+4
+    .endif
+    jsr draw_scores
+    lda #ST_PLAY
+    sta state
+    lda #1
+    sta over_next
+    rts
+.endproc
+.segment "CODE"
 .endif
 
 .proc play_main
@@ -177,6 +218,8 @@ win_pg:    .res 1               ; YOU WIN nel GAME OVER: 0 no, 1-16 prossima pag
     sta screen_clear
 .if .defined(ENDTEST)
     jsr endtest_setup           ; build per le schermate del finale (sotto, tra le routine dell'avvio)
+.elseif .defined(OVERTEST)
+    jsr overtest_setup          ; build per le schermate del GAME OVER (sopra)
 .elseif .defined(AUTOSTART)
     lda #3                      ; build per le schermate: subito una partita EVO contro la CPU
     sta opt_players
@@ -538,8 +581,16 @@ done:
 
 ; ------------------------------------------------------------------------------------ demo
 
-; Partita dimostrativa: due CPU, EVO, difficoltà Normal.
+; Partita dimostrativa: due CPU, EVO, difficoltà Normal. Prima i caratteri di INSERT COIN e
+; PRESS START che il GAME OVER può aver usato per PERFECT (ov_enter): la loro pagina del set di
+; caratteri, dalla cartuccia (circa 3.800 cicli).
 .proc demo_enter
+    lda #$80 + PERFECT_PAGE
+    sta ef_src+2
+    lda #CHARSET_BANK
+    ldx #1
+    ldy #>CHARSET + PERFECT_PAGE
+    jsr ef_copy
     jsr math_ensure
     lda #0
     sta cfg_next
@@ -1404,12 +1455,32 @@ yes:
 ; GAME OVER, e sotto chi ha vinto (in due). Da sola, al posto di GAME OVER, la scritta di chi ha
 ; vinto quando la partita non è finita davvero o è vinta: YOU WIN contro la CPU, CPU WINS a un
 ; livello perso di CHALLENGE (poi il continue; il GAME OVER se scade, cont_over), come sul PC e
-; sul MiSTer. Il riquadro: 4 righe con una scritta, 7 con due.
+; sul MiSTer. Vinta da un giocatore (non dalla CPU) con l'avversario a 0 punti, PERFECT: al posto
+; di YOU WIN, o di GAME OVER sopra chi ha vinto. Il riquadro: 4 righe con una scritta, 7 con due.
 OV_GAME_OVER = 0                ; scritte grandi del GAME OVER (over_lo e le altre tabelle)
 OV_YOU_WIN   = 1
-OV_P1_WINS   = 2                ; da qui con GAME OVER sopra
+OV_P1_WINS   = 2                ; da qui con GAME OVER (o PERFECT) sopra
 OV_P2_WINS   = 3
 OV_CPU_WINS  = 4
+OV_PERFECT   = 5                ; la mappa è nel codice del GAME OVER: solo da ov_enter
+; Chi ha vinto, le scritte e la voce stanno nella cartuccia (segmento OVCODE, nel .prg da OV_IMG,
+; dopo la classifica) e girano a OV_RUN, sul tema di CHALLENGE (che nel GAME OVER tace e si ricopia
+; nella presentazione dopo) e nella bitmap dell'attract (che dopo si rifà da capo): enter_over lo
+; copia (una pagina, circa 3.800 cicli) e ci salta; poi lo coprono i campioni del banco della
+; vittoria (over_scene). Nel programma restano enter_over, over_big e over_scene. Dopo il codice,
+; nella pagina dopo, la pagina del set di caratteri con PERFECT (OVCHARS, gen/perfect_chars.bin).
+OV_RUN   = $F800                ; dove gira (paddws.cfg, OVRAM)
+OV_IMG   = $DE00                ; dove sta nel .prg (OVIMG), poi nella flash
+OV_BANK  = PRG_BANK + (OV_IMG - $0800) / $4000
+OV_SRC   = $80 + ((OV_IMG - $0800) .mod $4000) / 256
+.import __OVCODE_LOAD__, __OVCODE_RUN__, __OVCODE_SIZE__, __OVCHARS_LOAD__
+.assert __OVCODE_LOAD__ = OV_IMG .and __OVCODE_RUN__ = OV_RUN, lderror, "GAME OVER fuori posto"
+.assert __OVCODE_SIZE__ <= $100 .and __OVCHARS_LOAD__ = OV_IMG + $100, lderror, "GAME OVER oltre una pagina"
+.assert ((OV_IMG - $0800) .mod $4000) + $0200 <= $2000, error, "GAME OVER oltre la ROML del banco"
+.assert OV_RUN = THEME_BASE .and OV_RUN >= WIN_SAMPLES .and OV_RUN + $100 <= WIN_RUN + WIN_PAGES * 256, error, "GAME OVER fuori dal tema o dal banco della vittoria"
+; pagina del set di caratteri con i caratteri di PERFECT (gen/perfect_chars.bin)
+PERFECT_PAGE = PERFECT_C0 * 8 / 256
+.assert (PERFECT_C0 + PERFECT_CHARS - 1) * 8 / 256 = PERFECT_PAGE, error, "PERFECT: caratteri su due pagine"
 .proc enter_over
     jsr shots_erase             ; le scritte vanno sul campo pulito
     lda #ST_OVER
@@ -1421,86 +1492,13 @@ OV_CPU_WINS  = 4
 :   jsr sid_song
     lda #AT_GAME_OVER_FRAMES
     sta timer
-    lda #COL_BLACK
-    sta sh_bg
-    sta win_pg
-    ldx #OV_GAME_OVER           ; in singolo solo GAME OVER
-    lda m_players
-    cmp #2
-    bne box
-    ; vince chi ha più punti (a parità il destro): Y = lato del vincitore * 4
-    ldy #0
-    lda score+5
-    cmp score+1
-    bcc :+
-    bne right
-    lda score+4
-    cmp score
-    bcc :+
-right:
-    ldy #4
-:   ; contro la CPU YOU WIN o CPU WINS (chi gioca può essere a destra), in due P1 o P2 WINS
-    lda cpu_side
-    bmi humans
-    sty m_t
-    ldx #OV_CPU_WINS
-    cmp m_t
-    beq box
-    ; la voce YOU WIN, come sul PC (non all'ultimo livello di CHALLENGE: la dice il finale)
-    lda cg_active
-    beq :+
-    lda ch_level
-    cmp #CH_LEVELS - 1
-    beq :++
-:   inc win_pg
-:   ldx #OV_YOU_WIN
-    bne box
-humans:
-    ldx #OV_P1_WINS
-    tya
-    beq box
-    inx
-box:
-    ; Y = 1 con una scritta sola: GAME OVER in singolo, YOU WIN, CPU WINS nella scalata
-    ldy #1
-    cpx #OV_P1_WINS
-    bcc push
-    cpx #OV_CPU_WINS
-    bne pair
-    lda cg_active
-    cmp #CG_LADDER
-    beq push
-pair:
-    ldy #0
-push:
-    txa
-    pha
-    tya
-    pha
-    lda #4
-    cpy #1
-    beq :+
-    lda #7
-:   sta v_n
-    lda #16
-    ldx #12
-    ldy #9
-    jsr blank_box
-    pla                         ; una scritta sola: quella, nella riga di GAME OVER
-    tay
-    pla
-    cpy #0
-    beq :+
-    tax
-    ldy #10
-    jmp over_big
-:   pha                         ; due: GAME OVER e sotto chi ha vinto
-    ldx #OV_GAME_OVER
-    ldy #10
-    jsr over_big
-    pla
-    tax
-    ldy #13                     ; (prosegue in over_big)
+    lda #OV_SRC
+    sta ef_src+2
+    lda #OV_BANK
+    ldx #1
+    ldy #>OV_RUN
+    jsr ef_copy
+    jmp ov_enter
 .endproc
 ; Scritta grande X del GAME OVER (OV_*), centrata nella riga Y.
 .proc over_big
@@ -1515,31 +1513,157 @@ push:
     pla
     jmp draw_big
 .endproc
-over_lo:  .lobytes big_game_over, big_you_win, big_p1_wins, big_p2_wins, big_cpu_wins
-over_hi:  .hibytes big_game_over, big_you_win, big_p1_wins, big_p2_wins, big_cpu_wins
-over_w:   .byte BIG_GAME_OVER_W, BIG_YOU_WIN_W, BIG_P1_WINS_W, BIG_P2_WINS_W, BIG_CPU_WINS_W
+over_lo:  .lobytes big_game_over, big_you_win, big_p1_wins, big_p2_wins, big_cpu_wins, big_perfect
+over_hi:  .hibytes big_game_over, big_you_win, big_p1_wins, big_p2_wins, big_cpu_wins, big_perfect
+over_w:   .byte BIG_GAME_OVER_W, BIG_YOU_WIN_W, BIG_P1_WINS_W, BIG_P2_WINS_W, BIG_CPU_WINS_W, BIG_PERFECT_W
 over_col: .byte (40 - BIG_GAME_OVER_W) / 2, (40 - BIG_YOU_WIN_W) / 2, (40 - BIG_P1_WINS_W) / 2
-          .byte (40 - BIG_P2_WINS_W) / 2, (40 - BIG_CPU_WINS_W) / 2
+          .byte (40 - BIG_P2_WINS_W) / 2, (40 - BIG_CPU_WINS_W) / 2, (40 - BIG_PERFECT_W) / 2
 
-; Dopo il GAME OVER si torna all'attract. Contro la CPU, se vince chi gioca, "YOU WIN!": il banco
-; della vittoria (voice.inc) a WIN_RUN, due pagine per frame (circa 7.700 cicli), poi la voce. I
-; campioni stanno dove ci sono le tabelle dei quadrati e il tema, che poi si rifanno (math_step,
-; il file voce della presentazione dopo).
+.segment "OVCODE"
+; Il GAME OVER dopo enter_over (a OV_RUN): le scritte in top (righe 10-11) e bottom (13-14, $FF
+; nessuna); la voce in win_pg (1 da dire, come in over_scene), quale nell'immagine da copiare
+; (win_src): YOU WIN quando un giocatore batte la CPU, PERFECT al suo posto, anche in due, quando
+; chi perde ha 0 punti; all'ultimo livello di CHALLENGE nessuna (la dice il finale), ma la scritta
+; resta PERFECT, come sul PC.
+.proc ov_enter
+    lda #COL_BLACK
+    sta sh_bg
+    sta win_pg
+    lda #$80                    ; YOU WIN, all'inizio della ROML del banco della vittoria
+    sta win_src
+    lda m_players               ; in singolo solo GAME OVER
+    cmp #2
+    bne draw
+    ; vince chi ha più punti (a parità il destro): Y = lato del vincitore * 4
+    ldy #0
+    lda score+5
+    cmp score+1
+    bcc :+
+    bne right
+    lda score+4
+    cmp score
+    bcc :+
+right:
+    ldy #4
+:   ; partita perfetta: chi perde (dal lato Y eor 4) è a 0 punti
+    tya
+    eor #4
+    tax
+    lda score,x
+    ora score+1,x
+    sta lost                    ; 0: perfetta, se ha vinto un giocatore
+    ; contro la CPU YOU WIN o CPU WINS (chi gioca può essere a destra), in due P1 o P2 WINS
+    lda cpu_side
+    bmi humans
+    sty m_t
+    cmp m_t
+    bne you_win
+    ; ha vinto la CPU (niente PERFECT): GAME OVER e sotto CPU WINS, da sola a un livello perso
+    ; di CHALLENGE (si può ancora continuare)
+    lda #OV_CPU_WINS
+    ldx cg_active
+    cpx #CG_LADDER
+    bne :+
+    sta top
+    beq draw                    ; (Z dal confronto: sta non lo cambia)
+:   sta bottom
+    bne draw
+you_win:
+    ; la voce, come sul PC (non all'ultimo livello di CHALLENGE: la dice il finale)
+    lda cg_active
+    beq :+
+    lda ch_level
+    cmp #CH_LEVELS - 1
+    beq :++
+:   inc win_pg
+:   lda #OV_YOU_WIN             ; YOU WIN da sola, o PERFECT al suo posto
+    ldx lost
+    beq perfect
+    sta top
+    bne draw
+humans:
+    ldx #OV_P1_WINS
+    tya
+    beq :+
+    inx
+:   stx bottom
+    lda lost
+    bne draw
+    inc win_pg                  ; in due la voce c'è solo per PERFECT, che va al posto di GAME OVER
+perfect:
+    lda #OV_PERFECT
+    sta top
+    lda #WIN_PERFECT            ; "PERFECT!" al posto di "YOU WIN!"
+    sta win_src
+    ; i caratteri di PERFECT al posto di alcuni di INSERT COIN e PRESS START, che si vedono solo
+    ; nella demo (demo_enter rimette gli originali): la loro pagina dalla cartuccia
+    lda #OV_SRC + 1
+    sta ef_src+2
+    lda #OV_BANK
+    ldx #1
+    ldy #>CHARSET + PERFECT_PAGE
+    jsr ef_copy
+draw:
+    ; il riquadro: 4 righe con una scritta, 7 con due
+    lda #4
+    ldx bottom
+    bmi :+
+    lda #7
+:   sta v_n
+    lda #16
+    ldx #12
+    ldy #9
+    jsr blank_box
+    ldx top
+    ldy #10
+    jsr over_big
+    ldx bottom
+    bmi :+
+    ldy #13
+    jmp over_big
+:   rts
+lost:   .byte 0                 ; punti di chi perde (byte basso | alto)
+; (valori di partenza: il codice si ricopia dalla cartuccia a ogni GAME OVER)
+top:    .byte OV_GAME_OVER
+bottom: .byte $ff
+.endproc
+big_perfect: .byte BIG_PERFECT
+.segment "OVCHARS"
+    .incbin "perfect_chars.bin"
+.segment "CODE"
+
+; Dopo il GAME OVER si torna all'attract. Contro la CPU, se vince chi gioca, "YOU WIN!" (o
+; "PERFECT!", anche in due: lo sceglie ov_enter): l'immagine del banco della vittoria (voice.inc)
+; a WIN_RUN, due pagine per frame (circa 7.700 cicli), poi la voce. I campioni stanno dove ci sono
+; le tabelle dei quadrati e il tema, che poi si rifanno (math_step, il file voce della
+; presentazione dopo).
 .proc over_scene
     ldx win_pg
     beq tick
     cpx #WIN_PAGES + 1
     bcc copy
-    bne tick                    ; (già detta)
+    bne said
     inc win_pg
     ldx #<WIN_DESC
     ldy #>WIN_DESC
     jsr VOICE_SAY
     jmp tick
+said:
+    ; finita la voce (l'NMI di nuovo del programma), una volta: le tabelle dei quadrati, coperte
+    ; dai campioni, si rifanno già nel GAME OVER (math_step), così sono pronte per quello che segue
+    ; (dopo la sfida di CHALLENGE subito la presentazione, che non lascia tempo a math_step)
+    cpx #WIN_SAID
+    beq tick
+    bit $fffb
+    bmi tick
+    inc win_pg
+    jsr math_invalidate
+    jmp tick
 copy:
     dex
     txa
-    ora #$80
+src:
+    ora #$80                    ; ($80 YOU WIN, WIN_PERFECT PERFECT: lo sceglie ov_enter)
     sta ef_src+2
     txa
     clc
@@ -1555,7 +1679,9 @@ copy:
 tick:
     dec timer
     bne done
-    lda win_pg
+    ldx win_pg                  ; (se la voce non fosse finita)
+    beq :+
+    cpx #WIN_SAID
     beq :+
     jsr math_invalidate
 :   lda cg_active               ; CHALLENGE: livello superato o continue
@@ -1566,4 +1692,7 @@ stripes:
 done:
     rts
 .endproc
+win_src = over_scene::src + 1
+WIN_SAID = WIN_PAGES + 3        ; win_pg: voce finita, tabelle dei quadrati da rifare
 .assert WIN_PAGES .mod 2 = 0, error, "YOU WIN: pagine a coppie"
+.assert WIN_PERFECT .mod WIN_PAGES = 0 .and WIN_PAGES <= 16, error, "PERFECT: pagine dell'immagine con ora"

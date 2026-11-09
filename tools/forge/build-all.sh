@@ -77,27 +77,27 @@ fi
 
 step "Windows x86_64 (MinGW)"
 (cd rust && cargo build --release -q -p paddws --target x86_64-pc-windows-gnu)
-stage windows-x86_64 rust/target/x86_64-pc-windows-gnu/release/paddws.exe padd_config.json rust/README.md $licenses
+stage windows-x86_64 rust/target/x86_64-pc-windows-gnu/release/paddws.exe padd_config.json $licenses
 zipdir "paddws-$version-windows-x86_64"
 
 step "Linux x86_64"
 (cd rust && cargo build --release -q -p paddws)
 glibc objdump rust/target/release/paddws
-stage linux-x86_64 rust/target/release/paddws padd_config.json rust/README.md $licenses
+stage linux-x86_64 rust/target/release/paddws padd_config.json $licenses
 tardir "paddws-$version-linux-x86_64"
 
 step "Linux aarch64 (compilazione incrociata)"
 (cd rust && PKG_CONFIG_ALLOW_CROSS=1 PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig \
     cargo build --release -q -p paddws --target aarch64-unknown-linux-gnu)
 glibc aarch64-linux-gnu-objdump rust/target/aarch64-unknown-linux-gnu/release/paddws
-stage linux-aarch64 rust/target/aarch64-unknown-linux-gnu/release/paddws padd_config.json rust/README.md $licenses
+stage linux-aarch64 rust/target/aarch64-unknown-linux-gnu/release/paddws padd_config.json $licenses
 tardir "paddws-$version-linux-aarch64"
 
 step "Linux armv7 (compilazione incrociata, Raspberry Pi OS a 32 bit)"
 (cd rust && PKG_CONFIG_ALLOW_CROSS=1 PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig \
     cargo build --release -q -p paddws --target armv7-unknown-linux-gnueabihf)
 glibc arm-linux-gnueabihf-objdump rust/target/armv7-unknown-linux-gnueabihf/release/paddws
-stage linux-armv7 rust/target/armv7-unknown-linux-gnueabihf/release/paddws padd_config.json rust/README.md $licenses
+stage linux-armv7 rust/target/armv7-unknown-linux-gnueabihf/release/paddws padd_config.json $licenses
 tardir "paddws-$version-linux-armv7"
 
 step "web"
@@ -107,5 +107,5 @@ zipdir "paddws-$version-web"
 
 step "C64"
 sh c64/build.sh
-stage c64 c64/build/paddws.crt c64/README.md $licenses
+stage c64 c64/build/paddws.crt $licenses
 zipdir "paddws-$version-c64"
