@@ -14,6 +14,8 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+## [4.1.0] - 2026-11-10
+
 ### Aggiunto
 - Sviluppo: **`create_forge.bat`** crea da zero la VM forge in VMware Workstation, senza domande.
   Scarica l'immagine cloud di Debian 13, la configura con cloud-init (utente con la chiave ssh del
@@ -1073,6 +1075,7 @@ Ricostruite dalle cartelle di backup in `archive/` (date indicative).
 - **1.5** (2020-08) – versione per Raspberry Pi con encoder rotativi.
 - **1.1 – 1.4** (2020-08) – prime versioni pygame: menu, modalità CLASSIC ed EVO, suoni, splash.
 
-[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.0.1...HEAD
+[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.1.0...HEAD
+[4.1.0]: https://github.com/Schermobianco/PaddWS/compare/v4.1.0-beta.2...v4.1.0
 [4.0.1]: https://github.com/Schermobianco/PaddWS/compare/v4.0.0...v4.0.1
 [4.0.0]: https://github.com/Schermobianco/PaddWS/compare/v4.0.0-beta.22...v4.0.0
