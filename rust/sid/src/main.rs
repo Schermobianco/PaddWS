@@ -4,8 +4,17 @@
 //! ```text
 //! paddws-sid render CANZONE OUT.wav [--fast] [--slow] [--seconds S] [--rate HZ]
 //! paddws-sid compare CANZONE RIF.wav [--save OUT.wav]
+//! paddws-sid compare voice:NOME RIF.wav [--save OUT.wav]
+//! paddws-sid compare fx:EFFETTO[_slow] RIF.wav [--save OUT.wav]
 //! paddws-sid bench
 //! ```
+//!
+//! `voice:NOME` (il nome di un avversario in minuscolo, o `stop`) rifà le prove della voce della
+//! CHALLENGE di `mister/sim/sid/render.cpp` (`render.ps1 CARTELLA -Voice`, file
+//! `intro_voice_NOME.wav`): il jingle della presentazione e la voce al frame 26 a 60 Hz; con `stop`
+//! la voce di ARCADE fermata a 0,8 s, poi il silenzio e l'effetto del colpo. `fx:EFFETTO` (`wall`,
+//! `hit`, `boost`, `score`, `coin`, `move`, `special`; con `_slow` rallentato) è l'effetto da solo
+//! dal reset, come i file `EFFETTO.wav` e `EFFETTO_slow.wav` di render.cpp.
 //!
 //! CANZONE è il numero (da 1) o il nome di `sid_music.vh` in minuscolo (`title`, `theme_hammer`...).
 //! Le registrazioni di riferimento (mono, 16 bit, 44,1 kHz, dall'inizio della canzone) le fa
@@ -41,7 +50,7 @@ fn main() -> ExitCode {
         Some("bench") => bench(),
         _ => Err(
             "uso: paddws-sid render CANZONE OUT.wav [--fast] [--slow] [--seconds S] [--rate HZ]\n\
-                  \x20     paddws-sid compare CANZONE RIF.wav [--save OUT.wav]\n\
+                  \x20     paddws-sid compare CANZONE|voice:NOME|fx:EFFETTO RIF.wav [--save OUT.wav]\n\
                   \x20     paddws-sid bench"
                 .into(),
         ),
@@ -227,17 +236,80 @@ fn octave_bands(x: &[f32], rate: u32) -> Vec<(f64, f64)> {
         .collect()
 }
 
+/// Le prove della voce di render.cpp: dal reset, il jingle della presentazione (canzone 2), al
+/// frame 26 a 60 Hz il nome; `stop`: ARCADE fermata a 0,8 s, canzone 0 e l'effetto del colpo.
+fn voice_scene(name: &str, rate: u32, len: usize) -> Result<Vec<f32>, String> {
+    const NAMES: [&str; 7] = ["arcade", "titan", "hammer", "twist", "blaster", "rush", "guardian"];
+    let stop = name == "stop";
+    let id = if stop {
+        0
+    } else {
+        NAMES
+            .iter()
+            .position(|&n| n == name)
+            .ok_or(format!("voce {name:?} sconosciuta: {}, stop", NAMES.join(", ")))? as u8
+    };
+    let mut music = Music::new(rate);
+    let mut got = vec![0.0; len];
+    // nel MiSTer il primo passo del player è dopo un frame da 50 Hz
+    let step = (rate as usize / 50).min(len);
+    music.render(&mut got[..step]);
+    music.set_song(2);
+    let at = ((26.0 / 60.0 * rate as f64) as usize).clamp(step, len);
+    music.render(&mut got[step..at]);
+    music.say(id);
+    if stop {
+        let end = ((0.8 * rate as f64) as usize).clamp(at, len);
+        music.render(&mut got[at..end]);
+        music.stop_voice();
+        music.set_song(0);
+        music.effect(1 << 1, false);
+        music.render(&mut got[end..]);
+    } else {
+        music.render(&mut got[at..]);
+    }
+    Ok(got)
+}
+
+/// Un effetto da solo, come in render.cpp: dal reset, gli eventi al primo ciclo.
+fn fx_scene(name: &str, rate: u32, len: usize) -> Result<Vec<f32>, String> {
+    const FX: [&str; 7] = ["wall", "hit", "boost", "score", "coin", "move", "special"];
+    let (fx, slow) = match name.strip_suffix("_slow") {
+        Some(fx) => (fx, true),
+        None => (name, false),
+    };
+    let i = FX
+        .iter()
+        .position(|&f| f == fx)
+        .ok_or(format!("effetto {fx:?} sconosciuto: {}", FX.join(", ")))?;
+    let mut music = Music::new(rate);
+    let mut got = vec![0.0; len];
+    // il primo passo del player Rust è al campione 0, quello del MiSTer dopo un frame da 50 Hz:
+    // l'effetto parte dopo il primo passo, così il passo dopo cade a 20 ms come nel MiSTer
+    music.render(&mut got[..1.min(len)]);
+    music.effect(1 << i, slow);
+    music.render(&mut got[1.min(len)..]);
+    Ok(got)
+}
+
 fn compare(name: &str, reference: &str, save: Option<String>) -> Result<(), String> {
     let (want, rate) = read_wav(reference)?;
-    let mut music = Music::new(rate);
-    let n = song(&music, name)?;
-    // come mister/sim/sid/render.cpp: due passi dopo il reset, poi la canzone dal passo dopo
-    // (conta per la fase degli arpeggi)
-    let mut preroll = vec![0.0; 2 * rate as usize / 50];
-    music.render(&mut preroll);
-    music.set_song(n);
-    let mut got = vec![0.0; want.len()];
-    music.render(&mut got);
+    let got = if let Some(voice) = name.strip_prefix("voice:") {
+        voice_scene(voice, rate, want.len())?
+    } else if let Some(fx) = name.strip_prefix("fx:") {
+        fx_scene(fx, rate, want.len())?
+    } else {
+        let mut music = Music::new(rate);
+        let n = song(&music, name)?;
+        // come mister/sim/sid/render.cpp: due passi dopo il reset, poi la canzone dal passo dopo
+        // (conta per la fase degli arpeggi)
+        let mut preroll = vec![0.0; 2 * rate as usize / 50];
+        music.render(&mut preroll);
+        music.set_song(n);
+        let mut got = vec![0.0; want.len()];
+        music.render(&mut got);
+        got
+    };
     if let Some(path) = &save {
         write_wav(path, &got, rate)?;
     }

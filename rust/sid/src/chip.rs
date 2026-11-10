@@ -4,12 +4,15 @@
 //! - Tre voci con oscillatore a 24 bit (frequenza a 16 bit) a 1 MHz.
 //! - Forme d'onda triangolo, dente di sega, impulso (larghezza a 12 bit) e rumore (LFSR a 23 bit
 //!   che avanza sul fronte di salita del bit 19 dell'oscillatore, come il chip). Le forme d'onda
-//!   combinate danno silenzio; ring, sync e il bit di test non ci sono (il player non li usa).
+//!   combinate danno silenzio; ring e sync non ci sono (il player non li usa). Il bit di test
+//!   tiene l'oscillatore a zero e l'impulso alto: è il DC della voce digitalizzata (`voice`).
 //! - Inviluppo ADSR con le tabelle dei tempi del chip, il contatore esponenziale del decadimento
 //!   e del rilascio, il contatore a 15 bit che fa ripartire il giro quando il periodo scende sotto
 //!   il conteggio (il ritardo dell'ADSR del chip vero).
 //! - DAC lineari e senza offset come nell'8580; senza forma d'onda il DAC tiene l'ultimo valore
 //!   per 5 secondi.
+//! - Un guadagno per voce (`set_gains`, 256 = 1): i volumi della musica e degli effetti, come il
+//!   `gain` delle voci di `mister/rtl/sid/sid_voice.sv` che scala l'inviluppo (non il $D418).
 //! - Il filtro dell'8580 (`Filter`): state variable a 12 dB/ottava con le tre uscite, la curva
 //!   lineare del taglio e la risonanza dell'8580, port del modo 8580 di
 //!   `mister/rtl/sid/sid_filter.sv` con la stessa aritmetica intera, un passo ogni 2 cicli. Gira
@@ -182,22 +185,43 @@ impl Voice {
     }
 
     /// Somma dell'uscita della voce in `n` cicli (DAC per inviluppo), e voce avanti di `n` cicli.
-    fn clock(&mut self, n: u32) -> i64 {
-        self.run::<false>(n, &mut [])
+    fn clock(&mut self, n: u32, gain: u32) -> i64 {
+        self.run::<false>(n, gain, &mut [])
     }
 
     /// Come `clock`, e in più somma l'uscita di ogni ciclo in `out` (lungo almeno `n`), per il
     /// filtro.
-    fn clock_into(&mut self, n: u32, out: &mut [i32]) -> i64 {
-        self.run::<true>(n, out)
+    fn clock_into(&mut self, n: u32, gain: u32, out: &mut [i32]) -> i64 {
+        self.run::<true>(n, gain, out)
     }
 
-    fn run<const PER_CYCLE: bool>(&mut self, n: u32, out: &mut [i32]) -> i64 {
-        let env = self.env as i64;
-        let e32 = self.env as i32;
+    /// `gain` (256 = 1) moltiplica l'inviluppo: nella somma senza perdere bit, nell'uscita ciclo
+    /// per ciclo del filtro con l'inviluppo arrotondato per difetto (a 256 è esatto).
+    fn run<const PER_CYCLE: bool>(&mut self, n: u32, gain: u32, out: &mut [i32]) -> i64 {
+        let env = self.env as i64 * gain as i64;
+        let e32 = ((self.env as u32 * gain) >> 8) as i32;
         let f = self.freq;
         let start = self.osc;
         let wave = self.ctrl >> 4;
+        if self.ctrl & 8 != 0 && wave != 0 {
+            // bit di test: oscillatore fermo a zero, uscita costante (l'impulso alto); l'LFSR non
+            // avanza (il rumore con il bit di test non serve)
+            self.osc = 0;
+            let d = self.wave_now();
+            let mut sum = 0;
+            if env != 0 && matches!(wave, 1 | 2 | 4 | 8) {
+                sum = ((d as i64 - 0x800) * n as i64 * env) >> 8;
+                if PER_CYCLE {
+                    for o in &mut out[..n as usize] {
+                        *o += (d as i32 - 0x800) * e32;
+                    }
+                }
+            }
+            self.dac = d as i32 - 0x800;
+            self.hold = DAC_HOLD_CYCLES;
+            self.env_clock(n);
+            return sum;
+        }
         // oscillatore dopo `n` cicli
         let end = start as u64 + n as u64 * f as u64;
         let mut sum = 0;
@@ -276,7 +300,7 @@ impl Voice {
                 }
             };
             self.osc = osc;
-            sum = (dacs as i64 - 0x800 * n as i64) * env;
+            sum = ((dacs as i64 - 0x800 * n as i64) * env) >> 8;
         }
         if wave == 0 {
             self.hold = self.hold.saturating_sub(n);
@@ -306,7 +330,7 @@ impl Voice {
             }
             2 => osc >> 12,
             4 => {
-                if osc >> 12 >= self.pw {
+                if self.ctrl & 8 != 0 || osc >> 12 >= self.pw {
                     0xFFF
                 } else {
                     0
@@ -411,6 +435,8 @@ pub struct Sid {
     voices: [Voice; 3],
     volume: u8,
     filter: Filter,
+    /// guadagno di ogni voce, 256 = 1
+    gains: [u32; 3],
 }
 
 impl Default for Sid {
@@ -426,7 +452,14 @@ impl Sid {
             voices: [Voice::new(), Voice::new(), Voice::new()],
             volume: 0,
             filter: Filter::default(),
+            gains: [256; 3],
         }
+    }
+
+    /// Guadagno di ogni voce (256 = 1): scala l'inviluppo, quindi l'uscita della voce ma non il
+    /// $D418.
+    pub fn set_gains(&mut self, gains: [u32; 3]) {
+        self.gains = gains;
     }
 
     /// Scrittura di un registro (0-0x18).
@@ -475,7 +508,7 @@ impl Sid {
         let off3 = f.mode & 8 != 0;
         let mut sum = 0;
         for (i, v) in self.voices.iter_mut().enumerate() {
-            let s = v.clock(n);
+            let s = v.clock(n, self.gains[i]);
             if !(i == 2 && off3) {
                 sum += s;
             }
@@ -495,12 +528,13 @@ impl Sid {
         let off3 = self.filter.mode & 8 != 0;
         let mut direct = 0;
         for (i, v) in self.voices.iter_mut().enumerate() {
+            let g = self.gains[i];
             if route >> i & 1 != 0 {
-                v.clock_into(k as u32, &mut filtered[..k]);
+                v.clock_into(k as u32, g, &mut filtered[..k]);
             } else if i == 2 && off3 {
-                v.clock(k as u32);
+                v.clock(k as u32, g);
             } else {
-                direct += v.clock(k as u32);
+                direct += v.clock(k as u32, g);
             }
         }
         let f = &mut self.filter;

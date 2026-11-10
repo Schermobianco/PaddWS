@@ -33,6 +33,18 @@ crea il commit e il tag `vX.Y.Z`.
   PRESS START: nel programma i byte liberi passano da 7 a 88.
 
 ### Modificato
+- PC, Raspberry e web: **effetti e voci li suona il SID Rust** come il MiSTer, al posto dei WAV
+  (tolti da `assets/sounds/sid` e `assets/sounds/voice`; `tools/gen_voices.py` non li scrive più e
+  `render.ps1` vuole sempre la cartella). Gli effetti vanno sulla voce 3 del SID: uno per frame,
+  scelto con le priorità del MiSTer, e quello nuovo interrompe quello in corso; nel bullet time
+  rallentano con le regole del MiSTer, e al match point restano a 50 Hz mentre la canzone accelera.
+  Il nome dell'avversario nella presentazione della CHALLENGE usa il trucco del volume (`$D418`):
+  intanto il jingle tace, gli effetti aspettano, e la voce si ferma se la presentazione finisce
+  prima. Le urla delle mosse, READY, GO, YOU WIN e PERFECT si sommano all'uscita del SID. Voci ed
+  effetti seguono EFFECTS VOLUME; le voci hanno il livello del MiSTer, più basso di prima (il nome
+  circa 12 dB, le voci di partita circa 5 dB). Il SID Rust ha ora il bit di test, un guadagno per
+  voce e il passo degli effetti separato da quello della canzone; `paddws-sid compare fx:EFFETTO` e
+  `voice:NOME` confrontano effetti e voci con le registrazioni del core simulato.
 - NEXT: la palla e la sua scia passano **sopra** le scritte del bonus e delle mosse speciali, invece
   di finirci sotto (sul C64 era già così: la palla è uno sprite). Sul PC la palla si ridisegna solo
   quando tocca una scritta, così nel bullet time resta sfocata con il campo.
@@ -42,6 +54,12 @@ crea il commit e il tag `vX.Y.Z`.
   lo chiede a VMware e va avanti con quello; se forge è già accesa non prova più ad accenderla.
 
 ### Corretto
+- PC, Raspberry e web: il salto del **TELEPORT** suonava spesso il boost due volte, una sopra
+  l'altra (con il bonus attivato nello stesso tick o pochi tick prima), e sembrava un suono
+  rallentato o con l'eco. Ora, con gli effetti sul SID, suona una volta sola come sul MiSTer.
+- C64: gli eventi di NEXT e dei tipi di racchetta suonano come sul MiSTer: capsula e barriera del
+  GUARDIAN il muro, sparo del BLASTER il colpo, bonus attivato e TELEPORT il boost, SUPER il punto.
+  Prima restavano muti.
 - MiSTer: la classifica di CHALLENGE ha l'elenco centrato sullo schermo come il titolo; era spostato
   di 14 pixel a sinistra.
 

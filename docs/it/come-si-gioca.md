@@ -169,8 +169,8 @@ o paddle conviene HARD o EXPERT.
 ## Suono
 
 Suoni e musiche passano per un **SID** (il chip del Commodore 64): sul MiSTer è quello del core C64
-(OSD *Sound*: SID 8580 o SID 6581); su PC, Raspberry e web le musiche le suona in tempo reale un SID
-scritto in Rust con lo stesso player (`rust/sid`), gli effetti sono registrati dal core simulato.
+(OSD *Sound*: SID 8580 o SID 6581); su PC, Raspberry e web musiche, effetti e voci li suona in
+tempo reale un SID scritto in Rust con lo stesso player (`rust/sid`), come il core MiSTer.
 
 - **MUSIC VOLUME** ed **EFFECTS VOLUME** (PC, Raspberry e web; sul MiSTer *Music volume* ed
   *Effects volume* nell'OSD) regolano la musica e gli effetti

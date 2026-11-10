@@ -121,8 +121,8 @@ Altri banchi di prova, più lenti o più specifici:
 
 - `.\mister\sim\rv\rv.ps1 [-Traces trace,...] [-Ticks N]`: il VexRiscv vero con il firmware contro
   le tracce di `run.ps1`, ciclo per ciclo, con i tempi di ogni tick (tutte: circa un'ora);
-- `.\mister\sim\sid\render.ps1 [cartella]`: canzoni ed effetti del player del SID in WAV (senza
-  cartella riscrive gli effetti in `assets/sounds/sid`);
+- `.\mister\sim\sid\render.ps1 CARTELLA [-Voice]`: canzoni, effetti e voci del SID in WAV, i
+  riferimenti del SID Rust (`paddws-sid compare`);
 - `.\mister\sim\sid\writes.ps1`: le scritture del player nei registri del SID, il riferimento del
   player Rust e di quello del C64.
 

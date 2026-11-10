@@ -122,8 +122,8 @@ Other test benches, slower or more specific:
 - `.\mister\sim\rv\rv.ps1 [-Traces trace,...] [-Ticks N]`: the real VexRiscv with the firmware
   against the traces from `run.ps1`, cycle by cycle, with the timing of each tick (all of them:
   about an hour);
-- `.\mister\sim\sid\render.ps1 [folder]`: songs and effects of the SID player as WAV files (without
-  a folder it rewrites the effects in `assets/sounds/sid`);
+- `.\mister\sim\sid\render.ps1 FOLDER [-Voice]`: songs, effects and voices of the SID as WAV
+  files, the reference for the Rust SID (`paddws-sid compare`);
 - `.\mister\sim\sid\writes.ps1`: the player's writes to the SID registers, the reference for the
   Rust player and the C64 one.
 

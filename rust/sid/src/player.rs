@@ -90,8 +90,9 @@ pub struct Player {
     rom: Rom,
     ch: [Chan; 4],
     active: [bool; 4],
-    /// passo degli arpeggi
+    /// passo degli arpeggi della canzone e degli effetti (uguali fuori dal match point)
     phase: u8,
+    fx_phase: u8,
     song: u8,
     song_new: bool,
     /// effetto rallentato e passo saltato (il canale 3 avanza un passo su due)
@@ -129,6 +130,7 @@ impl Player {
             ch: [Chan::default(); 4],
             active: [false; 4],
             phase: 0,
+            fx_phase: 0,
             song: 0,
             song_new: true,
             fx_slow: false,
@@ -173,6 +175,19 @@ impl Player {
         self.active.iter().any(|&a| a)
     }
 
+    /// Un effetto suona sulla voce 3 (la voce prende il guadagno degli effetti).
+    pub fn effect_playing(&self) -> bool {
+        self.active[3]
+    }
+
+    /// La voce digitalizzata ha il SID (`voice::NameVoice`): il filtro è spento ($D417 = 0 alla
+    /// sua partenza, $D418 = $0F alla fine) e la copia del player resta così, così la prima nota
+    /// nel filtro dopo la voce riscrive tutto (taglio, $D417, $D418), come in pong_sid.v.
+    pub fn voice_has_sid(&mut self) {
+        self.res_filt = 0;
+        self.vol_mode = 0x0F;
+    }
+
     /// Voce del SID del canale: registri da 0, 7 o 14 (gli effetti sulla voce 3).
     fn base(c: usize) -> u8 {
         [0, 7, 14, 14][c]
@@ -214,10 +229,23 @@ impl Player {
         self.serve(3, w);
     }
 
-    /// Un passo del player (50 volte al secondo nel MiSTer).
+    /// Un passo del player per la canzone e per gli effetti (50 volte al secondo nel MiSTer).
     pub fn tick(&mut self, w: &mut impl Writes) {
-        self.phase = if self.phase == 2 { 0 } else { self.phase + 1 };
-        let new = self.song_new;
+        self.step(true, true, w);
+    }
+
+    /// Un passo della canzone (`song`) e/o degli effetti (`fx`). Nel MiSTer hanno due divisori: al
+    /// match point la canzone avanza a 62,5 Hz e gli effetti restano a 50 Hz, ognuno con la sua
+    /// fase degli arpeggi; fuori dal match point i due passi coincidono (`tick`).
+    pub fn step(&mut self, song: bool, fx: bool, w: &mut impl Writes) {
+        let next = |p: u8| if p == 2 { 0 } else { p + 1 };
+        if song {
+            self.phase = next(self.phase);
+        }
+        if fx {
+            self.fx_phase = next(self.fx_phase);
+        }
+        let new = song && self.song_new;
         if new {
             // canzone nuova (o silenzio): i canali 0-2 ripartono
             self.song_new = false;
@@ -244,7 +272,7 @@ impl Player {
             self.sweep = 0;
         }
         // musica appena rallentata o tornata normale: le note in corso cambiano ottava subito
-        if self.retune {
+        if song && self.retune {
             self.retune = false;
             if !new {
                 for c in 0..3 {
@@ -256,10 +284,14 @@ impl Player {
             }
         }
         // l'effetto e la musica rallentati avanzano un passo su due
-        let serve_fx = !(self.fx_slow && self.fx_skip);
-        self.fx_skip = !self.fx_skip;
-        let serve_song = !(self.slow && self.skip);
-        self.skip = !self.skip;
+        let serve_fx = fx && !(self.fx_slow && self.fx_skip);
+        if fx {
+            self.fx_skip = !self.fx_skip;
+        }
+        let serve_song = song && !(self.slow && self.skip);
+        if song {
+            self.skip = !self.skip;
+        }
         if new && self.song == 0 {
             // silenzio: si chiude il gate delle voci della canzone, altrimenti l'ultima nota
             // resta tenuta (la voce 3 no se suona un effetto)
@@ -410,7 +442,8 @@ impl Player {
     fn run(&mut self, c: usize, w: &mut impl Writes) {
         let ch = self.ch[c];
         if ch.arp != 0 {
-            let note = ch.note.wrapping_add(arp_offset(ch.arp, self.phase)) & 0x7F;
+            let phase = if c == 3 { self.fx_phase } else { self.phase };
+            let note = ch.note.wrapping_add(arp_offset(ch.arp, phase)) & 0x7F;
             self.load_freq(c, note, w);
         } else if ch.slide != 0 {
             let f = ch.freq.wrapping_add(ch.slide as i8 as i16 as u16);

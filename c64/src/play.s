@@ -1397,9 +1397,39 @@ done:
     jsr next_fx_scene           ; NEXT: scritta del bonus attivato, segni di STEER
     jsr ch_tick                 ; CHALLENGE: punti arcade
     jsr ch_hud
-    ; effetto sonoro, con il frame già avanti al prossimo (avviarlo costa)
+    ; effetto sonoro, con il frame già avanti al prossimo (avviarlo costa). NEXT e tipi di
+    ; racchetta come nel MiSTer: capsula e barriera del GUARDIAN = muro, sparo del BLASTER =
+    ; colpo, bonus attivato e TELEPORT = boost, SUPER = punto (senza questi eventi, la via corta)
+    lda events
+    and #EV_COLLECT | EV_ACTIVATE | EV_SUPER | EV_TELEPORT
+    bne :+
+    lda events+1
+    and #EV_FIRE_HI | EV_BARRIER_HI
+    beq @fx_base                ; A = 0
+:   lda events
+    asl a
+    asl a
+    sta m_t                     ; bit 7 bonus attivato, bit 6 capsula
+    lda events+1
+    lsr a                       ; C = sparo; bit 0 = barriera
+    and #EV_WALL
+    bcc :+
+    ora #EV_HIT
+:   bit m_t
+    bpl :+
+    ora #EV_BOOST
+:   bvc :+
+    ora #EV_WALL
+:   bit events                  ; N = TELEPORT, V = SUPER
+    bpl :+
+    ora #EV_BOOST
+:   bvc @fx_base
+    ora #EV_SCORE
+@fx_base:
+    sta m_t
     lda events
     and #EV_WALL | EV_HIT | EV_BOOST | EV_SCORE   ; il bit 4 del player è il gettone
+    ora m_t
     ora fx_pend
     beq :+
     sta fx_pend

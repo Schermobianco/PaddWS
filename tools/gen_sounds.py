@@ -7,7 +7,7 @@ Uso:
 Suoni originali nello stile degli arcade del 1972: onde quadre come quelle dei contatori TTL,
 con le sole armoniche dispari fino alla nona (nessun aliasing a 48 kHz), un attacco e una fine
 di pochi millisecondi per non fare click. Mono, 16 bit, 48 kHz. Le altre versioni suonano gli
-effetti del SID (assets/sounds/sid).
+effetti con il SID (sul PC il SID Rust, rust/sid).
 """
 
 from __future__ import annotations

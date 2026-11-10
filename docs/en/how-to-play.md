@@ -172,9 +172,9 @@ spinner or paddles, HARD or EXPERT is a better choice.
 ## Sound
 
 Sounds and music go through a **SID** (the Commodore 64 sound chip): on the MiSTer it is the one of
-the C64 core (OSD *Sound*: SID 8580 or SID 6581); on PC, Raspberry and web the music is played in
-real time by a SID written in Rust with the same player (`rust/sid`), the effects are recorded from
-the simulated core.
+the C64 core (OSD *Sound*: SID 8580 or SID 6581); on PC, Raspberry and web music, effects and
+voices are played in real time by a SID written in Rust with the same player (`rust/sid`), like the
+MiSTer core.
 
 - **MUSIC VOLUME** and **EFFECTS VOLUME** (PC, Raspberry and web; on the MiSTer *Music volume* and
   *Effects volume* in the OSD) set music and effects (voices included) from 0% to 100%, in 10%

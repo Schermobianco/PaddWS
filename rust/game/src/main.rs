@@ -23,7 +23,6 @@ mod touch;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use macroquad::audio::{PlaySoundParams, load_sound_from_bytes, play_sound};
 use macroquad::prelude::*;
 use paddws_core::Params;
 
@@ -170,71 +169,10 @@ fn main() {
     macroquad::Window::from_config(conf, run(args, cfg, config_path));
 }
 
-/// Copia di un WAV PCM con la frequenza di campionamento dimezzata: suona a metà velocità,
-/// un'ottava sotto (il suono del bullet time). Senza il blocco `fmt ` resta com'è.
-fn slowed_wav(bytes: &[u8]) -> Vec<u8> {
-    let mut wav = bytes.to_vec();
-    let mut at = 12; // dopo "RIFF", dimensione e "WAVE"
-    while at + 8 <= wav.len() {
-        let size = u32::from_le_bytes([wav[at + 4], wav[at + 5], wav[at + 6], wav[at + 7]]) as usize;
-        if &wav[at..at + 4] == b"fmt " && at + 20 <= wav.len() {
-            // frequenza di campionamento a +12, byte al secondo a +16
-            for field in [at + 12, at + 16] {
-                let v = u32::from_le_bytes([wav[field], wav[field + 1], wav[field + 2], wav[field + 3]]);
-                wav[field..field + 4].copy_from_slice(&(v / 2).to_le_bytes());
-            }
-            break;
-        }
-        at += 8 + size + (size & 1);
-    }
-    wav
-}
-
-async fn load_assets() -> Assets {
-    let sound = async |bytes: &[u8]| {
-        load_sound_from_bytes(bytes)
-            .await
-            .expect("suono incluso nell'eseguibile")
-    };
-    let slow = async |bytes: &[u8]| sound(&slowed_wav(bytes)).await;
+fn load_assets() -> Assets {
     Assets {
         font_text: GameFont::from_bytes(include_bytes!("../../../assets/fonts/munro.ttf")),
         font_score: GameFont::from_bytes(include_bytes!("../../../assets/fonts/pong-score.ttf")),
-        sid: [
-            sound(include_bytes!("../../../assets/sounds/sid/wall.wav")).await,
-            sound(include_bytes!("../../../assets/sounds/sid/hit.wav")).await,
-            sound(include_bytes!("../../../assets/sounds/sid/boost.wav")).await,
-            sound(include_bytes!("../../../assets/sounds/sid/score.wav")).await,
-            sound(include_bytes!("../../../assets/sounds/sid/coin.wav")).await,
-            sound(include_bytes!("../../../assets/sounds/sid/move.wav")).await,
-            sound(include_bytes!("../../../assets/sounds/sid/special.wav")).await,
-        ],
-        slow_sid: [
-            slow(include_bytes!("../../../assets/sounds/sid/wall.wav")).await,
-            slow(include_bytes!("../../../assets/sounds/sid/hit.wav")).await,
-            slow(include_bytes!("../../../assets/sounds/sid/boost.wav")).await,
-            slow(include_bytes!("../../../assets/sounds/sid/score.wav")).await,
-            slow(include_bytes!("../../../assets/sounds/sid/coin.wav")).await,
-            slow(include_bytes!("../../../assets/sounds/sid/move.wav")).await,
-            slow(include_bytes!("../../../assets/sounds/sid/special.wav")).await,
-        ],
-        voices: [
-            sound(include_bytes!("../../../assets/sounds/voice/arcade.wav")).await,
-            sound(include_bytes!("../../../assets/sounds/voice/titan.wav")).await,
-            sound(include_bytes!("../../../assets/sounds/voice/hammer.wav")).await,
-            sound(include_bytes!("../../../assets/sounds/voice/twist.wav")).await,
-            sound(include_bytes!("../../../assets/sounds/voice/blaster.wav")).await,
-            sound(include_bytes!("../../../assets/sounds/voice/rush.wav")).await,
-            sound(include_bytes!("../../../assets/sounds/voice/guardian.wav")).await,
-        ],
-        shouts: [
-            sound(include_bytes!("../../../assets/sounds/voice/move_straight.wav")).await,
-            sound(include_bytes!("../../../assets/sounds/voice/move_rise.wav")).await,
-        ],
-        ready: sound(include_bytes!("../../../assets/sounds/voice/ready.wav")).await,
-        go: sound(include_bytes!("../../../assets/sounds/voice/go.wav")).await,
-        you_win: sound(include_bytes!("../../../assets/sounds/voice/you_win.wav")).await,
-        perfect: sound(include_bytes!("../../../assets/sounds/voice/perfect.wav")).await,
     }
 }
 
@@ -260,18 +198,8 @@ async fn run(args: Args, mut cfg: Config, config_path: PathBuf) {
     touch::init();
     platform::boost_priority();
     show_mouse(false);
-    let assets = load_assets().await;
-    platform::startup_mark("suoni e font");
-    for s in &assets.sid {
-        play_sound(
-            s,
-            PlaySoundParams {
-                looped: false,
-                volume: 0.0,
-            },
-        ); // apre subito il dispositivo audio
-    }
-    platform::startup_mark("dispositivo audio");
+    let assets = load_assets();
+    platform::startup_mark("font");
     // nell'ordine dei campi di App, per misurare i tempi dell'avvio
     let renderer = Renderer::new(cfg.resolution.width, cfg.resolution.height, cfg.game.keep_aspect);
     platform::startup_mark("renderer");
@@ -282,7 +210,10 @@ async fn run(args: Args, mut cfg: Config, config_path: PathBuf) {
     platform::startup_mark("encoder");
     let pads = gamepad::Pads::open();
     platform::startup_mark("gamepad");
-    let sid_music = music::SidMusic::start(config::volume_gain(cfg.game.music_volume));
+    let sid_music = music::SidMusic::start(
+        config::volume_gain(cfg.game.music_volume),
+        config::volume_gain(cfg.game.effects_volume),
+    );
     platform::startup_mark("musica SID");
     let mut app = App {
         params: Params::new(&cfg.tuning()),

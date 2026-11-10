@@ -1,6 +1,8 @@
 //! Musica del SID suonata in tempo reale dal SID Rust (`paddws-sid`): il player legge la ROM della
 //! musica come quello del MiSTer e del C64, quindi il tempo può cambiare in partita (match point,
-//! bullet time) senza registrazioni a parte.
+//! bullet time) senza registrazioni a parte. Anche effetti e voci "da SID" passano da qui, come
+//! nel MiSTer: gli effetti sulla voce 3 (uno alla volta), il nome dell'avversario con il trucco di
+//! $D418 (intanto la musica tace) e le voci di partita sommate all'uscita, al volume degli effetti.
 //!
 //! - Nativo (Windows, Linux, Raspberry): la sintesi gira nel thread audio, dentro il mixer di
 //!   quad-snd (`vendor/quad-snd`, `set_stream`), sopra gli effetti; i comandi arrivano con un
@@ -9,7 +11,7 @@
 //!   nello stesso AudioContext di quad-snd (blocchi da 2048, circa 45 ms); l'audio parte al primo
 //!   gesto dell'utente, come gli effetti. Lo ScriptProcessor funziona anche fuori da https.
 
-use paddws_sid::Music;
+use paddws_sid::{Call, Music};
 
 /// Volume della musica rispetto agli effetti (come i vecchi OGG suonati a 0,8), con MUSIC VOLUME
 /// al 100%.
@@ -26,6 +28,15 @@ enum Cmd {
     Slow(bool),
     /// volume finale (`VOLUME` per il guadagno di MUSIC VOLUME)
     Volume(f32),
+    /// volume delle voci (il guadagno di EFFECTS VOLUME)
+    FxVolume(f32),
+    /// CHALLENGE: il nome dell'avversario (`PaddleKind`), e la sua fine con la presentazione
+    Say(u8),
+    StopVoice,
+    /// voce di partita
+    Call(Call),
+    /// effetto per i bit degli eventi del frame, rallentato o no
+    Effect(u8, bool),
 }
 
 fn apply(m: &mut Music, cmd: Cmd) {
@@ -34,6 +45,11 @@ fn apply(m: &mut Music, cmd: Cmd) {
         Cmd::Fast(on) => m.set_fast(on),
         Cmd::Slow(on) => m.set_slow(on),
         Cmd::Volume(v) => m.set_volume(v),
+        Cmd::FxVolume(v) => m.set_fx_volume(v),
+        Cmd::Say(id) => m.say(id),
+        Cmd::StopVoice => m.stop_voice(),
+        Cmd::Call(c) => m.call(c),
+        Cmd::Effect(events, slow) => m.effect(events, slow),
     }
 }
 
@@ -45,17 +61,19 @@ pub struct SidMusic {
     fast: bool,
     slow: bool,
     gain: f32,
+    fx_gain: f32,
 }
 
 impl SidMusic {
-    /// Avvia la sorgente continua (in silenzio fino alla prima canzone), con il guadagno `gain` di
-    /// MUSIC VOLUME (da 0 a 1, `config::volume_gain`).
-    pub fn start(gain: f32) -> SidMusic {
+    /// Avvia la sorgente continua (in silenzio fino alla prima canzone), con i guadagni `gain` di
+    /// MUSIC VOLUME e `fx_gain` di EFFECTS VOLUME (da 0 a 1, `config::volume_gain`).
+    pub fn start(gain: f32, fx_gain: f32) -> SidMusic {
         #[cfg(not(target_arch = "wasm32"))]
         let tx = {
             let (tx, rx) = std::sync::mpsc::channel::<Cmd>();
             let mut music = Music::new(NATIVE_RATE);
             music.set_volume(VOLUME * gain);
+            music.set_fx_volume(fx_gain);
             quad_snd::set_stream(Some(Box::new(move |buffer: &mut [f32]| {
                 while let Ok(cmd) = rx.try_recv() {
                     apply(&mut music, cmd);
@@ -65,7 +83,7 @@ impl SidMusic {
             tx
         };
         #[cfg(target_arch = "wasm32")]
-        web::start(VOLUME * gain);
+        web::start(VOLUME * gain, fx_gain);
         SidMusic {
             #[cfg(not(target_arch = "wasm32"))]
             tx,
@@ -73,6 +91,7 @@ impl SidMusic {
             fast: false,
             slow: false,
             gain,
+            fx_gain,
         }
     }
 
@@ -82,6 +101,35 @@ impl SidMusic {
             self.gain = gain;
             self.send(Cmd::Volume(VOLUME * gain));
         }
+    }
+
+    /// Guadagno di EFFECTS VOLUME (da 0 a 1) per le voci: vale subito.
+    pub fn set_fx_gain(&mut self, gain: f32) {
+        if gain != self.fx_gain {
+            self.fx_gain = gain;
+            self.send(Cmd::FxVolume(gain));
+        }
+    }
+
+    /// CHALLENGE: il SID dice il nome dell'avversario (`PaddleKind`), se non sta già parlando.
+    pub fn say(&self, kind: u8) {
+        self.send(Cmd::Say(kind));
+    }
+
+    /// Fine della presentazione: il nome dell'avversario si ferma, se c'è ancora.
+    pub fn stop_voice(&self) {
+        self.send(Cmd::StopVoice);
+    }
+
+    /// Effetto del SID sulla voce 3 per i bit degli eventi (`paddws_sid::player::effect_of`): ne
+    /// suona uno per priorità e interrompe quello in corso; `slow` nel bullet time.
+    pub fn effect(&self, events: u8, slow: bool) {
+        self.send(Cmd::Effect(events, slow));
+    }
+
+    /// Voce di partita (urli delle mosse, READY, GO, YOU WIN, PERFECT): interrompe quella in corso.
+    pub fn call(&self, call: Call) {
+        self.send(Cmd::Call(call));
     }
 
     fn send(&self, cmd: Cmd) {
@@ -130,11 +178,12 @@ mod web {
         static MUSIC: RefCell<Option<(Music, Vec<f32>)>> = const { RefCell::new(None) };
     }
 
-    pub fn start(volume: f32) {
+    pub fn start(volume: f32, fx_volume: f32) {
         let rate = unsafe { paddws_music_init() };
         if rate > 0 {
             let mut music = Music::new(rate);
             music.set_volume(volume);
+            music.set_fx_volume(fx_volume);
             MUSIC.with(|m| *m.borrow_mut() = Some((music, Vec::new())));
         }
     }

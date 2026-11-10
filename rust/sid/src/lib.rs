@@ -7,11 +7,15 @@
 //! - `player`: il player, con le stesse scritture ai registri del player Verilog.
 //! - `chip`: il SID (tre voci, quattro forme d'onda, ADSR, il filtro dell'8580).
 //! - `engine`: player e SID insieme, ricampionati per il dispositivo audio; le regole di tempo.
+//! - `voice`: le voci "da SID" del MiSTer (il nome dell'avversario con il trucco di $D418, le voci
+//!   di partita sommate all'uscita), con la ROM delle voci di `tools/gen_voices.py`.
 
 pub mod chip;
 pub mod engine;
 pub mod player;
 pub mod rom;
+pub mod voice;
 
 pub use engine::Music;
 pub use rom::Rom;
+pub use voice::{Call, VoiceRom};

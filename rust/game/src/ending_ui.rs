@@ -400,7 +400,7 @@ impl Ending {
         }
         if !self.voiced && self.t >= YOU_WIN_AT {
             self.voiced = true;
-            app.say(&app.assets.you_win);
+            app.say(paddws_sid::Call::YouWin);
         }
         // sfilata: un colpo per ogni avversario che entra e per ogni timbro
         if let Some((Part::Parade, at)) = part_at(self.t) {

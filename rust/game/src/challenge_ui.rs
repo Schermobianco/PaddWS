@@ -360,7 +360,17 @@ impl Intro {
         }
     }
 
+    /// Come il MiSTer, il nome dell'avversario si ferma quando la presentazione finisce (saltata,
+    /// arriva uno sfidante, Esc).
     pub fn update(&mut self, app: &mut App, dt: f64) -> Option<Scene> {
+        let next = self.step(app, dt);
+        if next.is_some() {
+            app.stop_announce();
+        }
+        next
+    }
+
+    fn step(&mut self, app: &mut App, dt: f64) -> Option<Scene> {
         if input::pressed(KeyCode::Escape) {
             app.run = None;
             return Some(Scene::Menu(Menu::new(app)));

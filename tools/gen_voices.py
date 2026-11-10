@@ -10,9 +10,8 @@ Richiede espeak-ng portable in C:\\DEV\\@Compiler\\espeak-ng (cartella cambiabil
 variabile PADDWS_COMPILERS, come gli altri strumenti); i file generati sono nel repository, quindi
 serve solo per rifarli. Per ogni tipo di racchetta (in ordine di `PaddleKind`):
 - `assets/sounds/voice/<nome>.raw4`: campioni a 4 bit (0-15, 8 = silenzio) a `RATE` Hz, due per
-  byte, prima il nibble alto; è quello che suonano il C64 e il MiSTer;
-- `assets/sounds/voice/<nome>.wav`: gli stessi campioni a 22.050 Hz, tenuti come li tiene il
-  registro del SID, per il gioco su PC e web.
+  byte, prima il nibble alto; è quello che suonano il C64, il MiSTer e il SID Rust del gioco su PC
+  e web (`rust/sid/src/voice.rs`, dalla ROM del MiSTer).
 
 Per il core MiSTer `mister/rtl/gen/sid_voices.hex` (i .raw4 uno dopo l'altro, un byte per riga) e
 `sid_voices.vh` (inizio e lunghezza in byte di ogni voce, frequenza dei campioni, numeri delle voci
@@ -50,7 +49,6 @@ COMPILERS = Path(os.environ.get("PADDWS_COMPILERS", r"C:\DEV\@Compiler"))
 ESPEAK = COMPILERS / "espeak-ng" / "eSpeak NG"
 
 RATE = 5000     # campioni al secondo (il C64 li suona con un interrupt del timer)
-PLAY = 22050    # frequenza dei WAV per il PC
 
 # nomi nell'ordine di `PaddleKind` (rust/core/src/next.rs)
 NAMES = ["ARCADE", "TITAN", "HAMMER", "TWIST", "BLASTER", "RUSH", "GUARDIAN"]
@@ -138,14 +136,13 @@ def breath(x: list[float], rng: random.Random) -> list[float]:
 
 
 def shout(text: str, base: Path, rng: random.Random) -> None:
-    """`text` urlato: campioni a 4 bit (.raw4) e WAV per il PC."""
+    """`text` urlato: campioni a 4 bit (.raw4)."""
     with tempfile.TemporaryDirectory() as tmp:
         src = Path(tmp) / "voce.wav"
         speak(text, src)
         x, rate = read(src)
     q = quantize(resample(trim(breath(x, rng)), rate, RATE))
     base.with_suffix(".raw4").write_bytes(pack(q))
-    write_wav(q, base.with_suffix(".wav"))
     print(f"{text:13s} {len(q) / RATE:.2f} s, {len(pack(q))} byte")
 
 
@@ -166,18 +163,6 @@ def pack(q: list[int]) -> bytes:
     if len(q) % 2:
         q = q + [8]
     return bytes((q[i] << 4) | q[i + 1] for i in range(0, len(q), 2))
-
-
-def write_wav(q: list[int], path: Path) -> None:
-    out = array.array("h")
-    for i in range(int(len(q) * PLAY / RATE)):
-        v = q[min(len(q) - 1, int(i * RATE / PLAY))]
-        out.append(int((v - 7.5) / 7.5 * 30000))
-    with wave.open(str(path), "wb") as w:
-        w.setnchannels(1)
-        w.setsampwidth(2)
-        w.setframerate(PLAY)
-        w.writeframes(out.tobytes())
 
 
 def write_mister() -> None:

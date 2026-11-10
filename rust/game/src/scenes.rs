@@ -3,10 +3,10 @@
 
 use std::f32::consts::FRAC_PI_2;
 
-use macroquad::audio::{PlaySoundParams, Sound, play_sound};
 use macroquad::prelude::*;
 use paddws_core::challenge::{LEVELS, RUNGS, Score, Table};
 use paddws_core::fixed::to_f32;
+use paddws_sid::Call;
 use paddws_core::{
     Bonus, Cpu, DIFFICULTY_LEVELS, Event, Input, Match, PaddleKind, Params, Rng, Side, Special, TICK_HZ, Tuning,
 };
@@ -55,24 +55,52 @@ fn slide(cur: f32, target: f32, dt: f64, unit: f32) -> f32 {
 pub struct Assets {
     pub font_text: GameFont,
     pub font_score: GameFont,
-    /// suoni del SID: muro, colpo, boost, punto, gettone, mossa speciale attivata e colpo della
-    /// mossa (`SID_SFX`)
-    pub sid: [Sound; 7],
-    /// bullet time: gli stessi suoni a metà velocità, un'ottava sotto (il gettone non rallenta
-    /// mai, ma tiene il suo posto)
-    pub slow_sid: [Sound; 7],
-    /// CHALLENGE: il nome dell'avversario detto dal SID, nell'ordine di `PaddleKind`
-    /// (tools/gen_voices.py)
-    pub voices: [Sound; 7],
-    /// NEXT: l'urlo di chi esegue una mossa speciale, nell'ordine di `Special` (tools/gen_voices.py)
-    pub shouts: [Sound; 2],
-    /// CHALLENGE: "READY?" all'inizio del conto alla rovescia e "GO!" al via (tools/gen_voices.py)
-    pub ready: Sound,
-    pub go: Sound,
-    /// "YOU WIN!": partita vinta contro la CPU e finale della CHALLENGE (tools/gen_voices.py)
-    pub you_win: Sound,
-    /// "PERFECT!": partita vinta da un giocatore senza punti dell'avversario (tools/gen_voices.py)
-    pub perfect: Sound,
+}
+
+/// Effetti del SID: i bit degli eventi di `paddws_sid::player::effect_of` (come `sid_events` di
+/// pong_top.v).
+const SFX_WALL: u8 = 1 << 0;
+const SFX_HIT: u8 = 1 << 1;
+const SFX_BOOST: u8 = 1 << 2;
+const SFX_SCORE: u8 = 1 << 3;
+const SFX_COIN: u8 = 1 << 4;
+const SFX_MOVE: u8 = 1 << 5;
+const SFX_SPECIAL_HIT: u8 = 1 << 6;
+
+/// I suoni degli eventi di un frame (anche di più tick), da suonare con `App::play_frame`.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FrameSound {
+    /// effetti del SID (`SFX_*`)
+    sid: u8,
+    /// voce di partita: l'urlo della mossa speciale (STRAIGHT SHOT vince su RISING STRIKE nello
+    /// stesso frame), o YOU WIN / PERFECT a fine partita, che vincono sugli urli
+    shout: Option<Call>,
+}
+
+impl FrameSound {
+    pub fn add(&mut self, event: Event) {
+        self.sid |= match event {
+            Event::Wall => SFX_WALL,
+            Event::Hit => SFX_HIT,
+            Event::Boost => SFX_BOOST,
+            Event::Score => SFX_SCORE,
+            // NEXT: capsula raccolta, bonus attivato, colpo con il SUPER, salto del TELEPORT
+            Event::Collect => SFX_WALL,
+            Event::Activate | Event::Teleport => SFX_BOOST,
+            Event::Super => SFX_SCORE,
+            // tipi di racchetta: colpo del BLASTER, rimbalzo sulla barriera del GUARDIAN
+            Event::Fire => SFX_HIT,
+            Event::Barrier => SFX_WALL,
+            // mosse speciali: i loro effetti, e l'urlo con il nome della mossa
+            Event::Straight | Event::Rise => SFX_MOVE,
+            Event::SpecialHit => SFX_SPECIAL_HIT,
+        };
+        match event {
+            Event::Straight => self.shout = Some(Call::Straight),
+            Event::Rise => self.shout = self.shout.or(Some(Call::Rise)),
+            _ => {}
+        }
+    }
 }
 
 /// Musiche del SID (tools/gen_sid_music.py), suonate in tempo reale dal SID Rust (`music`).
@@ -282,6 +310,7 @@ impl App {
     /// canzone suona; a 0 non suona nessuna musica.
     pub fn set_music(&mut self, want: Option<Song>) {
         self.sid_music.set_gain(config::volume_gain(self.cfg.game.music_volume));
+        self.sid_music.set_fx_gain(config::volume_gain(self.cfg.game.effects_volume));
         let want = want.filter(|_| self.cfg.game.music_volume > 0);
         if want == self.music {
             return;
@@ -300,64 +329,45 @@ impl App {
         to_f32(self.params.scale)
     }
 
-    /// Suona `sound` una volta al volume di EFFECTS VOLUME (gli effetti e le voci "da SID"); a 0
-    /// niente.
-    fn play_effect(&self, sound: &Sound) {
-        let volume = config::volume_gain(self.cfg.game.effects_volume);
-        if volume > 0.0 {
-            play_sound(sound, PlaySoundParams { looped: false, volume });
-        }
-    }
-
-    /// Gettone inserito.
+    /// Gettone inserito: l'effetto più importante, non rallenta mai.
     pub fn play_coin(&self) {
-        self.play_effect(&self.assets.sid[4]);
+        self.sid_music.effect(SFX_COIN, false);
     }
 
-    /// CHALLENGE: il nome dell'avversario, come lo dice il SID.
+    /// CHALLENGE: il nome dell'avversario, detto dal SID con il trucco di $D418 (intanto la musica
+    /// tace), al volume degli effetti.
     pub fn announce(&self, kind: PaddleKind) {
-        self.say(&self.assets.voices[kind as usize]);
+        self.sid_music.say(kind as u8);
     }
 
+    /// Fine della presentazione: il nome dell'avversario si ferma, se c'è ancora.
+    pub fn stop_announce(&self) {
+        self.sid_music.stop_voice();
+    }
+
+    /// L'effetto di un evento fuori dalla partita (menu, scelte, attract).
     pub fn play(&self, event: Event) {
-        self.play_slowed(event, false);
+        let mut sound = FrameSound::default();
+        sound.add(event);
+        self.play_frame(sound, false);
     }
 
-    /// Una delle voci "da SID" (il nome dell'avversario, gli urli delle mosse, READY e GO).
-    pub fn say(&self, voice: &Sound) {
-        self.play_effect(voice);
+    /// Una delle voci di partita "da SID" (gli urli delle mosse, READY, GO, YOU WIN, PERFECT):
+    /// la suona il SID Rust sopra musica ed effetti, al volume degli effetti.
+    pub fn say(&self, call: Call) {
+        self.sid_music.call(call);
     }
 
-    /// Come `play`; con `slow` (bullet time) il suono rallentato.
-    pub fn play_slowed(&self, event: Event, slow: bool) {
-        // mossa speciale attivata: l'urlo con il nome della mossa (non rallenta)
-        if let Some(special) = match event {
-            Event::Straight => Some(Special::Straight),
-            Event::Rise => Some(Special::Rise),
-            _ => None,
-        } {
-            self.say(&self.assets.shouts[special as usize - 1]);
+    /// I suoni degli eventi di un frame, come il MiSTer: l'urlo della mossa speciale attivata e un
+    /// solo effetto del SID sulla voce 3, scelto per priorità (`paddws_sid::player::effect_of`),
+    /// che interrompe quello in corso; con `slow` (bullet time) a metà velocità, un'ottava sotto.
+    pub fn play_frame(&self, sound: FrameSound, slow: bool) {
+        if let Some(call) = sound.shout {
+            self.say(call);
         }
-        // 0 muro, 1 colpo, 2 boost, 3 punto, 5 mossa attivata, 6 colpo della mossa (come il core
-        // MiSTer)
-        let i = match event {
-            Event::Wall => 0,
-            Event::Hit => 1,
-            Event::Boost => 2,
-            Event::Score => 3,
-            // NEXT: capsula raccolta, bonus attivato, colpo con il SUPER, salto del TELEPORT
-            Event::Collect => 0,
-            Event::Activate | Event::Teleport => 2,
-            Event::Super => 3,
-            // tipi di racchetta: colpo del BLASTER, rimbalzo sulla barriera del GUARDIAN
-            Event::Fire => 1,
-            Event::Barrier => 0,
-            // mosse speciali: i loro effetti
-            Event::Straight | Event::Rise => 5,
-            Event::SpecialHit => 6,
-        };
-        let a = &self.assets;
-        self.play_effect(if slow { &a.slow_sid[i] } else { &a.sid[i] });
+        if sound.sid != 0 {
+            self.sid_music.effect(sound.sid, slow);
+        }
     }
 
     /// Schermo intero, come lo mostra la voce del menu: nel browser quello vero della pagina.
@@ -1837,14 +1847,14 @@ impl Play {
                 // CHALLENGE la voce dice "READY?" all'inizio e "GO!" al via, al posto del suo bip
                 let calls = self.challenge.is_some() || self.duel.is_some();
                 if calls && self.countdown == COUNTDOWN_TIME {
-                    app.say(&app.assets.ready);
+                    app.say(Call::Ready);
                 }
                 let before = self.countdown.ceil();
                 self.countdown -= dt;
                 if self.countdown <= 0.0 {
                     self.countdown = 0.0;
                     if calls {
-                        app.say(&app.assets.go);
+                        app.say(Call::Go);
                     } else {
                         app.play(Event::Boost);
                     }
@@ -1867,6 +1877,8 @@ impl Play {
             fx.update(dt);
         }
         self.accumulator += dt.min(MAX_FRAME_TIME);
+        // i suoni dei tick del frame, insieme alla fine (come il MiSTer: un effetto per frame)
+        let mut sound = FrameSound::default();
         while self.accumulator >= PHYSICS_STEP {
             self.accumulator -= PHYSICS_STEP;
             self.previous = self.snapshot();
@@ -1897,12 +1909,10 @@ impl Play {
             if let Some(fx) = &mut self.fx {
                 fx.after_tick(&self.game, events, app.scale());
             }
-            // nel bullet time i suoni rallentano con il gioco
-            let slow = self.game.next.as_ref().is_some_and(|n| n.bullet_on);
             for event in events.iter() {
                 // la demo suona solo con i suoni dell'attract
                 if !self.demo || app.cfg.game.attract_sound {
-                    app.play_slowed(event, slow);
+                    sound.add(event);
                 }
                 if event == Event::Score {
                     self.flash = FLASH_TIME;
@@ -1929,13 +1939,15 @@ impl Play {
                 // senza punti dell'avversario, anche in due
                 let last = self.challenge.is_some_and(|(level, _)| level + 1 == LEVELS);
                 if !last && self.perfect() {
-                    app.say(&app.assets.perfect);
+                    sound.shout = Some(Call::Perfect);
                 } else if self.winner() == Some("you_win") && !last {
-                    app.say(&app.assets.you_win);
+                    sound.shout = Some(Call::YouWin);
                 }
                 break;
             }
         }
+        // nel bullet time gli effetti rallentano con il gioco
+        app.play_frame(sound, self.game.next.as_ref().is_some_and(|n| n.bullet_on));
         let unit = app.renderer.world_h / 240.0;
         for (x, pad) in self.pad_draw_x.iter_mut().zip(&self.game.paddles) {
             *x = slide(*x, to_f32(pad.x), dt, unit);
