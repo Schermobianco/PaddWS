@@ -41,7 +41,7 @@ cambia solo il filamento tra un piatto e l'altro, mai durante una stampa.
 | piatto | pezzi | filamento |
 |---|---|---|
 | 1 | metà G1 del piano (a faccia in giù), pezzi del logo | 1: PETG nero |
-| 2 | metà G2 del piano, 2 manopole (capovolte) | 1: PETG nero |
+| 2 | metà G2 del piano, 2 manopole (capovolte), 10 mozzi delle manopole | 1: PETG nero |
 | 3 | cornice del vetro (flangia sulla piastra), 4 barre del display | 1: PETG nero |
 | 4 | metà G1 della vasca (dritta), 2 anelli delle tacche, 2 indicatori, 8 lettere di DASH | 2: PETG giallo |
 | 5 | metà G2 della vasca, placca della presa micro-USB (a faccia in giù) | 2: PETG giallo |
@@ -60,6 +60,26 @@ Piano, cornice, vasca e manopole hanno già 3 perimetri e il 15% di riempimento.
 I pezzi da incollare sono spessi 1,2 mm ed entrano per 0,6 mm in sedi con 0,15 mm di gioco per
 lato; sul PETG l'Attack (cianoacrilato) tiene poco da solo: meglio con il suo primer per
 plastiche difficili, oppure stampare i pezzi da incollare in PLA.
+
+## Mozzi delle manopole
+
+La manopola non si infila direttamente sull'albero dell'encoder: dentro ha una sede dentata dove si
+incolla un mozzo con il foro a D. I fori piccoli stampati vengono più stretti del disegno, e quanto
+dipende da stampante e filamento; per questo ci sono mozzi con cinque giochi diversi, due per tipo,
+riconoscibili dalle tacche sulla flangia:
+
+| tacche | gioco per lato attorno all'albero |
+|---|---|
+| 1 | 0,10 mm |
+| 2 | 0,15 mm |
+| 3 | 0,20 mm (quello del modello) |
+| 4 | 0,25 mm |
+| 5 | 0,30 mm |
+
+Si provano sull'albero e si tengono i due che entrano con una spinta decisa senza ballare. Il mozzo
+entra nella manopola in una delle 10 posizioni dei denti, con 0,2 mm di gioco: i denti trascinano la
+manopola, la colla serve solo a non farla sfilare. La flangia in basso tiene le rondelle nella loro
+sede.
 
 ## Placca della presa
 
@@ -135,9 +155,9 @@ schema degli encoder ottici (`pulses_per_revolution: 600`, `debounce_us: 0`).
    sul bordo, dalla parte del labbro, prende il gioco.
 7. Cablare, appoggiare il piano sulla vasca e avvitarlo da sotto con le 12 viti M3 × 35, che passano
    dentro le colonnine.
-8. Rondelle nella sede sotto le manopole, poi le manopole sugli alberi, a pressione: il taglio
-   dell'albero va dalla parte dell'indicatore giallo. Nel foro due costoline si schiacciano e
-   tengono la manopola, senza grano. Infine i piedini sotto la vasca.
+8. Rondelle nella sede sotto la manopola, poi il mozzo scelto da sotto, attraverso le rondelle,
+   incollato nella sede dentata: la flangia del mozzo chiude le rondelle nella sede. Poi le manopole
+   sugli alberi, senza grano. Infine i piedini sotto la vasca.
 
 ## Da verificare prima di stampare
 
@@ -151,9 +171,9 @@ schema degli encoder ottici (`pulses_per_revolution: 600`, `debounce_us: 0`).
   fuori dalla cornice: una rondella tra barra e tubo.
 - **Spessore del piano attorno a DASH** (ora 3 mm): i venditori danno i Sanwa OBSF-30 per pannelli
   da 2 a 3,7-4 mm. Conta la distanza tra il sotto della ghiera e i denti dei ganci.
-- **Foro dell'albero nelle manopole** (ora Ø6,3, con il lato piatto a 2,25 mm dall'asse e due
-  costoline da 0,25 mm): l'albero è Ø6 e il suo taglio sta a poco più di 5 mm dal lato tondo. Se la
-  manopola entra troppo dura o balla, si cambia il foro.
+- **Foro dell'albero nei mozzi**: disegnato su un albero Ø6 con il taglio a 2,1 mm dall'asse (poco
+  più di 5 mm dal lato tondo), più il gioco del mozzo. Se nessuno dei cinque mozzi va bene, si
+  cambiano i giochi.
 - **Fori degli inserti** (ora Ø4,4, come per gli M3 × 5 × 4 di CNC Kitchen e ruthex): con altre marche
   conviene provare l'inserto in un foro di prova prima di stampare il piano.
 - **Spessore degli altoparlanti** (ora 5,4 mm, lo spessore totale dichiarato): conta quello nei 2 mm

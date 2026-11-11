@@ -21,7 +21,7 @@ encoders, in transparent grey, are bought parts and are not printed.
 ![Exploded view of the Deck](previews/exploded.gif)
 
 The parameter and part names in the model are in Italian: *piano* is the top plate, *vasca* the
-tray (the bottom shell), *cornice* the glass frame. G1 and G2 are the two halves, one per player.
+tray (the bottom shell), *cornice* the glass frame, *manopola* the knob and *mozzo* its hub. G1 and G2 are the two halves, one per player.
 
 ## Files
 
@@ -44,7 +44,7 @@ and material. The filament only changes between one plate and the next, never du
 | plate | parts | filament |
 |---|---|---|
 | 1 | G1 half of the top plate (face down), logo pieces | 1: black PETG |
-| 2 | G2 half of the top plate, 2 knobs (upside down) | 1: black PETG |
+| 2 | G2 half of the top plate, 2 knobs (upside down), 10 knob hubs | 1: black PETG |
 | 3 | glass frame (flange on the build plate), 4 display bars | 1: black PETG |
 | 4 | G1 half of the tray (upright), 2 notch rings, 2 pointers, 8 DASH letters | 2: yellow PETG |
 | 5 | G2 half of the tray, micro-USB socket plate (face down) | 2: yellow PETG |
@@ -63,6 +63,25 @@ Top plate, frame, tray and knobs already have 3 walls and 15% infill.
 The parts to glue are 1.2 mm thick and go 0.6 mm deep into seats with 0.15 mm of clearance per side;
 on PETG, cyanoacrylate glue alone holds poorly: better with its primer for difficult plastics, or
 print the parts to glue in PLA.
+
+## Knob hubs
+
+The knob doesn't go straight onto the encoder shaft: inside it has a toothed seat, where a hub with
+the D-shaped hole is glued. Small printed holes come out tighter than designed, by an amount that
+depends on printer and filament; that is why there are hubs with five different clearances, two of
+each, told apart by the notches on the flange:
+
+| notches | clearance per side around the shaft |
+|---|---|
+| 1 | 0.10 mm |
+| 2 | 0.15 mm |
+| 3 | 0.20 mm (the one in the model) |
+| 4 | 0.25 mm |
+| 5 | 0.30 mm |
+
+Try them on the shaft and keep the two that go on with a firm push without wobbling. The hub goes
+into the knob in any of the 10 tooth positions, with 0.2 mm of clearance: the teeth drive the knob,
+the glue only keeps it from coming off. The flange at the bottom holds the washers in their seat.
 
 ## Power socket plate
 
@@ -137,9 +156,9 @@ optical encoder diagram (`pulses_per_revolution: 600`, `debounce_us: 0`).
    (5.7 mm), a ring of adhesive foam on the rim, on the lip side, takes up the play.
 7. Wire everything, place the top plate on the tray and screw it from below with the 12 M3 × 35
    screws, which run inside the pillars.
-8. Washers into the seat under the knobs, then press the knobs onto the shafts: the flat of the
-   shaft goes on the side of the yellow pointer. Two small ribs in the hole get squashed and hold
-   the knob, with no grub screw. Finally the feet under the tray.
+8. Washers into the seat under the knob, then the chosen hub from below, through the washers, glued
+   into the toothed seat: the hub's flange closes the washers in their seat. Then the knobs onto the
+   shafts, with no grub screw. Finally the feet under the tray.
 
 ## To check before printing
 
@@ -154,9 +173,9 @@ optical encoder diagram (`pulses_per_revolution: 600`, `debounce_us: 0`).
 - **Top plate thickness around DASH** (now 3 mm): sellers give the Sanwa OBSF-30 for panels from 2
   to 3.7-4 mm. What counts is the distance between the underside of the bezel and the teeth of the
   clips.
-- **Shaft hole in the knobs** (now Ø6.3, with the flat side 2.25 mm from the axis and two 0.25 mm
-  ribs): the shaft is Ø6 and its flat is a little over 5 mm from the round side. If the knob goes on
-  too hard or wobbles, change the hole.
+- **Shaft hole in the hubs**: designed for a Ø6 shaft with its flat 2.1 mm from the axis (a little
+  over 5 mm from the round side), plus the hub's clearance. If none of the five hubs fits, change
+  the clearances.
 - **Insert holes** (now Ø4.4, as for the M3 × 5 × 4 inserts by CNC Kitchen and ruthex): with other
   brands, try the insert in a test hole before printing the top plate.
 - **Speaker thickness** (now 5.4 mm, the stated total thickness): what counts is the thickness in
