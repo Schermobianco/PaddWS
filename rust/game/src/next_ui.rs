@@ -162,11 +162,24 @@ pub fn special_title(special: Special, level: u8) -> String {
 
 /// Lampo del settore del muro del GUARDIAN che rimanda la palla, prima di sparire.
 const BARRIER_FLASH_SECONDS: f64 = 0.3;
-/// Durata della scritta "P1 SMASH!" e di quella delle mosse speciali.
+/// Durata della scritta "P1 SMASH!": si accende e si spegne come un vecchio televisore. Una riga
+/// bianca si allarga (`CRT_STEP`) e si apre in altezza (`CRT_STEP`) mostrando la scritta; alla fine
+/// si richiude in una riga, la riga si stringe e resta un puntino (`CRT_DOT`).
 const LABEL_SECONDS: f64 = 1.2;
-/// Mosse speciali: ingresso della scritta (parte più grande e si stringe), scie del salto di
-/// RISING STRIKE e quadrato che si allarga sul colpo speciale.
-const SPECIAL_ZOOM_SECONDS: f64 = 0.15;
+const CRT_STEP: f64 = 5.0 / 60.0;
+const CRT_DOT: f64 = 3.0 / 60.0;
+/// Scritta della mossa speciale. All'attivazione si disegnano i trattini sotto le lettere, uno ogni
+/// `SPECIAL_DASH_STEP` dal lato del giocatore (due righe con la MAX), che poi si accendono mentre la
+/// palla arriva verso di lui. Al colpo, per `SPECIAL_BLOCK` blocchi bianchi al posto delle lettere,
+/// poi le lettere, bianche fino a `SPECIAL_WHITE`; i trattini restano accesi per
+/// `SPECIAL_DASH_LIT`; da `SPECIAL_BLINK` lampeggia, fino a `SPECIAL_HIT_SECONDS`.
+const SPECIAL_DASH_STEP: f64 = 2.0 / 60.0;
+const SPECIAL_BLOCK: f64 = 2.0 / 60.0;
+const SPECIAL_WHITE: f64 = 4.0 / 60.0;
+const SPECIAL_DASH_LIT: f64 = 24.0 / 60.0;
+const SPECIAL_BLINK: f64 = 44.0 / 60.0;
+const SPECIAL_HIT_SECONDS: f64 = 1.0;
+/// Quadrato che si allarga sul colpo speciale e dove RISING STRIKE s'impenna.
 const BURST_SECONDS: f64 = 0.3;
 /// Colpo di una mossa speciale, sulla racchetta di chi l'ha fatto: rinculo e onda d'urto (con la MAX
 /// anche le immagini della racchetta), lampo nei primi `KICK_FLASH_SECONDS` e scossa dello schermo
@@ -737,6 +750,28 @@ impl Pick {
 
 // --------------------------------------------------------------- partita
 
+/// Scritta di una mossa speciale: mossa, livello, se è già il colpo (altrimenti la mossa è armata e
+/// si vedono solo i trattini) e secondi dall'attivazione o dal colpo.
+#[derive(Clone, Copy)]
+struct SpecialLabel {
+    special: Special,
+    level: u8,
+    hit: bool,
+    t: f64,
+}
+
+/// Mossa armata dal giocatore `side`: quanta strada ha fatto la palla verso la sua racchetta (0
+/// dalla racchetta avversaria, 1 arrivata), 0 se va dall'altra parte.
+fn approach(game: &Match, side: usize) -> f32 {
+    let b = &game.ball;
+    let toward = if side == 0 { b.vx < 0 } else { b.vx > 0 };
+    let (pad, other) = (to_f32(game.paddles[side].x), to_f32(game.paddles[1 - side].x));
+    if !toward || pad == other {
+        return 0.0;
+    }
+    ((to_f32(b.x) - other) / (pad - other)).clamp(0.0, 1.0)
+}
+
 /// Stato grafico di NEXT durante la partita.
 pub struct NextFx {
     /// posizioni recenti della palla (coordinate del core) per le scie
@@ -756,10 +791,10 @@ pub struct NextFx {
     rush_ghost: [f64; 2],
     pad_home: [bool; 2],
     /// mosse speciali: barra prima del tick (per capire chi ha speso), scritta della mossa per
-    /// giocatore (mossa, livello, colpo invece di attivazione, secondi rimasti), RISING STRIKE
-    /// ancora da impennare prima del tick e quadrato del colpo o dell'impennata (x, y, secondi)
+    /// giocatore, RISING STRIKE ancora da impennare prima del tick e quadrato del colpo o
+    /// dell'impennata (x, y, secondi)
     meters: [u8; 2],
-    special_label: [Option<(Special, u8, bool, f64)>; 2],
+    special_label: [Option<SpecialLabel>; 2],
     rise_pending: bool,
     burst: Option<(f32, f32, f64)>,
     /// verso della palla al tick prima: la coda riparte a ogni colpo
@@ -792,13 +827,23 @@ impl NextFx {
 
     /// Scritta di un bonus al centro in basso (come "P1 SMASH!").
     pub fn show_label(&mut self, text: &str) {
-        self.label = Some((text.to_string(), LABEL_SECONDS));
+        self.show_label_at(text, 0.0);
+    }
+
+    /// Come `show_label`, già accesa da `seconds` (per le schermate di verifica).
+    pub fn show_label_at(&mut self, text: &str, seconds: f64) {
+        self.label = Some((text.to_string(), LABEL_SECONDS - seconds));
     }
 
     /// Scritta di una mossa speciale di livello `level` per il giocatore `side`: all'attivazione
     /// o, con `hit`, al colpo.
     pub fn show_special(&mut self, side: usize, special: Special, level: u8, hit: bool) {
-        self.special_label[side] = Some((special, level, hit, LABEL_SECONDS));
+        self.special_label[side] = Some(SpecialLabel {
+            special,
+            level,
+            hit,
+            t: 0.0,
+        });
     }
 
     /// Colpo di una mossa sulla racchetta del giocatore `side`, già avanti di `seconds` (per le
@@ -860,6 +905,12 @@ impl NextFx {
             self.show_special(side, special, n.special_level, true);
             self.burst = Some((to_f32(b.x), to_f32(b.y), BURST_SECONDS));
             self.kick[side] = Some((special, n.special_level, 0.0));
+        }
+        // mossa armata che non c'è più senza il colpo (un punto, o le mosse spente): via i trattini
+        for (label, pl) in self.special_label.iter_mut().zip(&n.players) {
+            if label.is_some_and(|l| !l.hit) && pl.special_idle() {
+                *label = None;
+            }
         }
         // RISING STRIKE: un altro quadrato dove la palla s'impenna
         if self.rise_pending && n.rise_break.is_none() && n.special_flight == Some(Special::Rise) {
@@ -947,10 +998,11 @@ impl NextFx {
                 self.label = None;
             }
         }
+        // la scritta della mossa armata resta finché c'è la mossa (`after_tick`)
         for label in &mut self.special_label {
-            if let Some((_, _, _, t)) = label {
-                *t -= dt;
-                if *t <= 0.0 {
+            if let Some(l) = label {
+                l.t += dt;
+                if l.hit && l.t >= SPECIAL_HIT_SECONDS {
                     *label = None;
                 }
             }
@@ -1432,53 +1484,124 @@ impl NextFx {
         let s = app.scale();
         let white = App::color(app.cfg.colors.white);
         let accent = App::color(app.cfg.colors.accent);
+        let u = unit(app);
         // riquadri delle scritte disegnate in questo frame
         let mut boxes: [Option<Rect>; 3] = [None; 3];
         if game.next.as_ref().is_some_and(|n| n.super_moves) {
             let p = &game.params;
             let font = &app.assets.font_text;
+            let dim = Color {
+                a: 0.45,
+                ..App::color(app.cfg.colors.lgray)
+            };
             // sotto le riserve; con i punteggi dritti (che stanno proprio lì, a 42 righe su 480) sotto
-            // di loro, così il titolo, anche nella sua dimensione più grande, non li copre
+            // di loro, così il titolo non li copre
             let y = if app.cfg.game.scores_upright {
                 42.0 * h / 480.0 + 50.0 * s
             } else {
                 to_f32(p.capsule_margin_top) + 16.0 * s
             };
+            let size = 34.0 * s;
             for (side, label) in self.special_label.iter().enumerate() {
-                let Some((special, level, hit, t)) = *label else { continue };
-                // entra grande e si stringe; nell'ultima parte lampeggia come le altre scritte
-                if t < LABEL_SECONDS * 0.3 && (get_time() * 8.0) as i64 % 2 == 1 {
+                let Some(l) = *label else { continue };
+                let cx = if side == 0 { w / 4.0 } else { 3.0 * w / 4.0 };
+                let title = special_title(l.special, l.level);
+                let th = r.text_height(&title, font, size);
+                // lettere (dall'inchiostro), contate dal lato del giocatore
+                let mut letters: Vec<(f32, f32)> = r.ink_boxes(&title, font, size).into_iter().flatten().collect();
+                if side == 1 {
+                    letters.reverse();
+                }
+                let n_letters = letters.len();
+                // trattini sotto le lettere: due righe con la MAX
+                let dash_y = y + th / 2.0 + 3.0 * u;
+                let dash = |(x0, x1): (f32, f32), color: Color| {
+                    for row in 0..l.level.clamp(1, 2) {
+                        draw_rectangle(cx + x0, dash_y + row as f32 * 4.0 * u, x1 - x0, 2.0 * u, color);
+                    }
+                };
+                if !l.hit {
+                    // armata: i trattini si disegnano dal lato del giocatore (l'ultimo bianco), poi si
+                    // accendono man mano che la palla arriva verso di lui: quando c'è il colpo
+                    let shown = ((l.t / SPECIAL_DASH_STEP) as usize + 1).min(n_letters);
+                    let lit = if shown == n_letters {
+                        (approach(game, side) * n_letters as f32) as usize
+                    } else {
+                        0
+                    };
+                    for (j, &letter) in letters.iter().take(shown).enumerate() {
+                        let color = if j + 1 == shown && shown < n_letters {
+                            white
+                        } else if j < lit {
+                            accent
+                        } else {
+                            dim
+                        };
+                        dash(letter, color);
+                    }
                     continue;
                 }
-                let zoom = ((t - (LABEL_SECONDS - SPECIAL_ZOOM_SECONDS)) / SPECIAL_ZOOM_SECONDS).clamp(0.0, 1.0) as f32;
-                let base = (if hit { 34.0 } else { 28.0 }) * s;
-                let size = base * (1.0 + 0.6 * zoom);
-                // durante lo zoom i caratteri sono quelli grandi, scalati (`text_centered_zoom`);
-                // fermi, quelli alla dimensione giusta, nitidi
-                let raster = if zoom > 0.0 { base * 1.6 } else { base };
-                // al colpo la scritta alterna accento e bianco
-                let color = if hit && (get_time() * 12.0) as i64 % 2 == 0 {
-                    white
+                // colpo: si accende, nell'ultima parte lampeggia
+                if l.t >= SPECIAL_BLINK && (l.t * 7.5) as i64 % 2 == 1 {
+                    continue;
+                }
+                let color = if l.t < SPECIAL_WHITE { white } else { accent };
+                if l.t < SPECIAL_DASH_LIT {
+                    for &letter in &letters {
+                        dash(letter, color);
+                    }
+                }
+                if l.t < SPECIAL_BLOCK {
+                    for &(x0, x1) in &letters {
+                        draw_rectangle(cx + x0, y - th / 2.0, x1 - x0, th, white);
+                    }
                 } else {
-                    accent
-                };
-                let cx = if side == 0 { w / 4.0 } else { 3.0 * w / 4.0 };
-                let title = special_title(special, level);
-                r.text_centered_zoom(&title, font, size, raster, cx, y, color);
+                    r.text_centered(&title, font, size, cx, y, 0.0, color);
+                }
                 let tw = r.text_width(&title, font, size);
                 boxes[side] = Some(Rect::new(cx - tw / 2.0, y - size / 2.0, tw, size));
             }
         }
 
-        if let Some((text, t)) = &self.label
-            && (*t > LABEL_SECONDS * 0.5 || (get_time() * 8.0) as i64 % 2 == 0)
-        {
+        if let Some((text, t)) = &self.label {
+            // dall'accensione: riga che si allarga, immagine che si apre, ferma, che si richiude,
+            // riga che si stringe, puntino
+            let e = LABEL_SECONDS - t;
+            let close = LABEL_SECONDS - 2.0 * CRT_STEP - CRT_DOT;
+            let (open, line) = if e < CRT_STEP {
+                (0.0, e / CRT_STEP)
+            } else if e < 2.0 * CRT_STEP {
+                ((e - CRT_STEP) / CRT_STEP, 1.0)
+            } else if e < close {
+                (1.0, 1.0)
+            } else if e < close + CRT_STEP {
+                (1.0 - (e - close) / CRT_STEP, 1.0)
+            } else {
+                (0.0, (1.0 - (e - close - CRT_STEP) / CRT_STEP).max(0.0))
+            };
             let font = &app.assets.font_text;
             let y = h - 34.0 * s;
             let back = Rect::new(w / 2.0 - 120.0 * s, y - 20.0 * s, 240.0 * s, 40.0 * s);
-            draw_rectangle(back.x, back.y, back.w, back.h, BLACK);
-            r.text_centered(text, font, 32.0 * s, w / 2.0, y, 0.0, accent);
-            boxes[2] = Some(back);
+            if open > 0.0 {
+                // il riquadro nero, la scritta e, fuori dalla fascia aperta, di nuovo il nero; durante
+                // l'apertura e la chiusura i bordi della fascia sono bianchi
+                let band = (back.h * open as f32).max(2.0 * u);
+                let top = y - band / 2.0;
+                draw_rectangle(back.x, back.y, back.w, back.h, BLACK);
+                r.text_centered(text, font, 32.0 * s, w / 2.0, y, 0.0, accent);
+                draw_rectangle(back.x, back.y, back.w, top - back.y, BLACK);
+                draw_rectangle(back.x, top + band, back.w, back.bottom() - top - band, BLACK);
+                if open < 1.0 {
+                    draw_rectangle(back.x, top, back.w, u, white);
+                    draw_rectangle(back.x, top + band - u, back.w, u, white);
+                }
+                boxes[2] = Some(back);
+            } else if line > 0.0 {
+                let lw = (back.w * line as f32).max(2.0 * u);
+                draw_rectangle(w / 2.0 - lw / 2.0, y - u, lw, 2.0 * u, white);
+            } else {
+                draw_rectangle(w / 2.0 - u, y - u, 2.0 * u, 2.0 * u, white);
+            }
         }
 
         // palla e scia stanno sopra alle scritte: si ridisegnano solo quando ne toccano una, così

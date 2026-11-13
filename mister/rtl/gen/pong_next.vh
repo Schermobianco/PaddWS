@@ -951,6 +951,95 @@ function nx_max_lit(input [9:0] dx, input [9:0] dy);
     end
 endfunction
 
+localparam [7:0] NX_P1_COLS = 8'b11110110;
+function nx_p1_col(input [9:0] dx);
+    nx_p1_col = (dx < 8) ? NX_P1_COLS[7 - dx] : 1'b0;
+endfunction
+
+localparam [8:0] NX_P2_COLS = 9'b111101110;
+function nx_p2_col(input [9:0] dx);
+    nx_p2_col = (dx < 9) ? NX_P2_COLS[8 - dx] : 1'b0;
+endfunction
+
+localparam [16:0] NX_MAX_COLS = 17'b11111011110111110;
+function nx_max_col(input [9:0] dx);
+    nx_max_col = (dx < 17) ? NX_MAX_COLS[16 - dx] : 1'b0;
+endfunction
+
+localparam [54:0] NX_MOVE0_COLS = 55'b1110111011110111101011110111101110000111011110111101110;
+function nx_move0_col(input [9:0] dx);
+    nx_move0_col = (dx < 55) ? NX_MOVE0_COLS[54 - dx] : 1'b0;
+endfunction
+
+localparam [49:0] NX_MOVE1_COLS = 50'b11110101110101111011110000111011101111010111101110;
+function nx_move1_col(input [9:0] dx);
+    nx_move1_col = (dx < 50) ? NX_MOVE1_COLS[49 - dx] : 1'b0;
+endfunction
+
+localparam [1:0] NX_BANG_COLS = 2'b10;
+function nx_bang_col(input [9:0] dx);
+    nx_bang_col = (dx < 2) ? NX_BANG_COLS[1 - dx] : 1'b0;
+endfunction
+
+function [6:0] kind_l1(input [2:0] kind, input [3:0] i);
+    case ({kind, i})
+        {3'd0, 4'd0}: kind_l1 = 7'd4;
+        {3'd0, 4'd1}: kind_l1 = 7'd9;
+        {3'd0, 4'd2}: kind_l1 = 7'd13;
+        {3'd0, 4'd3}: kind_l1 = 7'd18;
+        {3'd0, 4'd4}: kind_l1 = 7'd23;
+        {3'd0, 4'd5}: kind_l1 = 7'd27;
+        {3'd1, 4'd0}: kind_l1 = 7'd3;
+        {3'd1, 4'd1}: kind_l1 = 7'd5;
+        {3'd1, 4'd2}: kind_l1 = 7'd9;
+        {3'd1, 4'd3}: kind_l1 = 7'd14;
+        {3'd1, 4'd4}: kind_l1 = 7'd19;
+        {3'd2, 4'd0}: kind_l1 = 7'd4;
+        {3'd2, 4'd1}: kind_l1 = 7'd9;
+        {3'd2, 4'd2}: kind_l1 = 7'd15;
+        {3'd2, 4'd3}: kind_l1 = 7'd21;
+        {3'd2, 4'd4}: kind_l1 = 7'd25;
+        {3'd2, 4'd5}: kind_l1 = 7'd30;
+        {3'd3, 4'd0}: kind_l1 = 7'd3;
+        {3'd3, 4'd1}: kind_l1 = 7'd9;
+        {3'd3, 4'd2}: kind_l1 = 7'd11;
+        {3'd3, 4'd3}: kind_l1 = 7'd15;
+        {3'd3, 4'd4}: kind_l1 = 7'd19;
+        {3'd4, 4'd0}: kind_l1 = 7'd4;
+        {3'd4, 4'd1}: kind_l1 = 7'd8;
+        {3'd4, 4'd2}: kind_l1 = 7'd13;
+        {3'd4, 4'd3}: kind_l1 = 7'd17;
+        {3'd4, 4'd4}: kind_l1 = 7'd21;
+        {3'd4, 4'd5}: kind_l1 = 7'd25;
+        {3'd4, 4'd6}: kind_l1 = 7'd30;
+        {3'd5, 4'd0}: kind_l1 = 7'd4;
+        {3'd5, 4'd1}: kind_l1 = 7'd9;
+        {3'd5, 4'd2}: kind_l1 = 7'd13;
+        {3'd5, 4'd3}: kind_l1 = 7'd18;
+        {3'd6, 4'd0}: kind_l1 = 7'd4;
+        {3'd6, 4'd1}: kind_l1 = 7'd9;
+        {3'd6, 4'd2}: kind_l1 = 7'd14;
+        {3'd6, 4'd3}: kind_l1 = 7'd19;
+        {3'd6, 4'd4}: kind_l1 = 7'd24;
+        {3'd6, 4'd5}: kind_l1 = 7'd26;
+        {3'd6, 4'd6}: kind_l1 = 7'd31;
+        {3'd6, 4'd7}: kind_l1 = 7'd36;
+        default: kind_l1 = 7'd127;
+    endcase
+endfunction
+function [3:0] kind_letters(input [2:0] kind);
+    case (kind)
+        3'd0: kind_letters = 4'd6;
+        3'd1: kind_letters = 4'd5;
+        3'd2: kind_letters = 4'd6;
+        3'd3: kind_letters = 4'd5;
+        3'd4: kind_letters = 4'd7;
+        3'd5: kind_letters = 4'd4;
+        3'd6: kind_letters = 4'd8;
+        default: kind_letters = 4'd0;
+    endcase
+endfunction
+
 function [5:0] name_w(input [2:0] bonus);
     case (bonus)
         3'd0: name_w = 35;

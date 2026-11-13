@@ -134,6 +134,48 @@ def names_rom(masks: dict[str, Image.Image], func: str, prefix: str, count: int,
     return "\n".join(lines) + "\n"
 
 
+def cols_rom(name: str, mask: Image.Image) -> str:
+    """Colonne con almeno un pixel acceso: sotto di loro i trattini e, al colpo, i blocchi della
+    scritta della mossa speciale (come le lettere di `ink_boxes` in rust/game/src/render.rs)."""
+    w, h = mask.size
+    bits = "".join("1" if any(mask.getpixel((x, y)) for y in range(h)) else "0" for x in range(w))
+    return "\n".join([f"localparam [{w - 1}:0] {name.upper()}_COLS = {w}'b{bits};",
+                      f"function {name}_col(input [9:0] dx);",
+                      f"    {name}_col = (dx < {w}) ? {name.upper()}_COLS[{w - 1} - dx] : 1'b0;",
+                      "endfunction"]) + "\n"
+
+
+def kind_letters_rom(masks: dict[str, Image.Image]) -> str:
+    """Lettere dei nomi dei tipi di racchetta (gruppi di colonne accese separati da colonne vuote):
+    `kind_l1(kind, i)` è la colonna dopo la lettera i, `kind_letters(kind)` quante sono. Le usano le
+    presentazioni della CHALLENGE, che scrivono il nome una lettera alla volta."""
+    spans = []
+    for i in range(len(KINDS)):
+        mask = masks[f"nx_kind{i}"]
+        w, h = mask.size
+        cur, start = [], None
+        for x in range(w + 1):
+            lit = x < w and any(mask.getpixel((x, y)) for y in range(h))
+            if lit and start is None:
+                start = x
+            elif not lit and start is not None:
+                cur.append((start, x))
+                start = None
+        spans.append(cur)
+    lines = ["function [6:0] kind_l1(input [2:0] kind, input [3:0] i);", "    case ({kind, i})"]
+    for k, s in enumerate(spans):
+        lines += [f"        {{3'd{k}, 4'd{i}}}: kind_l1 = 7'd{b};" for i, (_, b) in enumerate(s)]
+    lines += ["        default: kind_l1 = 7'd127;", "    endcase", "endfunction",
+              "function [3:0] kind_letters(input [2:0] kind);", "    case (kind)"]
+    lines += [f"        3'd{k}: kind_letters = 4'd{len(s)};" for k, s in enumerate(spans)]
+    lines += ["        default: kind_letters = 4'd0;", "    endcase", "endfunction"]
+    return "\n".join(lines) + "\n"
+
+
+# scritte della mossa speciale: colonne occupate (`cols_rom`)
+COL_MASKS = ["nx_p1", "nx_p2", "nx_max", "nx_move0", "nx_move1", "nx_bang"]
+
+
 def sin_rom() -> str:
     """Seno in Q8 (256 = 1) su 64 passi per giro: la racchetta che ruota con il SUPER."""
 
@@ -147,6 +189,8 @@ def main() -> None:
     masks = text_masks()
     parts = ["// Generato da tools/gen_next_assets.py: non modificare a mano.\n", icon_rom(), special_rom(), sin_rom()]
     parts += [verilog_rom(name, mask) for name, mask in masks.items()]
+    parts += [cols_rom(name, masks[name]) for name in COL_MASKS]
+    parts.append(kind_letters_rom(masks))
     parts.append(names_rom(masks, "name", "nx_name", len(NAMES), "bonus", 6))
     parts.append(names_rom(masks, "kind_name", "nx_kind", len(KINDS), "kind", 7))
     parts.append(names_rom(masks, "tag", "nx_tag", len(TAGS), "kind", 7))

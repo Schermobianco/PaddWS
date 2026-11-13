@@ -132,7 +132,10 @@ not (see [c64/README.en.md](../../c64/README.en.md)).
 Alone against 7 CPU opponents (menu **PLAYERS: CHALLENGE**, on the MiSTer OSD *Game type:
 Challenge*). You pick power-ups and paddle once, then each level introduces its opponent: a
 different paddle type for each level, its 3 power-ups and an ever stronger CPU, from the ARCADE of
-the first level to the GUARDIAN of the final boss. Matches are NEXT, to 5 points.
+the first level to the GUARDIAN of the final boss. Each opponent makes its own entrance, showing off
+what it can do (the ARCADE catches a volley of capsules, the TITAN grows out of the floor, the
+BLASTER lights up its name by shooting it, the GUARDIAN builds its wall...); on the C64 the
+introduction stays still. Matches are NEXT, to 5 points.
 
 - **Arcade scoring**: hits, successful dashes, SUPERs and points scored, with a multiplier that
   rises in long rallies (up to ×8); for each level won a prize, plus a double prize for a perfect

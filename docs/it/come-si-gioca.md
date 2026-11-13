@@ -129,7 +129,10 @@ dell'attract resta EVO e non c'è la schermata HOW TO PLAY. Barra, icona della m
 Da soli contro 7 avversari CPU (menu **PLAYERS: CHALLENGE**, sul MiSTer OSD *Game type: Challenge*).
 Si scelgono una volta bonus e racchetta, poi ogni livello presenta il suo avversario: un tipo di
 racchetta diverso per livello, i suoi 3 bonus e una CPU sempre più forte, dall'ARCADE del primo
-livello al GUARDIAN del boss finale. Le partite sono NEXT a 5 punti.
+livello al GUARDIAN del boss finale. Ogni avversario entra a modo suo, mostrando quello che sa fare
+(l'ARCADE prende al volo una raffica di capsule, il TITAN cresce dal pavimento, il BLASTER accende il
+suo nome a colpi, il GUARDIAN si costruisce il muro...); sul C64 la presentazione resta ferma. Le
+partite sono NEXT a 5 punti.
 
 - **Punti arcade**: colpi, scatti riusciti, SUPER e punti segnati, con un moltiplicatore che sale
   negli scambi lunghi (fino a ×8); a ogni livello vinto un premio, più un premio doppio per la

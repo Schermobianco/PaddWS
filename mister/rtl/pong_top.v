@@ -1429,13 +1429,15 @@ wire [1:0] bul_cold = {bul_on && !bul_side, bul_on && bul_side};
 wire [1:0] pad_gray = {nxt && player1[19:16] != 4'd8 && armed_blink,
                        nxt && player0[19:16] != 4'd8 && armed_blink} | bul_cold;
 
-// scritta "P1 SMASH!" per 1,2 s quando un giocatore attiva un bonus; con le mosse speciali "P1
-// STRAIGHT SHOT!" quando la mossa parte (1,2 s) e di nuovo al colpo (0,8 s), con "MAX" davanti al
-// livello 2 (come special_title di next_ui.rs). La mossa partita nel frame è quella pagata: la barra
-// è scesa di almeno mezza mossa (spende uno o due settori, 32 o 64; nel frame cresce al più di 12),
-// e la mossa e il livello sono quelli che il giocatore ha armato adesso. Quando RISING STRIKE
-// s'impenna (bit 14 di super0 che torna a zero con la mossa ancora in volo) next_render mostra un
-// quadrato nel punto per 12 frame.
+// scritta "P1 SMASH!" per 1,2 s quando un giocatore attiva un bonus (si accende come un televisore,
+// LK_BONUS di next_render); con le mosse speciali, quando la mossa parte, i trattini sotto "P1
+// STRAIGHT SHOT!" finché resta armata (LK_ARMED), e al colpo la scritta per 1 s (LK_HIT), con "MAX"
+// davanti al livello 2 (come special_title di next_ui.rs). La mossa partita nel frame è quella
+// pagata: la barra è scesa di almeno mezza mossa (spende uno o due settori, 32 o 64; nel frame
+// cresce al più di 12), e la mossa e il livello sono quelli che il giocatore ha armato adesso. Se la
+// mossa armata sparisce senza colpo (un punto) i trattini se ne vanno; se la scritta di un bonus li
+// copre, finita lei tornano. Quando RISING STRIKE s'impenna (bit 14 di super0 che torna a zero con
+// la mossa ancora in volo) next_render mostra un quadrato nel punto per 12 frame.
 reg [1:0] prev_count [0:1];
 reg       label_player = 1'b0;
 reg [2:0] label_bonus = 3'd0;
@@ -1446,7 +1448,12 @@ function bullet_new(input who);
 endfunction
 reg [1:0] label_move = 2'd0;               // 0 bonus, 1 STRAIGHT SHOT, 2 RISING STRIKE
 reg       label_max = 1'b0;                // mossa di livello 2: "MAX" davanti al nome
-reg [6:0] label_frames = 7'd0;
+reg [6:0] label_frames = 7'd0;             // frame rimasti (con LK_ARMED resta a 1 finché c'è la mossa)
+localparam [1:0] LK_BONUS = 2'd0, LK_ARMED = 2'd1, LK_HIT = 2'd2;
+reg [1:0] label_kind = 2'd0;
+reg [6:0] label_age = 7'd0;                // frame dall'inizio della scritta, fermi a 127
+// livelli armati dei due giocatori (STRAIGHT SHOT nei bit 0-1, RISING STRIKE nei bit 2-3)
+wire [3:0] armed0 = super0[11:8], armed1 = super1[11:8];
 reg [7:0] prev_meter [0:1];
 reg       prev_rise = 1'b0;                // RISING STRIKE in volo, impennata da arrivare
 reg [3:0] rise_frames = 4'd0;              // quadrato dove s'è impennata
@@ -1462,7 +1469,8 @@ always @(posedge clk) begin
         prev_rise <= 1'b0;
         rise_frames <= 4'd0;
     end else begin
-        if (frame_start && label_frames != 7'd0) label_frames <= label_frames - 7'd1;
+        if (frame_start && label_frames != 7'd0 && label_kind != LK_ARMED) label_frames <= label_frames - 7'd1;
+        if (frame_start && label_age != 7'd127) label_age <= label_age + 7'd1;
         if (frame_start && rise_frames != 4'd0) rise_frames <= rise_frames - 4'd1;
         if (sound_trigger) begin
             prev_count[0] <= reserve_count(player0);
@@ -1477,13 +1485,17 @@ always @(posedge clk) begin
                 label_player <= ball_vx < 0;
                 label_move <= next_flags[10:9];
                 label_max <= super0[13];
-                label_frames <= 7'd48;
+                label_kind <= LK_HIT;
+                label_age <= 7'd0;
+                label_frames <= 7'd60;
             end else if (sup && (sound_events[10] || sound_events[11]) && paid != 2'b00) begin
                 // livelli armati: STRAIGHT SHOT nei bit 8-9, RISING STRIKE nei bit 10-11 (2 = MAX)
                 label_player <= !paid[0];
                 label_move <= ((paid[0] ? super0[9:8] : super1[9:8]) != 2'd0) ? 2'd1 : 2'd2;
                 label_max <= paid[0] ? (super0[9] || super0[11]) : (super1[9] || super1[11]);
-                label_frames <= 7'd72;
+                label_kind <= LK_ARMED;
+                label_age <= 7'd0;
+                label_frames <= 7'd1;
             end else if (nxt && sound_events[5]) begin
                 label_move <= 2'd0;
                 label_player <= reserve_count(player0) < prev_count[0] ? 1'b0 : 1'b1;
@@ -1492,7 +1504,20 @@ always @(posedge clk) begin
                 label_bonus <= (reserve_count(player0) < prev_count[0])
                     ? (player0[19:16] == 4'd8 ? (bullet_new(1'b0) ? 3'd7 : 3'd2) : player0[18:16])
                     : (player1[19:16] == 4'd8 ? (bullet_new(1'b1) ? 3'd7 : 3'd2) : player1[18:16]);
+                label_kind <= LK_BONUS;
+                label_age <= 7'd0;
                 label_frames <= 7'd72;
+            end else if (label_kind == LK_ARMED && label_frames != 7'd0 && (label_player ? armed1 : armed0) == 4'd0) begin
+                // la mossa armata non c'è più senza il colpo: via i trattini
+                label_frames <= 7'd0;
+            end else if (sup && label_frames == 7'd0 && (armed0 != 4'd0 || armed1 != 4'd0)) begin
+                // finita un'altra scritta, tornano i trattini di una mossa ancora armata, già disegnati
+                label_player <= armed0 == 4'd0;
+                label_move <= ((armed0 != 4'd0 ? armed0[1:0] : armed1[1:0]) != 2'd0) ? 2'd1 : 2'd2;
+                label_max <= armed0 != 4'd0 ? (armed0[1] || armed0[3]) : (armed1[1] || armed1[3]);
+                label_kind <= LK_ARMED;
+                label_age <= 7'd127;
+                label_frames <= 7'd1;
             end
         end
     end
@@ -1725,6 +1750,53 @@ wire [2:0]  over_base = !two ? 3'd0 : match_cpu ? (((score0 >= score1) != ch_cpu
 wire        over_zero = (score0 == 16'd0) != (score1 == 16'd0);
 wire        over_perfect = over_zero && over_base != 3'd0 && over_base != 3'd4;
 wire [2:0]  over_winner = (over_perfect && over_base == 3'd3) ? 3'd5 : over_base;
+wire        over_solo = over_winner == 3'd3 || over_winner == 3'd5 || (ch_active && !duel && over_winner == 3'd4);
+// GAME OVER animato (pong_render, OV_*): frame dall'inizio; con GAME OVER il campo si spegne, e dal
+// frame 48 anche le aggiunte di NEXT se ne vanno con palla e racchette
+wire [7:0]  over_age = (mframe > 11'd255) ? 8'd255 : mframe[7:0];
+wire        over_off = mode == M_GAME_OVER && !over_solo && !over_perfect && mframe >= 11'd48;
+
+// presentazione animata della CHALLENGE: frame dall'inizio e scossa dello schermo (pixel), come
+// Stage::shake_at di rust/game/src/challenge_ui.rs con le distanze dimezzate: il colpo e il nome
+// che atterra di HAMMER, la crescita di TITAN (un colpo ogni 12 frame), i pezzi del muro e la
+// palla sul muro del GUARDIAN
+wire [7:0]  intro_age = (mframe > 11'd255) ? 8'd255 : mframe[7:0];
+wire [2:0]  intro_kind = rung_kind(ch_level);
+reg signed [3:0] intro_sx, intro_sy;
+always @(*) begin
+    intro_sx = 4'sd0;
+    intro_sy = 4'sd0;
+    if (mode == M_INTRO)
+        case (intro_kind)
+            3'd2: begin   // HAMMER
+                case (intro_age)
+                    8'd49: intro_sx = 4'sd3;
+                    8'd50: begin intro_sx = -4'sd3; intro_sy = 4'sd2; end
+                    8'd51: begin intro_sx = 4'sd3; intro_sy = -4'sd2; end
+                    8'd52: begin intro_sx = -4'sd2; intro_sy = 4'sd1; end
+                    8'd53: begin intro_sx = 4'sd2; intro_sy = -4'sd1; end
+                    8'd54: intro_sx = -4'sd1;
+                    8'd55: intro_sx = 4'sd1;
+                    8'd72: intro_sy = 4'sd3;
+                    8'd73: intro_sy = -4'sd2;
+                    8'd74: intro_sy = 4'sd2;
+                    8'd75: intro_sy = -4'sd1;
+                    8'd76: intro_sy = 4'sd1;
+                    default: ;
+                endcase
+            end
+            3'd1: if (intro_age == 8'd6 || intro_age == 8'd18 || intro_age == 8'd30 || intro_age == 8'd42 ||
+                      intro_age == 8'd54 || intro_age == 8'd66) intro_sy = 4'sd1;   // TITAN
+            3'd6: begin   // GUARDIAN
+                if (intro_age == 8'd14 || intro_age == 8'd22 || intro_age == 8'd30 || intro_age == 8'd38 ||
+                    intro_age == 8'd46) intro_sy = 4'sd1;
+                if (intro_age == 8'd82) intro_sx = 4'sd2;
+            end
+            default: ;
+        endcase
+end
+wire [9:0]  intro_hc = {1'b0, hc} - {{6{intro_sx[3]}}, intro_sx};
+wire [9:0]  intro_vc = {1'b0, vc} - {{6{intro_sy[3]}}, intro_sy};
 
 pong_render render (
     .clk(clk), .snapshot(snapshot), .hc(game_hc), .vc(vc),
@@ -1736,8 +1808,8 @@ pong_render render (
     .score0(score0), .score1(score1), .best(best),
     .lives(lives), .show_lives(!two && (mode == M_GAME || mode == M_GAME_OVER)),
     .overlay(mode == M_DEMO ? 2'd1 : mode == M_GAME_OVER ? 2'd2 : 2'd0), .demo_mode(demo_kind),
-    .winner(over_winner), .win_solo(over_winner == 3'd3 || over_winner == 3'd5 || (ch_active && !duel && over_winner == 3'd4)),
-    .perfect(over_perfect),
+    .winner(over_winner), .win_solo(over_solo), .perfect(over_perfect),
+    .over_age(over_age), .you_right(ch_cpu_left),
     .winner_accent(nxt), .ball_accent(nxt && (next_flags[2] || next_flags[10:9] != 2'd0)),
     .free_play(free_play), .credits(credits), .blink(blink), .upright(upright), .countdown(countdown),
     .pad_hide(pad_spin | warp_hide | twist_kind), .pad_gray(pad_gray), .dash_off(dash_off), .field_gray(bul_on),
@@ -1746,13 +1818,14 @@ pong_render render (
 );
 
 next_render next_draw (
-    .clk(clk), .snapshot(snapshot), .hc({1'b0, (mode == M_INTRO || mode == M_ENDING) ? hc : game_hc}), .vc({1'b0, vc}),
+    .clk(clk), .snapshot(snapshot),
+    .hc(mode == M_INTRO ? intro_hc : {1'b0, mode == M_ENDING ? hc : game_hc}), .vc(mode == M_INTRO ? intro_vc : {1'b0, vc}),
     .pick(mode == M_PICK), .pick_cursor0(pick_cur[0]), .pick_cursor1(pick_cur[1]),
     .pick_mask0(pick_mask[0]), .pick_mask1(pick_mask[1]), .pick_secs(pick_secs), .pick_ready(pick_ready),
     .cpu(pick_cpu), .lock(pick_lock), .blink(blink),
     .pick_paddle(pick_paddle), .kind_cursor0(kind_cur[0]), .kind_cursor1(kind_cur[1]), .kind_chosen(kind_chosen),
     // presentazione di CHALLENGE: la racchetta dell'avversario, rivolta verso il giocatore
-    .intro(mode == M_INTRO), .intro_kind(rung_kind(ch_level)), .intro_right(ch_side),
+    .intro(mode == M_INTRO), .intro_kind(intro_kind), .intro_right(ch_side), .intro_age(intro_age),
     .parade(end_parade), .parade_n(end_parade_n),
     .nxt(nxt && (mode == M_GAME || mode == M_GAME_OVER || mode == M_DEMO)),
     .ball_x(ball_x), .ball_y(ball_y), .ball_r(ball_r), .ball_boost(ball_boost), .ball_vx(ball_vx),
@@ -1761,6 +1834,7 @@ next_render next_draw (
     .slow_timer(slow_timer), .curve(curve), .next_flags(next_flags), .player0(player0), .player1(player1),
     .caps_x(caps_x), .caps_y(caps_y), .caps_flags(caps_flags), .tick(logic_tick),
     .label_on(label_frames != 7'd0), .label_player(label_player), .label_bonus(label_bonus),
+    .label_kind(label_kind), .label_age(label_age),
     .warp_on(warp_on), .warp_side(warp_side), .warp_from(warp_from),
     .kind0(kind0), .kind1(kind1), .shots_x(shots_x), .shots_y(shots_y),
     .pad0_motion(pad0_motion), .pad1_motion(pad1_motion), .rush_fade(rush_fade), .barrier_flash(barrier_flash),
@@ -1859,7 +1933,7 @@ always @(posedge clk) begin
 end
 
 challenge_render challenge_draw (
-    .clk(clk), .hc({1'b0, hc}), .vc({1'b0, vc}),
+    .clk(clk), .hc(mode == M_INTRO ? intro_hc : {1'b0, hc}), .vc(mode == M_INTRO ? intro_vc : {1'b0, vc}),
     .screen(mode == M_INTRO ? 3'd1 : mode == M_CLEAR ? 3'd2 : mode == M_CONT ? 3'd3 :
             mode == M_INITIALS ? 3'd4 : mode == M_SCORES ? 3'd5 : mode == M_CHALLENGER ? 3'd7 :
             (ch_active && !duel && (mode == M_GAME || mode == M_GAME_OVER)) ? 3'd6 : 3'd0),
@@ -1869,7 +1943,7 @@ challenge_render challenge_draw (
     .cont_digit(ch_cont_digit), .cont_over(cont_over),
     .name(ch_name), .name_pos(ch_pos), .letter(letter_code(ch_letter)),
     .table_names(tb_names_bus), .table_bcd(tb_bcd_bus), .table_levels(tb_levels_bus),
-    .highlight(ch_highlight), .mult(ch_mult),
+    .highlight(ch_highlight), .mult(ch_mult), .intro_age(intro_age),
     .rgb(ch_rgb), .opaque(ch_opaque)
 );
 
@@ -1886,7 +1960,8 @@ assign rgb_mix = (mode <= M_TITLE) ? attract_rgb :
                  // finale: i timbri sopra le racchette della sfilata, le racchette sopra il resto
                  (mode == M_ENDING) ? ((end_top || !next_opaque) ? end_rgb : next_rgb) :
                  (mode >= M_INTRO || (ch_opaque && !flash_q)) ? ch_rgb :
-                 (next_opaque && !game_top && !(next_label && game_ball) && (mode == M_PICK || !flash_q)) ? next_rgb :
+                 (next_opaque && !game_top && !(next_label && game_ball) && (mode == M_PICK || !flash_q) &&
+                  !over_off) ? next_rgb :
                  (game_bg && next_halo != 2'd0) ? halo_rgb : game_rgb;
 // easter egg: giallo e rosso scambiati sull'uscita, dopo la scelta del renderer
 egg_swap swap (.on(egg), .rgb_in(rgb_mix), .rgb_out(rgb));

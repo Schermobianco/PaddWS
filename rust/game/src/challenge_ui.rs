@@ -14,16 +14,16 @@
 //! sfida non entra nessun altro.
 
 use macroquad::prelude::*;
-use paddws_core::challenge::{Entry, LEVELS, RUNGS, Score, TABLE_SIZE, Table};
+use paddws_core::challenge::{Entry, LEVELS, RUNGS, Rung, Score, TABLE_SIZE, Table};
 use paddws_core::fixed::to_f32;
-use paddws_core::{Event, Side};
+use paddws_core::{Event, PaddleKind, Side};
 
 use crate::attract::Attract;
 use crate::encoder::Action;
 use crate::gamepad::Control;
 use crate::input::{self, PadKeys};
 use crate::next_ui::{Pick, draw_capsule, unit};
-use crate::paddle_ui::{Look, Shape, draw_paddle, tagline};
+use crate::paddle_ui::{Look, Shape, TWIST_MAX_TILT, draw_paddle, tagline};
 use crate::platform;
 use crate::scenes::{App, Menu, Play, START_KEYS, Scene};
 use crate::touch;
@@ -360,6 +360,11 @@ impl Intro {
         }
     }
 
+    /// Per la verifica automatica: porta la presentazione a `seconds` dall'inizio.
+    pub fn skip_to(&mut self, seconds: f64) {
+        self.left = INTRO_SECONDS - seconds;
+    }
+
     /// Come il MiSTer, il nome dell'avversario si ferma quando la presentazione finisce (saltata,
     /// arriva uno sfidante, Esc).
     pub fn update(&mut self, app: &mut App, dt: f64) -> Option<Scene> {
@@ -392,66 +397,630 @@ impl Intro {
         (self.left <= 0.0 || skip).then(|| Scene::Game(Box::new(Play::challenge(app))))
     }
 
+    /// Presentazione animata: in cima la scala dei livelli, poi l'avversario entra a modo suo,
+    /// mostrando quello che sa fare, e porta con sé nome, motto, bonus e punti da fare.
     pub fn draw(&self, app: &App) {
         let r = &app.renderer;
         let run = app.run.as_ref().expect("CHALLENGE senza partita");
-        let rung = &RUNGS[run.level];
-        let colors = &app.cfg.colors;
-        let (white, gray, accent) = (
-            App::color(colors.white),
-            App::color(colors.lgray),
-            App::color(colors.accent),
-        );
         r.fill(BLACK);
-        let title = if run.level + 1 == LEVELS {
-            "FINAL LEVEL".to_string()
-        } else {
-            format!("LEVEL {} OF {LEVELS}", run.level + 1)
-        };
-        text(app, &title, 44.0, 60.0, accent);
-        // la racchetta dell'avversario, rivolta verso il giocatore
-        let p = &app.params;
-        let k = &p.kinds[rung.kind as usize];
-        let shape = Shape {
-            kind: Some(rung.kind),
-            x: r.world_w / 2.0,
-            y: r.world_h * 0.66, // y verso l'alto: la racchetta sta sopra il nome
-            w: to_f32(p.pad_width),
-            h: to_f32(k.height),
-            front: if run.side == Side::Left { -1.0 } else { 1.0 },
-            tilt: 0.0,
-            dash: None,
-            preview: true,
-        };
-        draw_paddle(
-            r,
-            &shape,
-            unit(app),
-            Look {
-                body: white,
-                mark: accent,
-                detail: gray,
-            },
-        );
-        let h = r.world_h / app.scale();
-        text(app, rung.kind.name(), 52.0, h * 0.53, white);
-        text(app, tagline(rung.kind), 26.0, h * 0.53 + 40.0, gray);
-        // i bonus dell'avversario: capsula con l'icona e nome sotto, su tre colonne
-        let (sc, u) = (app.scale(), unit(app));
-        for (i, b) in rung.loadout.iter().enumerate() {
-            let cx = r.world_w / 2.0 + (i as f32 - 1.0) * 150.0 * sc;
-            draw_capsule(*b, cx, (h * 0.53 + 84.0) * sc, 13.0 * u, u, false, accent);
-            r.text_centered(b.name(), &app.assets.font_text, 22.0 * sc, cx, (h * 0.53 + 112.0) * sc, 0.0, accent);
+        let f = ((INTRO_SECONDS - self.left) * 60.0).floor() as f32;
+        let st = Stage::new(app, run, f);
+        st.header();
+        match st.rung.kind {
+            PaddleKind::Arcade => st.arcade(),
+            PaddleKind::Twist => st.twist(),
+            PaddleKind::Hammer => st.hammer(),
+            PaddleKind::Titan => st.titan(),
+            PaddleKind::Blaster => st.blaster(),
+            PaddleKind::Rush => st.rush(),
+            PaddleKind::Guardian => st.guardian(),
         }
-        text(app, &format!("FIRST TO {}", rung.points), 26.0, h * 0.53 + 150.0, gray);
         text(
             app,
             &format!("SCORE {}    HI {}", pad(run.score), pad(app.scores.entries[0].score)),
             28.0,
-            h - 30.0,
-            white,
+            r.world_h / app.scale() - 30.0,
+            App::color(app.cfg.colors.white),
         );
         draw_join_hint(app, run.side.opponent());
+    }
+}
+
+// Presentazione: righe (unità a 480 righe) della scala, del livello, del centro della racchetta,
+// del nome, del motto, delle capsule e dei loro nomi, dei punti da fare.
+const LADDER_Y: f32 = 14.0;
+const LEVEL_Y: f32 = 52.0;
+const PAD_Y: f32 = 163.0;
+const NAME_Y: f32 = 254.0;
+const TAG_Y: f32 = 294.0;
+const CAP_Y: f32 = 338.0;
+const CAP_NAME_Y: f32 = 366.0;
+const FIRST_Y: f32 = 404.0;
+/// HAMMER: scossa del colpo e dell'atterraggio del nome (unità a 480 righe, frame per frame).
+const HAMMER_SHAKE: [(f32, f32); 8] = [
+    (6.0, 0.0),
+    (-6.0, 4.0),
+    (6.0, -4.0),
+    (-4.0, 2.0),
+    (4.0, -2.0),
+    (-2.0, 0.0),
+    (2.0, 0.0),
+    (0.0, 0.0),
+];
+const LAND_SHAKE: [(f32, f32); 6] = [(0.0, 6.0), (0.0, -4.0), (0.0, 4.0), (0.0, -2.0), (0.0, 2.0), (0.0, 0.0)];
+/// ARCADE: capsule della raffica, spostamento verticale dalla racchetta.
+const ARCADE_DY: [f32; 10] = [-28.0, 20.0, -8.0, 32.0, -36.0, 4.0, 24.0, -20.0, 12.0, -4.0];
+/// GUARDIAN: frame in cui la palla arriva sul muro.
+const GUARDIAN_HIT: f32 = 82.0;
+
+/// Una presentazione al frame `f` (60 al secondo, dall'inizio). Le x si danno come distanza dal
+/// centro verso la metà campo dell'avversario (`x`), da dove entra; le y come righe a 480 (`y`).
+struct Stage<'a> {
+    app: &'a App,
+    rung: &'static Rung,
+    level: usize,
+    f: f32,
+    /// +1 se l'avversario sta a destra (il giocatore a sinistra), -1 altrimenti
+    away: f32,
+    sc: f32,
+    u: f32,
+    shake: (f32, f32),
+    white: Color,
+    gray: Color,
+    accent: Color,
+}
+
+impl<'a> Stage<'a> {
+    fn new(app: &'a App, run: &Run, f: f32) -> Self {
+        let rung = &RUNGS[run.level];
+        let colors = &app.cfg.colors;
+        let mut st = Self {
+            app,
+            rung,
+            level: run.level,
+            f,
+            away: if run.side == Side::Left { 1.0 } else { -1.0 },
+            sc: app.scale(),
+            u: unit(app),
+            shake: (0.0, 0.0),
+            white: App::color(colors.white),
+            gray: App::color(colors.lgray),
+            accent: App::color(colors.accent),
+        };
+        let (dx, dy) = st.shake_at();
+        st.shake = (dx * st.sc, dy * st.sc);
+        st
+    }
+
+    /// Scossa dello schermo di questo frame (unità a 480 righe).
+    fn shake_at(&self) -> (f32, f32) {
+        let f = self.f;
+        match self.rung.kind {
+            PaddleKind::Hammer if (49.0..57.0).contains(&f) => HAMMER_SHAKE[(f - 49.0) as usize],
+            PaddleKind::Hammer if (72.0..78.0).contains(&f) => LAND_SHAKE[(f - 72.0) as usize],
+            // TITAN: un colpo sordo ogni quattro scatti della crescita
+            PaddleKind::Titan if (6.0..78.0).contains(&f) && (f - 6.0) % 12.0 == 0.0 => (0.0, 2.0),
+            // GUARDIAN: i pezzi del muro che si posano, la palla che lo colpisce
+            PaddleKind::Guardian if (0..5).any(|s| f == 14.0 + 8.0 * s as f32) => (0.0, 2.0),
+            PaddleKind::Guardian if f == GUARDIAN_HIT => (3.0, 0.0),
+            _ => (0.0, 0.0),
+        }
+    }
+
+    fn x(&self, dx: f32) -> f32 {
+        self.app.renderer.world_w / 2.0 + self.away * dx * self.sc + self.shake.0
+    }
+
+    fn y(&self, y: f32) -> f32 {
+        y * self.sc + self.shake.1
+    }
+
+    fn font(&self) -> &crate::render::GameFont {
+        &self.app.assets.font_text
+    }
+
+    /// Testo centrato in (x, y) di disegno, alto `size` (unità a 480 righe).
+    fn text_at(&self, s: &str, size: f32, x: f32, y: f32, color: Color) {
+        self.app.renderer.text_centered(s, self.font(), size * self.sc, x, y, 0.0, color);
+    }
+
+    /// Racchetta dell'avversario con centro (x, y) di disegno, alta `h`, rivolta al giocatore.
+    #[allow(clippy::too_many_arguments)]
+    fn paddle(&self, x: f32, y: f32, h: f32, tilt: f32, dash: Option<(f32, f32)>, body: Color, preview: bool) {
+        let r = &self.app.renderer;
+        let shape = Shape {
+            kind: Some(self.rung.kind),
+            x,
+            y: r.screen_y(y), // y del core, verso l'alto
+            w: to_f32(self.app.params.pad_width),
+            h,
+            front: -self.away,
+            tilt,
+            dash,
+            preview,
+        };
+        let look = Look {
+            body,
+            mark: self.accent,
+            detail: self.gray,
+        };
+        draw_paddle(r, &shape, self.u, look);
+    }
+
+    fn pad_height(&self) -> f32 {
+        to_f32(self.app.params.kinds[self.rung.kind as usize].height)
+    }
+
+    fn ball(&self) -> f32 {
+        to_f32(self.app.params.ball_radius) * 2.0
+    }
+
+    /// Scala dei livelli: sette trattini come quelli della mezzeria (battuti bianchi, quello di
+    /// adesso giallo che lampeggia, gli altri spenti), che compaiono uno ogni due frame, e sotto il
+    /// livello (FINAL LEVEL lampeggia).
+    fn header(&self) {
+        let f = self.f;
+        let dim = Color { a: 0.25, ..self.white };
+        let w = self.app.renderer.world_w;
+        for i in 0..LEVELS {
+            if f < 2.0 * i as f32 {
+                break;
+            }
+            let color = match i.cmp(&self.level) {
+                std::cmp::Ordering::Less => self.white,
+                std::cmp::Ordering::Equal if (f / 8.0) as i64 % 2 == 0 => self.accent,
+                _ => dim,
+            };
+            let x = w / 2.0 + (i as f32 * 48.0 - 160.0) * self.sc + self.shake.0;
+            draw_rectangle(x, self.y(LADDER_Y), 32.0 * self.sc, 10.0 * self.sc, color);
+        }
+        let last = self.level + 1 == LEVELS;
+        if f >= 14.0 && (!last || (f / 10.0) as i64 % 2 == 0) {
+            let title = if last {
+                "FINAL LEVEL".to_string()
+            } else {
+                format!("LEVEL {} OF {LEVELS}", self.level + 1)
+            };
+            self.text_at(&title, 34.0, self.x(0.0), self.y(LEVEL_Y), self.accent);
+        }
+    }
+
+    fn name(&self, x: f32, y: f32, color: Color) {
+        self.text_at(self.rung.kind.name(), 52.0, x, y, color);
+    }
+
+    /// Lettere del nome: centro x di disegno di ciascuna (il nome centrato nello schermo).
+    fn name_letters(&self) -> Vec<f32> {
+        let r = &self.app.renderer;
+        let cx = r.world_w / 2.0 + self.shake.0;
+        r.ink_boxes(self.rung.kind.name(), self.font(), 52.0 * self.sc)
+            .into_iter()
+            .flatten()
+            .map(|(x0, x1)| cx + (x0 + x1) / 2.0)
+            .collect()
+    }
+
+    /// Una lettera del nome, centrata in (x, y) di disegno.
+    fn letter(&self, i: usize, x: f32, y: f32, color: Color) {
+        if let Some(ch) = self.rung.kind.name().chars().nth(i) {
+            self.text_at(&ch.to_string(), 52.0, x, y, color);
+        }
+    }
+
+    /// Motto scritto una lettera ogni `per` frame da `t0`.
+    fn tag_typed(&self, t0: f32, per: f32) {
+        if self.f < t0 {
+            return;
+        }
+        let tag = tagline(self.rung.kind);
+        let n = (((self.f - t0) / per) as usize + 1).min(tag.len());
+        // la parte scritta, allineata dove starà il motto intero
+        let r = &self.app.renderer;
+        let size = 26.0 * self.sc;
+        let full = r.text_width(tag, self.font(), size);
+        let part = r.text_width(&tag[..n], self.font(), size);
+        let cx = r.world_w / 2.0 + self.shake.0 - full / 2.0 + part / 2.0;
+        self.text_at(&tag[..n], 26.0, cx, self.y(TAG_Y), self.gray);
+    }
+
+    fn cap_x(&self, i: usize) -> f32 {
+        self.app.renderer.world_w / 2.0 + (i as f32 - 1.0) * 150.0 * self.sc + self.shake.0
+    }
+
+    fn capsule(&self, i: usize, x: f32, y: f32, inverted: bool) {
+        draw_capsule(self.rung.loadout[i], x, y, 13.0 * self.u, self.u, inverted, self.accent);
+    }
+
+    fn cap_name(&self, i: usize) {
+        self.text_at(self.rung.loadout[i].name(), 22.0, self.cap_x(i), self.y(CAP_NAME_Y), self.accent);
+    }
+
+    /// Capsule che arrivano dalla metà campo dell'avversario, una ogni `gap` frame da `t0`, a `sp`
+    /// unità per frame; arrivate si accendono in negativo per un attimo e mostrano il nome.
+    fn caps_slide(&self, t0: f32, gap: f32, sp: f32) {
+        for i in 0..3 {
+            let s = t0 + i as f32 * gap;
+            if self.f < s {
+                continue;
+            }
+            let (from, to) = (self.x(360.0), self.cap_x(i));
+            let travel = (to - from).abs();
+            let moved = (self.f - s) * sp * self.sc;
+            if moved < travel {
+                self.capsule(i, from + (to - from).signum() * moved, self.y(CAP_Y), false);
+                continue;
+            }
+            let arrived = s + travel / (sp * self.sc);
+            self.capsule(i, to, self.y(CAP_Y), self.f < arrived + 4.0);
+            self.cap_name(i);
+        }
+    }
+
+    /// Capsule che compaiono al loro posto in negativo, una ogni `gap` frame da `t0`.
+    fn caps_pop(&self, t0: f32, gap: f32) {
+        for i in 0..3 {
+            let s = t0 + i as f32 * gap;
+            if self.f >= s {
+                self.capsule(i, self.cap_x(i), self.y(CAP_Y), self.f < s + 4.0);
+                self.cap_name(i);
+            }
+        }
+    }
+
+    fn first_to(&self, at: f32) {
+        if self.f >= at {
+            let s = format!("FIRST TO {}", self.rung.points);
+            self.text_at(&s, 26.0, self.x(0.0), self.y(FIRST_Y), self.gray);
+        }
+    }
+
+    /// ARCADE (più bonus): una raffica di capsule parte dalla mezzeria e la racchetta le prende
+    /// tutte, contandole; il nome lampeggia come INSERT COIN, poi i tre bonus escono dalla racchetta.
+    fn arcade(&self) {
+        let (f, u) = (self.f, self.u);
+        let (net, face, sp): (f32, f32, f32) = (-240.0, -5.0, 12.0);
+        let arrive = |k: usize| 10.0 + k as f32 * 6.0 + ((face - net) / sp).ceil();
+        if (6.0..84.0).contains(&f) {
+            for i in 0..5 {
+                let y = PAD_Y - 56.0 + i as f32 * 24.0;
+                draw_rectangle(self.x(net) - 2.0 * self.sc, self.y(y), 4.0 * self.sc, 12.0 * self.sc, self.white);
+            }
+        }
+        let (mut caught, mut flash) = (0, false);
+        for (k, dy) in ARCADE_DY.iter().enumerate() {
+            let s = 10.0 + k as f32 * 6.0;
+            if f >= arrive(k) {
+                caught += 1;
+                flash |= f < arrive(k) + 2.0;
+            } else if f >= s {
+                let x = self.x(net + (f - s) * sp);
+                draw_capsule(self.rung.loadout[k % 3], x, self.y(PAD_Y + dy), 10.0 * u, u, false, self.accent);
+            }
+        }
+        // la racchetta va incontro alla capsula che arriva, poi torna al centro
+        let dy = match (0..ARCADE_DY.len()).find(|&k| arrive(k) > f) {
+            _ if f < 10.0 => 0.0,
+            Some(k) => {
+                let (a0, y0) = if k > 0 { (arrive(k - 1), ARCADE_DY[k - 1]) } else { (10.0, 0.0) };
+                y0 + (ARCADE_DY[k] - y0) * ((f - a0) / (arrive(k) - a0 - 2.0).max(1.0)).min(1.0)
+            }
+            None => ARCADE_DY[9] * (1.0 - ((f - arrive(9)) / 10.0).min(1.0)),
+        };
+        let body = if flash { self.accent } else { self.white };
+        self.paddle(self.x(0.0), self.y(PAD_Y + dy), self.pad_height(), 0.0, None, body, false);
+        if caught > 0 && f < 96.0 {
+            self.text_at(&format!("+{caught}"), 26.0, self.x(30.0), self.y(PAD_Y + dy - 10.0), self.accent);
+        }
+        if f >= 84.0 && (f >= 108.0 || ((f - 84.0) / 4.0) as i64 % 2 == 0) {
+            self.name(self.x(0.0), self.y(NAME_Y), self.white);
+        }
+        self.tag_typed(100.0, 1.0);
+        for i in 0..3 {
+            let s = 120.0 + 8.0 * i as f32;
+            if f < s {
+                continue;
+            }
+            let k = ((f - s) / 6.0).min(1.0);
+            let (x0, y0) = (self.x(0.0), self.y(PAD_Y));
+            let (x1, y1) = (self.cap_x(i), self.y(CAP_Y));
+            self.capsule(i, x0 + (x1 - x0) * k, y0 + (y1 - y0) * k, k == 1.0 && f < s + 10.0);
+            if k == 1.0 {
+                self.cap_name(i);
+            }
+        }
+        self.first_to(160.0);
+    }
+
+    /// TWIST (s'inclina con la velocità): corre su e giù inclinandosi, ribatte la palla di sbieco;
+    /// il nome entra inclinato e oscilla finché non si raddrizza.
+    fn twist(&self) {
+        let f = self.f;
+        // spostamento verticale e velocità (unità per frame, verso il basso) della racchetta
+        let run = |f: f32| {
+            if !(6.0..66.0).contains(&f) {
+                return (0.0, 0.0);
+            }
+            let (t, a) = (f - 6.0, 44.0 * (1.0 - (f - 6.0) / 60.0));
+            (a * (t * 0.35).sin(), a * 0.35 * (t * 0.35).cos())
+        };
+        let (dy, v) = run(f);
+        // salendo la faccia si gira verso l'alto
+        let tilt = (-v * 0.03).clamp(-TWIST_MAX_TILT, TWIST_MAX_TILT);
+        self.paddle(self.x(0.0), self.y(PAD_Y + dy), self.pad_height(), tilt, None, self.white, false);
+        let d = self.ball();
+        let hit_y = PAD_Y + run(30.0).0;
+        if (14.0..30.0).contains(&f) {
+            draw_rectangle(self.x(-320.0 + (f - 14.0) * 19.0) - d / 2.0, self.y(hit_y) - d / 2.0, d, d, self.white);
+        } else if f >= 30.0 {
+            let t = f - 30.0;
+            draw_rectangle(self.x(-15.0 - 14.0 * t) - d / 2.0, self.y(hit_y - 9.0 * t) - d / 2.0, d, d, self.white);
+        }
+        if f >= 66.0 {
+            let t = f - 66.0;
+            let rot = if t < 24.0 { 0.25 * (t * 0.6).cos() * (1.0 - t / 24.0) } else { 0.0 };
+            let r = &self.app.renderer;
+            r.text_centered(self.rung.kind.name(), self.font(), 52.0 * self.sc, self.x(0.0), self.y(NAME_Y), rot, self.white);
+        }
+        self.tag_typed(92.0, 1.0);
+        self.caps_slide(112.0, 12.0, 60.0);
+        self.first_to(160.0);
+    }
+
+    /// HAMMER (colpi potenti): la palla arriva piano, il martello carica e la ribatte fortissimo;
+    /// il nome cade come un peso e alza la polvere, le capsule cadono pesanti.
+    fn hammer(&self) {
+        let f = self.f;
+        // carica all'indietro, colpo in avanti, ritorno
+        let px = if (40.0..48.0).contains(&f) {
+            2.0 * (f - 39.0)
+        } else if (49.0..55.0).contains(&f) {
+            (-16.0 + 4.0 * (f - 50.0).max(0.0)).min(0.0)
+        } else {
+            0.0
+        };
+        self.paddle(self.x(px), self.y(PAD_Y), self.pad_height(), 0.0, None, self.white, false);
+        let d = self.ball();
+        let by = self.y(PAD_Y) - d / 2.0;
+        if (12.0..49.0).contains(&f) {
+            draw_rectangle(self.x(-20.0 - (49.0 - f) * 8.0) - d / 2.0, by, d, d, self.white);
+        } else if f >= 49.0 {
+            let bx = -20.0 - (f - 49.0) * 40.0;
+            for (k, a) in [0.6, 0.35, 0.15].iter().enumerate() {
+                let color = Color { a: *a, ..self.gray };
+                draw_rectangle(self.x(bx + 16.0 * (k + 1) as f32) - d / 2.0, by, d, d, color);
+            }
+            draw_rectangle(self.x(bx) - d / 2.0, by, d, d, self.white);
+        }
+        if f >= 62.0 {
+            let y = if f < 72.0 { NAME_Y - (72.0 - f).powi(2) * 2.6 } else { NAME_Y };
+            self.name(self.x(0.0), self.y(y), self.white);
+        }
+        // polvere ai due lati del nome
+        if (72.0..82.0).contains(&f) {
+            let t = f - 72.0;
+            let r = &self.app.renderer;
+            let half = r.text_width(self.rung.kind.name(), self.font(), 52.0 * self.sc) / 2.0;
+            let cx = r.world_w / 2.0 + self.shake.0;
+            for (sp, up) in [(6.0, 5.0), (10.0, 3.0)] {
+                let dy = self.y(NAME_Y + 20.0 - up * t + 0.8 * t * t);
+                let off = half + (6.0 + sp * t) * self.sc;
+                let s = 4.0 * self.sc;
+                draw_rectangle(cx - off - s, dy, s, s, self.gray);
+                draw_rectangle(cx + off, dy, s, s, self.gray);
+            }
+        }
+        self.tag_typed(88.0, 1.0);
+        for i in 0..3 {
+            let s = 106.0 + 10.0 * i as f32;
+            if f < s {
+                continue;
+            }
+            let t = f - s;
+            let y = if t < 8.0 { CAP_Y - (8.0 - t).powi(2) * 6.0 } else { CAP_Y };
+            self.capsule(i, self.cap_x(i), self.y(y), (8.0..11.0).contains(&t));
+            if t >= 8.0 {
+                self.cap_name(i);
+            }
+        }
+        self.first_to(150.0);
+    }
+
+    /// TITAN (alto ma lento): tutto lento; cresce dal pavimento a scatti che fanno tremare lo
+    /// schermo, il nome sale da sotto terra, il motto si scrive piano, le capsule arrivano per ultime.
+    fn titan(&self) {
+        let f = self.f;
+        let full = self.pad_height();
+        if f >= 6.0 {
+            let step = full / 24.0;
+            let h = (((f - 6.0) / 3.0).floor() + 1.0).min(24.0) * step;
+            let flash = h >= full && (78.0..82.0).contains(&f);
+            let bottom = self.y(PAD_Y) + full / 2.0;
+            let body = if flash { self.accent } else { self.white };
+            self.paddle(self.x(0.0), bottom - h / 2.0, h, 0.0, None, body, false);
+        }
+        if f >= 84.0 {
+            // sale da sotto il pavimento: quello che è ancora sotto resta coperto
+            let r = &self.app.renderer;
+            let th = r.text_height(self.rung.kind.name(), self.font(), 52.0 * self.sc);
+            let ground = self.y(NAME_Y) + th / 2.0 + self.u;
+            let y = (NAME_Y + 50.0 - (f - 84.0) * 2.0).max(NAME_Y);
+            self.name(self.x(0.0), self.y(y), self.white);
+            let w = r.world_w;
+            draw_rectangle(0.0, ground, w, 60.0 * self.sc, BLACK);
+            if f < 112.0 {
+                let half = r.text_width(self.rung.kind.name(), self.font(), 52.0 * self.sc) / 2.0 + 16.0 * self.sc;
+                draw_rectangle(w / 2.0 - half + self.shake.0, ground, 2.0 * half, 2.0 * self.sc, self.gray);
+            }
+        }
+        self.tag_typed(114.0, 3.0);
+        self.caps_slide(156.0, 12.0, 16.0);
+        self.first_to(214.0);
+    }
+
+    /// BLASTER (spara alle capsule): da una parte spara, e ogni colpo accende una lettera del nome;
+    /// poi scende e colpisce al volo le tre capsule, che si fermano al loro posto.
+    fn blaster(&self) {
+        let (f, sc) = (self.f, self.sc);
+        let py = if f < 64.0 { NAME_Y } else { (NAME_Y + (f - 64.0) * 8.0).min(CAP_Y) };
+        let muzzle = self.x(224.0);
+        let shot = |x: f32, y: f32| {
+            for dy in [-8.0, 6.0] {
+                draw_rectangle(x - 7.0 * sc, self.y(y + dy), 14.0 * sc, 2.0 * sc, self.accent);
+            }
+        };
+        if f >= 4.0 {
+            self.paddle(self.x(240.0), self.y(py), self.pad_height(), 0.0, None, self.white, false);
+        }
+        // un colpo per lettera, dalla più vicina alla racchetta
+        let letters = self.name_letters();
+        let n = letters.len();
+        for k in 0..n {
+            let j = if self.away > 0.0 { n - 1 - k } else { k };
+            let fired = 12.0 + 5.0 * k as f32;
+            let target = letters[j];
+            let reach = fired + ((muzzle - target).abs() / (40.0 * sc)).ceil();
+            if (fired..reach).contains(&f) {
+                shot(muzzle - self.away * (f - fired) * 40.0 * sc, NAME_Y);
+            }
+            if f == fired {
+                draw_rectangle(muzzle - 3.0 * sc, self.y(NAME_Y - 10.0), 6.0 * sc, 20.0 * sc, self.accent);
+            }
+            if f >= reach {
+                let color = if f < reach + 2.0 { self.accent } else { self.white };
+                self.letter(j, target, self.y(NAME_Y), color);
+            }
+        }
+        self.tag_typed(56.0, 1.0);
+        // capsule colpite al volo: arrivano dalla parte del giocatore, il colpo le ferma al loro posto
+        for i in 0..3 {
+            let at = 96.0 + 14.0 * i as f32;
+            let cx = self.cap_x(i);
+            if f < at {
+                let x = cx - self.away * (at - f) * 20.0 * sc;
+                if (0.0..self.app.renderer.world_w).contains(&x) {
+                    draw_rectangle_lines(x - 6.5 * self.u, self.y(CAP_Y) - 6.5 * self.u, 13.0 * self.u, 13.0 * self.u, 2.0 * self.u, self.accent);
+                }
+                let sx = cx + self.away * (20.0 + (at - f) * 40.0) * sc;
+                if py == CAP_Y && (sx - muzzle) * self.away <= 0.0 {
+                    shot(sx, CAP_Y);
+                }
+                continue;
+            }
+            self.capsule(i, cx, self.y(CAP_Y), f < at + 4.0);
+            self.cap_name(i);
+        }
+        self.first_to(150.0);
+    }
+
+    /// RUSH (scatto lungo): tutto veloce; carica sul bordo e fa uno scatto lunghissimo con le
+    /// immagini gialle, e nome, motto e capsule entrano allo stesso modo.
+    fn rush(&self) {
+        let f = self.f;
+        // posizione (x di disegno) e intensità delle immagini di un elemento che scatta da `from` a
+        // `to` in `steps` frame da `t0`; None prima
+        let dash = |t0: f32, from: f32, to: f32, steps: f32| -> Option<(f32, f32)> {
+            if f < t0 {
+                return None;
+            }
+            let t = f - t0;
+            let x = if t < steps { from + (to - from) * (t + 1.0) / steps } else { to };
+            let fade = if t < steps { 1.0 } else { (1.0 - (t - steps + 1.0) / 12.0).max(0.0) };
+            Some((x, fade))
+        };
+        let ghosts = |from: f32, x: f32, fade: f32| (1..=3).map(move |k| (from + (x - from) * k as f32 / 4.0, 0.18 * k as f32 * fade));
+        let h = self.pad_height();
+        if (4.0..16.0).contains(&f) && ((f / 3.0) as i64) % 2 == 0 {
+            self.paddle(self.x(280.0), self.y(PAD_Y), h, 0.0, None, self.white, false);
+        }
+        if let Some((x, fade)) = dash(16.0, self.x(280.0), self.x(0.0), 4.0) {
+            let trail = (fade > 0.0).then_some((self.x(280.0), fade));
+            self.paddle(x, self.y(PAD_Y), h, 0.0, trail, self.white, false);
+        }
+        let name = self.rung.kind.name();
+        if let Some((x, fade)) = dash(30.0, self.x(340.0), self.x(0.0), 4.0) {
+            for (gx, a) in ghosts(self.x(340.0), x, fade) {
+                self.name(gx, self.y(NAME_Y), Color { a, ..self.accent });
+            }
+            let color = if (34.0..36.0).contains(&f) { self.accent } else { self.white };
+            self.text_at(name, 52.0, x, self.y(NAME_Y), color);
+        }
+        let tag = tagline(self.rung.kind);
+        if let Some((x, fade)) = dash(44.0, self.x(340.0), self.x(0.0), 3.0) {
+            for (gx, a) in ghosts(self.x(340.0), x, fade) {
+                self.text_at(tag, 26.0, gx, self.y(TAG_Y), Color { a, ..self.accent });
+            }
+            self.text_at(tag, 26.0, x, self.y(TAG_Y), self.gray);
+        }
+        for i in 0..3 {
+            let t0 = 58.0 + 6.0 * i as f32;
+            if let Some((x, fade)) = dash(t0, self.x(360.0), self.cap_x(i), 3.0) {
+                let s = 13.0 * self.u;
+                for (gx, a) in ghosts(self.x(360.0), x, fade) {
+                    let color = Color { a, ..self.accent };
+                    draw_rectangle_lines(gx - s / 2.0, self.y(CAP_Y) - s / 2.0, s, s, 2.0 * self.u, color);
+                }
+                self.capsule(i, x, self.y(CAP_Y), (t0 + 3.0..t0 + 5.0).contains(&f));
+                if f >= t0 + 3.0 {
+                    self.cap_name(i);
+                }
+            }
+        }
+        self.first_to(90.0);
+    }
+
+    /// GUARDIAN (muro a cinque pezzi), l'ultimo livello: i cinque pezzi del muro cadono uno
+    /// sull'altro, una palla passa sopra la racchetta e il muro la rimanda; il nome si posa lettera
+    /// per lettera, come i mattoni.
+    fn guardian(&self) {
+        let (f, u, sc) = (self.f, self.u, self.sc);
+        let h = self.pad_height();
+        if f >= 4.0 {
+            self.paddle(self.x(-20.0), self.y(PAD_Y), h, 0.0, None, self.white, false);
+        }
+        // muro dietro la racchetta: cinque settori tratteggiati come in partita, posati dal basso
+        let (sect, gap) = (24.0, 4.0);
+        let top = PAD_Y - (5.0 * sect + 4.0 * gap) / 2.0;
+        let wall_x = self.x(36.0);
+        for s in 0..5 {
+            let idx = 4 - s;
+            let t0 = 10.0 + 8.0 * s as f32;
+            if f < t0 {
+                continue;
+            }
+            let target = top + idx as f32 * (sect + gap);
+            let t = f - t0;
+            let y = if t < 5.0 { -30.0 + (target + 30.0) * ((t + 1.0) / 5.0).powi(2) } else { target };
+            let hit = idx == 0 && (GUARDIAN_HIT..GUARDIAN_HIT + 8.0).contains(&f) && ((f - GUARDIAN_HIT) / 2.0) as i64 % 2 == 0;
+            let color = if hit { self.white } else { Color { a: 0.9, ..self.accent } };
+            let mut dy = 0.0;
+            while dy < sect - 2.0 {
+                draw_rectangle(wall_x - u, self.y(y + dy), 2.0 * u, (5.0 * u).min((sect - dy) * sc), color);
+                dy += 8.0 * u / sc;
+            }
+        }
+        // la palla passa sopra la racchetta, il muro la rimanda
+        let d = self.ball();
+        let by = self.y(top + sect / 2.0) - d / 2.0;
+        if (52.0..GUARDIAN_HIT).contains(&f) {
+            draw_rectangle(self.x(-324.0 + (f - 52.0) * 12.0) - d / 2.0, by, d, d, self.white);
+        } else if f >= GUARDIAN_HIT {
+            let x = self.x(32.0 - (f - GUARDIAN_HIT) * 12.0);
+            if (0.0..self.app.renderer.world_w).contains(&x) {
+                draw_rectangle(x - d / 2.0, by, d, d, self.white);
+            }
+        }
+        // il nome: una lettera ogni tre frame cade al suo posto
+        for (i, &x) in self.name_letters().iter().enumerate() {
+            let t = f - (96.0 + 3.0 * i as f32);
+            if t < 0.0 {
+                continue;
+            }
+            let y = if t < 5.0 { NAME_Y - (NAME_Y + 60.0) * (1.0 - ((t + 1.0) / 5.0).powi(2)) } else { NAME_Y };
+            self.letter(i, x, self.y(y), self.white);
+        }
+        self.tag_typed(130.0, 1.0);
+        self.caps_pop(152.0, 10.0);
+        self.first_to(190.0);
     }
 }
 

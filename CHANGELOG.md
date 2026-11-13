@@ -14,6 +14,25 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+### Modificato
+- **Scritte animate**, su tutte le versioni tranne il C64 (che arriverà dopo) e Python:
+  - la scritta del bonus attivato ("P1 SMASH!") si accende e si spegne come un vecchio televisore:
+    una riga bianca che si allarga e si apre in altezza, alla fine il contrario fino al puntino;
+  - mosse speciali: quando la mossa parte, sotto le lettere del suo nome si disegnano dei trattini
+    (due righe con la MAX) dal lato di chi l'ha fatta, che diventano gialli mentre la palla arriva
+    verso di lui; al colpo per un attimo blocchi bianchi al posto delle lettere, poi la scritta;
+  - GAME OVER: la mezzeria si spegne dall'alto, palla e racchette se ne vanno, GAME OVER e chi ha
+    vinto si scrivono con un cursore e alla fine lo schermo si chiude come un televisore;
+  - PERFECT si stampa enorme, il riquadro trema e poi un riflesso giallo attraversa le lettere;
+  - YOU WIN: la palla parte dalla racchetta del giocatore e salta da una lettera all'altra,
+    accendendole; CPU WINS (livello perso della CHALLENGE) si scrive con il cursore.
+- **Presentazioni della CHALLENGE**: sopra il livello una scala di sette trattini (i livelli battuti
+  in bianco, quello in corso in giallo) e ogni avversario entra a modo suo: l'ARCADE prende al volo
+  una raffica di capsule, il TWIST corre inclinandosi e il suo nome oscilla, l'HAMMER ribatte la
+  palla fortissimo e il nome cade come un peso, il TITAN cresce lento dal pavimento, il BLASTER
+  accende il nome a colpi e colpisce al volo i bonus, il RUSH entra con uno scatto lunghissimo, il
+  GUARDIAN si costruisce il muro e rimanda una palla. Sul C64 la presentazione resta ferma.
+
 ## [4.1.0] - 2026-11-10
 
 ### Aggiunto

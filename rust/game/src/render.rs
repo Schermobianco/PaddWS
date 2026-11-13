@@ -409,21 +409,13 @@ impl Renderer {
 
     /// Testo centrato su (cx, cy) in coordinate di disegno, eventualmente ruotato (radianti, orario).
     /// La dimensione è in unità del campo; la rasterizzazione avviene alla risoluzione
-    /// reale dello schermo, così il testo resta nitido a ogni scala.
+    /// reale dello schermo, così il testo resta nitido a ogni scala. Niente dimensioni che cambiano
+    /// a ogni frame: ogni dimensione finisce nell'atlante di macroquad, che crescerebbe senza fine
+    /// (fino a superare le texture che un telefono regge) e, quando raddoppia, cancella la texture
+    /// già usata dai disegni del frame ("glBindTexture called with an already deleted texture").
     #[allow(clippy::too_many_arguments)] // posizione, dimensione, rotazione e colore sono tutti necessari
     pub fn text_centered(&self, text: &str, font: &GameFont, size: f32, cx: f32, cy: f32, rotation: f32, color: Color) {
         self.draw_centered(text, font, self.font_params(size), cx, cy, rotation, color);
-    }
-
-    /// Come `text_centered`, per le scritte che cambiano dimensione a ogni frame: i caratteri si
-    /// rasterizzano una volta sola alla dimensione `raster` e si scalano a `size`. Rasterizzati a
-    /// ogni dimensione, finirebbero tutti nell'atlante di macroquad, che cresce senza fine (fino a
-    /// superare le texture che un telefono regge) e, quando raddoppia, cancella la texture già
-    /// usata dai disegni del frame ("glBindTexture called with an already deleted texture").
-    #[allow(clippy::too_many_arguments)]
-    pub fn text_centered_zoom(&self, text: &str, font: &GameFont, size: f32, raster: f32, cx: f32, cy: f32, color: Color) {
-        let font_size = self.font_params(raster).0;
-        self.draw_centered(text, font, (font_size, size / font_size as f32), cx, cy, 0.0, color);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -465,6 +457,33 @@ impl Renderer {
     pub fn text_width(&self, text: &str, font: &GameFont, size: f32) -> f32 {
         let (font_size, font_scale) = self.font_params(size);
         measure_text(text, Some(&font.font), font_size, font_scale).width
+    }
+
+    /// Estensione orizzontale dell'inchiostro di ogni carattere di `text` (sinistra, destra) in
+    /// coordinate di disegno, rispetto al centro dell'inchiostro di tutto il testo: quello su cui
+    /// `text_centered` lo centra. None per i caratteri senza inchiostro (gli spazi).
+    pub fn ink_boxes(&self, text: &str, font: &GameFont, size: f32) -> Vec<Option<(f32, f32)>> {
+        let (font_size, font_scale) = self.font_params(size);
+        let dpi = screen_dpi_scale();
+        let raster = (font_size as f32 * dpi).ceil(); // come `draw_centered`
+        let (left, right) = font.ink_span(text, raster);
+        let (mid, k) = ((left + right) / 2.0, font_scale / dpi);
+        let mut pen = 0.0;
+        text.chars()
+            .map(|ch| {
+                let m = font.metrics.metrics(ch, raster);
+                let x0 = pen + m.xmin as f32 - mid;
+                pen += m.advance_width;
+                (m.width > 0).then_some((x0 * k, (x0 + m.width as f32) * k))
+            })
+            .collect()
+    }
+
+    /// Altezza dell'inchiostro di un testo in coordinate di disegno (quella che `text_centered`
+    /// centra in verticale).
+    pub fn text_height(&self, text: &str, font: &GameFont, size: f32) -> f32 {
+        let (font_size, font_scale) = self.font_params(size);
+        measure_text(text, Some(&font.font), font_size, font_scale).height
     }
 
     /// Testo allineato in basso a destra su (x, y) in coordinate di disegno.

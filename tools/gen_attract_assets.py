@@ -122,6 +122,31 @@ def verilog_rom(name: str, mask: Image.Image) -> str:
     return "\n".join(lines) + "\n"
 
 
+# scritte della fine partita che il core MiSTer anima lettera per lettera (`verilog_letters`)
+LETTER_TEXTS = ["game_over", "p1_wins", "p2_wins", "you_win", "cpu_wins", "perfect"]
+
+
+def verilog_letters(name: str, mask: Image.Image) -> str:
+    """Lettere di una scritta, come `letters` di rust/game/src/attract.rs: gruppi di colonne accese
+    separati da colonne vuote. `<nome>_l0(i)` è la prima colonna della lettera i, `<nome>_l1(i)` la
+    colonna dopo l'ultima; oltre l'ultima lettera valgono quanto la larghezza."""
+    w, h = mask.size
+    spans, start = [], None
+    for x in range(w + 1):
+        lit = x < w and any(mask.getpixel((x, y)) for y in range(h))
+        if lit and start is None:
+            start = x
+        elif not lit and start is not None:
+            spans.append((start, x))
+            start = None
+    lines = [f"localparam {name.upper()}_LETTERS = {len(spans)};"]
+    for k, label in ((0, "l0"), (1, "l1")):
+        lines += [f"function [5:0] {name}_{label}(input [3:0] i);", "    case (i)"]
+        lines += [f"        4'd{i}: {name}_{label} = 6'd{s[k]};" for i, s in enumerate(spans)]
+        lines += [f"        default: {name}_{label} = 6'd{w};", "    endcase", "endfunction"]
+    return "\n".join(lines) + "\n"
+
+
 def verilog_table(name: str, values: list[int], index_bits: int) -> str:
     lines = [f"function [8:0] {name}(input [{index_bits - 1}:0] i);", "    case (i)"]
     lines += [f"        {index_bits}'d{i}: {name} = 9'd{v};" for i, v in enumerate(values)]
@@ -193,6 +218,7 @@ def main() -> None:
 
     parts = ["// Generato da tools/gen_attract_assets.py: non modificare a mano.\n", verilog_timing(spec, ease)]
     parts += [verilog_rom(name, mask) for name, mask in images.items() if not name.startswith("digit_")]
+    parts += [verilog_letters(name, images[name]) for name in LETTER_TEXTS]
     VERILOG.write_text("\n".join(parts), encoding="utf-8")
     print(f"{len(images)} bitmap in {OUT}; tabella delle strisce {ease}")
 

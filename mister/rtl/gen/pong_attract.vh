@@ -769,3 +769,155 @@ function boot_5_lit(input [9:0] dx, input [9:0] dy);
         boot_5_lit = (dx < 50 && dy < 7) ? r[49 - dx] : 1'b0;
     end
 endfunction
+
+localparam GAME_OVER_LETTERS = 8;
+function [5:0] game_over_l0(input [3:0] i);
+    case (i)
+        4'd0: game_over_l0 = 6'd0;
+        4'd1: game_over_l0 = 6'd5;
+        4'd2: game_over_l0 = 6'd10;
+        4'd3: game_over_l0 = 6'd16;
+        4'd4: game_over_l0 = 6'd23;
+        4'd5: game_over_l0 = 6'd28;
+        4'd6: game_over_l0 = 6'd34;
+        4'd7: game_over_l0 = 6'd38;
+        default: game_over_l0 = 6'd43;
+    endcase
+endfunction
+function [5:0] game_over_l1(input [3:0] i);
+    case (i)
+        4'd0: game_over_l1 = 6'd4;
+        4'd1: game_over_l1 = 6'd9;
+        4'd2: game_over_l1 = 6'd15;
+        4'd3: game_over_l1 = 6'd19;
+        4'd4: game_over_l1 = 6'd27;
+        4'd5: game_over_l1 = 6'd33;
+        4'd6: game_over_l1 = 6'd37;
+        4'd7: game_over_l1 = 6'd42;
+        default: game_over_l1 = 6'd43;
+    endcase
+endfunction
+
+localparam P1_WINS_LETTERS = 6;
+function [5:0] p1_wins_l0(input [3:0] i);
+    case (i)
+        4'd0: p1_wins_l0 = 6'd0;
+        4'd1: p1_wins_l0 = 6'd5;
+        4'd2: p1_wins_l0 = 6'd11;
+        4'd3: p1_wins_l0 = 6'd17;
+        4'd4: p1_wins_l0 = 6'd19;
+        4'd5: p1_wins_l0 = 6'd24;
+        default: p1_wins_l0 = 6'd28;
+    endcase
+endfunction
+function [5:0] p1_wins_l1(input [3:0] i);
+    case (i)
+        4'd0: p1_wins_l1 = 6'd4;
+        4'd1: p1_wins_l1 = 6'd7;
+        4'd2: p1_wins_l1 = 6'd16;
+        4'd3: p1_wins_l1 = 6'd18;
+        4'd4: p1_wins_l1 = 6'd23;
+        4'd5: p1_wins_l1 = 6'd27;
+        default: p1_wins_l1 = 6'd28;
+    endcase
+endfunction
+
+localparam P2_WINS_LETTERS = 6;
+function [5:0] p2_wins_l0(input [3:0] i);
+    case (i)
+        4'd0: p2_wins_l0 = 6'd0;
+        4'd1: p2_wins_l0 = 6'd5;
+        4'd2: p2_wins_l0 = 6'd12;
+        4'd3: p2_wins_l0 = 6'd18;
+        4'd4: p2_wins_l0 = 6'd20;
+        4'd5: p2_wins_l0 = 6'd25;
+        default: p2_wins_l0 = 6'd29;
+    endcase
+endfunction
+function [5:0] p2_wins_l1(input [3:0] i);
+    case (i)
+        4'd0: p2_wins_l1 = 6'd4;
+        4'd1: p2_wins_l1 = 6'd8;
+        4'd2: p2_wins_l1 = 6'd17;
+        4'd3: p2_wins_l1 = 6'd19;
+        4'd4: p2_wins_l1 = 6'd24;
+        4'd5: p2_wins_l1 = 6'd28;
+        default: p2_wins_l1 = 6'd29;
+    endcase
+endfunction
+
+localparam YOU_WIN_LETTERS = 6;
+function [5:0] you_win_l0(input [3:0] i);
+    case (i)
+        4'd0: you_win_l0 = 6'd0;
+        4'd1: you_win_l0 = 6'd6;
+        4'd2: you_win_l0 = 6'd11;
+        4'd3: you_win_l0 = 6'd19;
+        4'd4: you_win_l0 = 6'd25;
+        4'd5: you_win_l0 = 6'd27;
+        default: you_win_l0 = 6'd32;
+    endcase
+endfunction
+function [5:0] you_win_l1(input [3:0] i);
+    case (i)
+        4'd0: you_win_l1 = 6'd5;
+        4'd1: you_win_l1 = 6'd10;
+        4'd2: you_win_l1 = 6'd15;
+        4'd3: you_win_l1 = 6'd24;
+        4'd4: you_win_l1 = 6'd26;
+        4'd5: you_win_l1 = 6'd31;
+        default: you_win_l1 = 6'd32;
+    endcase
+endfunction
+
+localparam CPU_WINS_LETTERS = 7;
+function [5:0] cpu_wins_l0(input [3:0] i);
+    case (i)
+        4'd0: cpu_wins_l0 = 6'd0;
+        4'd1: cpu_wins_l0 = 6'd4;
+        4'd2: cpu_wins_l0 = 6'd9;
+        4'd3: cpu_wins_l0 = 6'd17;
+        4'd4: cpu_wins_l0 = 6'd23;
+        4'd5: cpu_wins_l0 = 6'd25;
+        4'd6: cpu_wins_l0 = 6'd30;
+        default: cpu_wins_l0 = 6'd34;
+    endcase
+endfunction
+function [5:0] cpu_wins_l1(input [3:0] i);
+    case (i)
+        4'd0: cpu_wins_l1 = 6'd3;
+        4'd1: cpu_wins_l1 = 6'd8;
+        4'd2: cpu_wins_l1 = 6'd13;
+        4'd3: cpu_wins_l1 = 6'd22;
+        4'd4: cpu_wins_l1 = 6'd24;
+        4'd5: cpu_wins_l1 = 6'd29;
+        4'd6: cpu_wins_l1 = 6'd33;
+        default: cpu_wins_l1 = 6'd34;
+    endcase
+endfunction
+
+localparam PERFECT_LETTERS = 7;
+function [5:0] perfect_l0(input [3:0] i);
+    case (i)
+        4'd0: perfect_l0 = 6'd0;
+        4'd1: perfect_l0 = 6'd5;
+        4'd2: perfect_l0 = 6'd9;
+        4'd3: perfect_l0 = 6'd14;
+        4'd4: perfect_l0 = 6'd18;
+        4'd5: perfect_l0 = 6'd22;
+        4'd6: perfect_l0 = 6'd26;
+        default: perfect_l0 = 6'd30;
+    endcase
+endfunction
+function [5:0] perfect_l1(input [3:0] i);
+    case (i)
+        4'd0: perfect_l1 = 6'd4;
+        4'd1: perfect_l1 = 6'd8;
+        4'd2: perfect_l1 = 6'd13;
+        4'd3: perfect_l1 = 6'd17;
+        4'd4: perfect_l1 = 6'd21;
+        4'd5: perfect_l1 = 6'd25;
+        4'd6: perfect_l1 = 6'd29;
+        default: perfect_l1 = 6'd30;
+    endcase
+endfunction

@@ -42,6 +42,7 @@ module next_render (
     input  wire        intro,
     input  wire [2:0]  intro_kind,
     input  wire        intro_right,         // rivolta a destra (verso il giocatore)
+    input  wire [7:0]  intro_age,           // frame dall'inizio della presentazione (fermi a 255)
     // finale della CHALLENGE: la sfilata dei sette avversari battuti (le prime `parade_n` racchette, in
     // colonna, con il nome sotto); solo bianco e giallo, come il resto del finale (ending_render)
     input  wire        parade,
@@ -72,6 +73,10 @@ module next_render (
     input  wire        label_on,            // scritta "P1 SMASH!" del bonus attivato
     input  wire        label_player,
     input  wire [2:0]  label_bonus,
+    // tipo della scritta (LK_*: bonus, mossa armata, colpo della mossa) e frame dal suo inizio
+    // (fermi a 127)
+    input  wire [1:0]  label_kind,
+    input  wire [6:0]  label_age,
     input  wire        warp_on,             // salto del TELEPORT in corso (l'avanzamento segue la palla)
     input  wire        warp_side,
     input  wire signed [31:0] warp_from,    // y di partenza della racchetta (core)
@@ -294,6 +299,122 @@ function [2:0] kind_px(input [2:0] kind, input signed [11:0] t, input signed [11
     end
 endfunction
 
+// ------------------------------------------------ presentazione animata della CHALLENGE
+// La racchetta dell'avversario entra a modo suo (come Stage::arcade, ... di
+// rust/game/src/challenge_ui.rs, distanze dimezzate); il resto lo disegna challenge_render. Per
+// ogni frame: spostamento dal centro (x verso la metà campo dell'avversario, da dove entra), altezza
+// (TITAN cresce dal pavimento), inclinazione (TWIST), lampo giallo, se si vede, e per lo scatto del
+// RUSH le tre immagini tra la partenza e la racchetta con la loro intensità (0 = niente).
+// ARCADE: spostamento verticale delle capsule della raffica (come in challenge_render)
+function signed [5:0] arcade_dy(input [3:0] k);
+    case (k)
+        4'd0: arcade_dy = -6'sd14; 4'd1: arcade_dy = 6'sd10;  4'd2: arcade_dy = -6'sd4; 4'd3: arcade_dy = 6'sd16;
+        4'd4: arcade_dy = -6'sd18; 4'd5: arcade_dy = 6'sd2;   4'd6: arcade_dy = 6'sd12; 4'd7: arcade_dy = -6'sd10;
+        4'd8: arcade_dy = 6'sd6;   default: arcade_dy = -6'sd2;
+    endcase
+endfunction
+reg signed [11:0] ip_dx, ip_dy;        // spostamento (dx verso l'avversario, dy verso il basso)
+reg [9:0]  ip_h;
+reg signed [2:0] ip_tilt;
+reg        ip_flash, ip_show;
+reg [1:0]  ip_fade;                    // RUSH: intensità delle immagini dello scatto
+reg signed [11:0] ip_gx [1:3];         // ... e loro distanza dal centro (verso l'avversario)
+reg signed [11:0] it_a, it_y0, it_y1, it_amp;
+reg signed [19:0] it_m;
+reg [7:0]  it_t;
+reg [3:0]  it_k;
+reg [5:0]  it_i;
+always @(posedge clk) begin
+    ip_dx <= 12'sd0;
+    ip_dy <= 12'sd0;
+    ip_h <= kind_px_h(intro_kind);
+    ip_tilt <= 3'sd0;
+    ip_flash <= 1'b0;
+    ip_show <= 1'b1;
+    ip_fade <= 2'd0;
+    ip_gx[1] <= 12'sd0;
+    ip_gx[2] <= 12'sd0;
+    ip_gx[3] <= 12'sd0;
+    it_a = $signed({4'd0, intro_age});
+    case (intro_kind)
+        K_ARCADE: begin
+            // va incontro alla capsula che arriva (arrivo della k-esima al frame 30 + 6k), poi torna
+            // (a - 30) / 6 come (a - 30) * 43 / 256, giusto fin dove serve
+            it_m = $signed({12'd0, intro_age - 8'd30}) * 43;
+            it_k = (intro_age < 8'd30) ? 4'd0 : (intro_age >= 8'd84) ? 4'd10 : it_m[11:8] + 4'd1;
+            if (intro_age < 8'd10) ip_dy <= 12'sd0;
+            else if (it_k < 4'd10) begin
+                it_y0 = (it_k == 4'd0) ? 12'sd0 : arcade_dy(it_k - 4'd1);
+                it_y1 = arcade_dy(it_k);
+                it_t = (it_k == 4'd0) ? intro_age - 8'd10 : intro_age - (8'd24 + {it_k, 2'b0} + {it_k, 1'b0});
+                ip_dy <= (it_t >= 8'd4) ? it_y1 : it_y0 + (((it_y1 - it_y0) * $signed({4'd0, it_t})) >>> 2);
+            end else begin
+                it_t = intro_age - 8'd84;
+                ip_dy <= (it_t >= 8'd8) ? 12'sd0 : (arcade_dy(4'd9) * $signed({4'd0, 8'd8 - it_t})) >>> 3;
+            end
+            // lampo nei due frame dopo ogni capsula presa
+            ip_flash <= intro_age >= 8'd30 && intro_age < 8'd86 &&
+                        (intro_age - 8'd30) - ({it_m[11:8], 2'b0} + {it_m[11:8], 1'b0}) < 8'd2;
+        end
+        K_TWIST: if (intro_age >= 8'd6 && intro_age < 8'd66) begin
+            // corre su e giù con un'ampiezza che cala, inclinata con la velocità
+            it_t = intro_age - 8'd6;
+            it_amp = 12'sd22 - (($signed({4'd0, it_t}) * 3) >>> 3);
+            it_i = (it_t * 57) >> 4;
+            it_m = it_amp * sin_q8(it_i);
+            ip_dy <= it_m >>> 8;
+            it_m = it_amp * sin_q8(it_i + 6'd16);
+            it_y0 = -(it_m >>> 10);
+            ip_tilt <= (it_y0 > 3) ? 3'sd3 : (it_y0 < -3) ? -3'sd3 : it_y0[2:0];
+        end
+        K_HAMMER: begin
+            // carica all'indietro, colpo in avanti, ritorno
+            if (intro_age >= 8'd40 && intro_age < 8'd48) ip_dx <= it_a - 12'sd39;
+            else if (intro_age >= 8'd49 && intro_age < 8'd55)
+                ip_dx <= (intro_age <= 8'd50) ? -12'sd8 : -12'sd8 + ((it_a - 12'sd50) <<< 1);
+        end
+        K_TITAN: begin
+            // cresce dal pavimento a scatti di 1/24 dell'altezza ogni 3 frame
+            ip_show <= intro_age >= 8'd6;
+            it_k = 4'd0;
+            it_t = (intro_age < 8'd6) ? 8'd0 : (((intro_age - 8'd6) * 11) >> 5) + 8'd1;    // / 3
+            // altezza 48: un passo di 2 pixel
+            if (it_t < 8'd24) begin
+                ip_h <= {1'b0, it_t, 1'b0};
+                ip_dy <= 12'sd24 - $signed({4'd0, it_t});
+            end
+            ip_flash <= intro_age >= 8'd78 && intro_age < 8'd82;
+        end
+        K_BLASTER: begin
+            // da una parte, all'altezza del nome; poi scende a quella delle capsule
+            ip_show <= intro_age >= 8'd4;
+            ip_dx <= 12'sd120;
+            ip_dy <= (intro_age < 8'd64) ? 12'sd41 : (intro_age >= 8'd73) ? 12'sd78 : 12'sd41 + ((it_a - 12'sd64) <<< 2);
+        end
+        K_RUSH: begin
+            // carica sul bordo lampeggiando, poi uno scatto lunghissimo con le immagini
+            if (intro_age < 8'd16) begin
+                it_t = (intro_age * 11) >> 5;                                     // / 3
+                ip_show <= intro_age >= 8'd4 && !it_t[0];
+                ip_dx <= 12'sd140;
+            end else begin
+                it_t = intro_age - 8'd16;
+                ip_dx <= (it_t >= 8'd3) ? 12'sd0 : 12'sd105 - $signed({4'd0, it_t}) * 35;
+                it_y1 = (it_t >= 8'd3) ? 12'sd0 : 12'sd105 - $signed({4'd0, it_t}) * 35;
+                ip_gx[1] <= 12'sd140 - ((12'sd140 - it_y1) >>> 2);
+                ip_gx[2] <= 12'sd140 - ((12'sd140 - it_y1) >>> 1);
+                ip_gx[3] <= 12'sd140 - (((12'sd140 - it_y1) * 3) >>> 2);
+                ip_fade <= (it_t < 8'd4) ? 2'd3 : (it_t < 8'd10) ? 2'd2 : (it_t < 8'd16) ? 2'd1 : 2'd0;
+            end
+        end
+        K_GUARDIAN: begin
+            ip_show <= intro_age >= 8'd4;
+            ip_dx <= -12'sd10;
+        end
+        default: ;
+    endcase
+end
+
 // riga dell'elenco della scelta della racchetta (righe di 20 pixel da y = 74), senza divisioni
 function integer row20(input [9:0] yy);
     row20 = (yy >= 94) + (yy >= 114) + (yy >= 134) + (yy >= 154) + (yy >= 174) + (yy >= 194);
@@ -315,6 +436,42 @@ endfunction
 wire       label_mx = label_move != 2'd0 && label_max;
 wire [6:0] label_name_w = (label_move != 2'd0) ? move_w({2'd0, label_move == 2'd2}) + (label_mx ? NX_MAX_W + 3 : 0)
                                                : {1'b0, name_w(label_bonus)};
+// larghezza di tutta la scritta ("P1 " + nome + "!") in pixel del font (a schermo il doppio)
+wire [6:0] label_w_n = NX_P1_W + 3 + label_name_w + 1 + NX_BANG_W;
+
+// Tipi della scritta (`label_kind`), come rust/game/src/next_ui.rs:
+// - LK_BONUS, "P1 SMASH!": si accende e si spegne come un vecchio televisore. In 72 frame: una riga
+//   bianca che si allarga (4 frame), l'immagine che si apre in altezza con i bordi bianchi (4), ferma,
+//   che si richiude (3), la riga che si stringe (4), il puntino;
+// - LK_ARMED, mossa armata: solo i trattini sotto le lettere (due righe con la MAX), che si
+//   disegnano dal lato del giocatore, una lettera ogni 2 frame, e si accendono di giallo mentre la
+//   palla arriva verso di lui;
+// - LK_HIT, colpo della mossa (60 frame): per 2 frame blocchi bianchi al posto delle lettere, poi la
+//   scritta, bianca fino al frame 4; i trattini accesi fino al 24; dal 44 lampeggia.
+localparam [1:0] LK_BONUS = 2'd0, LK_ARMED = 2'd1, LK_HIT = 2'd2;
+localparam integer LABEL_MID = 224;     // riga centrale del riquadro (212-237; lettere 218-231)
+reg        crt_line, crt_dot, crt_edge;
+reg [3:0]  crt_hh;                      // mezza altezza della fascia aperta
+reg [7:0]  crt_lw;                      // mezza larghezza della riga
+reg [9:0]  dash_rev;                    // trattini disegnati: pixel dal lato del giocatore
+reg [9:0]  dash_lit;                    // trattini accesi: pixel dal lato del giocatore
+// v * n / 4 con n da 1 a 4, senza moltiplicazioni
+function [7:0] quarters(input [7:0] v, input [2:0] n);
+    case (n)
+        3'd1: quarters = v >> 2;
+        3'd2: quarters = v >> 1;
+        3'd3: quarters = (v >> 1) + (v >> 2);
+        default: quarters = v;
+    endcase
+endfunction
+// mossa armata: strada fatta dalla palla verso chi l'ha armata (dalla racchetta avversaria), in pixel
+// fino a 255; 0 se va dall'altra parte
+wire signed [10:0] arm_d = label_player ? $signed({1'b0, ball_col(ball_x)}) - $signed({1'b0, px_of(pad0_x)})
+                                        : $signed({1'b0, px_of(pad1_x)}) - $signed({1'b0, ball_col(ball_x)});
+wire       arm_toward = label_player ? ball_vx > 0 : ball_vx < 0;
+wire [7:0] arm_p = !arm_toward ? 8'd0 : (arm_d < 0) ? 8'd0 : (arm_d > 255) ? 8'd255 : arm_d[7:0];
+// trattini accesi: strada * larghezza della scritta (2 * label_w_n) / 256
+wire [15:0] arm_lit = arm_p * {label_w_n, 1'b0};
 
 reg        cv [0:3];
 reg [2:0]  cbon [0:3];
@@ -630,8 +787,32 @@ always @(posedge clk) begin
             my[i] <= my[i - 1];
         end
         // scritta del bonus o della mossa: "P1 " + nome + "!" a scala 2, centrata in basso
-        label_w <= NX_P1_W + 3 + label_name_w + 1 + NX_BANG_W;
-        label_x <= W / 2 - (NX_P1_W + 3 + label_name_w + 1 + NX_BANG_W);
+        label_w <= label_w_n;
+        label_x <= W / 2 - label_w_n;
+        // televisore della scritta del bonus (vedi LK_BONUS); la riga è larga quanto il riquadro
+        crt_line <= 1'b0;
+        crt_dot <= 1'b0;
+        crt_edge <= 1'b0;
+        crt_hh <= 4'd12;
+        crt_lw <= 8'd0;
+        if (label_age < 7'd4) begin
+            crt_line <= 1'b1;
+            crt_lw <= quarters({1'b0, label_w_n} + 8'd6, label_age[2:0] + 3'd1);
+        end else if (label_age < 7'd8) begin
+            crt_hh <= {label_age[1:0], 1'b0} + {2'b0, label_age[1:0]} + 4'd3;    // 3, 6, 9, 12
+            crt_edge <= 1'b1;
+        end else if (label_age >= 7'd64 && label_age < 7'd67) begin
+            crt_hh <= 4'd12 - (({label_age[1:0], 1'b0} + {2'b0, label_age[1:0]}) + 4'd3);  // 9, 6, 3
+            crt_edge <= 1'b1;
+        end else if (label_age >= 7'd67 && label_age < 7'd71) begin
+            crt_line <= 1'b1;
+            crt_lw <= quarters({1'b0, label_w_n} + 8'd6, 3'd7 - label_age[2:0]);       // 4/4 .. 1/4
+        end else if (label_age >= 7'd71) begin
+            crt_dot <= 1'b1;
+        end
+        // trattini della mossa armata: una lettera (12 pixel) ogni 2 frame, e quelli accesi
+        dash_rev <= {label_age, 2'b0} + {1'b0, label_age, 1'b0};
+        dash_lit <= arm_lit[15:8];
     end
 end
 
@@ -652,6 +833,8 @@ function cap_px(input [9:0] px, input [9:0] py, input [9:0] sx, input [9:0] sy, 
 endfunction
 
 reg        on, gray_px, lb;
+reg        lbox, ltext, lcol, ldash;      // scritta del bonus o della mossa
+reg [9:0]  ldx, lpos;
 reg [23:0] col;
 reg [9:0]  dx, dy, sx, cxl;
 reg [1:0]  t_count;
@@ -706,6 +889,12 @@ always @(*) begin
     mv_code = label_move == 2'd2;
     mv_dx = (x - label_x - 2 * (NX_P1_W + 3) - (label_mx ? 2 * (NX_MAX_W + 3) : 0)) >> 1;
     mv_dy = (y - 216) >> 1;
+    ldx = (x - label_x) >> 1;
+    lbox = 1'b0;
+    ltext = 1'b0;
+    lcol = 1'b0;
+    ldash = 1'b0;
+    lpos = 10'd0;
     // barre nella banda in alto: la sinistra da BAR_X, la destra speculare
     bq_x = hb_p ? (W - 1 - BAR_X) - x : x - BAR_X;
     bq_y = y - (BAR_Y - 2);
@@ -748,16 +937,30 @@ always @(*) begin
                     col = WHITE;
                 if (kind_chosen[p] && nx_ok_lit(x - (cxl + 26), y - 58)) col = ACCENT;
             end
-            // anteprima a grandezza reale della racchetta sotto il cursore, verso la mezzeria
-            kcx = parade ? pdx : intro ? W / 2 : cxl - 60;
+            // anteprima a grandezza reale della racchetta sotto il cursore, verso la mezzeria; nella
+            // presentazione animata (ip_*) spostata, alta ip_h, inclinata, senza i segni fissi del
+            // RUSH e del GUARDIAN (le immagini dello scatto qui sotto, il muro in challenge_render)
+            kcx = parade ? pdx : intro ? W / 2 + (intro_right ? -ip_dx : ip_dx) : cxl - 60;
             kx = $signed({2'b0, x}) - ($signed({2'b0, kcx}) - PW / 2);
             kq = (parade || (intro ? intro_right : p == 0)) ? kx : PW - 1 - kx;
-            kr = $signed({2'b0, y}) - ((parade ? END_PARADE_Y : intro ? INTRO_Y : 12'sd144) -
-                                       ($signed({2'b0, kind_px_h(kcur)}) >>> 1));
-            kc = kind_px(kcur, kq, kr, kind_px_h(kcur), (kcur == K_TWIST) ? 3'sd3 : 3'sd0, 1'b1, 1'b1);
+            kr = $signed({2'b0, y}) - ((parade ? END_PARADE_Y : intro ? INTRO_Y + ip_dy : 12'sd144) -
+                                       ($signed({2'b0, intro ? ip_h : kind_px_h(kcur)}) >>> 1));
+            kc = kind_px(kcur, kq, kr, intro ? ip_h : kind_px_h(kcur),
+                         intro ? ip_tilt : (kcur == K_TWIST) ? 3'sd3 : 3'sd0, !intro, !intro);
             if ((intro || parade) && p != 0) kc = KP_NONE;     // nella presentazione una sola racchetta
             if (parade && pk >= parade_n) kc = KP_NONE;         // avversario non ancora entrato
-            if (kc == KP_BODY) col = WHITE;
+            if (intro && !ip_show) kc = KP_NONE;
+            // RUSH: le tre immagini dello scatto, più scure verso la partenza
+            if (intro && p == 0 && ip_fade != 2'd0 && kc == KP_NONE)
+                for (k = 1; k <= 3; k = k + 1)
+                    if ($signed({2'b0, x}) - (W / 2 + (intro_right ? -ip_gx[k] : ip_gx[k]) - PW / 2) >= 0 &&
+                        $signed({2'b0, x}) - (W / 2 + (intro_right ? -ip_gx[k] : ip_gx[k]) - PW / 2) < PW &&
+                        kr >= 0 && kr < $signed({2'b0, ip_h}) && ip_fade + k >= 4) begin
+                        // intensità: dalla più chiara (vicina alla racchetta, k = 3) alla più scura
+                        on = 1'b1;
+                        col = (ip_fade + k >= 6) ? GHOST3 : (ip_fade + k == 5) ? GHOST2 : GHOST1;
+                    end
+            if (kc == KP_BODY) col = (intro && ip_flash) ? ACCENT : WHITE;
             if (kc == KP_MARK) col = ACCENT;
             if (kc == KP_DETAIL) col = parade ? ACCENT : DETAIL;
             if (kc == KP_GHOST1) col = parade ? ((x[0] && y[0]) ? ACCENT : BLACK) : GHOST1;
@@ -1088,18 +1291,58 @@ always @(*) begin
                 col = BLACK;
             end
 
-        // scritta del bonus attivato, su un riquadro nero in basso, sotto alla palla e alla sua scia:
-        // la coprono le scie, le righe dello STRAIGHT, la cometa e l'alone qui sotto, e la palla di
-        // pong_render in pong_top (`label`, acceso anche sotto la scia: lì la palla non c'è)
-        if (label_on && x >= label_x - 6 && x < label_x + 2 * label_w + 6 && y >= 212 && y < 236) begin
-            on = 1'b1;
-            lb = 1'b1;
-            col = BLACK;
-            if ((label_player ? nx_p2_lit((x - label_x) >> 1, (y - 216) >> 1) : nx_p1_lit((x - label_x) >> 1, (y - 216) >> 1)) ||
-                (label_mx && nx_max_lit((x - label_x - 2 * (NX_P1_W + 3)) >> 1, (y - 216) >> 1)) ||
-                (label_move != 2'd0 ? mv_on : name_lit(label_bonus, (x - label_x - 2 * (NX_P1_W + 3)) >> 1, (y - 216) >> 1)) ||
-                nx_bang_lit((x - label_x - 2 * (NX_P1_W + 3 + label_name_w + 1)) >> 1, (y - 216) >> 1))
-                col = ACCENT;
+        // scritta del bonus attivato o della mossa (LK_*), su un riquadro nero in basso, sotto alla
+        // palla e alla sua scia: la coprono le scie, le righe dello STRAIGHT, la cometa e l'alone qui
+        // sotto, e la palla di pong_render in pong_top (`label`, acceso anche sotto la scia: lì la
+        // palla non c'è)
+        lbox = x >= label_x - 6 && x < label_x + 2 * label_w + 6 && y >= 212 && y < 238;
+        ltext = (label_player ? nx_p2_lit(ldx, (y - 216) >> 1) : nx_p1_lit(ldx, (y - 216) >> 1)) ||
+                (label_mx && nx_max_lit(ldx - (NX_P1_W + 3), (y - 216) >> 1)) ||
+                (label_move != 2'd0 ? mv_on : name_lit(label_bonus, ldx - (NX_P1_W + 3), (y - 216) >> 1)) ||
+                nx_bang_lit(ldx - (NX_P1_W + 3 + label_name_w + 1), (y - 216) >> 1);
+        // colonne con una lettera (solo per le mosse): sotto di loro i trattini, al colpo i blocchi
+        lcol = x - label_x < 2 * label_w &&
+               ((label_player ? nx_p2_col(ldx) : nx_p1_col(ldx)) ||
+                (label_mx && nx_max_col(ldx - (NX_P1_W + 3))) ||
+                (label_move == 2'd2 ? nx_move1_col(ldx - (NX_P1_W + 3) - (label_mx ? NX_MAX_W + 3 : 0))
+                                    : nx_move0_col(ldx - (NX_P1_W + 3) - (label_mx ? NX_MAX_W + 3 : 0))) ||
+                nx_bang_col(ldx - (NX_P1_W + 3 + label_name_w + 1)));
+        ldash = lcol && (y == 233 || y == 234 || (label_mx && (y == 236 || y == 237)));
+        // distanza dal lato del giocatore che ha fatto la mossa
+        lpos = label_player ? label_x + 2 * label_w - 1 - x : x - label_x;
+        if (label_on && label_kind == LK_ARMED) begin
+            // solo i trattini: l'ultimo disegnato bianco, poi grigi che si accendono mentre la palla arriva
+            if (ldash && lpos < dash_rev) begin
+                on = 1'b1;
+                lb = 1'b1;
+                col = (lpos + 12 >= dash_rev && dash_rev < 2 * label_w) ? WHITE : (lpos < dash_lit) ? ACCENT : DIM;
+            end
+        end else if (label_on && label_kind == LK_HIT) begin
+            // colpo: blocchi bianchi, poi la scritta e i trattini accesi; nell'ultima parte lampeggia
+            if (lbox && !(label_age >= 7'd44 && label_age[2])) begin
+                on = 1'b1;
+                lb = 1'b1;
+                col = BLACK;
+                if (label_age < 7'd2 ? (lcol && y >= 218 && y < 232) : ltext)
+                    col = (label_age < 7'd4) ? WHITE : ACCENT;
+                if (ldash && label_age < 7'd24)
+                    col = (label_age < 7'd4) ? WHITE : ACCENT;
+            end
+        end else if (label_on) begin
+            // bonus: riga, immagine che si apre e si chiude, puntino (vedi LK_BONUS)
+            if (crt_dot || crt_line) begin
+                if ((y == LABEL_MID - 1 || y == LABEL_MID) &&
+                    x - (label_x + label_w - (crt_dot ? 10'd1 : crt_lw)) < (crt_dot ? 10'd2 : {crt_lw, 1'b0})) begin
+                    on = 1'b1;
+                    lb = 1'b1;
+                    col = WHITE;
+                end
+            end else if (lbox && y - (LABEL_MID - crt_hh) < {crt_hh, 1'b0}) begin
+                on = 1'b1;
+                lb = 1'b1;
+                col = (crt_edge && (y == LABEL_MID - crt_hh || y == LABEL_MID + crt_hh - 1)) ? WHITE :
+                      ltext ? ACCENT : BLACK;
+            end
         end
 
         // scie: lunga e piena per la cometa; per gli altri effetti una coda larga quanto la palla che

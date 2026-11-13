@@ -467,6 +467,25 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         e.skip_to(part, at - 0.5);
         Scene::Ending(e)
     }
+    // presentazione del livello `level` (da 0) a `at` secondi dall'inizio, dopo i 30 frame del ciclo
+    fn intro_at(app: &mut App, level: usize, at: f64) -> Scene {
+        challenge(app, level);
+        let mut intro = challenge_ui::Intro::new(app);
+        intro.skip_to(at - 0.5);
+        Scene::Intro(intro)
+    }
+    // fine partita con questi punti a `at` secondi dall'inizio, dopo i 30 frame del ciclo (`cpu`:
+    // contro la CPU)
+    fn over_at(app: &mut App, score: [u16; 2], cpu: bool, at: f64) -> Scene {
+        app.run = None;
+        (app.players, app.cpu, app.evo, app.next, app.challenge) = (2, cpu, false, false, false);
+        let mut play = Play::new(app);
+        play.skip_countdown();
+        play.set_scores(score, 0);
+        play.show_game_over_at(app, at - 0.5);
+        app.cpu = false;
+        Scene::Game(Box::new(play))
+    }
     use ending_ui::Part as E;
     use paddws_core::PaddleKind as K;
     // easter egg acceso (iniziali "WS!"): giallo e rosso scambiati
@@ -474,7 +493,7 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         app.set_egg(true);
         scene
     }
-    let shots: [(&str, MakeScene); 64] = [
+    let shots: [(&str, MakeScene); 85] = [
         ("1_demo_classic", |app| demo_at(app, DemoMode::Classic)),
         ("1_demo_evo", |app| demo_at(app, DemoMode::Evo)),
         ("1_demo_next", |app| demo_at(app, DemoMode::Next)),
@@ -785,6 +804,38 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         ("a_egg_fireworks", |app| {
             let scene = ending(app, E::Champion, 3.5);
             egg(app, scene)
+        }),
+        // presentazioni dei sette avversari, a metà dell'entrata e a entrata finita
+        ("8_intro_1_arcade", |app| intro_at(app, 0, 0.6)),
+        ("8_intro_1_arcade_end", |app| intro_at(app, 0, 2.9)),
+        ("8_intro_2_twist", |app| intro_at(app, 1, 0.5)),
+        ("8_intro_2_twist_name", |app| intro_at(app, 1, 1.2)),
+        ("8_intro_3_hammer", |app| intro_at(app, 2, 0.85)),
+        ("8_intro_3_hammer_name", |app| intro_at(app, 2, 1.25)),
+        ("8_intro_4_titan", |app| intro_at(app, 3, 0.8)),
+        ("8_intro_4_titan_name", |app| intro_at(app, 3, 1.65)),
+        ("8_intro_5_blaster", |app| intro_at(app, 4, 0.45)),
+        ("8_intro_5_blaster_caps", |app| intro_at(app, 4, 1.75)),
+        ("8_intro_6_rush", |app| intro_at(app, 5, 0.32)),
+        ("8_intro_6_rush_end", |app| intro_at(app, 5, 1.2)),
+        ("8_intro_7_guardian", |app| intro_at(app, 6, 1.4)),
+        ("8_intro_7_guardian_end", |app| intro_at(app, 6, 3.4)),
+        // fine partita animata: campo che si spegne, scritta, chiusura; PERFECT; YOU WIN
+        ("5_over_field_off", |app| over_at(app, [11, 6], false, 0.6)),
+        ("5_over_typing", |app| over_at(app, [11, 6], false, 1.3)),
+        ("5_over_close", |app| over_at(app, [11, 6], false, 2.7)),
+        ("5_over_perfect_stamp", |app| over_at(app, [11, 0], false, 0.03)),
+        ("5_over_perfect_glint", |app| over_at(app, [11, 0], false, 0.88)),
+        ("5_over_you_win_hop", |app| over_at(app, [11, 6], true, 0.5)),
+        // scritte di NEXT: mossa armata (trattini) e scritta del bonus che si accende
+        ("7_next_super_armed", |app| {
+            app.players = 2;
+            app.next = true;
+            let mut play = Play::new(app);
+            play.skip_countdown();
+            play.fill_super_armed();
+            app.next = false;
+            Scene::Game(Box::new(play))
         }),
     ];
     // le schermate che accendono il touch o il gamepad non cambiano le altre

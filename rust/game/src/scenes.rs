@@ -2014,6 +2014,13 @@ impl Play {
         let bullet = next_ui::bullet_time(&self.game);
         let blurred = bullet.is_some() && r.begin_blur();
         let white = next_ui::slowed_color(white, bullet.is_some(), white, App::color(colors.lgray));
+        // fine partita: secondi dall'inizio (dopo il lampo del punto) e, con GAME OVER, il campo
+        // che si spegne (`attract::net_off`, `attract::pads_left`)
+        let over = self
+            .game_over
+            .map(|left| (app.attract.game_over_seconds() - left - FLASH_TIME).max(0.0));
+        let field_off = over.filter(|_| self.over_texts().0 == Some("game_over"));
+        let net_off = field_off.map_or(0.0, attract::net_off) * h;
         // linea tratteggiata centrale (in NEXT la COMETA ne spazza i trattini)
         let dash = (10.0 * s).floor().max(1.0);
         let line_w = ((to_f32(p.pad_width) / 2.0).floor() * w / 800.0).floor().max(1.0);
@@ -2023,7 +2030,7 @@ impl Play {
         let mut i = 0;
         while y < h {
             let dx = self.fx.as_ref().map_or(0.0, |fx| fx.dash_offset(i));
-            if !(pause_hint && y < PAUSE_ICON_BOTTOM * s) {
+            if !(pause_hint && y < PAUSE_ICON_BOTTOM * s) && y >= net_off {
                 draw_rectangle(w / 2.0 - line_w / 2.0 + dx, y, line_w, dash.min(h - y), white);
             }
             y += dash * 2.0;
@@ -2051,6 +2058,21 @@ impl Play {
         if !blink_off && self.fx.is_none() {
             let d = to_f32(ball.radius) * 2.0;
             r.rect_centered(pos[2].0, pos[2].1, d, d, white);
+        }
+        // GAME OVER: spenta la mezzeria se ne va la palla e le racchette si accorciano fino a sparire
+        if let Some(t) = field_off {
+            let left = attract::pads_left(t);
+            if left < 1.0 {
+                let d = to_f32(ball.radius) * 4.0;
+                r.rect_centered(pos[2].0, pos[2].1, d, d, BLACK);
+                for (pad, &(x, y)) in self.game.paddles.iter().zip(&pos) {
+                    let (ph, cw) = (to_f32(pad.height) + 4.0 * s, to_f32(pad.width) * 6.0);
+                    let cut = ph * (1.0 - left) / 2.0;
+                    let top = r.screen_y(y) - ph / 2.0;
+                    draw_rectangle(x - cw / 2.0, top, cw, cut, BLACK);
+                    draw_rectangle(x - cw / 2.0, top + ph - cut, cw, cut, BLACK);
+                }
+            }
         }
 
         // punteggi rivolti ai giocatori, seduti ai lati sinistro e destro del tavolo, oppure (SCORES:
@@ -2170,23 +2192,34 @@ impl Play {
                 r.text_centered("B = MENU", font, 30.0 * s, w / 2.0, h / 2.0 + 80.0 * s, 0.0, gray);
             }
         }
-        if self.game_over.is_some() {
+        if let Some(t) = over {
             // in NEXT chi ha vinto prende il colore di accento
             let colors = &app.cfg.colors;
             let winner_color = if self.fx.is_some() { colors.accent } else { colors.white };
-            let winner = self.winner();
-            // solo chi ha vinto: YOU WIN, o CPU WINS a un livello perso della CHALLENGE (il GAME
-            // OVER viene dopo, se il CONTINUE scade); vinta senza punti dell'avversario, PERFECT al
-            // posto di YOU WIN, o di GAME OVER sopra chi ha vinto
-            let lost_level = self.challenge.is_some() && self.duel.is_none() && winner == Some("cpu_wins");
-            let (title, winner) = match (winner, self.perfect()) {
-                (Some("you_win"), true) => (None, Some("perfect")),
-                (Some("you_win"), false) => (None, winner),
-                (_, true) => (Some("perfect"), winner),
-                _ if lost_level => (None, winner),
-                _ => (Some("game_over"), winner),
-            };
-            attract::draw_game_over(&app.attract, r, title, winner, App::color(winner_color));
+            let (title, winner) = self.over_texts();
+            // YOU WIN: la palla parte dalla racchetta del giocatore
+            let me = pos[self.solo as usize];
+            let ball = (vec2(me.0, r.screen_y(me.1)), to_f32(self.game.ball.radius) * 2.0);
+            let (winner_color, accent) = (App::color(winner_color), App::color(colors.accent));
+            attract::draw_game_over_anim(&app.attract, r, title, winner, winner_color, accent, t, ball);
+            if field_off.is_some() {
+                attract::draw_crt_close(r, t, app.attract.game_over_seconds() - FLASH_TIME);
+            }
+        }
+    }
+
+    /// Scritte della fine partita: (titolo, chi ha vinto). Solo chi ha vinto: YOU WIN, o CPU WINS a
+    /// un livello perso della CHALLENGE (il GAME OVER viene dopo, se il CONTINUE scade); vinta senza
+    /// punti dell'avversario, PERFECT al posto di YOU WIN, o di GAME OVER sopra chi ha vinto.
+    fn over_texts(&self) -> (Option<&'static str>, Option<&'static str>) {
+        let winner = self.winner();
+        let lost_level = self.challenge.is_some() && self.duel.is_none() && winner == Some("cpu_wins");
+        match (winner, self.perfect()) {
+            (Some("you_win"), true) => (None, Some("perfect")),
+            (Some("you_win"), false) => (None, winner),
+            (_, true) => (Some("perfect"), winner),
+            _ if lost_level => (None, winner),
+            _ => (Some("game_over"), winner),
         }
     }
 
@@ -2472,6 +2505,33 @@ impl Play {
     /// Per la verifica automatica: mostra la schermata di fine partita.
     pub fn show_game_over(&mut self) {
         self.game_over = Some(1.0);
+    }
+
+    /// Per la verifica automatica: fine partita a `seconds` dall'inizio (dopo il lampo del punto).
+    pub fn show_game_over_at(&mut self, app: &App, seconds: f64) {
+        self.game_over = Some(app.attract.game_over_seconds() - FLASH_TIME - seconds);
+    }
+
+    /// Per la verifica automatica: P1 ha armato una MAX STRAIGHT SHOT e la palla gli arriva contro,
+    /// a metà strada; la scritta del bonus di P2 si sta accendendo.
+    pub fn fill_super_armed(&mut self) {
+        let p = self.game.params.clone();
+        self.game.set_super_moves(true);
+        let Some(n) = &mut self.game.next else { return };
+        n.spawn_timer = u32::MAX;
+        n.players[0].straight = 2;
+        n.players[1].meter = p.super_cost / 2;
+        self.game.serve_timer = 0;
+        let b = &mut self.game.ball;
+        b.x = p.width * 3 / 5;
+        b.y = p.height / 2;
+        b.vx = -p.serve_unit * 2;
+        b.vy = 0;
+        self.game.score = [3, 4];
+        if let Some(fx) = &mut self.fx {
+            fx.show_special(0, Special::Straight, 2, false);
+            fx.show_label_at("P2 SMASH!", 0.12 - 0.5);
+        }
     }
 }
 

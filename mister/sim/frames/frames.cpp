@@ -36,6 +36,10 @@
 // Argomento "challenge": CHALLENGE contro la CPU, un fotogramma per schermata (ch_*.ppm); nella prima
 // presentazione anche le racchette degli avversari di tutti i livelli (ch_lvl1..7.ppm, e due rivolte
 // a destra, ch_lvl5_right e ch_lvl6_right).
+// Argomento "anim": come "challenge", ma nella prima presentazione i sette avversari a più frame
+// della loro entrata (an_in<livello>_<frame>.ppm, con _r se il giocatore è a destra), poi nella prima
+// partita la fine partita animata forzata a più frame: YOU WIN con la palla sulle lettere, PERFECT con
+// il timbro, CPU WINS scritto, GAME OVER con il campo che si spegne e la chiusura (an_<tipo>_<frame>.ppm).
 // Argomento "challenger": CHALLENGE in corso, durante la partita del primo livello gettone e Start sul
 // joystick 2: HERE COMES A NEW CHALLENGER!, scelta dello sfidante (solo joystick 2), sfida tra i due
 // giocatori automatici vinta dallo sfidante a destra, iniziali del campione (solo joystick 1, il suo
@@ -223,7 +227,8 @@ int main(int argc, char** argv) {
     const bool kinds_test = arg == "kinds";
     // "challenge": scelta, presentazione, livello 1 vinto, livello 2 perso, continue scaduto,
     // iniziali e classifica; i punteggi e i tempi lunghi si forzano per fare in fretta
-    const bool ch_test = arg == "challenge";
+    const bool anim_test = arg == "anim";
+    const bool ch_test = arg == "challenge" || anim_test;
     const bool sup_test = arg == "supers";
     const bool howto_test = arg == "howto";
     const bool chal_test = arg == "challenger";
@@ -616,7 +621,73 @@ int main(int argc, char** argv) {
             // "challenge": un fotogramma per schermata, poi si passa oltre
             bool ch_shot = false;
             std::string ch_name;
-            if (ch_test) {
+            if (anim_test) {
+                // "anim": presentazioni (livello da 0, frame dell'entrata, giocatore a destra) e fine
+                // partita (tipo, frame); a coppie di frame: nel primo si imposta, nel secondo si salva
+                struct IntroShot { int lvl, age, right; };
+                static const IntroShot intro_plan[] = {
+                    {0, 20, 0}, {0, 50, 0}, {0, 86, 0}, {0, 126, 0}, {0, 170, 0},
+                    {1, 20, 0}, {1, 28, 0}, {1, 40, 0}, {1, 70, 0}, {1, 120, 0},
+                    {2, 46, 0}, {2, 50, 0}, {2, 66, 0}, {2, 74, 0}, {2, 112, 0},
+                    {3, 20, 0}, {3, 50, 0}, {3, 80, 0}, {3, 95, 0}, {3, 130, 0}, {3, 170, 0},
+                    {4, 20, 0}, {4, 30, 0}, {4, 45, 0}, {4, 80, 0}, {4, 100, 0}, {4, 115, 0}, {4, 30, 1},
+                    {5, 10, 0}, {5, 17, 0}, {5, 19, 0}, {5, 32, 0}, {5, 46, 0}, {5, 62, 0}, {5, 100, 0}, {5, 32, 1},
+                    {6, 14, 0}, {6, 40, 0}, {6, 70, 0}, {6, 84, 0}, {6, 100, 0}, {6, 104, 0}, {6, 160, 0},
+                };
+                struct OverShot { int kind, age; };   // 0 YOU WIN, 1 PERFECT, 2 CPU WINS, 3 GAME OVER
+                static const OverShot over_plan[] = {
+                    {0, 8}, {0, 16}, {0, 22}, {0, 30}, {0, 50}, {0, 60}, {0, 80},
+                    {1, 0}, {1, 1}, {1, 4}, {1, 6}, {1, 22}, {1, 44}, {1, 48},
+                    {2, 14}, {2, 22}, {2, 40},
+                    {3, 24}, {3, 52}, {3, 60}, {3, 70}, {3, 100}, {3, 112}, {3, 125}, {3, 160}, {3, 166}, {3, 170}, {3, 176},
+                };
+                static const char* over_names[] = {"youwin", "perfect", "cpuwins", "gameover"};
+                const int n_intro = sizeof intro_plan / sizeof intro_plan[0];
+                const int n_over = sizeof over_plan / sizeof over_plan[0];
+                const int m = r->pong_top__DOT__mode;
+                if (m != ch_mode) {
+                    ch_mode = m;
+                    ch_at = frames;
+                    if (m == 5) ch_games++;
+                }
+                const int t = frames - ch_at;
+                if (m == 8 && ch_games == 0 && t >= 2) {
+                    const int i = (t - 2) / 2;
+                    if (i < n_intro && (t - 2) % 2 == 0) {
+                        r->pong_top__DOT__ch_level = intro_plan[i].lvl;
+                        r->pong_top__DOT__ch_side = intro_plan[i].right;
+                        r->pong_top__DOT__mframe = intro_plan[i].age - 1;
+                    } else if (i < n_intro) {
+                        ch_shot = true;
+                        ch_name = "an_in" + std::to_string(intro_plan[i].lvl + 1) + "_" +
+                                  std::to_string(intro_plan[i].age) + (intro_plan[i].right ? "_r" : "");
+                    } else if (i == n_intro) {
+                        r->pong_top__DOT__ch_level = 0;
+                        r->pong_top__DOT__ch_side = 0;
+                        r->pong_top__DOT__mframe = 235;                 // la presentazione finisce
+                    }
+                }
+                if (m == 5 && t == 1) r->pong_top__DOT__mframe = 179;  // niente conto alla rovescia
+                if ((m == 5 || m == 6) && ch_games == 1 && frames - ch_at >= 0) {
+                    static int an_from = -1;
+                    if (an_from < 0 && m == 5 && t == 60) an_from = frames;
+                    if (an_from >= 0) {
+                        const int k = frames - an_from, i = k / 2;
+                        if (i >= n_over) break;
+                        const OverShot& o = over_plan[i];
+                        if (k % 2 == 0) {
+                            set_score(r, 0, (o.kind <= 1) ? 7 : 1);
+                            set_score(r, 1, (o.kind == 1) ? 0 : (o.kind == 0) ? 1 : 7);
+                            r->pong_top__DOT__duel = o.kind == 3;
+                            r->pong_top__DOT__mode = 6;
+                            r->pong_top__DOT__mframe = o.age > 0 ? o.age - 1 : 0;
+                        } else {
+                            ch_shot = true;
+                            ch_name = std::string("an_") + over_names[o.kind] + "_" + std::to_string(o.age);
+                        }
+                    }
+                }
+            } else if (ch_test) {
                 const int m = r->pong_top__DOT__mode;
                 if (m != ch_mode) {
                     ch_mode = m;
@@ -730,9 +801,10 @@ int main(int argc, char** argv) {
                         sup_name = "sup_r" + std::to_string(frames - dp_at);
                     }
                     if (t % 40 == 0) { sup_shot = true; sup_name = "sup_t" + std::to_string(t); }
-                    const int lm = r->pong_top__DOT__label_move, lf = r->pong_top__DOT__label_frames;
-                    if (lm && (lf == 72 || lf == 48))
-                        std::printf("frame %d: mossa %d (scritta %d frame), barre %d %d\n", frames, lm, lf,
+                    // la scritta di una mossa appena cominciata: armata (i trattini) o il colpo
+                    const int lm = r->pong_top__DOT__label_move, lk = r->pong_top__DOT__label_kind;
+                    if (lm && r->pong_top__DOT__label_frames && r->pong_top__DOT__label_age == 0)
+                        std::printf("frame %d: mossa %d (%s), barre %d %d\n", frames, lm, lk == 2 ? "colpo" : "armata",
                                     meter(r, 0), meter(r, 1));
                     if (dp_at >= 0 && frames > dp_at + 400) break;
                 }
@@ -1144,7 +1216,7 @@ int main(int argc, char** argv) {
                     frames == paddle_at + 30)
                     top.joy0 |= 0x10;
                 // "challenge": A salta presentazione e livello superato; iniziali: giù, giù, A, su, A, A
-                if (ch_test || (chal_test && ch_games == 0)) {
+                if ((ch_test && !anim_test) || (chal_test && ch_games == 0)) {
                     const int m = r->pong_top__DOT__mode, t = frames - ch_at;
                     if ((m == 8 || m == 9) && t == ((ch_test && m == 8 && ch_games == 0) ? 90 : 70)) top.joy0 |= 0x10;
                     if (m == 11 && (t == 30 || t == 40)) top.joy0 |= 0x04;
