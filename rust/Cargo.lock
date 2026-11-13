@@ -529,7 +529,7 @@ dependencies = [
 
 [[package]]
 name = "paddws"
-version = "4.1.0"
+version = "4.1.1-beta.1"
 dependencies = [
  "embed-resource",
  "fontdue",
@@ -546,7 +546,7 @@ dependencies = [
 
 [[package]]
 name = "paddws-c64"
-version = "4.1.0"
+version = "4.1.1-beta.1"
 dependencies = [
  "paddws-core",
  "paddws-sid",
@@ -554,22 +554,22 @@ dependencies = [
 
 [[package]]
 name = "paddws-core"
-version = "4.1.0"
+version = "4.1.1-beta.1"
 
 [[package]]
 name = "paddws-mister-fw"
-version = "4.1.0"
+version = "4.1.1-beta.1"
 dependencies = [
  "paddws-core",
 ]
 
 [[package]]
 name = "paddws-sid"
-version = "4.1.0"
+version = "4.1.1-beta.1"
 
 [[package]]
 name = "paddws-trace"
-version = "4.1.0"
+version = "4.1.1-beta.1"
 dependencies = [
  "paddws-core",
  "paddws-mister-fw",
