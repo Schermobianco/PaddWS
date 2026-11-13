@@ -97,6 +97,7 @@ wings, there are 40 mm of width for the socket; under the middle there is the 5 
 | file | socket |
 |---|---|
 | `parts/power-plate-micro-usb.3mf` | panel-mount micro-USB extension with two M3 screws 28 mm apart (the one in the Bambu Studio project) |
+| `parts/power-plate-micro-usb-snap.3mf` | square snap-in micro-USB extension, no screws: 26.2 × 13.2 opening for the 30 × 18 flange |
 | `parts/power-plate-usb-c.3mf` | round USB-C socket with nut, Ø12.2 hole (M12 thread) |
 | `parts/power-plate-dc-jack.3mf` | 5.5 × 2.1 DC jack with 8 mm thread and 6 mm toggle switch |
 | `parts/power-plate-blank.3mf` | solid: to be drilled, or redesigned starting from `deck.step` |
@@ -184,6 +185,7 @@ optical encoder diagram (`pulses_per_revolution: 600`, `debounce_us: 0`).
   the outer 2 mm, where the lip of the guides holds them. If it is thinner, a ring of foam on the
   rim takes up the play; or adapt the guides to the measured thickness.
 - **Power socket**: the micro-USB plate is for an extension with screws 28 mm apart. With another
-  socket, use or redesign another plate: the rest of the console doesn't change.
+  socket, use or redesign another plate: the rest of the console doesn't change. On the snap-in
+  plate the clips must catch behind the 2.5 mm face: the dimensions are the seller's.
 - **Encoders**: sellers' dimensions (body Ø38 × 35.5, collar Ø20 × 5, Ø6 × 13 shaft with a flat a little over 5 mm from the round side, M3
   holes on a Ø30 circle).

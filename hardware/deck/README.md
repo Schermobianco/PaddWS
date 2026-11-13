@@ -95,6 +95,7 @@ La faccia è larga 43,6 mm e alta 34,3, spessa come la parete (2,5 mm). Dietro, 
 | file | presa |
 |---|---|
 | `parts/power-plate-micro-usb.3mf` | prolunga micro-USB da pannello con due viti M3 a 28 mm (è quella del progetto Bambu Studio) |
+| `parts/power-plate-micro-usb-snap.3mf` | prolunga micro-USB quadrata a scatto, senza viti: apertura 26,2 × 13,2 per la flangia da 30 × 18 |
 | `parts/power-plate-usb-c.3mf` | presa USB-C rotonda con il dado, foro Ø12,2 (filetto M12) |
 | `parts/power-plate-dc-jack.3mf` | jack DC 5,5 × 2,1 con filetto da 8 mm e interruttore a levetta da 6 mm |
 | `parts/power-plate-blank.3mf` | piena: da forare, o da ridisegnare partendo da `deck.step` |
@@ -182,6 +183,7 @@ schema degli encoder ottici (`pulses_per_revolution: 600`, `debounce_us: 0`).
   esterni, dove li tiene il labbro delle guide. Se è più sottile, un anello di gommapiuma sul bordo
   prende il gioco; oppure si adattano le guide allo spessore misurato.
 - **Presa di alimentazione**: la placca micro-USB è per una prolunga con le viti a 28 mm. Con
-  un'altra presa si usa o si rifà un'altra placca: il resto della console non cambia.
+  un'altra presa si usa o si rifà un'altra placca: il resto della console non cambia. Nella placca
+  a scatto le alette devono agganciarsi dietro la faccia da 2,5 mm: le misure sono quelle del venditore.
 - **Encoder**: misure dei venditori (corpo Ø38 × 35,5, collare Ø20 × 5, albero Ø6 × 13 con il taglio a poco più di 5 mm dal lato tondo,
   fori M3 sul cerchio Ø30).
