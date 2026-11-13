@@ -42,7 +42,7 @@ cambia solo il filamento tra un piatto e l'altro, mai durante una stampa.
 |---|---|---|
 | 1 | metà G1 del piano (a faccia in giù), pezzi del logo | 1: PETG nero |
 | 2 | metà G2 del piano, 2 manopole (capovolte), 10 mozzi delle manopole | 1: PETG nero |
-| 3 | cornice del vetro (flangia sulla piastra), 4 barre del display | 1: PETG nero |
+| 3 | cornice del vetro (flangia sulla piastra), 4 barre del display (capovolte) | 1: PETG nero |
 | 4 | metà G1 della vasca (dritta), 2 anelli delle tacche, 2 indicatori, 8 lettere di DASH | 2: PETG giallo |
 | 5 | metà G2 della vasca, placca della presa micro-USB (a faccia in giù) | 2: PETG giallo |
 | 6 | 8 piedini | 3: TPU 95A |
@@ -118,11 +118,11 @@ ricambio sono nascoste, dietro la console.
 | 1 | alimentatore micro-USB 5,1 V 2,5 A, oppure powerbank con uscita USB-A da almeno 2,4 A |
 | 1 | microSD da almeno 8 GB |
 | - | cavetti Dupont femmina per la GPIO, faston da 4,8 mm per i pulsanti |
-| 16 | inserti in ottone a caldo M3 × 5 × 4 (tipo Voron: Ø5 in testa, lunghi 4 mm; fori da 4,4 × 4,5): nei tubi sotto il piano, 12 per le viti della vasca e 4 per le barre |
-| 12 | viti M3 × 35 a testa bombata (ISO 7380): da sotto la vasca, dentro le colonnine, negli inserti dei tubi del piano |
-| 4 | viti M3 × 8: barre → tubi del piano |
-| 4 | viti M3 × 6: barre → telaio del display (nelle borchie non si va oltre 2,9 mm) |
-| 6 | viti M3 × 6 a testa svasata piana (ISO 10642): encoder → piano, dall'alto, a filo del piano |
+| 12 | inserti in ottone a caldo M4 larghi 6 mm, lunghi 6 (o 4) mm (fori da 5,6 × 6,5): nei tubi sotto il piano, per le viti della vasca |
+| 4 | inserti in ottone a caldo M3 × 5 × 4 (tipo Voron: Ø5 in testa, lunghi 4 mm; fori da 4,4 × 4,5): nei tubi sotto il piano, per le barre |
+| 12 | viti M4 × 30 a testa cilindrica bombata (DIN 7985): da sotto la vasca, dentro le colonnine, negli inserti dei tubi del piano |
+| 8 | viti M3 × 10 a testa cilindrica bombata (DIN 7985): barre → tubi del piano e barre → telaio del display |
+| 6 | viti M3 × 10 a testa svasata piana (DIN 965): encoder → piano, dall'alto, a filo del piano; nell'encoder entrano 6 mm |
 | 4 | rondelle M12 (24 × 13 × 2,5), due per manopola: fanno da volano |
 
 Collegamenti e configurazione degli encoder: [deploy/raspberry/README.md](../../deploy/raspberry/README.md),
@@ -130,8 +130,8 @@ schema degli encoder ottici (`pulses_per_revolution: 600`, `debounce_us: 0`).
 
 ## Montaggio
 
-1. Inserti a caldo nei tubi sotto il piano (12 per le viti della vasca, 4 per le barre), con la
-   punta del saldatore a circa 230-240 °C per il PETG. Sopra gli inserti restano 4,5 mm di piano
+1. Inserti a caldo nei tubi sotto il piano (12 M4 per le viti della vasca, 4 M3 per le barre), con
+   la punta del saldatore a circa 230-240 °C per il PETG. Sopra gli inserti restano 4,5 mm di piano
    (4 sopra quelli delle barre).
 2. Appoggiare le due metà del piano a faccia in giù, accostate alla giunta, e incollare da sotto la
    cornice del vetro: il labbro entra nell'apertura e allinea le metà, la flangia va incollata sotto
@@ -141,7 +141,8 @@ schema degli encoder ottici (`pulses_per_revolution: 600`, `debounce_us: 0`).
    aver unito le metà.
 4. Mettere il display nell'apertura dall'alto, con il vetro sul labbro della cornice, e avvitare sotto
    le quattro barre corte, una per angolo: al telaio del display (asola, sulla borchia del foro) e
-   al tubo del piano. Le barre tengono il vetro contro la cornice: si stringono senza forzare,
+   al tubo del piano. Sotto le teste delle viti le barre hanno dei rialzi, così le M3 × 10 non
+   toccano il fondo dei fori. Le barre tengono il vetro contro la cornice: si stringono senza forzare,
    perché la cornice è solo incollata. Il centro del telaio resta libero per la scheda del display
    e il Pi, con i loro connettori.
 5. Encoder da sotto, con 3 viti dall'alto ciascuno; SELECT e USE con il dado; DASH si aggancia a
@@ -153,8 +154,8 @@ schema degli encoder ottici (`pulses_per_revolution: 600`, `debounce_us: 0`).
    dalla plastica; le costole sul labbro si schiacciano e li tengono fermi,
    senza vibrare. Se il bordo è più sottile della gola (5,7 mm), un anello di gommapiuma adesiva
    sul bordo, dalla parte del labbro, prende il gioco.
-7. Cablare, appoggiare il piano sulla vasca e avvitarlo da sotto con le 12 viti M3 × 35, che passano
-   dentro le colonnine.
+7. Cablare, appoggiare il piano sulla vasca e avvitarlo da sotto con le 12 viti M4 × 30, che passano
+   dentro le colonnine; le teste stanno nelle sedi in fondo alle colonnine.
 8. Rondelle nella sede sotto la manopola, poi il mozzo scelto da sotto, attraverso le rondelle,
    incollato nella sede dentata: la flangia del mozzo chiude le rondelle nella sede. Poi le manopole
    sugli alberi, senza grano. Infine i piedini sotto la vasca.
@@ -174,8 +175,9 @@ schema degli encoder ottici (`pulses_per_revolution: 600`, `debounce_us: 0`).
 - **Foro dell'albero nei mozzi**: disegnato su un albero Ø6 con il taglio a 2,1 mm dall'asse (poco
   più di 5 mm dal lato tondo), più il gioco del mozzo. Se nessuno dei cinque mozzi va bene, si
   cambiano i giochi.
-- **Fori degli inserti** (ora Ø4,4, come per gli M3 × 5 × 4 di CNC Kitchen e ruthex): con altre marche
-  conviene provare l'inserto in un foro di prova prima di stampare il piano.
+- **Fori degli inserti** (ora Ø5,6 per gli M4 larghi 6 mm e Ø4,4 per gli M3 × 5 × 4, come da CNC
+  Kitchen e ruthex): con altre marche conviene provare l'inserto in un foro di prova prima di
+  stampare il piano.
 - **Spessore degli altoparlanti** (ora 5,4 mm, lo spessore totale dichiarato): conta quello nei 2 mm
   esterni, dove li tiene il labbro delle guide. Se è più sottile, un anello di gommapiuma sul bordo
   prende il gioco; oppure si adattano le guide allo spessore misurato.

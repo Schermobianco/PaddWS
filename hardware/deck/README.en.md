@@ -45,7 +45,7 @@ and material. The filament only changes between one plate and the next, never du
 |---|---|---|
 | 1 | G1 half of the top plate (face down), logo pieces | 1: black PETG |
 | 2 | G2 half of the top plate, 2 knobs (upside down), 10 knob hubs | 1: black PETG |
-| 3 | glass frame (flange on the build plate), 4 display bars | 1: black PETG |
+| 3 | glass frame (flange on the build plate), 4 display bars (upside down) | 1: black PETG |
 | 4 | G1 half of the tray (upright), 2 notch rings, 2 pointers, 8 DASH letters | 2: yellow PETG |
 | 5 | G2 half of the tray, micro-USB socket plate (face down) | 2: yellow PETG |
 | 6 | 8 feet | 3: TPU 95A |
@@ -120,11 +120,11 @@ hidden behind the console.
 | 1 | 5.1 V 2.5 A micro-USB power supply, or a power bank with a USB-A output of at least 2.4 A |
 | 1 | microSD card of at least 8 GB |
 | - | female Dupont jumper wires for the GPIO, 4.8 mm spade connectors for the buttons |
-| 16 | M3 × 5 × 4 brass heat-set inserts (Voron style: Ø5 at the top, 4 mm long; holes 4.4 × 4.5): in the tubes under the top plate, 12 for the tray screws and 4 for the bars |
-| 12 | M3 × 35 button head screws (ISO 7380): from under the tray, inside the pillars, into the inserts of the top plate tubes |
-| 4 | M3 × 8 screws: bars → top plate tubes |
-| 4 | M3 × 6 screws: bars → display frame (no deeper than 2.9 mm into the bosses) |
-| 6 | M3 × 6 flat countersunk screws (ISO 10642): encoders → top plate, from above, flush with the top plate |
+| 12 | M4 brass heat-set inserts, 6 mm wide, 6 (or 4) mm long (holes 5.6 × 6.5): in the tubes under the top plate, for the tray screws |
+| 4 | M3 × 5 × 4 brass heat-set inserts (Voron style: Ø5 at the top, 4 mm long; holes 4.4 × 4.5): in the tubes under the top plate, for the bars |
+| 12 | M4 × 30 pan head screws (DIN 7985): from under the tray, inside the pillars, into the inserts of the top plate tubes |
+| 8 | M3 × 10 pan head screws (DIN 7985): bars → top plate tubes and bars → display frame |
+| 6 | M3 × 10 flat countersunk screws (DIN 965): encoders → top plate, from above, flush with the top plate; 6 mm go into the encoder |
 | 4 | M12 washers (24 × 13 × 2.5), two per knob: they act as a flywheel |
 
 Encoder wiring and configuration: [deploy/raspberry/README.en.md](../../deploy/raspberry/README.en.md),
@@ -132,8 +132,8 @@ optical encoder diagram (`pulses_per_revolution: 600`, `debounce_us: 0`).
 
 ## Assembly
 
-1. Heat-set inserts into the tubes under the top plate (12 for the tray screws, 4 for the bars),
-   with the soldering iron tip at about 230-240 °C for PETG. Above the inserts there are 4.5 mm of
+1. Heat-set inserts into the tubes under the top plate (12 M4 for the tray screws, 4 M3 for the
+   bars), with the soldering iron tip at about 230-240 °C for PETG. Above the inserts there are 4.5 mm of
    top plate left (4 above those for the bars).
 2. Lay the two halves of the top plate face down, pushed together at the joint, and glue the glass
    frame from below: the lip goes into the opening and aligns the halves, the flange is glued under
@@ -143,7 +143,8 @@ optical encoder diagram (`pulses_per_revolution: 600`, `debounce_us: 0`).
    joining the halves.
 4. Put the display into the opening from above, with the glass on the lip of the frame, and screw
    the four short bars underneath, one per corner: to the display frame (slot, on the boss of the
-   hole) and to the top plate tube. The bars hold the glass against the frame: tighten them without
+   hole) and to the top plate tube. Under the screw heads the bars have raised pads, so the
+   M3 × 10 screws don't reach the bottom of the holes. The bars hold the glass against the frame: tighten them without
    forcing, because the frame is only glued. The middle of the frame stays free for the display
    board and the Pi, with their connectors.
 5. Encoders from below, with 3 screws from above each; SELECT and USE with their nut; DASH snaps
@@ -154,8 +155,8 @@ optical encoder diagram (`pulses_per_revolution: 600`, `debounce_us: 0`).
    rests on two spacers of the wall, so the membrane stays 1.5 mm from the plastic; the ribs on the
    lip get squashed and hold them still, without vibrating. If the rim is thinner than the groove
    (5.7 mm), a ring of adhesive foam on the rim, on the lip side, takes up the play.
-7. Wire everything, place the top plate on the tray and screw it from below with the 12 M3 × 35
-   screws, which run inside the pillars.
+7. Wire everything, place the top plate on the tray and screw it from below with the 12 M4 × 30
+   screws, which run inside the pillars; the heads sit in the seats at the bottom of the pillars.
 8. Washers into the seat under the knob, then the chosen hub from below, through the washers, glued
    into the toothed seat: the hub's flange closes the washers in their seat. Then the knobs onto the
    shafts, with no grub screw. Finally the feet under the tray.
@@ -176,8 +177,9 @@ optical encoder diagram (`pulses_per_revolution: 600`, `debounce_us: 0`).
 - **Shaft hole in the hubs**: designed for a Ø6 shaft with its flat 2.1 mm from the axis (a little
   over 5 mm from the round side), plus the hub's clearance. If none of the five hubs fits, change
   the clearances.
-- **Insert holes** (now Ø4.4, as for the M3 × 5 × 4 inserts by CNC Kitchen and ruthex): with other
-  brands, try the insert in a test hole before printing the top plate.
+- **Insert holes** (now Ø5.6 for the 6 mm wide M4 inserts and Ø4.4 for the M3 × 5 × 4 ones, as
+  recommended by CNC Kitchen and ruthex): with other brands, try the insert in a test hole before
+  printing the top plate.
 - **Speaker thickness** (now 5.4 mm, the stated total thickness): what counts is the thickness in
   the outer 2 mm, where the lip of the guides holds them. If it is thinner, a ring of foam on the
   rim takes up the play; or adapt the guides to the measured thickness.
