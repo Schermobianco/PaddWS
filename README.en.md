@@ -7,6 +7,11 @@ mode, coin-op credits, power-ups, fighting-game special moves and a ladder again
 opponents. It runs on PC, in the browser, in a Raspberry Pi cabinet, on the MiSTer FPGA and on the
 Commodore 64, and everywhere it plays exactly the same match.
 
+<p align="center"><img src="docs/badges/powered-by-sid.svg" alt="Powered by SID 6581 / 8580" width="440"></p>
+
+Music, sound effects and voices come from a SID, the Commodore 64 sound chip: the real one on the
+C64, the one from the C64 core on the MiSTer and a SID written in Rust on PC, Raspberry and web.
+
 ## Play now
 
 **<https://schermobianco.github.io/PaddWS/>**: in the browser, on a computer, a phone or a tablet

@@ -141,7 +141,8 @@ si costruiscono poi in uno di questi due modi:
   ([tools/forge](../../tools/forge/README.md)): la accende e la spegne da solo, e sul PC bastano git
   e ssh. La VM si crea una volta con `create_forge.bat` (VMware Workstation, pochi minuti,
   senza domande). `build_onforge.bat -Publish` pubblica poi la release del tag con `gh` e la versione web su GitHub
-  Pages. Le note della release vengono dal changelog (`tools/release_notes.py X.Y.Z`): per le
+  Pages. Per provare i pacchetti prima di pubblicarli: `build_onforge.bat` senza `-Publish`, le prove,
+  `git push --follow-tags` e `build_onforge.bat -PublishOnly`, che pubblica quelli già in `dist\`. Le note della release vengono dal changelog (`tools/release_notes.py X.Y.Z`): per le
   anteprime solo le voci nuove o cambiate dal tag precedente.
 - `build_ongithub.bat VERSIONE` fa tutto online: controlli, `tools/release.py`, push, avvia le
   GitHub Action sul tag e le segue fino alla release (core MiSTer compreso); senza versione rilancia

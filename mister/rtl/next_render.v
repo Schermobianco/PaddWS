@@ -436,20 +436,28 @@ endfunction
 wire       label_mx = label_move != 2'd0 && label_max;
 wire [6:0] label_name_w = (label_move != 2'd0) ? move_w({2'd0, label_move == 2'd2}) + (label_mx ? NX_MAX_W + 3 : 0)
                                                : {1'b0, name_w(label_bonus)};
-// larghezza di tutta la scritta ("P1 " + nome + "!") in pixel del font (a schermo il doppio)
+// larghezza di tutta la scritta ("P1 " + nome + "!") in pixel del font, a scala 1
 wire [6:0] label_w_n = NX_P1_W + 3 + label_name_w + 1 + NX_BANG_W;
 
 // Tipi della scritta (`label_kind`), come rust/game/src/next_ui.rs:
 // - LK_BONUS, "P1 SMASH!": si accende e si spegne come un vecchio televisore. In 72 frame: una riga
 //   bianca che si allarga (4 frame), l'immagine che si apre in altezza con i bordi bianchi (4), ferma,
 //   che si richiude (3), la riga che si stringe (4), il puntino;
+// la scritta è a scala 1 (righe del font 222-230, lettere 223-229), su un riquadro di 20 righe;
 // - LK_ARMED, mossa armata: solo i trattini sotto le lettere (due righe con la MAX), che si
-//   disegnano dal lato del giocatore, una lettera ogni 2 frame, e si accendono di giallo mentre la
+//   disegnano dal lato del giocatore, una lettera (6 pixel) ogni 2 frame, e si accendono di giallo mentre la
 //   palla arriva verso di lui;
 // - LK_HIT, colpo della mossa (60 frame): per 2 frame blocchi bianchi al posto delle lettere, poi la
 //   scritta, bianca fino al frame 4; i trattini accesi fino al 24; dal 44 lampeggia.
 localparam [1:0] LK_BONUS = 2'd0, LK_ARMED = 2'd1, LK_HIT = 2'd2;
-localparam integer LABEL_MID = 224;     // riga centrale del riquadro (212-237; lettere 218-231)
+localparam integer LABEL_TOP = 222;     // prima riga del font della scritta
+localparam integer LABEL_MID = 228;     // riga centrale del riquadro (218-237)
+// mezza altezza della fascia che si apre (frame 4-7) e si richiude (frame 64-66)
+function [3:0] crt_open(input [1:0] k);
+    case (k)
+        2'd0: crt_open = 4'd3;  2'd1: crt_open = 4'd5;  2'd2: crt_open = 4'd8;  default: crt_open = 4'd10;
+    endcase
+endfunction
 reg        crt_line, crt_dot, crt_edge;
 reg [3:0]  crt_hh;                      // mezza altezza della fascia aperta
 reg [7:0]  crt_lw;                      // mezza larghezza della riga
@@ -470,8 +478,8 @@ wire signed [10:0] arm_d = label_player ? $signed({1'b0, ball_col(ball_x)}) - $s
                                         : $signed({1'b0, px_of(pad1_x)}) - $signed({1'b0, ball_col(ball_x)});
 wire       arm_toward = label_player ? ball_vx > 0 : ball_vx < 0;
 wire [7:0] arm_p = !arm_toward ? 8'd0 : (arm_d < 0) ? 8'd0 : (arm_d > 255) ? 8'd255 : arm_d[7:0];
-// trattini accesi: strada * larghezza della scritta (2 * label_w_n) / 256
-wire [15:0] arm_lit = arm_p * {label_w_n, 1'b0};
+// trattini accesi: strada * larghezza della scritta / 256
+wire [15:0] arm_lit = arm_p * {1'b0, label_w_n};
 
 reg        cv [0:3];
 reg [2:0]  cbon [0:3];
@@ -788,30 +796,30 @@ always @(posedge clk) begin
         end
         // scritta del bonus o della mossa: "P1 " + nome + "!" a scala 2, centrata in basso
         label_w <= label_w_n;
-        label_x <= W / 2 - label_w_n;
+        label_x <= W / 2 - (label_w_n >> 1);
         // televisore della scritta del bonus (vedi LK_BONUS); la riga è larga quanto il riquadro
         crt_line <= 1'b0;
         crt_dot <= 1'b0;
         crt_edge <= 1'b0;
-        crt_hh <= 4'd12;
+        crt_hh <= 4'd10;
         crt_lw <= 8'd0;
         if (label_age < 7'd4) begin
             crt_line <= 1'b1;
-            crt_lw <= quarters({1'b0, label_w_n} + 8'd6, label_age[2:0] + 3'd1);
+            crt_lw <= quarters({2'b0, label_w_n[6:1]} + 8'd4, label_age[2:0] + 3'd1);
         end else if (label_age < 7'd8) begin
-            crt_hh <= {label_age[1:0], 1'b0} + {2'b0, label_age[1:0]} + 4'd3;    // 3, 6, 9, 12
+            crt_hh <= crt_open(label_age[1:0]);                                   // 3, 5, 8, 10
             crt_edge <= 1'b1;
         end else if (label_age >= 7'd64 && label_age < 7'd67) begin
-            crt_hh <= 4'd12 - (({label_age[1:0], 1'b0} + {2'b0, label_age[1:0]}) + 4'd3);  // 9, 6, 3
+            crt_hh <= crt_open(2'd2 - label_age[1:0]);                            // 8, 5, 3
             crt_edge <= 1'b1;
         end else if (label_age >= 7'd67 && label_age < 7'd71) begin
             crt_line <= 1'b1;
-            crt_lw <= quarters({1'b0, label_w_n} + 8'd6, 3'd7 - label_age[2:0]);       // 4/4 .. 1/4
+            crt_lw <= quarters({2'b0, label_w_n[6:1]} + 8'd4, 3'd7 - label_age[2:0]);  // 4/4 .. 1/4
         end else if (label_age >= 7'd71) begin
             crt_dot <= 1'b1;
         end
-        // trattini della mossa armata: una lettera (12 pixel) ogni 2 frame, e quelli accesi
-        dash_rev <= {label_age, 2'b0} + {1'b0, label_age, 1'b0};
+        // trattini della mossa armata: una lettera (6 pixel) ogni 2 frame, e quelli accesi
+        dash_rev <= {1'b0, label_age, 1'b0} + {2'b0, label_age};
         dash_lit <= arm_lit[15:8];
     end
 end
@@ -834,6 +842,7 @@ endfunction
 
 reg        on, gray_px, lb;
 reg        lbox, ltext, lcol, ldash;      // scritta del bonus o della mossa
+reg        pad_box;                       // pixel di una racchetta: la scritta passa sotto
 reg [9:0]  ldx, lpos;
 reg [23:0] col;
 reg [9:0]  dx, dy, sx, cxl;
@@ -887,14 +896,15 @@ always @(*) begin
     w_line = x - (wx - WARP_LINE_HALF) < 2 * WARP_LINE_HALF;
     hb_p = x >= W / 2;
     mv_code = label_move == 2'd2;
-    mv_dx = (x - label_x - 2 * (NX_P1_W + 3) - (label_mx ? 2 * (NX_MAX_W + 3) : 0)) >> 1;
-    mv_dy = (y - 216) >> 1;
-    ldx = (x - label_x) >> 1;
+    mv_dx = x - label_x - (NX_P1_W + 3) - (label_mx ? NX_MAX_W + 3 : 0);
+    mv_dy = y - LABEL_TOP;
+    ldx = x - label_x;
     lbox = 1'b0;
     ltext = 1'b0;
     lcol = 1'b0;
     ldash = 1'b0;
     lpos = 10'd0;
+    pad_box = 1'b0;
     // barre nella banda in alto: la sinistra da BAR_X, la destra speculare
     bq_x = hb_p ? (W - 1 - BAR_X) - x : x - BAR_X;
     bq_y = y - (BAR_Y - 2);
@@ -1295,27 +1305,39 @@ always @(*) begin
         // palla e alla sua scia: la coprono le scie, le righe dello STRAIGHT, la cometa e l'alone qui
         // sotto, e la palla di pong_render in pong_top (`label`, acceso anche sotto la scia: lì la
         // palla non c'è)
-        lbox = x >= label_x - 6 && x < label_x + 2 * label_w + 6 && y >= 212 && y < 238;
-        ltext = (label_player ? nx_p2_lit(ldx, (y - 216) >> 1) : nx_p1_lit(ldx, (y - 216) >> 1)) ||
-                (label_mx && nx_max_lit(ldx - (NX_P1_W + 3), (y - 216) >> 1)) ||
-                (label_move != 2'd0 ? mv_on : name_lit(label_bonus, ldx - (NX_P1_W + 3), (y - 216) >> 1)) ||
-                nx_bang_lit(ldx - (NX_P1_W + 3 + label_name_w + 1), (y - 216) >> 1);
+        lbox = x >= label_x - 4 && x < label_x + label_w + 4 && y >= LABEL_MID - 10 && y < LABEL_MID + 10;
+        ltext = (label_player ? nx_p2_lit(ldx, y - LABEL_TOP) : nx_p1_lit(ldx, y - LABEL_TOP)) ||
+                (label_mx && nx_max_lit(ldx - (NX_P1_W + 3), y - LABEL_TOP)) ||
+                (label_move != 2'd0 ? mv_on : name_lit(label_bonus, ldx - (NX_P1_W + 3), y - LABEL_TOP)) ||
+                nx_bang_lit(ldx - (NX_P1_W + 3 + label_name_w + 1), y - LABEL_TOP);
         // colonne con una lettera (solo per le mosse): sotto di loro i trattini, al colpo i blocchi
-        lcol = x - label_x < 2 * label_w &&
+        lcol = x - label_x < label_w &&
                ((label_player ? nx_p2_col(ldx) : nx_p1_col(ldx)) ||
                 (label_mx && nx_max_col(ldx - (NX_P1_W + 3))) ||
                 (label_move == 2'd2 ? nx_move1_col(ldx - (NX_P1_W + 3) - (label_mx ? NX_MAX_W + 3 : 0))
                                     : nx_move0_col(ldx - (NX_P1_W + 3) - (label_mx ? NX_MAX_W + 3 : 0))) ||
                 nx_bang_col(ldx - (NX_P1_W + 3 + label_name_w + 1)));
-        ldash = lcol && (y == 233 || y == 234 || (label_mx && (y == 236 || y == 237)));
+        ldash = lcol && (y == LABEL_TOP + 9 || (label_mx && y == LABEL_TOP + 11));
         // distanza dal lato del giocatore che ha fatto la mossa
-        lpos = label_player ? label_x + 2 * label_w - 1 - x : x - label_x;
-        if (label_on && label_kind == LK_ARMED) begin
+        lpos = label_player ? label_x + label_w - 1 - x : x - label_x;
+        // le racchette stanno sopra alla scritta: sui pixel della racchetta (il rettangolo di
+        // pong_render e quelli del suo tipo, anche la HAMMER più spessa) la scritta non si disegna e
+        // restano pong_render e i segni qui sopra; accanto la scritta resta intera
+        pad_box = 1'b0;
+        for (k = 0; k < 2; k = k + 1) begin
+            kx = $signed({2'b0, x}) - kl[k];
+            kr = $signed({2'b0, y}) - kt[k];
+            if (kind_px(kd[k], (k == 0) ? kx : PW - 1 - kx, kr, kh[k], ktilt[k], 1'b0, 1'b0) != KP_NONE ||
+                (kx >= 0 && kx < PW && kr >= 0 && kr < $signed({2'b0, kh[k]})))
+                pad_box = 1'b1;
+        end
+        if (pad_box) ;
+        else if (label_on && label_kind == LK_ARMED) begin
             // solo i trattini: l'ultimo disegnato bianco, poi grigi che si accendono mentre la palla arriva
             if (ldash && lpos < dash_rev) begin
                 on = 1'b1;
                 lb = 1'b1;
-                col = (lpos + 12 >= dash_rev && dash_rev < 2 * label_w) ? WHITE : (lpos < dash_lit) ? ACCENT : DIM;
+                col = (lpos + 6 >= dash_rev && dash_rev < label_w) ? WHITE : (lpos < dash_lit) ? ACCENT : DIM;
             end
         end else if (label_on && label_kind == LK_HIT) begin
             // colpo: blocchi bianchi, poi la scritta e i trattini accesi; nell'ultima parte lampeggia
@@ -1323,7 +1345,7 @@ always @(*) begin
                 on = 1'b1;
                 lb = 1'b1;
                 col = BLACK;
-                if (label_age < 7'd2 ? (lcol && y >= 218 && y < 232) : ltext)
+                if (label_age < 7'd2 ? (lcol && y >= LABEL_TOP + 1 && y < LABEL_TOP + 8) : ltext)
                     col = (label_age < 7'd4) ? WHITE : ACCENT;
                 if (ldash && label_age < 7'd24)
                     col = (label_age < 7'd4) ? WHITE : ACCENT;
@@ -1332,7 +1354,7 @@ always @(*) begin
             // bonus: riga, immagine che si apre e si chiude, puntino (vedi LK_BONUS)
             if (crt_dot || crt_line) begin
                 if ((y == LABEL_MID - 1 || y == LABEL_MID) &&
-                    x - (label_x + label_w - (crt_dot ? 10'd1 : crt_lw)) < (crt_dot ? 10'd2 : {crt_lw, 1'b0})) begin
+                    x - (label_x + (label_w >> 1) - (crt_dot ? 10'd1 : crt_lw)) < (crt_dot ? 10'd2 : {crt_lw, 1'b0})) begin
                     on = 1'b1;
                     lb = 1'b1;
                     col = WHITE;

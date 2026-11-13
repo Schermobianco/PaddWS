@@ -22,6 +22,7 @@ module challenge_render (
     input  wire        coin_prompt,       // INSERT COIN invece di PRESS START
     input  wire [5:0]  blink,             // frame % 60
     input  wire [3:0]  cont_digit,        // secondi del continue
+    input  wire [5:0]  cont_sub,          // frame dentro il secondo del continue (0-59)
     input  wire        cont_over,         // continue scaduto: GAME OVER al posto della schermata
     input  wire [17:0] name,              // iniziali scelte (codici del font, 6 bit ciascuno)
     input  wire [1:0]  name_pos,          // lettera in corso
@@ -167,6 +168,31 @@ function in_box(input signed [10:0] x0, input signed [10:0] y0, input [6:0] w, i
         in_box = ddx >= 0 && ddx < $signed({5'd0, w}) && ddy >= 0 && ddy < $signed({5'd0, h});
     end
 endfunction
+
+// continue: y della pallina (parabola di 60 frame, alta 30 pixel: s (60 - s) * 17 / 512) e GAME OVER
+// che si scrive (una lettera ogni 5 frame dal 12, cursore) e si chiude (dal frame 158)
+reg signed [10:0] cont_ball_y;
+reg [5:0]  go_cols;
+reg        go_cur, go_close, go_close_line, go_close_dot;
+reg signed [10:0] go_cur_x;
+reg [6:0]  go_close_w, go_close_h;
+reg [11:0] cb_m;
+reg [7:0]  go_a;
+reg [3:0]  go_n;
+always @(posedge clk) begin
+    cb_m = {6'd0, cont_sub} * (12'd60 - {6'd0, cont_sub});
+    cont_ball_y <= 76 + 4 * CH_GLYPH_H - 6 - ((cb_m * 17) >> 9);
+    go_a = intro_age - 8'd12;
+    go_n = (intro_age < 8'd12) ? 4'd0 : (go_a >= 8'd40) ? GAME_OVER_LETTERS : ((go_a * 13) >> 6) + 4'd1;
+    go_cols <= (go_n == 4'd0) ? 6'd0 : game_over_l1(go_n - 4'd1);
+    go_cur_x <= (W - 2 * GAME_OVER_W) / 2 + 2 * ((go_n == 4'd0) ? 6'd0 : game_over_l1(go_n - 4'd1)) + 2;
+    go_cur <= intro_age >= 8'd12 && (go_n < GAME_OVER_LETTERS || intro_age[4]);
+    go_close <= intro_age >= 8'd158;
+    go_close_line <= intro_age >= 8'd166 && intro_age < 8'd174;
+    go_close_dot <= intro_age >= 8'd174;
+    go_close_h <= (intro_age >= 8'd165) ? 7'd1 : 7'd120 - 7'd15 * (intro_age[6:0] - 7'd30);   // 158 = 128 + 30
+    go_close_w <= (intro_age >= 8'd173) ? 7'd1 : 7'd127 - 7'd16 * (intro_age[6:0] - 7'd38);   // 166 = 128 + 38
+end
 
 reg        i_title, i_name, i_nacc, i_ground, i_gline, i_ghost, i_tag, i_first, i_net, i_ball, i_dust, i_wflash;
 reg [2:0]  i_lad, i_cap, i_cinv, i_cname, i_trail, i_shot;
@@ -637,11 +663,25 @@ always @(*) begin
         3'd3: begin   // ------------------------------------------------------ continue
             on = 1'b1;
             if (cont_over) begin
-                // continue scaduto: GAME OVER al centro, come quello sopra la partita
-                if (`CENTER2(game_over_lit, GAME_OVER_W, AT_GAME_OVER_Y)) col = WHITE;
+                // continue scaduto: GAME OVER al centro, come quello sopra la partita ma senza campo
+                // da spegnere: si scrive subito con il cursore, poi lo schermo si chiude come un
+                // televisore (come OV_TYPE e OV_OFF di pong_render; intro_age conta i frame del GAME OVER)
+                if (`CENTER2(game_over_lit, GAME_OVER_W, AT_GAME_OVER_Y) && (x - (W - 2 * GAME_OVER_W) / 2) >> 1 < go_cols)
+                    col = WHITE;
+                if (go_cur && in_box(go_cur_x, AT_GAME_OVER_Y, 7'd8, 7'd14)) col = WHITE;
+                if (go_close && (go_close_dot ? (x == W / 2 - 1 || x == W / 2) && (y == 119 || y == 120) :
+                                 go_close_line ? (y == 119 || y == 120) && x >= W / 2 - go_close_w && x < W / 2 + go_close_w :
+                                 (y == 120 - go_close_h || y == 119 + go_close_h)))
+                    col = WHITE;
+                else if (go_close && (go_close_dot || go_close_line || y < 120 - go_close_h || y > 119 + go_close_h))
+                    col = BLACK;
             end else begin
                 if (`CENTER2(ch_cont_lit, CH_CONT_W, 36)) col = ACCENT;
                 put(W / 2 - 2 * C, 10'd76, {2'd0, cont_digit}, 2'd2, WHITE);
+                // pallina che rimbalza a destra del numero: tocca terra a ogni secondo, quando il
+                // numero cambia; negli ultimi tre secondi diventa gialla
+                if (in_box(W / 2 + 2 * C + 12, cont_ball_y, 7'd6, 7'd6)) col = (cont_digit <= 4'd2) ? ACCENT : WHITE;
+                if (in_box(W / 2 + 2 * C + 9, 10'd76 + 4 * CH_GLYPH_H, 7'd12, 7'd1)) col = GRAY;
                 if (blink < 6'd30 &&
                     (coin_prompt ? `CENTER1(ch_coin_lit, CH_COIN_W, 160) : `CENTER1(ch_press_lit, CH_PRESS_W, 160)))
                     col = WHITE;

@@ -57,6 +57,12 @@ module pong_render (
     input  wire [179:0] dash_off,       // NEXT: scostamento di ognuno dei 30 trattini della mezzeria
     input  wire [7:0]  over_age,        // GAME OVER: frame dall'inizio (fermi a 255)
     input  wire        you_right,       // YOU WIN: il giocatore sta a destra (la palla parte da lì)
+    // CHALLENGE contro la CPU: la rete dell'avversario (tipo di racchetta, 7 = quella di sempre), frame
+    // per lo scorrimento del RUSH, vibrazione dopo un colpo dell'HAMMER (lato della scossa)
+    input  wire [2:0]  net_kind,
+    input  wire [3:0]  net_t,
+    input  wire        net_shake,
+    input  wire        net_shake_dir,
 
     output reg  [23:0] rgb,
     output reg         top,             // scritta sovrapposta: sopra anche alle aggiunte di NEXT
@@ -390,6 +396,82 @@ always @(posedge clk) begin
     end
 end
 
+// ------------------------------------------------- reti degli avversari
+
+// Come draw_net di rust/game/src/scenes.rs: la rete di sempre (trattini di 4 righe ogni 8, larghi 2) o,
+// nella CHALLENGE contro la CPU, quella del tipo di racchetta dell'avversario. rx è la colonna dal
+// centro (le due colonne della rete di sempre sono -1 e 0), solo confronti con costanti:
+// - ARCADE: quadratini vuoti 6x6 ogni 16 righe;
+// - TWIST: trattini inclinati di 4 righe ogni 8, che si piegano verso la palla quando passa (fino a 4
+//   pixel, meno lontano da lei: net_bend in pixel per riga, calcolato a ogni frame);
+// - HAMMER: rete doppia (colonne -4..-2 e 1..3), trattini di 10 righe ogni 16, che vibra di un pixel
+//   (trattini alterni da parti opposte) dopo un colpo dell'HAMMER;
+// - TITAN: trattini lunghi 20 righe ogni 32;
+// - BLASTER: due file di puntini 2x2 sfalsati, ogni 8 righe;
+// - RUSH: trattini di 8 righe ogni 16 che scorrono verso il basso, con 2 righe gialle scure sopra;
+// - GUARDIAN: mattoni 4x4 sfalsati, due per riga, ogni 8 righe, e gli angoli del campo gialli.
+localparam [2:0] NK_ARCADE = 3'd0, NK_TITAN = 3'd1, NK_HAMMER = 3'd2, NK_TWIST = 3'd3, NK_BLASTER = 3'd4,
+                 NK_RUSH = 3'd5, NK_GUARDIAN = 3'd6;
+localparam [23:0] RUSH_TRAIL = 24'h5C4C0D;
+reg        bend_on, bend_dir;              // TWIST: la palla è vicina alla rete, e va a destra
+reg signed [11:0] bend_row;                // ... riga del suo centro
+always @(posedge clk) begin
+    if (snapshot) begin
+        bend_on <= (c0[4] + c1[4]) >= W - 60 && (c0[4] + c1[4]) < W + 60;
+        bend_dir <= ball_x[31:16] > last_bx;
+        bend_row <= (r0[4] + r1[4]) >>> 1;
+    end
+end
+reg [15:0] last_bx;
+always @(posedge clk) if (snapshot) last_bx <= ball_x[31:16];
+
+// rete: 0 niente, 1 bianca (grigia nel bullet time), 2 gialla scura (RUSH), 3 gialla (angoli del GUARDIAN)
+function [1:0] net_px(input signed [11:0] rx, input [7:0] yy);
+    reg [4:0] q;
+    reg signed [11:0] d, b, s;
+    begin
+        net_px = 2'd0;
+        case (net_kind)
+            NK_ARCADE: begin
+                q = {1'b0, yy[3:0]};
+                if (q >= 2 && q < 8 && rx >= -3 && rx <= 2 && (q == 2 || q == 7 || rx == -3 || rx == 2)) net_px = 2'd1;
+            end
+            NK_TWIST: begin
+                d = $signed({4'd0, yy}) - bend_row;
+                if (d < 0) d = -d;
+                b = !bend_on ? 12'sd0 : (d < 10) ? 12'sd4 : (d < 20) ? 12'sd3 : (d < 30) ? 12'sd2 : (d < 40) ? 12'sd1 : 12'sd0;
+                s = $signed({10'd0, yy[2:1]}) - 12'sd2 + (bend_dir ? b : -b);
+                if (!yy[2] && (rx == s || rx == s + 1)) net_px = 2'd1;
+            end
+            NK_HAMMER: begin
+                s = !net_shake ? 12'sd0 : (yy[4] ^ net_shake_dir) ? 12'sd1 : -12'sd1;
+                if (yy[3:0] < 4'd10 && ((rx - s >= -4 && rx - s <= -2) || (rx - s >= 1 && rx - s <= 3))) net_px = 2'd1;
+            end
+            NK_TITAN: begin
+                q = yy[4:0];
+                if (q >= 2 && q < 22 && (rx == -1 || rx == 0)) net_px = 2'd1;
+            end
+            NK_BLASTER: begin
+                if (yy[2:1] == 2'd0 && (rx == -3 || rx == -2)) net_px = 2'd1;
+                if (yy[2:1] == 2'd2 && (rx == 1 || rx == 2)) net_px = 2'd1;
+            end
+            NK_RUSH: begin
+                q = {1'b0, yy[3:0] - net_t};
+                if (rx == -1 || rx == 0) net_px = (q < 8) ? 2'd1 : (q >= 14) ? 2'd2 : 2'd0;
+            end
+            NK_GUARDIAN: begin
+                s = yy[3] ? -12'sd3 : 12'sd0;
+                if (yy[2:0] < 3'd4 && ((rx - s >= -3 && rx - s <= 0) || (rx - s >= 2 && rx - s <= 5))) net_px = 2'd1;
+            end
+            default: if (!yy[2] && (rx == -1 || rx == 0)) net_px = 2'd1;
+        endcase
+    end
+endfunction
+// GUARDIAN: angoli del campo gialli, 14 pixel per lato, spessi 2
+wire corner_px = net_kind == NK_GUARDIAN &&
+                 ((hc < 14 || hc >= W - 14) && (vc < 2 || vc >= H - 2) ||
+                  (hc < 2 || hc >= W - 2) && (vc < 14 || vc >= H - 14));
+
 // ------------------------------------------------------------------ pixel
 
 wire signed [11:0] x = {3'd0, hc};
@@ -467,7 +549,8 @@ function rot_box(input signed [11:0] px, input signed [11:0] py, input signed [1
 endfunction
 
 // testo ruotato in senso orario (si legge dall'alto in basso) o antiorario
-reg        ls_px, rs_px, bt_px, bl_px, line_px;
+reg        ls_px, rs_px, bt_px, bl_px, line_px, net_acc;
+reg [1:0]  net_q;
 reg        ul_px, ur_px, ut_px, ub_px;
 reg        credit_px, label_px, label_box, go_px, go_box;
 reg        label_rot_px, label_rot_box, go_rot_px, go_rot_box, cd_px, cd_box;
@@ -603,10 +686,11 @@ always @(*) begin
         end
     end
 
-    // linea centrale: trattini di 4 pixel ogni 8, larga 2 (in NEXT la COMETA li sposta di lato); a
-    // fine partita, con GAME OVER, si spegne dall'alto
-    line_px = (x == W / 2 - 1 + line_off || x == W / 2 + line_off) && (y[2] == 1'b0) &&
-              !(ov == OV_OFF && y < $signed({4'd0, net_cut}));
+    // linea centrale (net_px: quella di sempre o quella dell'avversario; in NEXT la COMETA ne sposta
+    // i trattini di lato); a fine partita, con GAME OVER, si spegne dall'alto
+    net_q = net_px(x - (W / 2 + line_off), y[7:0]);
+    line_px = net_q == 2'd1 && !(ov == OV_OFF && y < $signed({4'd0, net_cut}));
+    net_acc = (net_q == 2'd2 || corner_px) && !(ov == OV_OFF && y < $signed({4'd0, net_cut}));
 
     // demo: "CREDIT n" (o "FREE PLAY") in alto a sinistra (in basso in NEXT e CHALLENGE, dove in
     // alto ci sono le riserve) e al centro la scritta lampeggiante, alternata al nome della modalità
@@ -910,6 +994,8 @@ always @(posedge clk) begin
         rgb <= WHITE;
     else if (text_px || line_px)
         rgb <= field_gray_q ? GRAY : WHITE;
+    else if (net_acc)
+        rgb <= corner_px ? ACCENT : RUSH_TRAIL;
     else if (halo_q != 2'd0)
         rgb <= (halo_q == 2'd1) ? HALO1 : (halo_q == 2'd2) ? HALO2 : HALO3;
     else
@@ -918,7 +1004,7 @@ always @(posedge clk) begin
           !(overlay == 2'd1 && (upright ? label_box : label_rot_box)) && !flash_q && !ball_in &&
           !pad_in(2, x, y) && !pad_in(3, x, y) && !(pad_in(0, x, y) && !pad_hide[0]) &&
           !(pad_in(1, x, y) && !pad_hide[1]) && !(overlay == 2'd1 && credit_px) && !text_px && !line_px &&
-          halo_q == 2'd0;
+          !net_acc && halo_q == 2'd0;
     ball <= !close_px && !cd_box && !ov_box && !ov_extra &&
             !(overlay == 2'd1 && (upright ? label_box : label_rot_box)) && !flash_q && ball_in;
 end

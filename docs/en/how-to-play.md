@@ -35,7 +35,7 @@ again.
 - **EVO** (2 players): hitting the ball with the grey area in the middle of the paddle powers it up
   (the area shrinks with each boost); the forward dash intercepts the ball and sends it back.
 - **NEXT** (2 players or against the CPU): Classic with the forward dash and power-ups. Before the
-  match each player picks 3 power-ups out of 6 and a paddle; capsules start from the centre line
+  match each player picks a paddle and 3 power-ups out of 6 (on the C64 the power-ups first); capsules start from the centre line
   and are collected by touching them with the paddle, then the power-ups are selected and activated
   from the reserve at the top.
 - **VS CPU**: alone against the computer, in every mode (menu **PLAYERS: VS CPU**); the CPU's skill
@@ -59,8 +59,8 @@ Each capsule shows the symbol of its power-up:
 
 ## Paddle types (NEXT)
 
-After the power-ups each player picks a paddle (the CPU picks at random; in CHALLENGE each opponent
-has its own). Each type has an advantage, a small price and a mark that makes it recognisable in
+Before the power-ups each player picks a paddle (on the C64 after them; the CPU picks at random; in
+CHALLENGE each opponent has its own). Each type has an advantage, a small price and a mark that makes it recognisable in
 play (in yellow in the picture, with the paddles to scale). The types are balanced so that each
 wins about half of the points against the normal paddle.
 
@@ -130,7 +130,7 @@ not (see [c64/README.en.md](../../c64/README.en.md)).
 ## CHALLENGE
 
 Alone against 7 CPU opponents (menu **PLAYERS: CHALLENGE**, on the MiSTer OSD *Game type:
-Challenge*). You pick power-ups and paddle once, then each level introduces its opponent: a
+Challenge*). You pick paddle and power-ups once, then each level introduces its opponent: a
 different paddle type for each level, its 3 power-ups and an ever stronger CPU, from the ARCADE of
 the first level to the GUARDIAN of the final boss. Each opponent makes its own entrance, showing off
 what it can do (the ARCADE catches a volley of capsules, the TITAN grows out of the floor, the
@@ -150,7 +150,7 @@ introduction stays still. Matches are NEXT, to 5 points.
   the CPU or the level cleared screen, a second player with a credit (or in Free Play) presses their
   Start (on PC `2`, or `1` if the champion plays on the right) and **HERE COMES A NEW CHALLENGER!**
   appears. On touch screens they hold a finger for a second on the free half, and during the match
-  behind the CPU's paddle, where it says P2 HOLD HERE. The challenger picks power-ups and paddle and
+  behind the CPU's paddle, where it says P2 HOLD HERE. The challenger picks paddle and power-ups and
   they play a duel to 5 points: the winner resumes the level against the CPU from their side, with a
   prize equal to the level's (the champion adds it to their score, the challenger starts from it);
   the loser enters their initials if they make the table.

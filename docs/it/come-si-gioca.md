@@ -34,7 +34,7 @@ partita, **RESUME** la riprende.
 - **EVO** (2 giocatori): colpire la palla nell'area grigia al centro della racchetta la potenzia
   (l'area si restringe a ogni boost); lo scatto in avanti intercetta la palla e la rilancia.
 - **NEXT** (2 giocatori o contro la CPU): Classic con lo scatto in avanti e i bonus. Prima della
-  partita ognuno sceglie 3 bonus su 6 e la sua racchetta; le capsule partono dalla mezzeria e si
+  partita ognuno sceglie la sua racchetta e 3 bonus su 6 (sul C64 prima i bonus); le capsule partono dalla mezzeria e si
   raccolgono toccandole con la racchetta, poi si scelgono e si attivano dalla riserva in alto.
 - **VS CPU**: da soli contro il computer, in tutte le modalità (menu **PLAYERS: VS CPU**); la
   bravura della CPU segue la difficoltà.
@@ -57,8 +57,8 @@ Ogni capsula mostra il simbolo del suo bonus:
 
 ## Tipi di racchetta (NEXT)
 
-Dopo i bonus ognuno sceglie la sua racchetta (la CPU a caso; in CHALLENGE ogni avversario ha la
-sua). Ogni tipo ha un vantaggio, un piccolo prezzo e un segno che lo fa riconoscere in partita (in
+Prima dei bonus ognuno sceglie la sua racchetta (sul C64 dopo; la CPU a caso; in CHALLENGE ogni
+avversario ha la sua). Ogni tipo ha un vantaggio, un piccolo prezzo e un segno che lo fa riconoscere in partita (in
 giallo nell'immagine, con le racchette in proporzione). I tipi sono bilanciati perché ognuno vinca
 circa metà dei punti contro la racchetta normale.
 
@@ -127,7 +127,7 @@ dell'attract resta EVO e non c'è la schermata HOW TO PLAY. Barra, icona della m
 ## CHALLENGE
 
 Da soli contro 7 avversari CPU (menu **PLAYERS: CHALLENGE**, sul MiSTer OSD *Game type: Challenge*).
-Si scelgono una volta bonus e racchetta, poi ogni livello presenta il suo avversario: un tipo di
+Si scelgono una volta racchetta e bonus, poi ogni livello presenta il suo avversario: un tipo di
 racchetta diverso per livello, i suoi 3 bonus e una CPU sempre più forte, dall'ARCADE del primo
 livello al GUARDIAN del boss finale. Ogni avversario entra a modo suo, mostrando quello che sa fare
 (l'ARCADE prende al volo una raffica di capsule, il TITAN cresce dal pavimento, il BLASTER accende il
@@ -147,7 +147,7 @@ partite sono NEXT a 5 punti.
   contro la CPU o il livello superato, un secondo giocatore con un credito (o in Free Play) preme
   il suo Start (sul PC `2`, o `1` se il campione gioca a destra) e compare **HERE COMES A NEW
   CHALLENGER!**. Sul touch tiene il dito per un secondo nella metà libera, e in partita dietro la
-  racchetta della CPU, dove c'è la scritta P2 HOLD HERE. Lo sfidante sceglie bonus e racchetta e si
+  racchetta della CPU, dove c'è la scritta P2 HOLD HERE. Lo sfidante sceglie racchetta e bonus e si
   gioca una sfida a 5 punti: chi vince riprende il livello contro la CPU dal suo lato, con un premio
   pari a quello del livello (il campione lo aggiunge ai suoi punti, lo sfidante parte da lì); chi
   perde scrive le iniziali se entra in classifica.

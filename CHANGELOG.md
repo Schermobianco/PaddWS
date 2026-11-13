@@ -15,6 +15,21 @@ crea il commit e il tag `vX.Y.Z`.
 ## [Non rilasciato]
 
 ### Modificato
+- Mosse speciali: l'urlo con il nome della mossa ("STRAIGHT SHOT!", "RISING STRIKE!") parte al colpo,
+  insieme al tiro e alla scritta, non più quando la mossa viene armata.
+- CHALLENGE, continue: accanto al numero una pallina rimbalza e tocca terra a ogni secondo, gialla
+  negli ultimi tre; Start vale già con il 9, dopo un quarto di secondo invece di un
+  secondo. Il GAME OVER del continue scaduto si scrive con il cursore e si chiude come un televisore,
+  come quello a fine partita.
+- MiSTer: la scritta del bonus e della mossa in basso è più piccola (scala 1) e passa sotto le
+  racchette; anche su PC le racchette stanno sopra le scritte.
+- NEXT: prima si sceglie la racchetta, poi i bonus (anche lo sfidante della CHALLENGE); sul C64
+  l'ordine resta quello di prima.
+- **Reti degli avversari**: nella CHALLENGE contro la CPU ogni avversario ha la sua rete: quadratini
+  come capsule (ARCADE), trattini inclinati che si piegano verso la palla (TWIST), rete doppia che
+  vibra ai colpi dell'HAMMER, trattini lunghi (TITAN), due file di puntini (BLASTER), trattini che
+  scorrono (RUSH), mattoni e angoli del campo gialli (GUARDIAN). Nelle sfide fra due giocatori e
+  nelle altre modalità resta la rete di sempre. Non ancora sul C64.
 - **Scritte animate**, su tutte le versioni tranne il C64 (che arriverà dopo) e Python:
   - la scritta del bonus attivato ("P1 SMASH!") si accende e si spegne come un vecchio televisore:
     una riga bianca che si allarga e si apre in altezza, alla fine il contrario fino al puntino;
@@ -32,6 +47,8 @@ crea il commit e il tag `vX.Y.Z`.
   palla fortissimo e il nome cade come un peso, il TITAN cresce lento dal pavimento, il BLASTER
   accende il nome a colpi e colpisce al volo i bonus, il RUSH entra con uno scatto lunghissimo, il
   GUARDIAN si costruisce il muro e rimanda una palla. Sul C64 la presentazione resta ferma.
+- Release in due tempi: `build_onforge.bat` mette i pacchetti in `dist\` senza pubblicarli e, dopo
+  le prove, `build_onforge.bat -PublishOnly` pubblica quelli senza ricostruirli.
 
 ## [4.1.0] - 2026-11-10
 

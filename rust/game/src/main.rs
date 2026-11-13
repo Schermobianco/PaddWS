@@ -486,6 +486,14 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         app.cpu = false;
         Scene::Game(Box::new(play))
     }
+    // partita della CHALLENGE al livello `level` (da 0), per la rete dell'avversario
+    fn net_at(app: &mut App, level: usize) -> Scene {
+        challenge(app, level);
+        let mut play = Play::challenge(app);
+        play.skip_countdown();
+        play.fill_challenge_demo();
+        Scene::Game(Box::new(play))
+    }
     use ending_ui::Part as E;
     use paddws_core::PaddleKind as K;
     // easter egg acceso (iniziali "WS!"): giallo e rosso scambiati
@@ -493,7 +501,7 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         app.set_egg(true);
         scene
     }
-    let shots: [(&str, MakeScene); 85] = [
+    let shots: [(&str, MakeScene); 92] = [
         ("1_demo_classic", |app| demo_at(app, DemoMode::Classic)),
         ("1_demo_evo", |app| demo_at(app, DemoMode::Evo)),
         ("1_demo_next", |app| demo_at(app, DemoMode::Next)),
@@ -805,6 +813,14 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
             let scene = ending(app, E::Champion, 3.5);
             egg(app, scene)
         }),
+        // reti degli avversari, una per livello
+        ("8_net_1_arcade", |app| net_at(app, 0)),
+        ("8_net_2_twist", |app| net_at(app, 1)),
+        ("8_net_3_hammer", |app| net_at(app, 2)),
+        ("8_net_4_titan", |app| net_at(app, 3)),
+        ("8_net_5_blaster", |app| net_at(app, 4)),
+        ("8_net_6_rush", |app| net_at(app, 5)),
+        ("8_net_7_guardian", |app| net_at(app, 6)),
         // presentazioni dei sette avversari, a metà dell'entrata e a entrata finita
         ("8_intro_1_arcade", |app| intro_at(app, 0, 0.6)),
         ("8_intro_1_arcade_end", |app| intro_at(app, 0, 2.9)),

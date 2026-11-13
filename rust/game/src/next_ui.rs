@@ -16,9 +16,9 @@ use paddws_core::{
 use crate::encoder::Action;
 use crate::gamepad::Control;
 use crate::input::{self, PadKeys};
-use crate::paddle_ui::{self, Look, PaddlePick, Shape};
+use crate::paddle_ui::{self, Look, Shape};
 use crate::render::Renderer;
-use crate::scenes::{App, Menu, Scene};
+use crate::scenes::{App, Menu, Play, Scene};
 use crate::touch;
 
 /// Icone 9x9 a 1 bit, come le bitmap del core MiSTer, nell'ordine di `Bonus`.
@@ -583,11 +583,24 @@ impl Pick {
         if let Some(t) = &mut self.ready {
             *t -= dt;
             if *t <= 0.0 {
+                // la racchetta è già scelta (`PaddlePick`, prima di qui)
                 app.loadout = self.loadouts();
-                return Some(Scene::Paddles(match self.duel {
-                    Some(free) => PaddlePick::challenger(app, free),
-                    None => PaddlePick::new(app),
-                }));
+                if let Some(free) = self.duel {
+                    // sfida in CHALLENGE: lo sfidante vede le mosse speciali se dal suo lato non
+                    // le ha ancora viste nessuno in questa sessione
+                    let i = free as usize;
+                    let run = app.run.as_mut().expect("sfida senza CHALLENGE");
+                    if !std::mem::replace(&mut run.howto[i], true) {
+                        return Some(Scene::HowTo(crate::moves_ui::HowTo::duel(app)));
+                    }
+                    return Some(Scene::Game(Box::new(Play::duel(app))));
+                }
+                // poi la presentazione delle mosse speciali (in CHALLENGE solo qui, prima del
+                // primo incontro)
+                if let Some(run) = &mut app.run {
+                    run.howto[run.side as usize] = true;
+                }
+                return Some(Scene::HowTo(crate::moves_ui::HowTo::new(app)));
             }
             return None;
         }
@@ -1476,9 +1489,10 @@ impl NextFx {
     }
 
     /// Scritte della mossa speciale e del bonus attivato: sopra tutto, nitide anche nel bullet time,
-    /// tranne la palla in `ball` (coordinate del core) e la sua scia, che si ridisegnano sopra
-    /// quelle che toccano.
-    pub fn draw_labels(&self, app: &App, game: &Match, ball: (f32, f32), shake: f32) {
+    /// tranne le racchette e la palla in `pos` (coordinate del core) e la scia della palla, che si
+    /// ridisegnano sopra quelle che toccano: le scritte passano sotto.
+    pub fn draw_labels(&self, app: &App, game: &Match, pos: &[(f32, f32); 3], shake: f32) {
+        let ball = pos[2];
         let r = &app.renderer;
         let (w, h) = (r.world_w, r.world_h);
         let s = app.scale();
@@ -1611,6 +1625,14 @@ impl NextFx {
             let at = Rect::new(x + shake - d / 2.0, r.screen_y(y) - d / 2.0, d, d);
             boxes.iter().flatten().any(|b| b.overlaps(&at))
         };
+        // le racchette (con un po' di margine per i segni dei tipi) che toccano una scritta
+        for (side, (&(x, y), pad)) in pos.iter().zip(&game.paddles).enumerate() {
+            let (pw, ph) = (to_f32(pad.width) * 3.0, to_f32(pad.height));
+            let at = Rect::new(x + shake - pw / 2.0, r.screen_y(y) - ph / 2.0, pw, ph);
+            if boxes.iter().flatten().any(|b| b.overlaps(&at)) {
+                self.draw_pad(app, game, (x, y), shake, side);
+            }
+        }
         if near(ball) || self.trail.iter().any(|&p| near(p)) {
             self.draw_trail(app, game, shake);
             self.draw_ball(app, game, ball, shake);

@@ -7,6 +7,11 @@ anni '80, le partite a gettoni, i bonus, le mosse speciali da picchiaduro e una 
 avversari. Gira su PC, nel browser, su un cabinato Raspberry Pi, sul MiSTer FPGA e sul Commodore 64,
 e ovunque si gioca la stessa identica partita.
 
+<p align="center"><img src="docs/badges/powered-by-sid.svg" alt="Powered by SID 6581 / 8580" width="440"></p>
+
+Musica, effetti e voci escono da un SID, il chip sonoro del Commodore 64: quello vero sul C64,
+quello del core C64 sul MiSTer e un SID scritto in Rust su PC, Raspberry e web.
+
 ## Gioca subito
 
 **<https://schermobianco.github.io/PaddWS/>**: nel browser, dal computer, dal telefono o dal tablet

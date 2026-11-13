@@ -72,8 +72,8 @@ const SFX_SPECIAL_HIT: u8 = 1 << 6;
 pub struct FrameSound {
     /// effetti del SID (`SFX_*`)
     sid: u8,
-    /// voce di partita: l'urlo della mossa speciale (STRAIGHT SHOT vince su RISING STRIKE nello
-    /// stesso frame), o YOU WIN / PERFECT a fine partita, che vincono sugli urli
+    /// voce di partita: l'urlo della mossa speciale al colpo, insieme alla scritta (`special_hit`),
+    /// o YOU WIN / PERFECT a fine partita, che vincono sugli urli
     shout: Option<Call>,
 }
 
@@ -95,11 +95,14 @@ impl FrameSound {
             Event::Straight | Event::Rise => SFX_MOVE,
             Event::SpecialHit => SFX_SPECIAL_HIT,
         };
-        match event {
-            Event::Straight => self.shout = Some(Call::Straight),
-            Event::Rise => self.shout = self.shout.or(Some(Call::Rise)),
-            _ => {}
-        }
+    }
+
+    /// Colpo di una mossa speciale: l'urlo con il suo nome parte insieme al tiro e alla scritta.
+    pub fn special_hit(&mut self, special: Special) {
+        self.shout = self.shout.or(Some(match special {
+            Special::Straight => Call::Straight,
+            Special::Rise => Call::Rise,
+        }));
     }
 }
 
@@ -1016,9 +1019,10 @@ impl Menu {
                 play.paused = true;
                 Scene::Game(play)
             }),
+            // NEXT: prima la racchetta, poi i bonus
             Item::Play if app.next => {
                 app.run = app.challenge.then(Run::new);
-                Some(Scene::Pick(Pick::new(app)))
+                Some(Scene::Paddles(PaddlePick::new(app)))
             }
             Item::Play => Some(Scene::Game(Box::new(Play::new(app)))),
             Item::Quit => {
@@ -1299,6 +1303,8 @@ pub struct Play {
     solo: Side,
     /// CHALLENGE: sfida tra il campione e un nuovo sfidante al livello in corso
     duel: Option<usize>,
+    /// secondi dall'ultimo colpo dell'HAMMER (la sua rete vibra subito dopo)
+    hammer_net: f64,
 }
 
 /// Seme della prossima partita.
@@ -1355,6 +1361,7 @@ impl Play {
             challenge: None,
             solo: Side::Left,
             duel: None,
+            hammer_net: 1.0,
         };
         play.pad_draw_x = [to_f32(play.game.paddles[0].x), to_f32(play.game.paddles[1].x)];
         play.previous = play.snapshot();
@@ -1911,8 +1918,21 @@ impl Play {
             }
             for event in events.iter() {
                 // la demo suona solo con i suoni dell'attract
+                // colpo della racchetta HAMMER della CPU (la palla riparte verso il giocatore): la
+                // sua rete vibra
+                if event == Event::Hit
+                    && self.net_kind() == Some(PaddleKind::Hammer)
+                    && (self.game.ball.vx > 0) == (self.solo == Side::Right)
+                {
+                    self.hammer_net = 0.0;
+                }
                 if !self.demo || app.cfg.game.attract_sound {
                     sound.add(event);
+                    if event == Event::SpecialHit
+                        && let Some(special) = self.game.next.as_ref().and_then(|n| n.special_flight)
+                    {
+                        sound.special_hit(special);
+                    }
                 }
                 if event == Event::Score {
                     self.flash = FLASH_TIME;
@@ -1948,6 +1968,7 @@ impl Play {
         }
         // nel bullet time gli effetti rallentano con il gioco
         app.play_frame(sound, self.game.next.as_ref().is_some_and(|n| n.bullet_on));
+        self.hammer_net += dt;
         let unit = app.renderer.world_h / 240.0;
         for (x, pad) in self.pad_draw_x.iter_mut().zip(&self.game.paddles) {
             *x = slide(*x, to_f32(pad.x), dt, unit);
@@ -2026,7 +2047,12 @@ impl Play {
         let line_w = ((to_f32(p.pad_width) / 2.0).floor() * w / 800.0).floor().max(1.0);
         // touch: in cima alla linea il simbolo della pausa (`draw_pause_hint`) al posto dei trattini
         let pause_hint = self.pause_hint(app);
-        let mut y = 0.0;
+        let mut y = if let Some(kind) = self.net_kind() {
+            self.draw_net(app, kind, white, net_off, pause_hint);
+            h
+        } else {
+            0.0
+        };
         let mut i = 0;
         while y < h {
             let dx = self.fx.as_ref().map_or(0.0, |fx| fx.dash_offset(i));
@@ -2162,7 +2188,7 @@ impl Play {
             if let Some(b) = bullet {
                 fx.draw_pad(app, &self.game, pos[b.side], shake, b.side);
             }
-            fx.draw_labels(app, &self.game, pos[2], shake);
+            fx.draw_labels(app, &self.game, &pos, shake);
         }
         if pause_hint {
             self.draw_pause_hint(app);
@@ -2204,6 +2230,119 @@ impl Play {
             attract::draw_game_over_anim(&app.attract, r, title, winner, winner_color, accent, t, ball);
             if field_off.is_some() {
                 attract::draw_crt_close(r, t, app.attract.game_over_seconds() - FLASH_TIME);
+            }
+        }
+    }
+
+    /// Rete dell'avversario: solo nella CHALLENGE contro la CPU (non nelle sfide tra due giocatori,
+    /// nelle altre modalità e nella demo).
+    fn net_kind(&self) -> Option<PaddleKind> {
+        let (level, _) = self.challenge.as_ref().filter(|_| !self.demo && self.duel.is_none())?;
+        Some(RUNGS[*level].kind)
+    }
+
+    /// Rete dell'avversario `kind`, come `net_px` di mister/rtl/pong_render.v, in pixel di uno schermo a
+    /// 240 righe: riga per riga, colonne dal centro (quelle della rete di sempre sono -1 e 0).
+    /// - ARCADE: quadratini vuoti 6x6 ogni 16 righe;
+    /// - TWIST: trattini inclinati di 4 righe ogni 8, che si piegano verso la palla quando passa;
+    /// - HAMMER: rete doppia, trattini di 10 righe ogni 16, che vibra dopo un colpo dell'HAMMER;
+    /// - TITAN: trattini lunghi 20 righe ogni 32;
+    /// - BLASTER: due file di puntini 2x2 sfalsati, ogni 8 righe;
+    /// - RUSH: trattini di 8 righe ogni 16 che scorrono verso il basso, con 2 righe gialle scure sopra;
+    /// - GUARDIAN: mattoni 4x4 sfalsati, due per riga, ogni 8 righe, e gli angoli del campo gialli.
+    ///
+    /// Come la rete di sempre: grigia nel bullet time (`white`), spenta dall'alto fino a `net_off`
+    /// a fine partita, senza la zona del simbolo della pausa sul touch; la COMETA ne sposta i pezzi.
+    fn draw_net(&self, app: &App, kind: PaddleKind, white: Color, net_off: f32, pause_hint: bool) {
+        let r = &app.renderer;
+        let (w, h) = (r.world_w, r.world_h);
+        let (s, u) = (app.scale(), h / 240.0);
+        let accent = App::color(app.cfg.colors.accent);
+        let trail = Color::from_rgba(0x5C, 0x4C, 0x0D, 255);
+        let dash = (10.0 * s).floor().max(1.0);
+        let t = (get_time() * 60.0) as i32;
+        // TWIST: palla vicina alla rete (entro 30 righe), suo verso e sua riga
+        let pos = self.positions(s);
+        let (bx, by) = (pos[2].0, r.screen_y(pos[2].1) / u);
+        let bend_on = (bx - w / 2.0).abs() < 30.0 * u;
+        let bend_dir = if self.game.ball.vx > 0 { 1 } else { -1 };
+        // HAMMER: 14 frame di vibrazione, un pixel a un lato e all'altro ogni due frame
+        let since = (self.hammer_net * 60.0) as i32;
+        let shake = if since < 14 && since / 2 % 2 == 1 { 1 } else { 0 };
+        let shake_dir = since / 4 % 2 == 1;
+        let mut spans: Vec<(i32, i32, Color)> = Vec::with_capacity(2);
+        for yy in 0..240 {
+            spans.clear();
+            match kind {
+                PaddleKind::Arcade => {
+                    let q = yy & 15;
+                    if q == 2 || q == 7 {
+                        spans.push((-3, 2, white));
+                    } else if (3..7).contains(&q) {
+                        spans.extend([(-3, -3, white), (2, 2, white)]);
+                    }
+                }
+                PaddleKind::Twist => {
+                    if yy & 4 == 0 {
+                        let d = (yy as f32 - by).abs();
+                        let b = match d {
+                            _ if !bend_on => 0,
+                            d if d < 10.0 => 4,
+                            d if d < 20.0 => 3,
+                            d if d < 30.0 => 2,
+                            d if d < 40.0 => 1,
+                            _ => 0,
+                        };
+                        let x0 = ((yy >> 1) & 3) - 2 + bend_dir * b;
+                        spans.push((x0, x0 + 1, white));
+                    }
+                }
+                PaddleKind::Hammer => {
+                    if yy & 15 < 10 {
+                        let sh = shake * if ((yy >> 4) & 1 == 1) != shake_dir { 1 } else { -1 };
+                        spans.extend([(-4 + sh, -2 + sh, white), (1 + sh, 3 + sh, white)]);
+                    }
+                }
+                PaddleKind::Titan => {
+                    if (2..22).contains(&(yy & 31)) {
+                        spans.push((-1, 0, white));
+                    }
+                }
+                PaddleKind::Blaster => match (yy >> 1) & 3 {
+                    0 => spans.push((-3, -2, white)),
+                    2 => spans.push((1, 2, white)),
+                    _ => {}
+                },
+                PaddleKind::Rush => {
+                    let q = ((yy & 15) - (t & 15)) & 15;
+                    if q < 8 {
+                        spans.push((-1, 0, white));
+                    } else if q >= 14 {
+                        spans.push((-1, 0, trail));
+                    }
+                }
+                PaddleKind::Guardian => {
+                    let sx = if yy & 8 != 0 { -3 } else { 0 };
+                    if yy & 7 < 4 {
+                        spans.extend([(-3 + sx, sx, white), (2 + sx, 5 + sx, white)]);
+                    }
+                }
+            }
+            let y = yy as f32 * u;
+            if y < net_off || (pause_hint && y < PAUSE_ICON_BOTTOM * s) {
+                continue;
+            }
+            let dx = self.fx.as_ref().map_or(0.0, |fx| fx.dash_offset((y / (dash * 2.0)) as usize));
+            for &(a, b, color) in &spans {
+                draw_rectangle(w / 2.0 + a as f32 * u + dx, y, (b - a + 1) as f32 * u, u, color);
+            }
+        }
+        // il boss: gli angoli del campo gialli, 14 pixel per lato, spessi 2
+        if kind == PaddleKind::Guardian {
+            let (l, t2) = (14.0 * u, 2.0 * u);
+            for (x, y, fx, fy) in [(0.0, 0.0, 0.0, 0.0), (w, 0.0, 1.0, 0.0), (0.0, h, 0.0, 1.0), (w, h, 1.0, 1.0)] {
+                draw_rectangle(x - fx * l, y - fy * t2, l, t2, accent);
+                draw_rectangle(x - fx * t2, y - fy * l, t2, l, accent);
             }
         }
     }

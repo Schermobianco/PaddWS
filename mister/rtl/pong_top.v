@@ -121,6 +121,7 @@ localparam [10:0]  HOWTO_SKIP_FRAMES = 11'd20;  // Start o A la saltano dopo un 
 localparam [10:0]  CH_INTRO_FRAMES = 11'd240;   // 4 s di presentazione
 localparam [10:0]  CH_CLEAR_FRAMES = 11'd240;
 localparam [10:0]  CH_CONT_FRAMES = 11'd600;    // 10 s per continuare
+localparam [10:0]  CH_CONT_SKIP = 11'd15;       // il continue si accetta quasi subito, già con il 9
 localparam [10:0]  CH_INITIALS_FRAMES = 11'd1800;
 localparam [10:0]  CH_SCORES_FRAMES = 11'd480;
 localparam [10:0]  CH_SKIP_FRAMES = 11'd60;     // prima non si salta (niente salti per sbaglio)
@@ -661,7 +662,7 @@ always @(posedge clk) begin
         ch_scores_attract <= 1'b0;
         ch_pos <= 2'd0;
         ch_letter <= 6'd0;
-    end else if (mode == M_CONT && !cont_over && start_press && mframe >= CH_SKIP_FRAMES && (free_play || credits != 4'd0)) begin
+    end else if (mode == M_CONT && !cont_over && start_press && mframe >= CH_CONT_SKIP && (free_play || credits != 4'd0)) begin
         // continue: stesso livello, punti da zero (li azzera il conteggio qui sotto)
         if (!free_play) credits <= credits - 4'd1;
         mode <= M_INTRO;
@@ -862,12 +863,12 @@ always @(posedge clk) begin
     end
 end
 
-// --------------------------------------------------------------- scelta dei bonus
+// ------------------------------------------------------ scelta della racchetta e dei bonus
 
-// su e giù muovono il cursore, A prende o lascia il bonus; la CPU sceglie subito, a caso.
-// Dopo 10 s (o con tutti e due a 3 bonus) si completa con le scelte predefinite e "READY!".
-// Poi la racchetta: su e giù scorrono i tipi, A conferma o annulla; la CPU sceglie a caso;
-// dopo 10 s vale quella sotto il cursore.
+// Prima la racchetta (pick_paddle alto): su e giù scorrono i tipi, A conferma o annulla; la CPU
+// sceglie a caso; dopo 10 s vale quella sotto il cursore. Poi i bonus: su e giù muovono il cursore,
+// A prende o lascia il bonus; la CPU sceglie subito, a caso. Dopo 10 s (o con tutti e due a 3 bonus)
+// si completa con le scelte predefinite e "READY!", poi la partita (o HOW TO PLAY).
 always @(posedge clk) begin
     pick_go <= 1'b0;
     pick_restart <= 1'b0;
@@ -882,7 +883,7 @@ always @(posedge clk) begin
         pick_cpu <= want_cpu;
         pick_lock <= {want_cpu, 1'b0};
         pick_ready <= 1'b0;
-        pick_paddle <= 1'b0;
+        pick_paddle <= 1'b1;
         kind_cur[0] <= 3'd0;
         // tipo a caso per la CPU, da bit del contatore diversi da quelli dei bonus
         kind_cur[1] <= want_challenge ? rung_kind(3'd0) : !want_cpu ? 3'd0 : (seed_counter[12:10] != 3'd7) ? seed_counter[12:10] :
@@ -897,7 +898,7 @@ always @(posedge clk) begin
         pick_lock <= ch_side ? 2'b10 : 2'b01;
         kind_chosen <= ch_side ? 2'b10 : 2'b01;
         pick_ready <= 1'b0;
-        pick_paddle <= 1'b0;
+        pick_paddle <= 1'b1;
     end else if (mode == M_PICK && pick_paddle) begin
         for (pp = 0; pp < 2; pp = pp + 1) begin
             if (!pick_lock[pp] && !pick_ready) begin
@@ -914,7 +915,12 @@ always @(posedge clk) begin
             pick_ready <= 1'b1;
             ready_at <= mframe;
         end
-        if (frame_start && pick_ready && mframe >= ready_at + READY_FRAMES) pick_go <= 1'b1;
+        // racchette scelte: si passa ai bonus, con il tempo da capo
+        if (frame_start && pick_ready && mframe >= ready_at + READY_FRAMES) begin
+            pick_paddle <= 1'b0;
+            pick_ready <= 1'b0;
+            pick_restart <= 1'b1;
+        end
     end else if (mode == M_PICK) begin
         for (pp = 0; pp < 2; pp = pp + 1) begin
             if (!pick_lock[pp] && !pick_ready) begin
@@ -937,11 +943,7 @@ always @(posedge clk) begin
             pick_ready <= 1'b1;
             ready_at <= mframe;
         end
-        if (frame_start && pick_ready && mframe >= ready_at + READY_FRAMES) begin
-            pick_paddle <= 1'b1;
-            pick_ready <= 1'b0;
-            pick_restart <= 1'b1;
-        end
+        if (frame_start && pick_ready && mframe >= ready_at + READY_FRAMES) pick_go <= 1'b1;
     end
 end
 
@@ -1798,6 +1800,21 @@ end
 wire [9:0]  intro_hc = {1'b0, hc} - {{6{intro_sx[3]}}, intro_sx};
 wire [9:0]  intro_vc = {1'b0, vc} - {{6{intro_sy[3]}}, intro_sy};
 
+// reti degli avversari (pong_render): solo nella CHALLENGE contro la CPU, in partita e a fine
+// partita; la rete dell'HAMMER vibra per 14 frame dopo un suo colpo (la palla riparte dal suo lato)
+wire [2:0]  net_kind = (ch_active && !duel && (mode == M_GAME || mode == M_GAME_OVER)) ? rung_kind(ch_level) : 3'd7;
+reg  [3:0]  net_t = 4'd0;
+reg  [3:0]  hammer_net = 4'd0;
+always @(posedge clk) begin
+    if (frame_start) begin
+        net_t <= net_t + 4'd1;
+        if (hammer_net != 4'd0) hammer_net <= hammer_net - 4'd1;
+    end
+    // colpo (evento 1) della CPU: la palla va verso il giocatore
+    if (sound_trigger && sound_events[1] && net_kind == 3'd2 && ((ball_vx > 0) == ch_cpu_left))
+        hammer_net <= 4'd14;
+end
+
 pong_render render (
     .clk(clk), .snapshot(snapshot), .hc(game_hc), .vc(vc),
     .two(two), .evo(evo), .flash(flash_count != 2'd0 || hit_flash),
@@ -1810,6 +1827,7 @@ pong_render render (
     .overlay(mode == M_DEMO ? 2'd1 : mode == M_GAME_OVER ? 2'd2 : 2'd0), .demo_mode(demo_kind),
     .winner(over_winner), .win_solo(over_solo), .perfect(over_perfect),
     .over_age(over_age), .you_right(ch_cpu_left),
+    .net_kind(net_kind), .net_t(net_t), .net_shake(hammer_net != 4'd0 && hammer_net[1]), .net_shake_dir(hammer_net[2]),
     .winner_accent(nxt), .ball_accent(nxt && (next_flags[2] || next_flags[10:9] != 2'd0)),
     .free_play(free_play), .credits(credits), .blink(blink), .upright(upright), .countdown(countdown),
     .pad_hide(pad_spin | warp_hide | twist_kind), .pad_gray(pad_gray), .dash_off(dash_off), .field_gray(bul_on),
@@ -1940,7 +1958,7 @@ challenge_render challenge_draw (
     .side(ch_side), .join_prompt(ch_active && !duel), .level(ch_level), .kind(rung_kind(ch_level)), .loadout(rung_loadout(ch_level)),
     .score_bcd(mode == M_INITIALS ? ch_best_bcd : ch_score_bcd), .hi_bcd(tb_bcd[0]),
     .perfect(ch_perfect), .coin_prompt(!free_play && credits == 4'd0), .blink(blink),
-    .cont_digit(ch_cont_digit), .cont_over(cont_over),
+    .cont_digit(ch_cont_digit), .cont_sub(ch_cont_sub), .cont_over(cont_over),
     .name(ch_name), .name_pos(ch_pos), .letter(letter_code(ch_letter)),
     .table_names(tb_names_bus), .table_bcd(tb_bcd_bus), .table_levels(tb_levels_bus),
     .highlight(ch_highlight), .mult(ch_mult), .intro_age(intro_age),
@@ -2042,9 +2060,11 @@ always @(posedge clk) begin
     end else if (you_win || end_say) begin
         call_go <= 1'b1;
         call_id <= VOICE_YOU_WIN;
-    end else if (game_sound && (sound_events[10] || sound_events[11])) begin
+    end else if (game_sound && sound_events[12] && next_flags[10:9] != 2'd0) begin
+        // l'urlo della mossa parte con il colpo, insieme alla scritta (tiro in volo: 1 STRAIGHT SHOT,
+        // 2 RISING STRIKE)
         call_go <= 1'b1;
-        call_id <= sound_events[10] ? VOICE_STRAIGHT : VOICE_RISE;
+        call_id <= next_flags[10:9] == 2'd1 ? VOICE_STRAIGHT : VOICE_RISE;
     end else if (frame_start && mode == M_GAME && ch_active &&
                  (mframe == 11'd0 || mframe == COUNTDOWN_FRAMES - 11'd1)) begin
         call_go <= 1'b1;

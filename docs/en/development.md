@@ -147,7 +147,9 @@ and `-beta.N` previews leave the entries under **Non rilasciato**), creates the 
   machine ([tools/forge](../../tools/forge/README.en.md)): it starts and stops it by itself, and the PC
   only needs git and ssh. The VM is created once with `create_forge.bat` (VMware Workstation, a few
   minutes, no questions asked). `build_onforge.bat -Publish` then publishes the release of the tag with `gh` and
-  the web version on GitHub Pages. The release notes come from the changelog
+  the web version on GitHub Pages. To try the packages before publishing them: `build_onforge.bat`
+  without `-Publish`, the tests, `git push --follow-tags` and `build_onforge.bat -PublishOnly`, which
+  publishes the ones already in `dist\`. The release notes come from the changelog
   (`tools/release_notes.py X.Y.Z`): for previews, only the entries added or changed since the
   previous tag.
 - `build_ongithub.bat VERSION` does everything online: checks, `tools/release.py`, push, starts the

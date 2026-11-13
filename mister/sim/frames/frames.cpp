@@ -247,6 +247,7 @@ int main(int argc, char** argv) {
     int kind_l = 4, kind_r = 6;
     std::sscanf(kinds_arg.c_str(), "%d,%d", &kind_l, &kind_r);
     int paddle_at = -1, game_at = -1;   // "kinds": inizio della scelta della racchetta e della partita
+    int bonus_at = -1;                   // inizio della scelta dei bonus (dopo la racchetta)
     int howto_at = -1, qcf_at = -1, dp_at = -1;   // "supers": schermata HOW TO PLAY e gesti
     int bul_at = -1;                              // "bullet": frame in cui il giocatore lo attiva
     int bul_end = -1, bul_state = 0;              // frame in cui finisce, stato al frame prima
@@ -334,7 +335,7 @@ int main(int argc, char** argv) {
         io(&music_cycles, sizeof music_cycles); io(&fx_cycles, sizeof fx_cycles);
         io(&steers, sizeof steers); io(&prev_steer, sizeof prev_steer); io(&steer_frames, sizeof steer_frames);
         io(&enc_prev, sizeof enc_prev); io(&pos_prev, sizeof pos_prev);
-        io(&paddle_at, sizeof paddle_at); io(&game_at, sizeof game_at);
+        io(&paddle_at, sizeof paddle_at); io(&game_at, sizeof game_at); io(&bonus_at, sizeof bonus_at);
         io(&ch_at, sizeof ch_at); io(&ch_mode, sizeof ch_mode); io(&ch_games, sizeof ch_games);
         io(&howto_at, sizeof howto_at); io(&qcf_at, sizeof qcf_at); io(&dp_at, sizeof dp_at);
         io(&bul_at, sizeof bul_at); io(&bul_end, sizeof bul_end); io(&bul_state, sizeof bul_state); io(&ch_voice, sizeof ch_voice);
@@ -932,12 +933,16 @@ int main(int argc, char** argv) {
                     chal_name = "chl_new" + std::to_string(t);
                 }
                 if (m == 7 && r->pong_top__DOT__duel) {
-                    // scelta dello sfidante col joystick 2 (il joystick 1 prova a cambiare quella del campione)
+                    // scelta dello sfidante col joystick 2 (il joystick 1 prova a cambiare quella del
+                    // campione): prima la racchetta, poi i bonus, con i tempi dall'inizio dei bonus
                     if (!r->pong_top__DOT__pick_paddle) {
-                        if (t == 10 || t == 30 || t == 50) chal_joy1 = 0x04;
-                        if (t == 20 || t == 40 || t == 60) chal_joy1 = 0x10;
-                        if (t == 25) chal_joy0 = 0x10;
-                        if (t == 45) { chal_shot = true; chal_name = "chl_pick"; }
+                        static int chal_bonus_at = -1;
+                        if (chal_bonus_at < 0) chal_bonus_at = frames;
+                        const int bt = frames - chal_bonus_at;
+                        if (bt == 10 || bt == 30 || bt == 50) chal_joy1 = 0x04;
+                        if (bt == 20 || bt == 40 || bt == 60) chal_joy1 = 0x10;
+                        if (bt == 25) chal_joy0 = 0x10;
+                        if (bt == 45) { chal_shot = true; chal_name = "chl_pick"; }
                     } else {
                         if (game_at < 0) game_at = frames;
                         const int q = frames - game_at;
@@ -1200,8 +1205,12 @@ int main(int argc, char** argv) {
                 top.players_mode = 0;
             }
             if (next_test) {
-                // scelta dei bonus: A prende quello sotto il cursore, giù lo sposta
-                const int t = frames - start_at;
+                // prima la racchetta (A la conferma dopo 30 frame), poi la scelta dei bonus: A prende
+                // quello sotto il cursore, giù lo sposta; i tempi contano dall'inizio dei bonus
+                if (paddle_at < 0 && r->pong_top__DOT__pick_paddle) paddle_at = frames;
+                if (paddle_at >= 0 && bonus_at < 0 && r->pong_top__DOT__mode == 7 && !r->pong_top__DOT__pick_paddle)
+                    bonus_at = frames;
+                const int t = bonus_at >= 0 ? frames - bonus_at : -1;
                 // le scelte si confermano con A
                 if (steer_test) {
                     // su dalla prima riga porta all'ultima, STEER; poi giù verso TELEPORT e SMASH
@@ -1212,9 +1221,7 @@ int main(int argc, char** argv) {
                     if (t == 10 || t == 30 || t == 50) top.joy0 |= 0x10;
                     if (t == 20 || t == 40) top.joy0 |= 0x04;
                 }
-                if ((kinds_test || ch_test || sup_test || chal_test || bul_test || ghost_test || end_test) && paddle_at >= 0 &&
-                    frames == paddle_at + 30)
-                    top.joy0 |= 0x10;
+                if (paddle_at >= 0 && frames == paddle_at + 30) top.joy0 |= 0x10;
                 // "challenge": A salta presentazione e livello superato; iniziali: giù, giù, A, su, A, A
                 if ((ch_test && !anim_test) || (chal_test && ch_games == 0)) {
                     const int m = r->pong_top__DOT__mode, t = frames - ch_at;

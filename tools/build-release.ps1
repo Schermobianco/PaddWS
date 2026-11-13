@@ -3,10 +3,14 @@
 # MiSTer compreso) e questo PC li riprende in dist\. Sul PC servono solo git, ssh e, per pubblicare, gh.
 # Se forge è spenta la accende (VMware, senza finestra) e alla fine la rispegne.
 #
-# Uso:  build_onforge.bat [-Publish] [-NoCheck] [-CheckOnly] [-SkipMister] [-KeepVm] [-WorkingTree [-Synth]]
-#   -Publish     pubblica la release vX.Y.Z su GitHub con gh (anteprima se la versione ha un "-"):
-#                serve il tag vX.Y.Z sul commit attuale, già inviato (tools/release.py e git push);
-#                poi la versione web su GitHub Pages (tools\publish-pages.ps1)
+# Uso:  build_onforge.bat [-Publish | -PublishOnly] [-NoCheck] [-CheckOnly] [-SkipMister] [-KeepVm]
+#                         [-WorkingTree [-Synth]]
+#   -Publish     dopo la build pubblica la release vX.Y.Z su GitHub con gh (anteprima se la versione
+#                ha un "-"): serve il tag vX.Y.Z sul commit attuale, già inviato (tools/release.py e
+#                git push); poi la versione web su GitHub Pages (tools\publish-pages.ps1)
+#   -PublishOnly pubblica come -Publish i pacchetti già in dist\ (di una build senza -Publish, provati
+#                prima), senza accendere forge né ricostruire: la release in due tempi è
+#                tools/release.py, build_onforge.bat, le prove, git push --follow-tags, -PublishOnly
 #   -NoCheck     senza i controlli; -CheckOnly solo i controlli (build_ongithub.bat)
 #   -SkipMister  senza la sintesi del core MiSTer (circa 16 minuti)
 #   -KeepVm      lascia forge accesa anche se l'ha accesa questo script
@@ -17,8 +21,8 @@
 #   @{ Host = 'forge'; Vmx = 'D:\VM\forge\forge.vmx' }
 # Host è il nome ssh di forge (~/.ssh/config); senza Vmx forge va accesa a mano.
 
-param([switch]$Publish, [switch]$NoCheck, [switch]$CheckOnly, [switch]$SkipMister, [switch]$KeepVm,
-      [switch]$WorkingTree, [switch]$Synth)
+param([switch]$Publish, [switch]$PublishOnly, [switch]$NoCheck, [switch]$CheckOnly, [switch]$SkipMister,
+      [switch]$KeepVm, [switch]$WorkingTree, [switch]$Synth)
 
 $ErrorActionPreference = "Continue"   # git, ssh e gh scrivono su stderr anche quando va tutto bene
 $root = (Resolve-Path "$PSScriptRoot\..").Path
@@ -56,6 +60,15 @@ if ($WorkingTree) {
 }
 Write-Host "PADD WS $version (commit $commit) su $vm"
 if (-not $WorkingTree -and (git status --porcelain)) { Fail "il repository ha modifiche non committate: forge riceve il commit, non i file modificati (per provarle: check_onforge.bat)" }
+if ($PublishOnly) {
+    if ($Publish -or $WorkingTree -or $CheckOnly) { Fail "-PublishOnly va da solo: pubblica i pacchetti già in dist" }
+    $Publish = $true
+    # i pacchetti in dist devono essere di questa versione (quelli del MiSTer hanno la data)
+    $mine = @(Get-ChildItem $dist -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "paddws-$version-*" })
+    if ($mine.Count -eq 0) { Fail "in $dist non ci sono i pacchetti della ${version}: prima build_onforge.bat" }
+    $other = @(Get-ChildItem $dist -File | Where-Object { $_.Name -like "paddws-*" -and $_.Name -notlike "paddws-$version-*" })
+    if ($other.Count -gt 0) { Fail "in $dist ci sono pacchetti di un'altra versione: $($other.Name -join ', ')" }
+}
 if ($Publish) {
     $at = git rev-list -n 1 $tag 2>$null
     if (-not $at -or $at.Trim() -ne (git rev-parse HEAD).Trim()) { Fail "il tag $tag non è sul commit attuale (python tools/release.py ...)" }
@@ -77,7 +90,10 @@ function FollowIp {
     }
 }
 $started = $false
-if (-not (Reachable)) {
+if ($PublishOnly) {
+    Step "pacchetti già in $dist"
+    Get-ChildItem $dist -File | ForEach-Object { "  {0,-45} {1,10:N0} byte" -f $_.Name, $_.Length }
+} elseif (-not (Reachable)) {
     if (-not $cfg.Vmx) { Fail "forge ($vm) non risponde e forge.local.psd1 non dice dov'è la VM (Vmx): va accesa a mano" }
     if (-not (Test-Path $vmrun)) { Fail "manca $vmrun (VMware Workstation)" }
     $vmxPath = (Resolve-Path $cfg.Vmx).Path
@@ -99,8 +115,8 @@ if (-not (Reachable)) {
     Write-Host "  pronta in circa $t s"
 }
 
-$ok = $false
-try {
+$ok = $PublishOnly
+if (-not $PublishOnly) { try {
     Step "sorgenti del commit $commit su forge"
     # con i fine riga del repository (LF), come il checkout della CI; in un file e non in una pipe:
     # PowerShell 5 rovinerebbe i byte del tar
@@ -139,12 +155,13 @@ try {
         Step "spegnimento di forge"
         & $vmrun -T ws stop $cfg.Vmx soft
     }
-}
+} }
 if (-not $ok) { exit 1 }
 
 if ($Publish) {
     Step "release $tag su GitHub"
-    $files = (Get-ChildItem $dist).FullName
+    # solo i file: le cartelle (un pacchetto estratto per provarlo) restano fuori
+    $files = (Get-ChildItem $dist -File).FullName
     # note dal CHANGELOG (tools/release_notes.py): per le anteprime le voci nuove dal tag precedente
     $python = Join-Path $root ".venv\Scripts\python.exe"
     if (-not (Test-Path $python)) { $python = "python" }

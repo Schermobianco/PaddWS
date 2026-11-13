@@ -13,9 +13,9 @@ use paddws_core::{Event, Paddle, PaddleKind, Side};
 use crate::encoder::Action;
 use crate::gamepad::Control;
 use crate::input::{self, PadKeys};
-use crate::next_ui::{PICK_KEYS, PICK_SECONDS, READY_SECONDS, unit};
+use crate::next_ui::{PICK_KEYS, PICK_SECONDS, Pick, READY_SECONDS, unit};
 use crate::render::Renderer;
-use crate::scenes::{App, Menu, Play, Scene};
+use crate::scenes::{App, Menu, Scene};
 use crate::touch;
 
 /// Inclinazione massima di TWIST (circa 20 gradi).
@@ -186,7 +186,7 @@ pub fn draw_gallery(app: &App, kind: PaddleKind, zoom: f32) {
 
 // ------------------------------------------------------------------ scelta
 
-/// Scelta della racchetta di ciascun giocatore, dopo i bonus.
+/// Scelta della racchetta di ciascun giocatore, prima dei bonus (`Pick`).
 pub struct PaddlePick {
     /// il giocatore di destra è il computer: sceglie a caso
     cpu: bool,
@@ -295,24 +295,14 @@ impl PaddlePick {
         if let Some(t) = &mut self.ready {
             *t -= dt;
             if *t <= 0.0 {
+                // poi la scelta dei bonus (nella sfida solo lo sfidante)
                 if let Some(free) = self.duel {
-                    // sfida in CHALLENGE: lo sfidante vede le mosse speciali se dal suo lato non
-                    // le ha ancora viste nessuno in questa sessione
                     let i = free as usize;
                     app.paddles[i] = Some(PaddleKind::ALL[self.cursor[i]]);
-                    let run = app.run.as_mut().expect("sfida senza CHALLENGE");
-                    if !std::mem::replace(&mut run.howto[i], true) {
-                        return Some(Scene::HowTo(crate::moves_ui::HowTo::duel(app)));
-                    }
-                    return Some(Scene::Game(Box::new(Play::duel(app))));
+                    return Some(Scene::Pick(Pick::challenger(app, free)));
                 }
                 app.paddles = self.cursor.map(|i| Some(PaddleKind::ALL[i]));
-                // prima la presentazione delle mosse speciali (in CHALLENGE solo qui, prima del
-                // primo incontro)
-                if let Some(run) = &mut app.run {
-                    run.howto[run.side as usize] = true;
-                }
-                return Some(Scene::HowTo(crate::moves_ui::HowTo::new(app)));
+                return Some(Scene::Pick(Pick::new(app)));
             }
             return None;
         }

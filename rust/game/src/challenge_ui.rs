@@ -22,8 +22,8 @@ use crate::attract::Attract;
 use crate::encoder::Action;
 use crate::gamepad::Control;
 use crate::input::{self, PadKeys};
-use crate::next_ui::{Pick, draw_capsule, unit};
-use crate::paddle_ui::{Look, Shape, TWIST_MAX_TILT, draw_paddle, tagline};
+use crate::next_ui::{draw_capsule, unit};
+use crate::paddle_ui::{Look, PaddlePick, Shape, TWIST_MAX_TILT, draw_paddle, tagline};
 use crate::platform;
 use crate::scenes::{App, Menu, Play, START_KEYS, Scene};
 use crate::touch;
@@ -37,8 +37,13 @@ const SCORES_SECONDS: f64 = 8.0;
 const CHALLENGER_SECONDS: f64 = 3.0;
 /// touch: tocco prolungato nella metà libera con cui entra uno sfidante
 pub(crate) const HOLD_SECONDS: f64 = 1.0;
-/// le schermate si possono saltare solo dopo questo tempo (non si salta per sbaglio)
+/// le schermate si possono saltare solo dopo questo tempo (non si salta per sbaglio); il continue si
+/// accetta quasi subito, già con il 9
 const SKIP_AFTER: f64 = 1.0;
+const CONTINUE_SKIP_AFTER: f64 = 0.25;
+/// continue: pallina che rimbalza accanto al numero e tocca terra quando il numero cambia, alta
+/// BOUNCE_HEIGHT (unità a 480 righe)
+const BOUNCE_HEIGHT: f32 = 70.0;
 /// la voce dice il nome dell'avversario dopo questo tempo dall'inizio della presentazione
 const ANNOUNCE_AFTER: f64 = 0.5;
 
@@ -259,7 +264,7 @@ impl Challenger {
             return None;
         }
         let free = free_side(app).expect("sfida senza CHALLENGE");
-        Some(Scene::Pick(Pick::challenger(app, free)))
+        Some(Scene::Paddles(PaddlePick::challenger(app, free)))
     }
 
     pub fn draw(&self, app: &App) {
@@ -1168,7 +1173,7 @@ impl Continue {
             app.credits += 1;
             app.play_coin();
         }
-        if self.left < CONTINUE_SECONDS - SKIP_AFTER
+        if self.left < CONTINUE_SECONDS - CONTINUE_SKIP_AFTER
             && start_pressed(app)
             && (app.cfg.game.free_play || app.credits > 0)
         {
@@ -1200,8 +1205,16 @@ impl Continue {
             App::color(colors.accent),
         );
         app.renderer.fill(BLACK);
-        if self.over.is_some() {
-            crate::attract::draw_game_over(&app.attract, &app.renderer, Some("game_over"), None, white);
+        if let Some(left) = self.over {
+            // GAME OVER come a fine partita, ma senza campo da spegnere: si scrive subito, poi lo
+            // schermo si chiude come un televisore
+            let total = app.attract.game_over_seconds();
+            let t = total - left;
+            let r = &app.renderer;
+            let none = (Vec2::ZERO, 0.0);
+            crate::attract::draw_game_over_anim(&app.attract, r, Some("game_over"), None, white, accent,
+                                                t + crate::attract::TYPE_LEAD, none);
+            crate::attract::draw_crt_close(r, t, total);
             return;
         }
         text(app, "CONTINUE?", 56.0, 120.0, accent);
@@ -1217,6 +1230,16 @@ impl Continue {
             0.0,
             white,
         );
+        // pallina che rimbalza a destra del numero: tocca terra a ogni secondo, quando il numero
+        // cambia; negli ultimi tre secondi diventa gialla
+        let since = (self.left.ceil() - self.left) as f32; // 0 appena toccato terra
+        let d = to_f32(app.params.ball_radius) * 3.0;
+        let floor = 300.0 * sc;
+        let bx = r.world_w / 2.0 + 80.0 * sc;
+        let by = floor - d - BOUNCE_HEIGHT * sc * 4.0 * since * (1.0 - since);
+        let ball = if self.left <= 3.0 { accent } else { white };
+        draw_rectangle(bx - d / 2.0, by, d, d, ball);
+        draw_rectangle(bx - d, floor, 2.0 * d, 2.0 * unit(app), gray);
         let blink = (get_time() * 2.0) as i64 % 2 == 0;
         let prompt = if app.cfg.game.free_play || app.credits > 0 {
             "PRESS START"

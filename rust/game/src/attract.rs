@@ -597,23 +597,6 @@ impl Attract {
     }
 }
 
-/// Fine partita al centro, su un riquadro nero sopra la partita: con `title` (`game_over`, o
-/// `perfect` quando un giocatore vince senza punti dell'avversario) quella scritta in bianco e,
-/// sotto, chi ha vinto (`p1_wins`, `p2_wins`, `cpu_wins`; nessuno in singolo) nel colore
-/// `winner_color`, su un riquadro largo come GAME OVER (come sul MiSTer); senza, solo chi ha
-/// vinto, al posto di GAME OVER e nel colore `winner_color` (YOU WIN o PERFECT, o CPU WINS a un
-/// livello perso della CHALLENGE, dove si può ancora continuare).
-pub fn draw_game_over(art: &AttractArt, r: &Renderer, title: Option<&str>, winner: Option<&str>, winner_color: Color) {
-    let s = &art.spec;
-    let view = View::of(r);
-    let o = Over::of(art, title, winner, winner_color);
-    view.rect(o.back.x, o.back.y, o.back.w, o.back.h, rgb(s.colors.black));
-    draw_centered(&view, o.label, 2.0, s.game_over.label_y, o.label_color);
-    if let Some(b) = o.win {
-        draw_centered(&view, b, 2.0, s.game_over.winner_y, winner_color);
-    }
-}
-
 /// Scritte e riquadro della fine partita, nello schermo virtuale.
 struct Over<'a> {
     label: &'a Bitmap,
@@ -687,6 +670,10 @@ const HOP_FIRST: f64 = 14.0;
 const HOP: f64 = 6.0;
 const HOP_PRESS: f64 = 3.0;
 
+/// GAME OVER senza campo da spegnere (il continue scaduto della CHALLENGE): secondi da aggiungere al
+/// tempo di `draw_game_over_anim` perché la scritta parta subito, come CPU WINS.
+pub const TYPE_LEAD: f64 = (TYPE_AT - 12.0) * FRAME;
+
 /// GAME OVER: quanto della mezzeria è già spento, dall'alto (0..1), a `t` secondi dall'inizio.
 pub fn net_off(t: f64) -> f32 {
     (t / FRAME / NET_OFF).clamp(0.0, 1.0) as f32
@@ -726,8 +713,12 @@ pub fn draw_crt_close(r: &Renderer, t: f64, total: f64) {
     }
 }
 
-/// Fine partita animata a `t` secondi dall'inizio (vedi `draw_game_over`, che è il suo ultimo
-/// fotogramma):
+/// Fine partita al centro, su un riquadro nero sopra la partita, a `t` secondi dall'inizio. Con
+/// `title` (`game_over`, o `perfect` quando un giocatore vince senza punti dell'avversario) quella
+/// scritta in bianco e, sotto, chi ha vinto (`p1_wins`, `p2_wins`, `cpu_wins`; nessuno in singolo) nel
+/// colore `winner_color`, su un riquadro largo come GAME OVER (come sul MiSTer); senza, solo chi ha
+/// vinto, al posto di GAME OVER e nel colore `winner_color` (YOU WIN o PERFECT, o CPU WINS a un
+/// livello perso della CHALLENGE, dove si può ancora continuare). Le animazioni:
 /// - GAME OVER: dopo lo spegnimento del campo (`net_off`, `pads_left`, li fa la partita) GAME OVER e
 ///   chi ha vinto si scrivono con un cursore; lo schermo poi si chiude (`draw_crt_close`);
 /// - PERFECT si stampa enorme e il riquadro trema; poi ogni secondo un riflesso di colore `accent`

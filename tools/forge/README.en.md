@@ -13,8 +13,8 @@ only). On the PC you run `build_onforge.bat`, which:
 4. copies the packages back into `dist\`;
 5. shuts forge down again, if it was the one that started it.
 
-Options: `-Publish` (publishes the release of the tag with `gh`), `-NoCheck`, `-CheckOnly`,
-`-SkipMister`, `-KeepVm`. To try files that are not committed yet there is `check_onforge.bat`
+Options: `-Publish` (publishes the release of the tag with `gh`), `-PublishOnly` (publishes the
+packages already in `dist\`, without rebuilding), `-NoCheck`, `-CheckOnly`, `-SkipMister`, `-KeepVm`. To try files that are not committed yet there is `check_onforge.bat`
 (`-Synth` to run the MiSTer synthesis too).
 
 Script messages and comments are in Italian, like the rest of the code.

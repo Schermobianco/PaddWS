@@ -13,8 +13,8 @@ soli controlli). Dal PC si lancia `build_onforge.bat`, che:
 4. riprende i pacchetti in `dist\`;
 5. la rispegne, se l'aveva accesa lui.
 
-Opzioni: `-Publish` (pubblica la release del tag con `gh`), `-NoCheck`, `-CheckOnly`, `-SkipMister`,
-`-KeepVm`. Per provare i file non ancora committati c'è `check_onforge.bat` (`-Synth` per fare
+Opzioni: `-Publish` (pubblica la release del tag con `gh`), `-PublishOnly` (pubblica i pacchetti
+già in `dist\`, senza ricostruire), `-NoCheck`, `-CheckOnly`, `-SkipMister`, `-KeepVm`. Per provare i file non ancora committati c'è `check_onforge.bat` (`-Synth` per fare
 anche la sintesi del MiSTer).
 
 ## Creare forge
