@@ -1719,8 +1719,8 @@ PERFECT_PAGE = PERFECT_C0 * 8 / 256
     pla
     jmp draw_big
 .endproc
-over_lo:  .lobytes big_game_over, big_you_win, big_p1_wins, big_p2_wins, big_cpu_wins, ovc::big_perfect
-over_hi:  .hibytes big_game_over, big_you_win, big_p1_wins, big_p2_wins, big_cpu_wins, ovc::big_perfect
+over_lo:  .lobytes big_game_over, big_you_win, big_p1_wins, big_p2_wins, big_cpu_wins, ov_big_perfect
+over_hi:  .hibytes big_game_over, big_you_win, big_p1_wins, big_p2_wins, big_cpu_wins, ov_big_perfect
 over_w:   .byte BIG_GAME_OVER_W, BIG_YOU_WIN_W, BIG_P1_WINS_W, BIG_P2_WINS_W, BIG_CPU_WINS_W, BIG_PERFECT_W
 over_col: .byte (40 - BIG_GAME_OVER_W) / 2, (40 - BIG_YOU_WIN_W) / 2, (40 - BIG_P1_WINS_W) / 2
           .byte (40 - BIG_P2_WINS_W) / 2, (40 - BIG_CPU_WINS_W) / 2, (40 - BIG_PERFECT_W) / 2
@@ -2843,6 +2843,8 @@ row:
 ov_box_code
 big_perfect: .byte BIG_PERFECT
 .endscope
+; (per over_lo e over_hi, che stanno prima: il ca65 di Debian non accetta ovc::big_perfect in avanti)
+ov_big_perfect = ovc::big_perfect
 
 
 .segment "OVCHARS"
