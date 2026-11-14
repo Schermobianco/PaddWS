@@ -2,9 +2,6 @@
 
 # Deck
 
-> **Progetto non ancora collaudato.** Il Deck non è ancora stato stampato e provato per intero:
-> misure, pezzi e istruzioni cambieranno con le prossime revisioni.
-
 Console da tavolo per PADD WS: una scatola piatta di 320 × 160 × 47,5 mm con lo schermo ufficiale da 7" al
 centro e una postazione per giocatore a ogni capo (manopola, DASH, SELECT, USE). Ogni pezzo è di un
 solo colore e si stampa senza supporti, tranne le placche della presa; tutti i pezzi entrano sul

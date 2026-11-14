@@ -64,6 +64,63 @@ fn capsule_is_collected_by_touching_it() {
     assert_eq!(pl.reserve, [Some(Bonus::Curve), None, None]);
 }
 
+/// Scatto di `side` (avanti o indietro) in un tick, senza altri comandi.
+fn dash(m: &mut Match, side: Side) -> Vec<Event> {
+    let mut input = Input::default();
+    input.players[side as usize] = PlayerInput {
+        forward: true,
+        ..Default::default()
+    };
+    m.step(&input).iter().collect()
+}
+
+#[test]
+fn dash_collects_the_capsules_it_jumps_over() {
+    for back in [false, true] {
+        let mut m = make();
+        m.ball.vx = fixed::int(1); // la palla va dall'altra parte
+        if back {
+            dash(&mut m, Side::Left); // prima avanti, senza capsule
+        }
+        let n = m.next.as_mut().unwrap();
+        n.spawn_timer = u32::MAX; // niente capsule casuali
+        let pad = &m.paddles[0];
+        // a metà del tratto dello scatto, che la racchetta salta in un tick
+        n.capsules[0] = Some(Capsule {
+            x: (pad.home_x + pad.fwd_x) / 2,
+            y: pad.y,
+            vx: -m.params.capsule_speed,
+            vy: 0,
+            bonus: Bonus::Curve,
+        });
+        let events = dash(&mut m, Side::Left);
+        assert!(events.contains(&Event::Collect), "ritorno {back}");
+        assert_eq!(m.paddles[0].x, if back { m.paddles[0].home_x } else { m.paddles[0].fwd_x });
+        let n = m.next.as_ref().unwrap();
+        assert_eq!(n.players[0].reserve, [Some(Bonus::Curve), None, None]);
+        assert!(n.capsules[0].is_none());
+    }
+}
+
+#[test]
+fn dash_does_not_collect_capsules_going_to_the_opponent() {
+    let mut m = make();
+    m.ball.vx = fixed::int(1);
+    let n = m.next.as_mut().unwrap();
+    n.spawn_timer = u32::MAX;
+    let pad = &m.paddles[0];
+    n.capsules[0] = Some(Capsule {
+        x: (pad.home_x + pad.fwd_x) / 2,
+        y: pad.y,
+        vx: m.params.capsule_speed, // verso destra
+        vy: 0,
+        bonus: Bonus::Curve,
+    });
+    let events = dash(&mut m, Side::Left);
+    assert!(!events.contains(&Event::Collect));
+    assert!(m.next.as_ref().unwrap().capsules[0].is_some());
+}
+
 #[test]
 fn capsules_carry_the_receivers_bonuses() {
     let mut m = make();

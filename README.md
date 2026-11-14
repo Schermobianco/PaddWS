@@ -2,6 +2,13 @@
 
 # PADD WS
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/paddws-logo-dark.png">
+    <img src="docs/paddws-logo-light.png" alt="PADD WS" width="800">
+  </picture>
+</p>
+
 Pong da tavolo per due giocatori seduti ai lati opposti dello schermo, con l'attract dei cabinati
 anni '80, le partite a gettoni, i bonus, le mosse speciali da picchiaduro e una scalata contro sette
 avversari. Gira su PC, nel browser, su un cabinato Raspberry Pi, sul MiSTer FPGA e sul Commodore 64,
@@ -87,8 +94,7 @@ il display ufficiale da 7", una manopola su encoder ottico a ogni capo e i pulsa
 USE. Ci sono il modello per SolidCraft e in STEP, il progetto per Bambu Studio con i pezzi già divisi
 nei piatti (nessun supporto, un colore per piatto) e le istruzioni di montaggio. Per il Pi 2 c'è
 l'[immagine della SD](deploy/raspberry/deck/README.md) già pronta (`paddws-X.Y.Z-deck-pi2.img.xz`
-nelle release): parte nel gioco in circa 8 secondi e si spegne togliendo la corrente. Il Deck non è
-ancora stato stampato e provato per intero: il progetto cambierà con le prossime revisioni.
+nelle release): parte nel gioco in circa 8 secondi e si spegne togliendo la corrente.
 
 | | |
 |---|---|

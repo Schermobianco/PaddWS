@@ -263,6 +263,9 @@ pub struct NextPlayer {
     pub meter: u8,
     pub straight: u8,
     pub rise: u8,
+    /// ha fatto lo scatto (avanti o indietro) in questo tick: il giro delle capsule lo legge e lo
+    /// spegne (`next_timers_and_capsules`)
+    pub dashed: bool,
 }
 
 impl NextPlayer {
@@ -283,6 +286,7 @@ impl NextPlayer {
             meter: 0,
             straight: 0,
             rise: 0,
+            dashed: false,
         }
     }
 
@@ -636,7 +640,21 @@ pub fn arrival_y(b: &Ball, pad: &Paddle, p: &Params) -> Fx {
 }
 
 fn touches(c: &Capsule, pad: &Paddle, half: Fx) -> bool {
-    (c.x - pad.x).abs() <= half + pad.width / 2 && (c.y - pad.y).abs() <= half + pad.height / 2
+    (c.x - pad.x).abs() <= half + pad.width / 2 && touches_y(c, pad, half)
+}
+
+fn touches_y(c: &Capsule, pad: &Paddle, half: Fx) -> bool {
+    (c.y - pad.y).abs() <= half + pad.height / 2
+}
+
+/// Nel tick dello scatto (avanti o indietro) la racchetta salta tutto il tratto fra casa e la
+/// posizione avanzata: la x della capsula vale anche lì, allargato di metà capsula e metà larghezza
+/// come `touches`. Il tratto si confronta in pixel interi (parte intera, `>> 16`): sul C64 bastano
+/// 16 bit.
+fn in_dash_span(c: &Capsule, pad: &Paddle, half: Fx) -> bool {
+    let reach = half + pad.width / 2;
+    let x = c.x >> 16;
+    x >= (pad.home_x.min(pad.fwd_x) - reach) >> 16 && x <= (pad.home_x.max(pad.fwd_x) + reach) >> 16
 }
 
 impl Match {
@@ -1003,14 +1021,20 @@ impl Match {
             }
             let side = c.toward();
             let pl = &mut n.players[side as usize];
-            // con la riserva piena la capsula passa oltre
-            if touches(c, &paddles[side as usize], half) && !pl.full() {
+            let pad = &paddles[side as usize];
+            // con la riserva piena la capsula passa oltre; nel tick dello scatto tocca tutto il tratto
+            if (touches(c, pad, half) || (pl.dashed && in_dash_span(c, pad, half) && touches_y(c, pad, half)))
+                && !pl.full()
+            {
                 pl.push(c.bonus);
                 events.add(Event::Collect);
                 *slot = None;
             } else if c.x + half < 0 || c.x - half > p.width {
                 *slot = None;
             }
+        }
+        for pl in &mut n.players {
+            pl.dashed = false;
         }
 
         // BLASTER: il colpo attraversa la palla, raccoglie la prima capsula che tocca (con la

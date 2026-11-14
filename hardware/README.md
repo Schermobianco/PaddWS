@@ -6,4 +6,4 @@ istruzioni di montaggio.
 
 | variante | |
 |---|---|
-| [Deck](deck/README.md) ([English](deck/README.en.md)) | console piatta da tavolo 320 × 160 × 47,5 mm, display ufficiale 7", due manopole ai capi; non ancora collaudata |
+| [Deck](deck/README.md) ([English](deck/README.en.md)) | console piatta da tavolo 320 × 160 × 47,5 mm, display ufficiale 7", due manopole ai capi |

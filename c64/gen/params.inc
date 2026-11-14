@@ -120,21 +120,21 @@ P_CPU_LEVELS           = 11
 P_CPU_RETURN           = 15   ; tick da avanzata, palla che si allontana, prima di tornare
 P_CPU_BULLET_SHIFT     = 4   ; BULLET con la palla a meno di |dx| << shift
 ; tempo di reazione (tick)
-.define T_CPU_REACTION 15, 14, 12, 10, 17, 15, 13, 13, 12, 13, 12
+.define T_CPU_REACTION 15, 13, 12, 10, 17, 15, 13, 13, 12, 13, 12
 ; usa il rapido
 .define T_CPU_FAST 0, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1
 ; prevede il punto d'arrivo
 .define T_CPU_PREDICT 0, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1
 ; scatto: una probabilità su N per tick (0 = mai)
-.define T_CPU_FWD_ODDS 0, 13, 6, 3, 0, 0, 42, 33, 25, 23, 19
+.define T_CPU_FWD_ODDS 0, 9, 6, 3, 0, 0, 42, 33, 25, 23, 19
 ; NEXT: bonus, una probabilità su N per tick
-.define T_CPU_BONUS_ODDS 100, 50, 25, 13, 100, 83, 75, 63, 50, 38, 29
+.define T_CPU_BONUS_ODDS 100, 38, 25, 13, 100, 83, 75, 63, 50, 38, 29
 ; CPU per livello: palle mancate apposta, per mille
-.define T_CPU_MISS $000000C8, $00000172, $0000012C, $000000DC, $000000F0, $000000C8, $000000AF, $000000B9, $000000A0, $000000AA, $000000AF
+.define T_CPU_MISS $000000C8, $00000140, $0000012C, $000000DC, $000000F0, $000000C8, $000000AF, $000000B9, $000000A0, $000000AA, $000000AF
 ; errore di mira massimo
 .define T_CPU_MAX_ERROR $000C8000, $000D5555, $000BAAAA, $000A0000, $000E2AAA, $000D5555, $000C8000, $000C8000, $000BAAAA, $000C8000, $000BAAAA
 ; distanza entro cui reagisce
-.define T_CPU_REACT $00A00000, $01000000, $01200000, $01400000, $00900000, $00A00000, $00D00000, $00E00000, $00F00000, $00F99999, $01066666
+.define T_CPU_REACT $00A00000, $01100000, $01200000, $01400000, $00900000, $00A00000, $00D00000, $00E00000, $00F00000, $00F99999, $01066666
 ; Q8.24: 1 / velocità massima della palla in Classic ed EVO, per difficoltà
 .define T_CPU_INV_SPEED $00571323, $00414E60, $00343EB6, $002B8992
 ; in NEXT

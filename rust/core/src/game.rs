@@ -499,12 +499,16 @@ impl Match {
             if blaster && (cmd.fire || (cmd.forward && !dash)) {
                 self.next_fire(side, events);
             }
-            if cmd.forward
-                && dash
-                && let Some(e) = self.toggle_forward(side)
-            {
-                events.add(e);
-                self.next_on_hit(side, true, events); // lo scatto che intercetta la palla vale come colpo
+            if cmd.forward && dash {
+                let boost = self.toggle_forward(side);
+                // NEXT: nel giro delle capsule di questo tick la racchetta tocca tutto il tratto saltato
+                if let Some(n) = self.next.as_mut() {
+                    n.players[side as usize].dashed = true;
+                }
+                if let Some(e) = boost {
+                    events.add(e);
+                    self.next_on_hit(side, true, events); // lo scatto che intercetta la palla vale come colpo
+                }
             }
             if cmd.select || cmd.activate {
                 self.next_command(side, &cmd, events);

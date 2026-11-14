@@ -592,12 +592,16 @@ _direct:
 .endproc
 
 ; Match::toggle_forward: scatto in avanti (EVO) o ritorno a casa; se intercetta la palla la
-; potenzia.
+; potenzia. In NEXT, avanti o indietro, segna nx_dash: le capsule di questo tick toccano tutto il
+; tratto saltato (move_capsules).
 .proc toggle_forward
     lda m_evo
     ora m_next
     bne :+
     rts
+:   lda m_next
+    beq :+
+    sta nx_dash,x
 :   beq32 {pad_x,x}, {pad_home,x}, _home
     mov32 {pad_x,x}, {pad_home,x}
     rts

@@ -947,20 +947,15 @@ impl Menu {
                 app.save_mode();
             }
             Item::Players => {
-                // TWO -> VS CPU -> CHALLENGE -> ONE -> TWO
+                // TWO -> VS CPU -> CHALLENGE -> ONE -> TWO, solo con le voci del tipo di gioco scelto
+                // (CHALLENGE in NEXT, ONE in CLASSIC): PLAYERS non cambia GAME TYPE
+                let classic = !app.evo && !app.next;
                 (app.players, app.cpu, app.challenge) = match (app.players, app.cpu, app.challenge) {
                     (2, false, _) => (2, true, false),
-                    (2, true, false) => (2, true, true),
-                    (2, true, true) => (1, false, false),
+                    (2, true, false) if app.next => (2, true, true),
+                    (2, true, _) if classic => (1, false, false),
                     _ => (2, false, false),
                 };
-                if app.players == 1 {
-                    app.evo = false;
-                    app.next = false;
-                }
-                if app.challenge {
-                    (app.evo, app.next) = (false, true);
-                }
                 app.save_mode();
             }
             Item::Difficulty => app.next_difficulty(),

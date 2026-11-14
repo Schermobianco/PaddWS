@@ -57,13 +57,13 @@ const SKILLS: [Skill; DIFFICULTY_LEVELS as usize] = [
     },
     Skill {
         error_px: 32,
-        miss_permille: 370,
-        reaction_ticks: 66,
-        react_permille: 800,
+        miss_permille: 320,
+        reaction_ticks: 60,
+        react_permille: 850,
         fast: true,
         predict: true,
-        forward_odds: 60,
-        bonus_odds: 240,
+        forward_odds: 45,
+        bonus_odds: 180,
     },
     Skill {
         error_px: 28,

@@ -17,6 +17,15 @@ crea il commit e il tag `vX.Y.Z`.
 ## [4.1.1] - 2026-11-14
 
 ### Modificato
+- Menu di PC e web: PLAYERS propone solo le scelte del tipo di gioco (CHALLENGE in NEXT, ONE in
+  CLASSIC) e non cambia più GAME TYPE da solo; prima ONE passava a CLASSIC e CHALLENGE a NEXT.
+- MiSTer, finale della CHALLENGE: nella sfilata degli avversari un K.O. rosso sulla racchetta, che
+  si spegne, al posto del timbro inclinato DEFEATED. A 320x240 il timbro era più largo delle
+  colonne, si sovrapponeva a quelli vicini e a 1 bit la scritta non si leggeva.
+- Difficoltà NORMAL un po' più dura (tutte le versioni tranne Python): la CPU sbaglia apposta meno
+  palle, reagisce prima e usa più spesso scatto e bonus. Con gli umani simulati di `paddws-trace`
+  un giocatore medio vince il 56% dei punti in EVO e il 47% in NEXT, contro il 64% e il 54% di
+  prima; HARD resta più dura. CHALLENGE ha i suoi livelli e non cambia.
 - **Classifica animata** della CHALLENGE (PC, web e MiSTer): una palla scende rimbalzando fra i
   bordi e accende le righe che tocca; i punti di ogni riga contano da zero mentre si accende (sul
   MiSTer le cifre girano e si fermano una alla volta); poi due racchette gialle affiancano il posto
@@ -73,6 +82,10 @@ crea il commit e il tag `vX.Y.Z`.
   le prove, `build_onforge.bat -PublishOnly` pubblica quelli senza ricostruirli.
 
 ### Corretto
+- NEXT e CHALLENGE (PC, web, MiSTer e C64): lo scatto in avanti, e il ritorno a casa,
+  non prendevano le capsule che stavano nel tratto saltato. La racchetta salta in un tick e la
+  capsula restava dietro, o la racchetta le passava sopra a schermo senza prenderla. Ora, nel tick
+  dello scatto, la racchetta tocca tutto il tratto fra casa e la posizione avanzata.
 - MiSTer: il timbro di PERFECT non si vedeva (durava due frame, sotto il lampo del punto).
 - C64 (4.1.1-beta.4): nella CHALLENGE, se la presentazione arrivava in fondo, il livello si giocava
   con le tabelle delle moltiplicazioni ancora coperte dall'entrata dell'avversario. Rimbalzi

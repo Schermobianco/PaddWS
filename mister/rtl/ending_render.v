@@ -1,8 +1,10 @@
 // Finale della CHALLENGE, quando si batte l'ultimo avversario (come rust/game/src/ending_ui.rs, su uno
 // schermo 320x240), al posto della schermata CHAMPION e prima delle iniziali. Sei parti in sequenza:
 // 0 CONGRATULATIONS! (lampeggia) e, dopo un secondo, YOU WIN! (la voce la fa partire pong_top);
-// 1 la sfilata dei sette avversari, uno al secondo, con il timbro rosso DEFEATED mezzo secondo dopo
-//   (le racchette e i nomi li disegna next_render, ingresso `parade`; qui il titolo e i timbri);
+// 1 la sfilata dei sette avversari, uno al secondo, con il K.O. rosso mezzo secondo dopo (su PC e
+//   C64 il timbro inclinato DEFEATED, che a 320x240 su colonne di 45 pixel non sta); le racchette e
+//   i nomi li disegna next_render (ingressi `parade`, e `parade_ko` per spegnere le battute); qui il
+//   titolo e i K.O.;
 // 2 il punteggio: SCORE che sale in 3 s, CHAMPION BONUS in 1 s, poi TOTAL;
 // 3 YOU ARE THE PADD WS CHAMPION con i fuochi d'artificio;
 // 4 i titoli di coda, che salgono dal basso; 5 THE END (lampeggia).
@@ -39,9 +41,10 @@ module ending_render #(
     input  wire [23:0] score,          // punti prima del premio del campione
     input  wire [23:0] bonus,          // premio del campione (vittoria e partita perfetta dell'ultimo livello)
     output reg  [23:0] rgb,
-    output reg         top,            // pixel del timbro: sopra le racchette di next_render
+    output reg         top,            // pixel del K.O.: sopra le racchette di next_render
     output wire        parade,         // sfilata in corso: racchette e nomi di next_render
     output wire [2:0]  parade_n,       // avversari già entrati nella sfilata (0-7)
+    output wire [2:0]  parade_ko,      // ... e quanti hanno già il K.O. (racchetta spenta)
     output reg         say,            // impulso: la voce "YOU WIN!"
     output reg  [1:0]  beat,           // impulso della sfilata: bit 0 entra un avversario, bit 1 un timbro
     output wire        skip_ok,        // Start può saltare il finale
@@ -92,6 +95,7 @@ wire [23:0] step_b = (bonus >> 6) + (bonus >> 10);
 
 assign parade = active && part == P_PARADE;
 assign parade_n = (beats + 4'd1) >> 1;
+assign parade_ko = beats[3:1];
 assign skip_ok = part != P_CONGRATS || pf >= END_SKIP_AFTER;
 
 always @(posedge clk) begin

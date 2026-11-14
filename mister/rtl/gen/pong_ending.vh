@@ -20,7 +20,7 @@ localparam integer END_MAP_SIZE = 925;
 localparam integer END_FW_SIZE = 7658;   // 6058 punti
 localparam integer END_GLYPH_H = 7, END_CELL = 7;
 localparam integer END_STRIP_ROW0 = 0, END_STAMP_ROW0 = 7;
-localparam integer END_STAMP_W = 64, END_STAMP_H = 36, END_STAMP_Y0 = 82;
+localparam integer END_STAMP_W = 64, END_STAMP_H = 36, END_STAMP_Y0 = 70;
 localparam integer END_DIG_X0 = 181;
 localparam integer END_PARADE_Y = 92, END_PARADE_NAME_Y = 145;
 localparam integer END_COL0 = 23;

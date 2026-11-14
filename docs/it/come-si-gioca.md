@@ -22,7 +22,8 @@ NEXT bonus e racchette sono a caso; in CHALLENGE si vede l'avversario di un live
 Con un gettone, o in Free Play, Start apre il menu (sul MiSTer avvia subito la partita con le
 opzioni dell'OSD); ogni partita costa un credito, anche in due. La partita comincia dopo un conto
 alla rovescia di 3 secondi. Dal menu si scelgono modalità (**GAME TYPE**), giocatori
-(**PLAYERS**: TWO, VS CPU, CHALLENGE, ONE), difficoltà, volumi e le altre opzioni; le scelte
+(**PLAYERS**: TWO e VS CPU, più CHALLENGE in NEXT e ONE in CLASSIC), difficoltà, volumi e le
+altre opzioni; le scelte
 restano per la volta dopo. La prima volta il gioco parte in NEXT con PLAYERS: CHALLENGE (sul
 MiSTer *Game type: Challenge*, sul C64 a ogni accensione). Se si torna al menu durante una
 partita, **RESUME** la riprende.
@@ -155,7 +156,8 @@ semplici). Le partite sono NEXT a 5 punti.
   pari a quello del livello (il campione lo aggiunge ai suoi punti, lo sfidante parte da lì); chi
   perde scrive le iniziali se entra in classifica.
 - **Finale**: battuto l'ultimo avversario arrivano CONGRATULATIONS e la voce "YOU WIN!", la
-  sfilata dei sette avversari con il timbro DEFEATED, il punteggio finale con il premio del
+  sfilata dei sette avversari con il timbro DEFEATED (sul MiSTer un K.O. rosso, e la racchetta
+  battuta si spegne), il punteggio finale con il premio del
   campione (la vittoria dell'ultimo livello, più la partita perfetta), "YOU ARE THE PADD WS
   CHAMPION" con i fuochi d'artificio, i titoli di coda e THE END, in circa un minuto, con una
   musica tutta sua; poi le iniziali. Start lo salta. La voce "YOU WIN!" si sente anche a ogni

@@ -2,6 +2,13 @@
 
 # PADD WS
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/paddws-logo-dark.png">
+    <img src="docs/paddws-logo-light.png" alt="PADD WS" width="800">
+  </picture>
+</p>
+
 Table-top Pong for two players sitting at opposite ends of the screen, with an 80s arcade attract
 mode, coin-op credits, power-ups, fighting-game special moves and a ladder against seven
 opponents. It runs on PC, in the browser, in a Raspberry Pi cabinet, on the MiSTer FPGA and on the
@@ -88,8 +95,7 @@ buttons. It comes with the SolidCraft model and a STEP file, the Bambu Studio pr
 parts already split into plates (no supports, one colour per plate) and the assembly instructions.
 For the Pi 2 there is a ready-made [SD card image](deploy/raspberry/deck/README.en.md)
 (`paddws-X.Y.Z-deck-pi2.img.xz` in the releases): it boots into the game in about 8 seconds and is
-switched off by pulling the plug. The Deck has not been fully printed and tried out yet: the design
-will change in the next revisions.
+switched off by pulling the plug.
 
 | | |
 |---|---|

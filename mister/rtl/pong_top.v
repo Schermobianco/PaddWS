@@ -491,6 +491,7 @@ wire        end_done, end_skip_ok, end_say;
 wire [1:0]  end_beat;
 wire        end_parade;               // sfilata: racchette e nomi di next_render, i primi end_parade_n
 wire [2:0]  end_parade_n;
+wire [2:0]  end_parade_ko;            // ... di cui battuti (K.O.): racchetta spenta
 integer    ti, tj;
 initial begin
     for (ti = 0; ti < 10; ti = ti + 1) begin
@@ -1850,7 +1851,7 @@ next_render next_draw (
     .pick_paddle(pick_paddle), .kind_cursor0(kind_cur[0]), .kind_cursor1(kind_cur[1]), .kind_chosen(kind_chosen),
     // presentazione di CHALLENGE: la racchetta dell'avversario, rivolta verso il giocatore
     .intro(mode == M_INTRO), .intro_kind(intro_kind), .intro_right(ch_side), .intro_age(intro_age),
-    .parade(end_parade), .parade_n(end_parade_n),
+    .parade(end_parade), .parade_n(end_parade_n), .parade_ko(end_parade_ko),
     .nxt(nxt && (mode == M_GAME || mode == M_GAME_OVER || mode == M_DEMO)),
     .ball_x(ball_x), .ball_y(ball_y), .ball_r(ball_r), .ball_boost(ball_boost), .ball_vx(ball_vx),
     .kick0({kick_max[0], kick_rise[0], kick_t[0]}), .kick1({kick_max[1], kick_rise[1], kick_t[1]}),
@@ -1887,7 +1888,7 @@ always @(posedge clk) end_q <= mode == M_ENDING;
 ending_render #(.TEXT_ROM(ENDING_TEXT_ROM), .MAP_ROM(ENDING_MAP_ROM), .FW_ROM(ENDING_FW_ROM)) ending_draw (
     .clk(clk), .start(mode == M_ENDING && !end_q), .active(mode == M_ENDING), .frame_start(frame_start),
     .hc(hc), .vc(vc), .score(end_score), .bonus(end_bonus),
-    .rgb(end_rgb), .top(end_top), .parade(end_parade), .parade_n(end_parade_n),
+    .rgb(end_rgb), .top(end_top), .parade(end_parade), .parade_n(end_parade_n), .parade_ko(end_parade_ko),
     .say(end_say), .beat(end_beat), .skip_ok(end_skip_ok), .done(end_done)
 );
 

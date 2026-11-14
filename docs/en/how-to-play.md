@@ -21,8 +21,9 @@ NEXT power-ups and paddles are random; in CHALLENGE you see the opponent of a ra
 
 With a coin, or in Free Play, Start opens the menu (on the MiSTer it starts the match right away
 with the OSD options); each match costs one credit, even with two players. The match begins after a
-3-second countdown. The menu sets the mode (**GAME TYPE**), the players (**PLAYERS**: TWO, VS CPU,
-CHALLENGE, ONE), difficulty, volumes and the other options; the choices are kept for next time. The
+3-second countdown. The menu sets the mode (**GAME TYPE**), the players (**PLAYERS**: TWO and VS
+CPU, plus CHALLENGE in NEXT and ONE in CLASSIC), difficulty, volumes and the other options; the
+choices are kept for next time. The
 first time, the game starts in NEXT with PLAYERS: CHALLENGE (on the MiSTer *Game type: Challenge*,
 on the C64 at every power-on). If you go back to the menu during a match, **RESUME** picks it up
 again.
@@ -158,7 +159,8 @@ entrances in characters, simpler). Matches are NEXT, to 5 points.
   prize equal to the level's (the champion adds it to their score, the challenger starts from it);
   the loser enters their initials if they make the table.
 - **Ending**: after beating the last opponent come CONGRATULATIONS and the voice "YOU WIN!", the
-  parade of the seven opponents with the DEFEATED stamp, the final score with the champion's prize
+  parade of the seven opponents with the DEFEATED stamp (on the MiSTer a red K.O., and the beaten
+  paddle goes dark), the final score with the champion's prize
   (the win of the last level, plus the perfect match), "YOU ARE THE PADD WS CHAMPION" with
   fireworks, the credits and THE END, in about a minute, with its own music; then the initials.
   Start skips it. The voice "YOU WIN!" is also heard at every match won against the CPU. If the

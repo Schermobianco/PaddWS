@@ -67,6 +67,7 @@ cfg_kinds:   .res 8             ; tipo di racchetta per giocatore
 ; giocatori
 nx_load:   .res 8
 nx_res:    .res 8               ; riserva: 3 posti, compatta nei primi
+nx_dash = nx_res + 3            ; nel quarto byte: scatto in questo tick (move_capsules lo azzera)
 nx_sel:    .res 8
 nx_armed:  .res 8
 nx_anim:   .res 8
@@ -995,6 +996,37 @@ done:
     rts
 .endproc
 
+; Tick dello scatto (nx_dash): la x della capsula vale in tutto il tratto fra casa e la posizione
+; avanzata, in pixel interi come nel core: parte intera fra quella del lato basso meno SW_REACH e
+; quella del lato alto più SW_REACH. Lato basso e alto sono pad_home e pad_fwd (sinistra) o pad_fwd
+; e pad_home (destra): indici 0 e 8 o 12 e 4 da pad_home.
+SW_REACH = (P_CAP_HALF + P_PAD_HALF_W) >> 16
+.assert (P_CAP_HALF + P_PAD_HALF_W) & $FFFF = 0, error, "scatto: metà capsula + metà larghezza intere"
+.assert pad_fwd = pad_home + 8, error, "scatto: pad_fwd subito dopo pad_home"
+
+; La capsula n_i (Y = n_i * 4) diretta al giocatore X la prende la racchetta se è alla sua altezza
+; (|cy - py| <= metà capsula + metà altezza) e ha un posto libero nella riserva.
+.proc cap_take
+    sub32 n_t, {cap_y,y}, {pad_y,x}
+    abs32 n_t, n_t
+    add32 n_u, {pad_half,x}, {#P_CAP_HALF}
+    cmp32 n_u, n_t
+    bmi done
+    ; con la riserva piena passa oltre
+    jsr res_count
+    cmp #3
+    beq done
+    ldy n_i
+    lda cap_bonus,y
+    jsr res_push
+    event EV_COLLECT
+    ldx n_i
+    lda #0
+    sta cap_on,x
+done:
+    rts
+.endproc
+
 ; Capsule in volo: rimbalzano tra il basso e la fascia delle riserve; chi le tocca con la
 ; racchetta (con un posto libero nella riserva) le prende; fuori dal campo spariscono. Con il
 ; BULLET rallentano tutte.
@@ -1035,27 +1067,53 @@ toward:
     bmi :+
     ldx #4
 :   stx n_side
-    ; tocca la racchetta: |cx - px| <= metà capsula + metà larghezza, |cy - py| <= metà + metà altezza
+    ; tocca la racchetta: |cx - px| <= metà capsula + metà larghezza, poi l'altezza (cap_take);
+    ; presa, la prova del campo qui sotto non cambia niente
     sub32 n_t, {cap_x,y}, {pad_x,x}
     abs32 n_t, n_t
-    blt32 {#P_CAP_HALF + P_PAD_HALF_W}, n_t, out
-    sub32 n_t, {cap_y,y}, {pad_y,x}
-    abs32 n_t, n_t
-    add32 n_u, {pad_half,x}, {#P_CAP_HALF}
-    cmp32 n_u, n_t
-    bmi out
-    ; con la riserva piena passa oltre
-    jsr res_count
-    cmp #3
+    blt32 {#P_CAP_HALF + P_PAD_HALF_W}, n_t, dash
+take:
+    jsr cap_take
+    jmp out
+dash:
+    ; nel tick dello scatto anche il tratto saltato: cx + SW_REACH - basso >= 0, alto + SW_REACH - cx >= 0
+    lda nx_dash,x
     beq out
-    ldy n_i
-    lda cap_bonus,y
-    jsr res_push
-    event EV_COLLECT
-    ldx n_i
-    lda #0
-    sta cap_on,x
-    jmp next
+    txa
+    asl a
+    adc n_side
+    tax                         ; 0 a sinistra, 12 a destra: il lato basso del tratto
+    clc
+    lda cap_x+2,y
+    adc #<SW_REACH
+    sta n_t
+    lda cap_x+3,y
+    adc #>SW_REACH
+    sta n_t+1
+    sec
+    lda n_t
+    sbc pad_home+2,x
+    lda n_t+1
+    sbc pad_home+3,x
+    bmi out
+    txa
+    eor #8
+    tax
+    clc
+    lda pad_home+2,x
+    adc #<SW_REACH
+    sta n_t
+    lda pad_home+3,x
+    adc #>SW_REACH
+    sta n_t+1
+    sec
+    lda n_t
+    sbc cap_x+2,y
+    lda n_t+1
+    sbc cap_x+3,y
+    bmi out
+    ldx n_side
+    jmp take
 out:
     ; fuori dal campo: cx + metà < 0 o cx - metà > W
     ldx n_i
@@ -1078,6 +1136,9 @@ next:
     lda n_i
     cmp #4
     jne cap
+    lda #0
+    sta nx_dash
+    sta nx_dash+4
     rts
 slowed:
     ; BULLET: le velocità sono sempre +/- P_CAP_SPEED e P_CAP_DRIFT, i passi rallentati costanti

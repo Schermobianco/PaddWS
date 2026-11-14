@@ -162,30 +162,26 @@ class Text:
 
 
 def stamp_bitmap() -> list[list[int]]:
-    """Timbro DEFEATED come stamp() di ending_ui.rs a 320x240: rettangolo 55x15 con il bordo di 1 pixel e
-    la scritta in Munro 10, ruotati di 18 gradi in salita verso destra. Disegnato a 4x e ridotto."""
-    k, sw, sh = 4, 64, 36
-    big = Image.new("L", (sw * k, sh * k), 0)
-    d = ImageDraw.Draw(big)
-    cx, cy = sw * k / 2, sh * k / 2
-    a = math.radians(-18.0)
-    hw, hh = 27.5 * k, 7.5 * k
-
-    def corner(dx: float, dy: float) -> tuple[float, float]:
-        return cx + dx * math.cos(a) - dy * math.sin(a), cy + dx * math.sin(a) + dy * math.cos(a)
-
-    pts = [corner(-hw, -hh), corner(hw, -hh), corner(hw, hh), corner(-hw, hh)]
-    for i in range(4):
-        d.line([pts[i], pts[(i + 1) % 4]], fill=255, width=k)
-    f40 = ImageFont.truetype(str(FONT), 10 * k)
-    tw = f40.getlength("DEFEATED")
-    asc, desc = f40.getmetrics()
-    timg = Image.new("L", (int(tw) + 8 * k, asc + desc + 4 * k), 0)
-    ImageDraw.Draw(timg).text((4 * k, 2 * k), "DEFEATED", font=f40, fill=255)
-    timg = timg.rotate(18.0, resample=Image.BICUBIC, expand=True)
-    big.paste(255, (int(cx - timg.width / 2), int(cy - timg.height / 2)), timg)
-    small = big.resize((sw, sh), Image.BOX)
-    return [[1 if small.getpixel((x, y)) > 100 else 0 for x in range(sw)] for y in range(sh)]
+    """Segno dell'avversario battuto nella sfilata del MiSTer: "K.O." rosso in Munro 10 a scala 2, a
+    pixel pieni, centrato sulla racchetta (che next_render intanto spegne). Il timbro inclinato
+    DEFEATED di ending_ui.rs, largo 55 pixel su colonne di 45, a 320x240 si sovrapponeva a quelli
+    vicini e a 1 bit non si leggeva."""
+    sw, sh, k = 64, 36, 2
+    f = ImageFont.truetype(str(FONT), 10)
+    probe = ImageDraw.Draw(Image.new("L", (1, 1)))
+    left, top, right, bottom = probe.textbbox((0, 0), "K.O.", font=f)
+    flat = Image.new("L", (right - left, bottom - top), 0)
+    ImageDraw.Draw(flat).text((-left, -top), "K.O.", font=f, fill=255)
+    fw, fh = flat.size
+    if fw * k > sw or fh * k > sh:
+        raise SystemExit(f"K.O. troppo grande per il segno {sw}x{sh}: {fw * k}x{fh * k}")
+    out = [[0] * sw for _ in range(sh)]
+    x0, y0 = (sw - fw * k) // 2, (sh - fh * k) // 2
+    for y in range(fh * k):
+        for x in range(fw * k):
+            if flat.getpixel((x // k, y // k)) > 127:
+                out[y0 + y][x0 + x] = 1
+    return out
 
 
 # ------------------------------------------------------------------ disposizione
@@ -195,7 +191,7 @@ def stamp_bitmap() -> list[list[int]]:
 PARADE_Y = 92                     # centro delle racchette (185 a 480 righe)
 PARADE_NAME_Y = 145               # centro dei nomi
 STAMP_W, STAMP_H = 64, 36
-STAMP_CY = 100                    # centro del timbro (cy + 15 a 480 righe)
+STAMP_CY = PARADE_Y - 4           # centro del K.O., poco sopra il centro delle racchette
 
 
 def column_x(i: int) -> int:

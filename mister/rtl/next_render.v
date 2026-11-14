@@ -47,6 +47,7 @@ module next_render (
     // colonna, con il nome sotto); solo bianco e giallo, come il resto del finale (ending_render)
     input  wire        parade,
     input  wire [2:0]  parade_n,
+    input  wire [2:0]  parade_ko,           // ... le prime `parade_ko` già battute (K.O.): spente
 
     // partita NEXT
     input  wire        nxt,
@@ -1136,6 +1137,8 @@ always @(*) begin
                 on = 1'b1;
                 col = ACCENT;
             end
+            // sfilata: la racchetta che ha già il K.O. si spegne (il nome resta bianco)
+            if (parade && pk < parade_ko && col != BLACK) col = DIM;
             // sfilata: il nome sotto la racchetta
             if (parade && p == 0 && pk < parade_n &&
                 sh_kname) begin

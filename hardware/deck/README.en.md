@@ -2,9 +2,6 @@
 
 # Deck
 
-> **Not tested yet.** The Deck has not been fully printed and tried out yet: dimensions, parts and
-> instructions will change in the next revisions.
-
 A table-top console for PADD WS: a flat 320 × 160 × 47.5 mm box with the official 7" screen in the
 middle and one station per player at each end (knob, DASH, SELECT, USE). Every part is a single
 colour and prints without supports, except the socket plates; all parts fit on the 256 mm build
