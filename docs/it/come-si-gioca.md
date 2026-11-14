@@ -34,7 +34,7 @@ partita, **RESUME** la riprende.
 - **EVO** (2 giocatori): colpire la palla nell'area grigia al centro della racchetta la potenzia
   (l'area si restringe a ogni boost); lo scatto in avanti intercetta la palla e la rilancia.
 - **NEXT** (2 giocatori o contro la CPU): Classic con lo scatto in avanti e i bonus. Prima della
-  partita ognuno sceglie la sua racchetta e 3 bonus su 6 (sul C64 prima i bonus); le capsule partono dalla mezzeria e si
+  partita ognuno sceglie la sua racchetta e 3 bonus su 6; le capsule partono dalla mezzeria e si
   raccolgono toccandole con la racchetta, poi si scelgono e si attivano dalla riserva in alto.
 - **VS CPU**: da soli contro il computer, in tutte le modalità (menu **PLAYERS: VS CPU**); la
   bravura della CPU segue la difficoltà.
@@ -57,7 +57,7 @@ Ogni capsula mostra il simbolo del suo bonus:
 
 ## Tipi di racchetta (NEXT)
 
-Prima dei bonus ognuno sceglie la sua racchetta (sul C64 dopo; la CPU a caso; in CHALLENGE ogni
+Prima dei bonus ognuno sceglie la sua racchetta (la CPU a caso; in CHALLENGE ogni
 avversario ha la sua). Ogni tipo ha un vantaggio, un piccolo prezzo e un segno che lo fa riconoscere in partita (in
 giallo nell'immagine, con le racchette in proporzione). I tipi sono bilanciati perché ognuno vinca
 circa metà dei punti contro la racchetta normale.
@@ -131,8 +131,8 @@ Si scelgono una volta racchetta e bonus, poi ogni livello presenta il suo avvers
 racchetta diverso per livello, i suoi 3 bonus e una CPU sempre più forte, dall'ARCADE del primo
 livello al GUARDIAN del boss finale. Ogni avversario entra a modo suo, mostrando quello che sa fare
 (l'ARCADE prende al volo una raffica di capsule, il TITAN cresce dal pavimento, il BLASTER accende il
-suo nome a colpi, il GUARDIAN si costruisce il muro...); sul C64 la presentazione resta ferma. Le
-partite sono NEXT a 5 punti.
+suo nome a colpi, il GUARDIAN si costruisce il muro...; sul C64 le stesse entrate a caratteri, più
+semplici). Le partite sono NEXT a 5 punti.
 
 - **Punti arcade**: colpi, scatti riusciti, SUPER e punti segnati, con un moltiplicatore che sale
   negli scambi lunghi (fino a ×8); a ogni livello vinto un premio, più un premio doppio per la
@@ -141,7 +141,8 @@ partite sono NEXT a 5 punti.
   Play) e riprovare lo stesso livello, con i punti da zero.
 - **Classifica**: i 10 migliori con le iniziali, mostrata anche nell'attract. Si accende con una
   palla che scende fra le righe e i punti che contano; il posto appena inserito ha le racchette ai
-  lati e un riflesso giallo (sul C64 resta ferma). Sul PC si salva in
+  lati e un riflesso giallo (sul C64 e sul MiSTer le cifre girano e si fermano una alla volta).
+  Sul PC si salva in
   `padd_scores.json` accanto alla configurazione, nel browser nel `localStorage`, sul C64 nella
   flash della cartuccia; sul MiSTer nella SD (`PaddWS.nvm`, da solo con l'OSD *Autosave scores*
   o con *Save settings*), se il core è avviato dal `.mra`.
@@ -165,7 +166,7 @@ partite sono NEXT a 5 punti.
   web e MiSTer la stessa voce dice anche il nome della racchetta appena confermata nella scelta.
 - **Musiche degli avversari**: in partita contro la CPU ogni avversario ha il suo tema, sulle prime
   due voci del SID (la terza resta agli effetti); la sfida tra due giocatori suona il tema di un
-  avversario a caso (non sul C64). Si spengono con **MUSIC VOLUME: 0%** nel menu
+  avversario a caso. Si spengono con **MUSIC VOLUME: 0%** nel menu
   (sul MiSTer *Music volume: 0%*, che spegne tutte le musiche); sul C64 il tema arriva con la voce,
   dalla cartuccia.
 

@@ -19,7 +19,7 @@ BOOT_IMG    = $D100             ; routine dell'avvio nel .prg (paddws.cfg), poi 
 BOOT_BANK   = PRG_BANK + (BOOT_IMG - $0800) / $4000
 BOOT_SRC    = $80 + ((BOOT_IMG - $0800) .mod $4000) / 256
 BOOT_RAM    = $F800
-.assert ((BOOT_IMG - $0800) .mod $4000) + $0700 <= $2000, error, "routine dell'avvio oltre la ROML del banco"
+.assert ((BOOT_IMG - $0800) .mod $4000) + $0400 <= $2000, error, "routine dell'avvio oltre la ROML del banco"
 .assert __BOOTCODE_LOAD__ = BOOT_IMG .and __BOOTCODE_RUN__ = BOOT_RAM, lderror, "routine dell'avvio fuori posto"
 
 .assert TITLE_SIZE <= TITLE_PAGES * 256 .and TITLE_BUF + TITLE_PAGES * 256 <= $e000, error, "titolo oltre la RAM sotto l'I/O"

@@ -35,7 +35,7 @@ again.
 - **EVO** (2 players): hitting the ball with the grey area in the middle of the paddle powers it up
   (the area shrinks with each boost); the forward dash intercepts the ball and sends it back.
 - **NEXT** (2 players or against the CPU): Classic with the forward dash and power-ups. Before the
-  match each player picks a paddle and 3 power-ups out of 6 (on the C64 the power-ups first); capsules start from the centre line
+  match each player picks a paddle and 3 power-ups out of 6; capsules start from the centre line
   and are collected by touching them with the paddle, then the power-ups are selected and activated
   from the reserve at the top.
 - **VS CPU**: alone against the computer, in every mode (menu **PLAYERS: VS CPU**); the CPU's skill
@@ -59,7 +59,7 @@ Each capsule shows the symbol of its power-up:
 
 ## Paddle types (NEXT)
 
-Before the power-ups each player picks a paddle (on the C64 after them; the CPU picks at random; in
+Before the power-ups each player picks a paddle (the CPU picks at random; in
 CHALLENGE each opponent has its own). Each type has an advantage, a small price and a mark that makes it recognisable in
 play (in yellow in the picture, with the paddles to scale). The types are balanced so that each
 wins about half of the points against the normal paddle.
@@ -134,8 +134,8 @@ Challenge*). You pick paddle and power-ups once, then each level introduces its 
 different paddle type for each level, its 3 power-ups and an ever stronger CPU, from the ARCADE of
 the first level to the GUARDIAN of the final boss. Each opponent makes its own entrance, showing off
 what it can do (the ARCADE catches a volley of capsules, the TITAN grows out of the floor, the
-BLASTER lights up its name by shooting it, the GUARDIAN builds its wall...); on the C64 the
-introduction stays still. Matches are NEXT, to 5 points.
+BLASTER lights up its name by shooting it, the GUARDIAN builds its wall...; on the C64 the same
+entrances in characters, simpler). Matches are NEXT, to 5 points.
 
 - **Arcade scoring**: hits, successful dashes, SUPERs and points scored, with a multiplier that
   rises in long rallies (up to ×8); for each level won a prize, plus a double prize for a perfect
@@ -144,7 +144,8 @@ introduction stays still. Matches are NEXT, to 5 points.
   try the same level again, with the score reset.
 - **High-score table**: the top 10 with initials, also shown in the attract mode. It lights up with a
   ball coming down between the rows and the scores counting up; the entry just added gets paddles
-  at its sides and a yellow glint (on the C64 it stays still). On PC it is saved
+  at its sides and a yellow glint (on the C64 and the MiSTer the digits roll and stop one at a
+  time). On PC it is saved
   in `padd_scores.json` next to the configuration, in the browser in `localStorage`, on the C64 in
   the cartridge flash; on the MiSTer on the SD card (`PaddWS.nvm`, automatically with the OSD
   option *Autosave scores* or with *Save settings*), if the core is started from the `.mra`.
@@ -168,7 +169,7 @@ introduction stays still. Matches are NEXT, to 5 points.
   web and MiSTer the same voice also says the name of the paddle just confirmed in the pick.
 - **Opponent themes**: in the match against the CPU each opponent has its own theme, on the first
   two SID voices (the third is left for the effects); the challenge between two players plays the
-  theme of a random opponent (not on the C64). They are turned off with **MUSIC VOLUME: 0%**
+  theme of a random opponent. They are turned off with **MUSIC VOLUME: 0%**
   in the menu (on the MiSTer *Music volume: 0%*, which turns off all music); on the C64 the theme
   comes with the voice, from the cartridge.
 

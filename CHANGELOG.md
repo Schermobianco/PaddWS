@@ -18,11 +18,12 @@ crea il commit e il tag `vX.Y.Z`.
 - **Classifica animata** della CHALLENGE (PC, web e MiSTer): una palla scende rimbalzando fra i
   bordi e accende le righe che tocca; i punti di ogni riga contano da zero mentre si accende (sul
   MiSTer le cifre girano e si fermano una alla volta); poi due racchette gialle affiancano il posto
-  appena inserito e un riflesso lo attraversa. Sul C64 resta ferma.
+  appena inserito e un riflesso lo attraversa. Sul C64 come sul MiSTer, con le cifre che girano.
 - GAME OVER: dopo la chiusura da televisore lo schermo resta nero per due secondi, prima di passare
-  oltre (PC, web e MiSTer).
-- Scelta della racchetta: confermata, il SID ne dice il nome (PC, web e MiSTer).
-- CHALLENGE: la sfida tra due giocatori suona il tema di un avversario a caso (PC, web e MiSTer).
+  oltre (PC, web, MiSTer e C64).
+- Scelta della racchetta: confermata, il SID ne dice il nome (PC, web e MiSTer; non sul C64).
+- CHALLENGE: la sfida tra due giocatori suona il tema di un avversario a caso (PC, web, MiSTer e
+  C64).
 - Scelta della racchetta al tocco (web e Deck): un tocco sulla riga la mostra e la conferma è un
   pulsante OK in cima alla colonna, come nella scelta dei bonus (prima: un secondo tocco sulla riga).
 - PERFECT si stampa più lentamente: ogni grandezza del timbro dura qualche frame invece di uno.
@@ -36,14 +37,14 @@ crea il commit e il tag `vX.Y.Z`.
   come quello a fine partita.
 - MiSTer: la scritta del bonus e della mossa in basso è più piccola (scala 1) e passa sotto le
   racchette; anche su PC le racchette stanno sopra le scritte.
-- NEXT: prima si sceglie la racchetta, poi i bonus (anche lo sfidante della CHALLENGE); sul C64
-  l'ordine resta quello di prima.
+- NEXT: prima si sceglie la racchetta, poi i bonus (anche lo sfidante della CHALLENGE).
 - **Reti degli avversari**: nella CHALLENGE contro la CPU ogni avversario ha la sua rete: quadratini
   come capsule (ARCADE), trattini inclinati che si piegano verso la palla (TWIST), rete doppia che
   vibra ai colpi dell'HAMMER, trattini lunghi (TITAN), due file di puntini (BLASTER), trattini che
   scorrono (RUSH), mattoni e angoli del campo gialli (GUARDIAN). Nelle sfide fra due giocatori e
-  nelle altre modalità resta la rete di sempre. Non ancora sul C64.
-- **Scritte animate**, su tutte le versioni tranne il C64 (che arriverà dopo) e Python:
+  nelle altre modalità resta la rete di sempre. Sul C64 a caratteri: la rete del TWIST si inclina
+  tutta insieme e il GUARDIAN non ha gli angoli gialli (lì c'è il punteggio).
+- **Scritte animate**, su tutte le versioni tranne Python:
   - la scritta del bonus attivato ("P1 SMASH!") si accende e si spegne come un vecchio televisore:
     una riga bianca che si allarga e si apre in altezza, alla fine il contrario fino al puntino;
   - mosse speciali: quando la mossa parte, sotto le lettere del suo nome si disegnano dei trattini
@@ -54,12 +55,17 @@ crea il commit e il tag `vX.Y.Z`.
   - PERFECT si stampa enorme, il riquadro trema e poi un riflesso giallo attraversa le lettere;
   - YOU WIN: la palla parte dalla racchetta del giocatore e salta da una lettera all'altra,
     accendendole; CPU WINS (livello perso della CHALLENGE) si scrive con il cursore.
+
+  Sul C64 a celle di carattere: il televisore si accende con una riga che si allarga, poi i blocchi
+  e il testo; PERFECT è un riquadro di blocchi che si stringe, trema e lascia passare il riflesso;
+  l'urlo della mossa non c'è (il C64 non ha le voci di partita).
 - **Presentazioni della CHALLENGE**: sopra il livello una scala di sette trattini (i livelli battuti
   in bianco, quello in corso in giallo) e ogni avversario entra a modo suo: l'ARCADE prende al volo
   una raffica di capsule, il TWIST corre inclinandosi e il suo nome oscilla, l'HAMMER ribatte la
   palla fortissimo e il nome cade come un peso, il TITAN cresce lento dal pavimento, il BLASTER
   accende il nome a colpi e colpisce al volo i bonus, il RUSH entra con uno scatto lunghissimo, il
-  GUARDIAN si costruisce il muro e rimanda una palla. Sul C64 la presentazione resta ferma.
+  GUARDIAN si costruisce il muro e rimanda una palla. Sul C64 le stesse entrate, più semplici: il
+  TITAN sale dal pavimento invece di crescere, le racchette non si inclinano, niente polvere.
 - Release in due tempi: `build_onforge.bat` mette i pacchetti in `dist\` senza pubblicarli e, dopo
   le prove, `build_onforge.bat -PublishOnly` pubblica quelli senza ricostruirli.
 

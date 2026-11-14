@@ -61,6 +61,8 @@ For screenshots there are builds that go straight into a match:
 ```powershell
 .\c64\build.ps1 -Name autostart -Define AUTOSTART     # EVO against the CPU; with AUTONEXT NEXT, with AUTOCHALLENGE CHALLENGE
 .\c64\build.ps1 -Name autoend -Define ENDTEST         # the CHALLENGE ending
+.\c64\build.ps1 -Name intro3 -Define INTROTEST=3      # the level 3 introduction (also CONTTEST: the continue)
+.\c64\build.ps1 -Name ft -Define AUTOSTART,FRAMETEST  # frames over time, red digit bottom right (FRAMESTOP: stops at the first)
 .\c64\shot.ps1 out.png -Prg autostart                # screenshot after -Cycles cycles (15 million by default)
 ```
 
@@ -96,7 +98,8 @@ ending, `profile` gives cycles per routine, `--build DIR` uses another build fol
 - `src/next.s`, `src/supers.s`, `src/pick.s` — NEXT, the special moves, the choices before the
   match and the HOW TO PLAY screen.
 - `src/cpu.s` — the CPU player (`cpu.rs`).
-- `src/challenge.s`, `src/ending.s` — CHALLENGE with the high score table, and the ending.
+- `src/challenge.s`, `src/intro.s`, `src/ending.s` — CHALLENGE with the high score table, the
+  opponents' entrances in the introduction, and the ending.
 - `src/play.s` — frame loop, scenes, menu, coins.
 - `src/attract.s`, `src/video.s`, `src/input.s` — attract mode, graphics, controls.
 - `src/sid.s` — the SID player, translated from `mister/rtl/pong_sid.v`.

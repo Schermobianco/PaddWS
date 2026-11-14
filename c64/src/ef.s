@@ -6,8 +6,9 @@
 ; della cartuccia (src/crt.s) la copia al suo posto prima di avviare il programma. Non costano byte
 ; del programma.
 ;
-; Copie (ef_voice, ef_pick): modo a 8K con $01 = $37, la ROML a $8000; le scritture vanno nella
-; RAM anche sotto le ROM. Interrupt spenti, $01 di nuovo $35 alla fine.
+; Copie (ef_voice, ef_pick, ef_copy): modo a 16K con $01 = $37, la ROML a $8000 e la ROMH a $A000
+; (le pagine sorgente $80-$BF di un banco); le scritture vanno nella RAM anche sotto le ROM, e mai
+; in $8000-$BFFF. Interrupt spenti, $01 di nuovo $35 alla fine.
 ;
 ; Classifica (ef_hi_write, ef_hi_erase): nella ROML del banco HI_BANK, primo banco di un settore
 ; della flash che serve solo a lei. Si scrive nel modo Ultimax, l'unico in cui il C64 manda alla
@@ -64,7 +65,7 @@ ef_ram:
     ldy #>(CHARSET + PICK_FIRST * 8)
 .endproc
 ; (prosegue)
-; X pagine dalla ROML del banco A, dalla pagina in ef_src+2, alla pagina Y.
+; X pagine dal banco A (ROML e ROMH), dalla pagina in ef_src+2 ($80-$BF), alla pagina Y.
 .proc ef_copy
     sta EF_BANK
     stx pages
@@ -73,7 +74,7 @@ ef_ram:
     sei
     lda #$37
     sta $01
-    lda #EF_8K
+    lda #EF_16K
     sta EF_MODE
     ldy #0
 loop:

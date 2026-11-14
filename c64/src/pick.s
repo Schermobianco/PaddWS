@@ -1,4 +1,4 @@
-; Modalità NEXT prima e durante la partita: scelta dei 3 bonus e del tipo di racchetta (come
+; Modalità NEXT prima e durante la partita: scelta del tipo di racchetta e poi dei 3 bonus (come
 ; rust/game/src/next_ui.rs `Pick` e paddle_ui.rs `PaddlePick`, con lo schermo del MiSTer in
 ; mister/rtl/next_render.v) e riserve in alto durante la partita.
 ;
@@ -21,7 +21,10 @@ PH_CLEAR = 1                    ; pulire lo schermo
 PH_CHARS = 2                    ; caratteri della scelta (ef_pick, circa 11.000 cicli)
 PH_DRAW  = 3                    ; scritte fisse (poi le colonne, una per frame)
 PH_MATCH = 4                    ; partita (lo schermo è già pulito)
-; HOW TO PLAY delle mosse speciali, dopo la scelta della racchetta (come su PC e MiSTer): bitmap e
+PH_RESTORE = 5                  ; scelte finite, schermo pulito: i caratteri di sempre, poi la
+                                ; HOW TO PLAY o la partita
+PH_THEME = 6                    ; sfida di CHALLENGE: il tema (ch_duel_theme), poi la partita
+; HOW TO PLAY delle mosse speciali, dopo le scelte (come su PC e MiSTer): bitmap e
 ; colori dalla cartuccia (gen/howto.bin, banchi HOWTO_BANK) a schermo spento, HW_STEP pagine per
 ; frame, poi la bitmap per HOWTO_FRAMES frame (8 s); fuoco o Start la saltano dopo HOWTO_SKIP.
 ; La bitmap copre le tabelle dei quadrati ($F000), che poi si rifanno (math_invalidate, math_step
@@ -112,7 +115,8 @@ col_base:   .byte 0, 20             ; prima colonna della metà di ciascun gioca
 
 ; ------------------------------------------------------------------------------------ scelta
 
-; Inizio di NEXT dal menu: seme della partita, poi la scelta dei bonus.
+; Inizio di NEXT dal menu: seme della partita, i bonus della CPU (o dell'avversario di CHALLENGE),
+; poi la scelta della racchetta (kind_enter) e dopo quella dei bonus (bonus_enter), come sul PC.
 .proc pick_enter
     jsr seed_from_time
     lda #0
@@ -132,10 +136,8 @@ col_base:   .byte 0, 20             ; prima colonna della metà di ciascun gioca
 :   stx pk_fixed
     lda #0
     sta hw_pg
-    sta pk_kind
     sta pk_count
     sta pk_count+1
-    jsr pick_start
     lda opt_players
     cmp #OPT_CHALLENGE
     bne :+
@@ -148,7 +150,7 @@ col_base:   .byte 0, 20             ; prima colonna della metà di ciascun gioca
     sta pk_chosen+5
     lda #3
     sta pk_count+1
-    rts
+    bne draw
 :   ; la CPU sceglie tre bonus diversi a caso
     lda pk_cpu
     beq draw
@@ -184,10 +186,10 @@ cpu:
     bne cpu
     jsr rng_restore
 draw:
-    rts
+    jmp kind_enter
 .endproc
 
-; Scelta della racchetta, dopo quella dei bonus.
+; Scelta della racchetta, la prima.
 .proc kind_enter
     lda #1
     sta pk_kind
@@ -243,15 +245,13 @@ first:
 .endproc
 
 ; CHALLENGE, nuovo sfidante (Pick::challenger): sceglie solo lui, sul lato libero; il campione
-; tiene i suoi bonus (e poi la sua racchetta, in kind_enter). Seme nuovo per la sfida.
+; tiene la sua racchetta (kind_enter) e i suoi bonus. Seme nuovo per la sfida.
 .proc pick_challenger
     jsr seed_from_time
     lda #0
     sta pk_cpu
-    sta pk_kind
     sta pk_count
     sta pk_count+1
-    jsr pick_start
     lda ch_side
     lsr a
     lsr a
@@ -264,7 +264,19 @@ first:
     sta pk_chosen,x
     dex
     bpl :-
-    rts
+    jmp kind_enter
+.endproc
+
+; Scelta dei bonus, dopo quella della racchetta: i tipi scelti vanno nella configurazione (il cursore
+; serve di nuovo).
+.proc bonus_enter
+    lda pk_cursor
+    sta cfg_kinds
+    lda pk_cursor+1
+    sta cfg_kinds+4
+    lda #0
+    sta pk_kind
+    jmp pick_start
 .endproc
 
 ; Parte comune delle due scelte: scena, tempo, cursori, schermo vuoto senza sprite.
@@ -401,7 +413,9 @@ done:
     beq chars
     cmp #PH_DRAW
     beq draw
-    bcs match
+    cmp #PH_MATCH
+    beq match
+    bcs late
     ; schermo pulito
     lda #PH_CHARS
     sta pk_phase
@@ -409,7 +423,7 @@ done:
     jmp clear_text
 chars:
     ; sullo schermo vuoto: nella scelta dei bonus le metà delle lettere (put_low), in quella della
-    ; racchetta di nuovo i caratteri di prima
+    ; racchetta i caratteri di sempre
     lda #PH_DRAW
     sta pk_phase
     lda pk_kind                 ; C = 0 i caratteri della scelta dei bonus, C = 1 quelli di prima
@@ -423,6 +437,33 @@ match:
     lda #PH_NONE
     sta pk_phase
     jmp start_next
+late:
+    cmp #PH_THEME
+    bne restore
+    jsr ch_duel_theme
+    lda #PH_MATCH
+    sta pk_phase
+    rts
+restore:
+    ; di nuovo i caratteri di sempre (circa 11.000 cicli, sullo schermo già pulito); con le mosse
+    ; speciali prima la HOW TO PLAY (non con i paddle, senza gesti, né per lo sfidante); la sfida
+    ; prima il suo tema (PH_THEME); poi la partita al prossimo frame
+    sec
+    jsr ef_pick
+    ldx #PH_THEME
+    lda cg_active
+    cmp #CG_DUEL
+    beq phase
+    lda cfg_super
+    beq match_next
+    lda ctl_paddle
+    bne match_next
+    jmp howto_enter
+match_next:
+    ldx #PH_MATCH
+phase:
+    stx pk_phase
+    rts
 ready:
     lda pk_ready
     beq choosing
@@ -442,19 +483,10 @@ ready:
 :   rts
 go:
     lda pk_kind
-    bne :+
-    jmp kind_enter
-:   ; con le mosse speciali prima la HOW TO PLAY (non con i paddle, senza gesti, né per lo
-    ; sfidante); poi la partita al prossimo frame, con lo schermo già pulito ora
-    lda cfg_super
     beq :+
-    lda ctl_paddle
-    bne :+
-    lda cg_active
-    cmp #CG_DUEL
-    beq :+
-    jmp howto_enter
-:   lda #PH_MATCH
+    jmp bonus_enter
+:   ; scelte finite: lo schermo pulito ora, il resto al prossimo frame (PH_RESTORE)
+    lda #PH_RESTORE
     sta pk_phase
     lda #COL_WHITE
     jmp clear_text
@@ -658,11 +690,7 @@ duel:
     iny
     cpy #3
     bne :-
-    lda pk_cursor
-    sta cfg_kinds
-    lda pk_cursor+1
-    sta cfg_kinds+4
-    lda #1                      ; schermo già pulito (pick_scene)
+    lda #1                      ; schermo già pulito (pick_scene; le racchette: bonus_enter)
     sta screen_clear
     jmp begin_match
 .endproc
@@ -1498,7 +1526,8 @@ empty_tmp = m_p                 ; quattro caratteri del posto vuoto (m_p non ser
     sta bar_flash+1
     sta sv_n                    ; nessun colpo a schermo
     sta lb_frames               ; nessuna scritta, nessun segno di STEER
-    sta lb_pend
+    sta mv_st                   ; (nemmeno delle mosse speciali)
+    sta mv_st+1
     sta st_drawn
     sta bl_on                   ; schermo nuovo: mezzeria e punteggi bianchi
     sta lb_prev
@@ -1919,6 +1948,17 @@ sv_col:    .res SHOT_MAX_CELLS
 
 LABEL_ROW    = 23               ; scritta del bonus attivato, in basso
 LABEL_FRAMES = 60               ; 1,2 secondi
+; accensione e spegnimento da vecchio televisore (next_ui.rs, CRT_STEP e CRT_DOT a 50 Hz), al
+; frame e = 0..LABEL_FRAMES - 2 (label_step): una riga bianca (CH_GRID_T) che si allarga dal centro
+; in LB_OPEN frame, LB_BLOCK frame di blocchi pieni (la fascia che si apre), la scritta; alla fine
+; LB_BLOCK frame di blocchi, la riga che si stringe in LB_OPEN, un trattino al centro per LB_DOT
+LB_OPEN   = 4
+LB_BLOCK  = 2
+LB_DOT    = 3
+LB_CLOSE  = LABEL_FRAMES - 1 - LB_DOT - LB_OPEN - LB_BLOCK
+LB_TEXT   = 5                   ; passi a schermo (lb_key): 0-3 la riga, 4 i blocchi, 5 la
+LB_BLOCKS = 4                   ; scritta, 6 il trattino
+LB_DASH   = 6
 
 ; Dopo il tick della partita: scritta "P1 SMASH!" del bonus attivato (chi ha una capsula in meno
 ; nella riserva; il bonus è quello armato, o SLOW e BULLET che non restano armati: il BULLET si
@@ -1955,30 +1995,29 @@ bonus:
     lda lb_frames
     beq :+
     jsr label_erase             ; la scritta di prima
-    lda #0
-    sta lb_frames
 :   pla
     sta lb_player
     pla
     sta lb_bonus
-    lda #1                      ; da disegnare appena il frame ha tempo
-    sta lb_pend
-timer:
-    lda lb_pend
-    beq :+
-    jsr frame_late              ; prima ci sono ancora sprite, riserve e SID
-    bcs counts
-    lda #0
-    sta lb_pend
-    jsr label_draw
-    lda #LABEL_FRAMES
+    jsr label_layout
+    lda #LABEL_FRAMES           ; si accende dal prossimo frame (label_step)
     sta lb_frames
-    jmp counts
-:   lda lb_frames
-    beq counts
+    lda #0
+    sta lb_wait
+    lda #$ff
+    sta lb_key
+    bne mark
+timer:
+    lda lb_frames
+    beq mark
     dec lb_frames
-    bne counts
+    bne :+
     jsr label_erase
+    jmp mark
+:   jsr label_step
+mark:
+    jsr sm_labels               ; le scritte delle mosse speciali
+    jsr net_tick                ; la rete dell'avversario
 counts:
     ; riserve dopo il tick, per il confronto del prossimo
     ldx #0
@@ -2137,15 +2176,8 @@ erase:
     rts
 .endproc
 
-; Scritta "P1 SMASH!" (gialla) centrata nella riga LABEL_ROW; con il bit 7 di lb_bonus quella
-; della mossa speciale (sm_label).
-.proc label_draw
-    jsr shots_erase
-    bit lb_bonus
-    bpl :+
-    jmp sm_label
-:
-    ; nome del bonus e sua lunghezza (fino al primo spazio)
+; Colonna e lunghezza della scritta "P1 SMASH!" (dal bonus lb_bonus, fino al primo spazio).
+.proc label_layout
     lda lb_bonus
     asl a
     tay
@@ -2171,6 +2203,13 @@ erase:
     sec
     adc #20
     sta lb_col
+    rts
+.endproc
+
+; La scritta "P1 SMASH!", gialla.
+.proc label_draw
+    jsr shots_erase
+    jsr label_layout
     ; P1 / P2
     lda lb_player
     beq :+
@@ -2216,6 +2255,110 @@ erase:
     jmp color_span
 .endproc
 
+; Un passo della scritta del bonus (vedi LB_OPEN), solo quando cambia e se il frame ha tempo;
+; altrimenti lb_frames torna indietro di uno e il passo si ritenta al prossimo frame, per al più
+; LB_WAIT frame di fila (in partita molti frame arrivano qui tardi: saltando subito i passi, la
+; scritta compariva già piena; aspettando sempre, con il BULLET restava ferma a metà).
+LB_WAIT = 3
+.proc label_step
+    lda lb_frames               ; e = LABEL_FRAMES - 1 - lb_frames (0..58)
+    eor #$ff
+    sec
+    adc #LABEL_FRAMES - 1
+    cmp #LB_OPEN                ; la riga che si allarga: passo e
+    bcc got
+    cmp #LB_OPEN + LB_BLOCK
+    bcc blocks
+    cmp #LB_CLOSE
+    bcc text
+    cmp #LB_CLOSE + LB_BLOCK
+    bcc blocks
+    cmp #LB_CLOSE + LB_BLOCK + LB_OPEN
+    bcs dash
+    sbc #LB_CLOSE + LB_BLOCK - 1    ; (C = 0) la riga che si stringe: passo 3 .. 0
+    eor #3
+    bpl got                     ; (sempre)
+blocks:
+    lda #LB_BLOCKS
+    bne got
+text:
+    lda #LB_TEXT
+    bne got
+dash:
+    lda #LB_DASH
+got:
+    cmp lb_key
+    beq done
+    pha
+    cmp #LB_TEXT                ; prima ci sono ancora sprite, riserve e SID: la scritta con
+    beq big                     ; frame_late, riga, blocchi e trattino (poche celle uguali) fino a
+    jsr frame_late_small        ; dove arrivano le riserve
+    jmp :+
+big:
+    jsr frame_late
+:   pla
+    bcs late
+    ldx #0
+    stx lb_wait
+    sta lb_key
+    cmp #LB_TEXT
+    bne :+
+    jmp label_draw
+:   pha
+    jsr label_erase             ; vuota, con la mezzeria
+    pla
+    cmp #LB_BLOCKS
+    beq block
+    bcs one
+    ; la riga: (passo + 1) * lunghezza / 4 celle, arrotondate in su
+    tax
+    inx
+    lda #3
+:   clc
+    adc lb_len
+    dex
+    bne :-
+    lsr a
+    lsr a
+    ldx #CH_GRID_T
+    bne run
+block:
+    lda lb_len
+    ldx #CH_SOLID
+    bne run
+one:
+    lda #1
+    ldx font_map + '-' - 32
+run:
+    ; A celle del carattere X al centro della scritta, bianche
+    stx m_t
+    sta v_n
+    lda lb_len
+    sec
+    sbc v_n
+    lsr a
+    clc
+    adc lb_col
+    tay
+    ldx v_n
+:   lda m_t
+    sta SCREEN + LABEL_ROW * 40,y
+    lda #COL_WHITE
+    sta $d800 + LABEL_ROW * 40,y
+    iny
+    dex
+    bne :-
+    rts
+late:
+    lda lb_wait                 ; il conto della scritta aspetta al più LB_WAIT frame, poi va
+    cmp #LB_WAIT                ; avanti (nei frame sempre pesanti i passi si saltano)
+    bcs done
+    inc lb_wait
+    inc lb_frames
+done:
+    rts
+.endproc
+
 ; Toglie la scritta e rimette la mezzeria.
 .proc label_erase
     jsr shots_erase
@@ -2252,7 +2395,8 @@ lb_bprev:  .res 1               ; e chi aveva il BULLET (nx_bside)
 lb_bonus:  .res 1
 lb_player: .res 1               ; 0 sinistro, 4 destro
 lb_frames: .res 1               ; frame rimasti della scritta
-lb_pend:   .res 1               ; scritta ancora da disegnare
+lb_key:    .res 1               ; il suo passo a schermo (label_step; $ff nessuno)
+lb_wait:   .res 1               ; frame di fila che il passo ha aspettato (label_step)
 lb_nlen:   .res 1
 lb_len:    .res 1
 lb_col:    .res 1

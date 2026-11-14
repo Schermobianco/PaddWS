@@ -61,6 +61,8 @@ Per le schermate ci sono build che partono subito con una partita:
 ```powershell
 .\c64\build.ps1 -Name autostart -Define AUTOSTART     # EVO contro la CPU; con AUTONEXT NEXT, con AUTOCHALLENGE CHALLENGE
 .\c64\build.ps1 -Name autoend -Define ENDTEST         # il finale di CHALLENGE
+.\c64\build.ps1 -Name intro3 -Define INTROTEST=3      # la presentazione del livello 3 (anche CONTTEST: il continue)
+.\c64\build.ps1 -Name ft -Define AUTOSTART,FRAMETEST  # frame oltre il tempo, cifra rossa in basso a destra (FRAMESTOP: si ferma al primo)
 .\c64\shot.ps1 out.png -Prg autostart                # schermata dopo -Cycles cicli (15 milioni di default)
 ```
 
@@ -97,7 +99,8 @@ CHALLENGE, `profile` dà i cicli per routine, `--build DIR` usa un'altra cartell
 - `src/next.s`, `src/supers.s`, `src/pick.s` — NEXT, le mosse speciali, le scelte prima della
   partita e la schermata HOW TO PLAY.
 - `src/cpu.s` — la CPU (`cpu.rs`).
-- `src/challenge.s`, `src/ending.s` — CHALLENGE con la classifica, e il finale.
+- `src/challenge.s`, `src/intro.s`, `src/ending.s` — CHALLENGE con la classifica, le entrate
+  degli avversari nella presentazione, e il finale.
 - `src/play.s` — ciclo dei frame, scene, menu, gettoni.
 - `src/attract.s`, `src/video.s`, `src/input.s` — attract, grafica, comandi.
 - `src/sid.s` — il player del SID, tradotto da `mister/rtl/pong_sid.v`.

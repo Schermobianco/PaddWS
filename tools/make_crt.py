@@ -7,9 +7,10 @@ Banchi e indirizzi in c64/src/ef.inc:
 - BOOT.bin: gli 8 KB della ROMH del banco 0 (c64/src/crt.s), a $E000 nel modo Ultimax
   dell'accensione: copia il programma in RAM e lo avvia;
 - PROGRAMMA.prg: il programma, da $0801 a $CFFF, poi a $D000-$D0FF l'immagine delle routine della
-  RAM della cartuccia (c64/src/ef.s), da $D100 quelle dell'avvio (c64/src/unpack.s), da $D800 il
-  codice delle mosse speciali di NEXT (c64/src/supers.s) e da $DC00 quello della classifica
-  (c64/src/challenge.s); da PRG_BANK (16 KB per banco, ROML e poi ROMH) da $0800, con uno zero
+  RAM della cartuccia (c64/src/ef.s), da $D100 quelle dell'avvio (c64/src/unpack.s), da $D500 il
+  codice delle mosse speciali di NEXT (c64/src/supers.s), da $D900 quello della classifica
+  (c64/src/challenge.s), da $DF00 i caratteri di PERFECT e da $E000 il codice del GAME OVER
+  (c64/src/play.s); da PRG_BANK (16 KB per banco, ROML e poi ROMH) da $0800, con uno zero
   davanti, così il caricatore copia pagine intere;
 - PICK.bin: il set di caratteri della scelta dei bonus, la pagina $FF00 e il titolo dell'attract
   (c64/gen/pick_bank.bin), nella ROML del banco PICK_BANK;
@@ -50,8 +51,9 @@ HW_EASYFLASH = 32
 CHIP_FLASH = 2
 HALF = 0x2000
 PRG_START = 0x0800
-PRG_END = 0xD100   # poi le routine dell'avvio (fino a $D7FF), le mosse speciali (fino a $DBFF) e
-BOOT_END = 0xE000  # la classifica (fino a $DFFF), che restano nella flash
+PRG_END = 0xD100   # poi le routine dell'avvio (fino a $D7FF), le mosse speciali (fino a $DBFF),
+BOOT_END = 0x10000 # la classifica, i caratteri di PERFECT e il GAME OVER (nel banco 4, anche nella
+                   # ROMH), che restano nella flash
 SRC = Path(__file__).resolve().parent.parent / "c64" / "src"
 
 

@@ -136,7 +136,9 @@ fn ui(m: &mut Machine) -> bool {
         println!("FAIL: dopo 35 frame del logo {shown} righe scoperte invece di circa 25");
         return false;
     }
-    // tutte le voci del menu, avanti e indietro
+    // tutte le voci del menu, avanti e indietro (il codice del menu dalla cartuccia: lì c'è stato
+    // il GAME OVER)
+    m.call("enter_menu");
     for sel in 0..9u8 {
         for dir in [1u8, 0xFF] {
             for _ in 0..4 {
@@ -350,17 +352,8 @@ fn volume_ui(m: &mut Machine) -> Result<(), String> {
 /// coperto), nessuna voce del menu che le spenga, i gesti del joystick letti come in partita
 /// (read_input, build_input) per tutti e due i giocatori, la scritta e la barra.
 fn supers_ui(m: &mut Machine) -> Result<String, String> {
-    let (run, code) = m.moved_segment("SMCODE").map(|(a, c)| (a, c.to_vec())).ok_or("niente SMCODE")?;
-    m.cpu.mem[run as usize..run as usize + code.len()].fill(0);
-    let pages = code.len().div_ceil(256);
-    for page in 0..pages {
-        m.cpu.a = page as u8;
-        m.call("sm_page");
-    }
-    if m.cpu.mem[run as usize..run as usize + code.len()] != code[..] {
-        return Err("sm_page non copia il codice delle mosse dalla cartuccia".into());
-    }
-    // sempre accese: nessuna voce del menu le cambia
+    // sempre accese: nessuna voce del menu le cambia (il menu gira dove poi vanno le mosse)
+    m.call("enter_menu");
     m.write_u8("cfg_super", 0, 1);
     for sel in 0..9u8 {
         for dir in [1u8, 0xFF] {
@@ -371,6 +364,16 @@ fn supers_ui(m: &mut Machine) -> Result<String, String> {
     }
     if m.read_u8("cfg_super", 0) != 1 {
         return Err("una voce del menu spegne le mosse speciali".into());
+    }
+    let (run, code) = m.moved_segment("SMCODE").map(|(a, c)| (a, c.to_vec())).ok_or("niente SMCODE")?;
+    m.cpu.mem[run as usize..run as usize + code.len()].fill(0);
+    let pages = code.len().div_ceil(256);
+    for page in 0..pages {
+        m.cpu.a = page as u8;
+        m.call("sm_page");
+    }
+    if m.cpu.mem[run as usize..run as usize + code.len()] != code[..] {
+        return Err("sm_page non copia il codice delle mosse dalla cartuccia".into());
     }
     // gesti: partita NEXT con le mosse, palla in gioco, niente di armato
     let (up, down, left, right, fire) = (0x01u8, 0x02u8, 0x04u8, 0x08u8, 0x10u8);
@@ -444,27 +447,125 @@ fn supers_ui(m: &mut Machine) -> Result<String, String> {
     if got != activate {
         return Err(format!("gesto durante la battuta: comandi {got:#04x}"));
     }
-    // scritta: "P2 MAX RISING STRIKE!" gialla nella riga 23, poi via con label_erase
-    let row = 0xC000 + 23 * 40;
-    m.call("clear_screen");
-    m.write_u8("lb_bonus", 0, 0x84);
-    m.write_u8("lb_player", 0, 4);
-    m.write_u8("lb_frames", 0, 0);
-    m.call("label_draw");
-    let text = "P2 MAX RISING STRIKE!";
-    let col = 20 - text.len() / 2;
+    // scritta del bonus: si accende e si spegne come un vecchio televisore (label_step, un passo a
+    // frame): la riga che si allarga, i blocchi, la scritta gialla, i blocchi, la riga che si
+    // stringe, il trattino, poi via (label_erase)
     let font = m.addr("font_map");
-    let want: Vec<u8> = text.bytes().map(|c| m.cpu.read(font + (c - 32) as u16)).collect();
-    if m.cpu.mem[row + col..row + col + text.len()] != want[..]
-        || m.read_u8("lb_len", 0) as usize != text.len()
-        || (0..text.len()).any(|i| m.cpu.read((0xD800 + 23 * 40 + col + i) as u16) & 15 != 7)
-    {
-        return Err("la scritta della mossa non è \"P2 MAX RISING STRIKE!\" gialla al centro".into());
+    let ch = |m: &Machine, c: u8| m.cpu.read(font + (c - 32) as u16);
+    let (grid_t, solid, dash) = (176u8, 255u8, ch(m, b'-'));
+    m.call("clear_screen");
+    m.write_u8("lb_bonus", 0, 1); // SMASH
+    m.write_u8("lb_player", 0, 4);
+    m.call("label_layout");
+    let (col, len) = (m.read_u8("lb_col", 0) as usize, m.read_u8("lb_len", 0) as usize);
+    let text = "P2 SMASH!";
+    if len != text.len() || col != 20 - text.len() / 2 {
+        return Err(format!("scritta del bonus: colonna {col} e lunghezza {len}"));
+    }
+    let row = 0xC000 + 23 * 40;
+    let mut steps = Vec::new();
+    m.write_u8("lb_key", 0, 0xFF);
+    for left in (1..60u8).rev() {
+        m.write_u8("lb_frames", 0, left);
+        m.cpu.frame_start = Some(m.cpu.cycles);
+        m.call("label_step");
+        m.cpu.frame_start = None;
+        let cells = &m.cpu.mem[row + col..row + col + len];
+        let count = |c: u8| cells.iter().filter(|&&x| x == c).count();
+        let step = if cells.iter().zip(text.bytes()).all(|(&x, t)| x == ch(m, t)) {
+            if (0..len).any(|i| m.cpu.read((0xD800 + 23 * 40 + col + i) as u16) & 15 != 7) {
+                return Err("scritta del bonus non gialla".into());
+            }
+            "scritta".to_string()
+        } else if count(solid) == len {
+            "blocchi".to_string()
+        } else if count(grid_t) > 0 {
+            format!("riga {}", count(grid_t))
+        } else if count(dash) == 1 {
+            "trattino".to_string()
+        } else {
+            format!("{cells:?}")
+        };
+        if steps.last() != Some(&step) {
+            steps.push(step);
+        }
+    }
+    let want = ["riga 3", "riga 5", "riga 7", "riga 9", "blocchi", "scritta", "blocchi", "riga 9", "riga 7", "riga 5", "riga 3", "trattino"];
+    if steps != want {
+        return Err(format!("scritta del bonus: passi {steps:?} invece di {want:?}"));
     }
     m.call("label_erase");
-    if m.cpu.mem[row + col..row + col + text.len()].iter().any(|&c| c > 2) {
-        return Err("label_erase non toglie la scritta della mossa".into());
+    if m.cpu.mem[row + col..row + col + len].iter().any(|&c| c > 2) {
+        return Err("label_erase non toglie la scritta del bonus".into());
     }
+    // scritte delle mosse (sm_labels), nella metà di chi la fa, righe 4 (lettere) e 5 (trattini):
+    // P2 arma una MAX RISING STRIKE con la palla a metà campo che va verso di lui, i trattini (due
+    // righe: BAR_C0) arrivano dal suo lato e poi si accendono; al colpo i blocchi, la scritta gialla,
+    // via dopo un secondo. P1 arma una mossa e la perde (punto): via i trattini.
+    let bar_c0 = assets_supers().0;
+    let frames = |m: &mut Machine, n: u32| {
+        for _ in 0..n {
+            m.cpu.frame_start = Some(m.cpu.cycles);
+            m.call("sm_labels");
+            m.cpu.frame_start = None;
+        }
+    };
+    m.call("clear_screen");
+    for (name, o, v) in [("sm_on", 0u16, 1u8), ("mv_st", 0, 0), ("mv_st", 1, 0), ("sm_arm", 0, 0), ("sm_arm", 4, 4), ("sm_fl", 0, 0)] {
+        m.write_u8(name, o, v);
+    }
+    m.write_i32("ball_vx", 0, 0x0002_0000);
+    m.write_i32("ball_x", 0, 160 << 16);
+    let title = "MAX RISING STRIKE";
+    let (r4, r5) = (0xC000 + 4 * 40 + 21, 0xC000 + 5 * 40 + 21);
+    frames(m, 3);
+    let drawn = |m: &Machine| (0..title.len()).filter(|&i| m.cpu.mem[r5 + i] == bar_c0).count();
+    let first = drawn(m);
+    if first == 0 || first > 3 || m.cpu.mem[r5 + title.len() - 1] != bar_c0 {
+        return Err(format!("mossa armata: dopo 3 frame {first} trattini, non dal lato destro"));
+    }
+    frames(m, 40);
+    let yellow = (0..title.len()).filter(|&i| m.cpu.read((0xD800 + 5 * 40 + 21 + i) as u16) & 15 == 7).count();
+    let gaps_ok = title.bytes().enumerate().all(|(i, c)| (c == b' ') == (m.cpu.mem[r5 + i] != bar_c0));
+    if drawn(m) != 15 || !gaps_ok || !(6..=8).contains(&yellow) || m.cpu.mem[r4..r4 + title.len()].iter().any(|&c| c != 0) {
+        return Err(format!(
+            "mossa armata: {} trattini, {yellow} gialli (con la palla a metà campo): riga 5 {:?}, colori {:?}",
+            drawn(m),
+            &m.cpu.mem[r5..r5 + title.len()],
+            (0..title.len()).map(|i| m.cpu.read((0xD800 + 5 * 40 + 21 + i) as u16) & 15).collect::<Vec<_>>()
+        ));
+    }
+    // il colpo: la mossa in volo, la palla che va verso P1
+    m.write_u8("sm_arm", 4, 0);
+    m.write_u8("sm_fl", 0, 2 + 4);
+    m.write_i32("ball_vx", 0, -0x0002_0000);
+    frames(m, 1);
+    let letters: Vec<usize> = title.bytes().enumerate().filter(|&(_, c)| c != b' ').map(|(i, _)| i).collect();
+    if !letters.iter().all(|&i| m.cpu.mem[r4 + i] == 255) {
+        return Err("colpo della mossa: niente blocchi al posto delle lettere".into());
+    }
+    frames(m, 5);
+    let want: Vec<u8> = title.bytes().map(|c| ch(m, c)).collect();
+    if m.cpu.mem[r4..r4 + title.len()] != want[..] || letters.iter().any(|&i| m.cpu.read((0xD800 + 4 * 40 + 21 + i) as u16) & 15 != 7) {
+        return Err("colpo della mossa: la scritta non è \"MAX RISING STRIKE\" gialla a destra".into());
+    }
+    frames(m, 50);
+    if m.read_u8("mv_st", 1) != 0 || m.cpu.mem[r4..r4 + title.len()].iter().chain(&m.cpu.mem[r5..r5 + title.len()]).any(|&c| c != 0) {
+        return Err("colpo della mossa: la scritta resta dopo un secondo".into());
+    }
+    m.write_u8("sm_arm", 0, 1);
+    m.write_u8("sm_fl", 0, 0);
+    frames(m, 30);
+    let l5 = 0xC000 + 5 * 40 + 4;
+    if m.cpu.mem[l5..l5 + 13].iter().filter(|&&c| c == 176).count() != 12 {
+        return Err("STRAIGHT SHOT di P1 armata: non 12 trattini a sinistra".into());
+    }
+    m.write_u8("sm_arm", 0, 0);
+    frames(m, 1);
+    if m.read_u8("mv_st", 0) != 0 || m.cpu.mem[l5..l5 + 13].iter().any(|&c| c != 0) {
+        return Err("mossa persa senza colpo: i trattini restano".into());
+    }
+    m.write_u8("sm_on", 0, 0);
     // barra: 40 su 64, cioè la prima metà gialla (un settore pieno), poi 8 su 16 (4 pixel) e vuota
     let c0 = assets_supers().0;
     m.write_u8("sm_meter", 4, 40);
@@ -1020,7 +1121,7 @@ fn challenger(m: &mut Machine) -> Result<(), String> {
     for (k, b) in champ.iter().enumerate() {
         m.write_u8("pk_chosen", k as u16, *b as u8);
     }
-    m.write_u8("pk_cursor", 0, PaddleKind::Blaster as u8);
+    m.write_u8("cfg_kinds", 0, PaddleKind::Blaster as u8);
     m.call("ch_start");
     step(m, 3);
     expect("scena della presentazione", state(m) as i64, ST_INTRO as i64)?;
@@ -1050,6 +1151,14 @@ fn challenger(m: &mut Machine) -> Result<(), String> {
     expect("dopo HERE COMES A NEW CHALLENGER!", state(m) as i64, ST_PICK as i64)?;
     expect("lato che non sceglie", m.read_u8("pk_fixed", 0) as i64, 0)?;
     expect("bonus del campione", m.read_u8("pk_count", 0) as i64, 3)?;
+    // prima la racchetta (quella del campione già confermata), poi i bonus
+    expect("prima scelta dello sfidante: la racchetta", m.read_u8("pk_kind", 0) as i64, 1)?;
+    expect("racchetta del campione", m.read_u8("pk_cursor", 0) as i64, PaddleKind::Blaster as i64)?;
+    let mut frames = 0;
+    while m.read_u8("pk_kind", 0) != 0 && frames < 1000 {
+        step(m, 1);
+        frames += 1;
+    }
     // colonne: quelli del campione accesi (bianchi), dello sfidante solo la riga del cursore
     step(m, 5);
     for (i, b) in Bonus::PICKABLE.iter().enumerate() {
@@ -1077,6 +1186,7 @@ fn challenger(m: &mut Machine) -> Result<(), String> {
         PaddleKind::Blaster as i64,
     )?;
     expect("CPU nella sfida", m.read_u8("cpu_side", 0) as i64, 0xFF)?;
+    expect("musica della sfida: il tema di un avversario", m.read_u8("sid_song_n", 0) as i64, SID_SONG_THEME as i64)?;
     expect("punti della sfida", m.read_u8("win_points", 0) as i64, RUNGS[0].points as i64)?;
     let chal: Vec<Bonus> = (0..3).filter_map(|k| bonus(m.read_u8("cfg_loadout", 4 + k))).collect();
     let chal_kind = PaddleKind::ALL[m.read_u8("cfg_kinds", 4) as usize % 7];
@@ -1308,8 +1418,9 @@ impl WarpCheck {
 /// Cometa del SUPER in partita NEXT: la palla è uno sprite della coda (cache a $E000), hires ed
 /// espanso, con la testa (5x5 pixel doppi) e almeno in metà dei frame anche la coda dietro, in
 /// quasi tutti i frame del volo tranne quelli dopo un rimbalzo in cui la cometa nuova non è ancora
-/// disegnata (lì la palla semplice) e il primo, carico. Mai uno sprite della coda con la palla
-/// nell'angolo di un'altra direzione: la coda finirebbe davanti alla palla.
+/// disegnata (lì la palla semplice): il primo, e quelli dopo un frame troppo carico per disegnarla
+/// (trail_end la disegna solo se comincia entro TRAIL_LATE, circa 12.500 cicli). Mai uno sprite
+/// della coda con la palla nell'angolo di un'altra direzione: la coda finirebbe davanti alla palla.
 #[derive(Default)]
 struct CometCheck {
     frames: u32,
@@ -1317,6 +1428,9 @@ struct CometCheck {
     tailed: u32,
     /// palla semplice dopo un cambio di direzione (sprite della coda di un'altra direzione)
     waiting: u32,
+    /// di questi, quelli dopo un frame già in attesa che aveva il tempo per disegnarla
+    missed: u32,
+    prev_waiting: bool,
     /// sprite della coda con la palla nell'angolo di un'altra direzione
     wrong: u32,
     /// frame con uno sprite della coda (grigia o cometa) e quelli nell'angolo sbagliato
@@ -1336,8 +1450,13 @@ impl CometCheck {
     /// SP_TRAIL0 e TRAIL_BUFS di video.s: sprite della coda a $E000
     const SP_TRAIL0: u8 = 128;
     const TRAIL_BUFS: u8 = 4;
+    /// cicli del frame sotto i quali trail_end ha avuto il tempo di disegnare (TRAIL_LATE di video.s:
+    /// comincia entro circa 12.500 cicli)
+    const LIGHT: u64 = 12_000;
 
-    fn check(&mut self, m: &Machine) {
+    /// `prev`: cicli del frame prima (è lì che trail_end disegna la cometa che si vede in questo).
+    fn check(&mut self, m: &Machine, prev: u64) {
+        let waited = std::mem::replace(&mut self.prev_waiting, false);
         let ptr = m.read_u8("sh_ptr", 0);
         if m.read_u8("sh_enable", 0) & 1 != 0 && (Self::SP_TRAIL0..Self::SP_TRAIL0 + Self::TRAIL_BUFS).contains(&ptr) {
             self.trails += 1;
@@ -1355,7 +1474,11 @@ impl CometCheck {
         let hires = m.read_u8("sh_mc", 0) & 1 == 0;
         let same_dir = m.read_u8("tr_shdir", 0) == trail_dir(m);
         if !(Self::SP_TRAIL0..Self::SP_TRAIL0 + Self::TRAIL_BUFS).contains(&ptr) || !expanded || !hires {
-            self.waiting += !same_dir as u32;
+            if !same_dir {
+                self.waiting += 1;
+                self.missed += (waited && prev < Self::LIGHT) as u32;
+                self.prev_waiting = true;
+            }
             return;
         }
         if !same_dir {
@@ -1384,16 +1507,16 @@ impl CometCheck {
             return false;
         }
         let flying = self.frames - self.waiting;
-        if self.wrong > 0 || self.shown * 10 < flying * 9 || self.tailed * 2 < flying || self.waiting * 3 > self.frames {
+        if self.wrong > 0 || self.shown * 10 < flying * 9 || self.tailed * 2 < flying || self.missed * 10 > self.frames {
             println!(
-                "FAIL: NEXT: cometa del SUPER in {} frame su {} ({} in attesa dopo un rimbalzo), con la coda in {}, con la palla nell'angolo sbagliato in {}",
-                self.shown, self.frames, self.waiting, self.tailed, self.wrong
+                "FAIL: NEXT: cometa del SUPER in {} frame su {} ({} in attesa dopo un rimbalzo, {} con il tempo per disegnarla), con la coda in {}, con la palla nell'angolo sbagliato in {}",
+                self.shown, self.frames, self.waiting, self.missed, self.tailed, self.wrong
             );
             return false;
         }
         println!(
-            "  coda della palla: {} frame, mai dalla parte sbagliata; cometa del SUPER in {} frame su {} (palla semplice in {} dopo un rimbalzo, finché la cometa nuova non è disegnata)",
-            self.trails, self.shown, self.frames, self.waiting
+            "  coda della palla: {} frame, mai dalla parte sbagliata; cometa del SUPER in {} frame su {} (palla semplice in {} dopo un rimbalzo, finché la cometa nuova non è disegnata; {} con il tempo per disegnarla)",
+            self.trails, self.shown, self.frames, self.waiting, self.missed
         );
         true
     }
@@ -1511,7 +1634,7 @@ impl SuperFrames {
                 self.yellow_pad += 1;
             }
         }
-        if m.read_u8("lb_frames", 0) != 0 && m.read_u8("lb_bonus", 0) & 0x80 != 0 {
+        if m.read_u8("mv_st", 0) | m.read_u8("mv_st", 1) != 0 {
             self.labels += 1;
         }
         if m.read_u8("sm_fl", 0) != 0 && m.read_u8("sh_col", 0) & 15 == 7 {
@@ -1594,6 +1717,10 @@ fn frames(m: &mut Machine) -> bool {
     let late_ticks = std::cell::Cell::new((0u32, 0u32));
     // frame di gioco che tengono gli sprite del frame prima (tick pesantissimo), su quelli di gioco
     let kept_sprites = std::cell::Cell::new((0u32, 0u32));
+    // scritte del bonus (label_step, lb_key): passi visti dall'ultima attivazione (bit 0-4: la riga
+    // 0-3 e i blocchi), passo del frame prima, scritte arrivate al testo con tutti i passi, scritte
+    // arrivate al testo, frame dall'attivazione, i più per arrivare al testo
+    let bonus_labels = std::cell::Cell::new((0u8, 0xFFu8, 0u32, 0u32, 0u32, 0u32));
     // tempo della musica: frame al match point, frame nel bullet time, credito massimo di passi
     // in più ancora da fare (non deve crescere)
     let tempo = std::cell::Cell::new((0u32, 0u32, 0u8));
@@ -1625,17 +1752,37 @@ fn frames(m: &mut Machine) -> bool {
         m.cpu.frame_start = Some(start); // $D012 dà la riga del raster
         let ef = m.cpu.ef_cycles;
         // sentinella: compute_sprites azzera pd_made; se resta, il frame ha tenuto gli sprite di
-        // prima (scene_done, dopo un tick pesantissimo)
+        // prima (scene_done, dopo un tick pesantissimo). Non nel GAME OVER (8): lì gli sprite li
+        // tiene il suo codice (play.s, ov_scene)
         m.write_u8("pd_made", 0, 0xAA);
         let c = m.cpu.call(addr, 1_000_000)?;
-        if matches!(m.read_u8("state", 0), 4 | 6 | 7 | 8) {
+        if m.read_u8("state", 0) == 7 && m.read_u8("m_next", 0) != 0 {
+            let (mut seen, prev, mut full, mut shown, mut open, mut slowest) = bonus_labels.get();
+            let key = m.read_u8("lb_key", 0);
+            open += 1;
+            match key {
+                0xFF => (seen, open) = (0, 0),
+                0..=4 => seen |= 1 << key,
+                5 if prev != 5 => {
+                    shown += 1;
+                    full += (seen == 0x1F) as u32;
+                    slowest = slowest.max(open);
+                }
+                _ => {}
+            }
+            bonus_labels.set((seen, key, full, shown, open, slowest));
+        }
+        if matches!(m.read_u8("state", 0), 4 | 6 | 7) {
             let (kept, all) = kept_sprites.get();
             kept_sprites.set((kept + (m.read_u8("pd_made", 0) == 0xAA) as u32, all + 1));
         }
         m.cpu.frame_start = None;
-        // presentazione nuova: la copia del file voce dalla cartuccia (circa 60.000 cicli, tre frame
-        // a schermo fermo) è un caricamento, fuori dal budget
-        let c = if m.read_u8("state", 0) == ST_INTRO && state != ST_INTRO as usize {
+        // presentazione nuova, o la sfida dopo le scelte dello sfidante (il tema di un avversario a
+        // caso): la copia del file voce dalla cartuccia (circa 60.000 cicli, tre frame a schermo
+        // fermo) è un caricamento, fuori dal budget
+        let now = m.read_u8("state", 0);
+        let file = m.cpu.ef_cycles - ef >= 50_000;
+        let c = if (now == ST_INTRO && state != ST_INTRO as usize) || file {
             voiced.0 += 1;
             c - (m.cpu.ef_cycles - ef)
         } else {
@@ -1659,15 +1806,15 @@ fn frames(m: &mut Machine) -> bool {
             slow + (m.read_u8("sid_slow", 0) != 0) as u32,
             extra.max(m.read_u8("sid_extra", 0)),
         ));
-        // il tema suona solo in CHALLENGE contro la CPU (non nella sfida tra due giocatori, né nelle
-        // altre partite), e lì sempre: ogni presentazione ha il file voce
+        // il tema suona solo in CHALLENGE (contro la CPU quello dell'avversario, nella sfida tra due
+        // giocatori quello di un avversario a caso), e lì sempre; mai nelle altre partite
         let theme = m.read_u8("sid_song_n", 0) == SID_SONG_THEME;
-        let ch_cpu = m.read_u8("cg_active", 0) == 1;
+        let ch_cpu = m.read_u8("cg_active", 0) != 0;
         if m.read_u8("state", 0) == 7 && !theme_forced.get() {
             if theme != ch_cpu {
                 return Err(format!(
                     "partita {} il tema di CHALLENGE",
-                    if theme { "fuori da CHALLENGE contro la CPU con" } else { "di CHALLENGE contro la CPU senza" }
+                    if theme { "fuori da CHALLENGE con" } else { "di CHALLENGE senza" }
                 ));
             }
             if theme {
@@ -1686,7 +1833,12 @@ fn frames(m: &mut Machine) -> bool {
         }
         let mut b = border.get();
         let brd = m.read_u8("sh_brd", 0);
-        if matches!(now, 4 | 6 | 7 | 8) {
+        if now == ST_OVER && brd == 0 {
+            // GAME OVER: nero dalla chiusura da televisore (ov_close)
+        } else if brd == 0 && now as usize != state {
+            // primo frame di una scena di partita (begin_match, pesante): border_game lo colora al
+            // prossimo, quando il frame ha tempo
+        } else if matches!(now, 4 | 6 | 7 | 8) {
             // (nel bullet time il grigio pulsante comincia dallo scuro: qui frame_count è fermo)
             let bullet = m.read_u8("sid_slow", 0) & 0x80 != 0;
             let k = match brd {
@@ -1795,9 +1947,9 @@ fn frames(m: &mut Machine) -> bool {
     let joy = |m: &mut Machine, rng: &mut Rng| {
         let mut joy = 0xFFu8;
         let diff = fixed::floor(m.read_i32("ball_y", 0)) - fixed::floor(m.read_i32("pad_y", 0));
-        // a partita finita (attract e menu) il joystick resta fermo: il fuoco nelle strisce
-        // aprirebbe il menu, che qui non si misura
-        if m.read_u8("state", 0) <= ST_MENU {
+        // a partita finita (attract, menu e classifica) il joystick resta fermo: il fuoco nelle
+        // strisce o nella classifica aprirebbe il menu, che qui non si misura
+        if m.read_u8("state", 0) <= ST_MENU || m.read_u8("state", 0) == ST_SCORES {
             return joy;
         }
         if m.read_u8("state", 0) >= 9 {
@@ -1826,6 +1978,7 @@ fn frames(m: &mut Machine) -> bool {
         }
         joy
     };
+    let mut prev_cycles = 0;
     for f in 0..50 * 30 + 50 * 60 * 3 {
         // le capsule raccolte dipendono da come va la partita: se il salto non è ancora capitato,
         // ogni 10 secondi un TELEPORT nella riserva vuota di P1, come preso da una capsula
@@ -1838,20 +1991,24 @@ fn frames(m: &mut Machine) -> bool {
             m.write_u8("nx_res", 0, 0);
         }
         m.cpu.joy_port2 = joy(m, &mut rng);
-        match frame(m, &mut stats, &mut voiced) {
-            Ok(c) => bullet_frame(m, c, &mut bullet),
+        let c = match frame(m, &mut stats, &mut voiced) {
+            Ok(c) => {
+                bullet_frame(m, c, &mut bullet);
+                c
+            }
             Err(e) => {
                 println!("FAIL: NEXT: {e}");
                 return false;
             }
-        }
+        };
         if m.read_u8("state", 0) == 7 && m.read_u8("m_next", 0) != 0 {
             next_on = true;
             next_pads.check(m);
             warp.check(m);
-            comet.check(m);
+            comet.check(m, prev_cycles);
             rings = rings.max(m.read_u8("fx_pages", 0));
         }
+        prev_cycles = c;
     }
     m.cpu.joy_port2 = 0xFF;
     if !next_on {
@@ -2125,6 +2282,16 @@ fn frames(m: &mut Machine) -> bool {
     println!("  sprite del frame prima (dopo un tick pesantissimo) in {kept} frame su {all}");
     if kept * 500 > all {
         println!("FAIL: troppi frame con gli sprite del frame prima (oltre lo 0,2%)");
+        return false;
+    }
+    let (_, _, full, shown, _, slowest) = bonus_labels.get();
+    println!(
+        "  scritte del bonus: {shown} a schermo, {full} accese per intero (riga e blocchi prima del testo), al testo in al più {slowest} frame"
+    );
+    // (6 frame senza ritardi, LB_OPEN + LB_BLOCK di pick.s; il testo aspetta un frame con tempo,
+    // e con il BULLET sempre in gioco può volerci quasi tutta la scritta: solo stampato)
+    if shown == 0 || full * 10 < shown * 9 {
+        println!("FAIL: scritte del bonus mai viste, o accese saltando dei passi (frame in ritardo)");
         return false;
     }
     let (fast, slow, extra) = tempo.get();
@@ -4436,13 +4603,85 @@ const OV_YOU_WIN: u8 = 1;
 const OV_P2_WINS: u8 = 3;
 const OV_CPU_WINS: u8 = 4;
 
-/// Le scritte grandi `labels` del GAME OVER, la prima nelle righe 10-11 e la seconda nelle 13-14,
-/// centrate (colonna (40 - larghezza) / 2); con una sola, nelle righe 13-14 nessuna.
-fn over_labels(m: &Machine, labels: &[u8]) -> Result<(), String> {
-    over_labels_at(m, labels, 10)
+/// Frame di nero alla fine del GAME OVER con GAME OVER in alto (AT_GAME_OVER_BLACK di
+/// c64/gen/assets.inc, da attract.json).
+fn over_black_frames() -> u32 {
+    let inc = std::fs::read_to_string(c64_dir().join("gen/assets.inc")).unwrap_or_default();
+    inc_const(&inc, "AT_GAME_OVER_BLACK").unwrap_or(0) as u32
 }
 
-/// Come `over_labels`, con la prima scritta dalla riga `top`.
+/// Un GAME OVER animato (play.s, ov_scene), guardato frame per frame: le scritte `labels` (dalla
+/// riga `top`) devono essere tutte a schermo insieme in almeno un frame. Con GAME OVER in alto la
+/// mezzeria è già spenta quando le scritte sono finite, gli sprite si spengono e alla fine lo
+/// schermo resta tutto nero per circa AT_GAME_OVER_BLACK frame; senza, mai tutto nero. Dopo la
+/// scossa di PERFECT lo scroll fine torna quello di sempre.
+struct OverWatch {
+    labels: Vec<u8>,
+    top: u16,
+    seen: bool,
+    black: u32,
+    frames: u32,
+}
+
+impl OverWatch {
+    fn new(labels: &[u8], top: u16) -> Self {
+        Self { labels: labels.to_vec(), top, seen: false, black: 0, frames: 0 }
+    }
+
+    fn title(&self) -> bool {
+        self.labels[0] == OV_GAME_OVER
+    }
+
+    /// Dopo ogni frame in cui lo stato è ancora ST_OVER.
+    fn frame(&mut self, m: &Machine) -> Result<(), String> {
+        self.frames += 1;
+        // (finché le pagine non sono tutte copiate la mappa di PERFECT in memoria non c'è)
+        if m.read_u8("ov_pg", 0) < 4 {
+            return Ok(());
+        }
+        if over_labels_at(m, &self.labels, self.top).is_ok() {
+            if !self.seen && self.title() {
+                // la mezzeria fuori dal riquadro (righe 9-15) già spenta
+                let net = (0..25u16).filter(|r| !(9..16).contains(r)).any(|r| {
+                    let a = 0xC000 + r as usize * 40;
+                    m.cpu.mem[a + 19] == 1 || m.cpu.mem[a + 20] == 2
+                });
+                if net {
+                    return Err(format!("frame {}: scritte finite con la mezzeria ancora accesa", self.frames));
+                }
+                if m.read_u8("sh_enable", 0) != 0 {
+                    return Err(format!("frame {}: scritte finite con gli sprite ancora accesi", self.frames));
+                }
+            }
+            self.seen = true;
+        }
+        // (prima delle scritte lo schermo può essere vuoto: nei banchi di prova non c'è il campo)
+        if self.seen && m.cpu.mem[0xC000..0xC3E8].iter().all(|&c| c == 0) {
+            self.black += 1;
+        }
+        Ok(())
+    }
+
+    fn finish(&self, m: &Machine) -> Result<String, String> {
+        if !self.seen {
+            return Err(format!("scritte {:?} mai tutte a schermo in {} frame", self.labels, self.frames));
+        }
+        let want = over_black_frames();
+        if self.title() && (self.black + 3 < want || self.black > want + 1) {
+            return Err(format!("{} frame di schermo nero alla fine invece di circa {want}", self.black));
+        }
+        if !self.title() && self.black > 0 {
+            return Err(format!("{} frame di schermo nero senza GAME OVER in alto", self.black));
+        }
+        if m.cpu.mem[0xD016] & 7 != 0 {
+            return Err(format!("scroll fine rimasto a {}", m.cpu.mem[0xD016] & 7));
+        }
+        Ok(format!("{} frame, {} neri", self.frames, self.black))
+    }
+}
+
+/// Le scritte grandi `labels` del GAME OVER, la prima dalla riga `top` e la seconda tre righe sotto,
+/// centrate (colonna (40 - larghezza) / 2); con una sola, nelle righe 13-14 nessuna.
 fn over_labels_at(m: &Machine, labels: &[u8], top: u16) -> Result<(), String> {
     let label_at = |k: u8, row: u16| -> Result<bool, String> {
         let w = m.image_u8("over_w", k as u16) as u16;
@@ -4521,14 +4760,18 @@ fn ending_ui(m: &mut Machine) -> Result<String, String> {
         }
         m.call("clear_screen"); // (le scritte del caso prima)
         m.call("enter_over");
-        over_labels(m, labels).map_err(|e| format!("GAME OVER, {what}: {e}"))?;
         m.cpu.watch = Some((0xD418, 0xD418));
         m.cpu.writes.clear();
         let mut n = 0;
-        while m.read_u8("state", 0) == ST_OVER && n < 200 {
+        let mut watch = OverWatch::new(labels, 10);
+        while m.read_u8("state", 0) == ST_OVER && n < 300 {
             full_frame(m).map_err(|e| format!("GAME OVER, {what}, frame {n} (win_pg {}): {e}", m.read_u8("win_pg", 0)))?;
+            if m.read_u8("state", 0) == ST_OVER {
+                watch.frame(m).map_err(|e| format!("GAME OVER, {what}: {e}"))?;
+            }
             n += 1;
         }
+        watch.finish(m).map_err(|e| format!("GAME OVER, {what}: {e}"))?;
         let got: Vec<u8> = m.cpu.writes.iter().map(|w| w.1).collect();
         m.cpu.watch = None;
         let said = you_win_count(&got)?;
@@ -4553,35 +4796,78 @@ fn ending_ui(m: &mut Machine) -> Result<String, String> {
         }
         m.call("math_ensure");
     }
-    // continue lasciato scadere: GAME OVER (righe 11-12), poi iniziali o classifica
+    // continue con Start dopo un quarto di secondo (con il 9 a schermo): la presentazione
+    quiet_inputs(m);
+    let free = m.read_u8("opt_free", 0);
+    for (name, v) in [("cg_active", 1u8), ("ch_level", 2), ("ch_side", 0), ("opt_free", 1)] {
+        m.write_u8(name, 0, v);
+    }
+    m.call("enter_cont");
+    for n in 0..30u32 {
+        m.cpu.joy_port2 = if n == 15 { !0x10 } else { 0xFF };
+        full_frame(m).map_err(|e| format!("continue con Start, frame {n}: {e}"))?;
+        if m.read_u8("state", 0) != ST_CONT {
+            break;
+        }
+    }
+    m.cpu.joy_port2 = 0xFF;
+    if m.read_u8("state", 0) != ST_INTRO {
+        return Err(format!("continue: Start dopo un quarto di secondo non vale (stato {})", m.read_u8("state", 0)));
+    }
+    m.write_u8("opt_free", 0, free);
+    // (la presentazione appena cominciata: le tabelle dei quadrati sotto l'entrata, intro.s)
+    m.call("math_invalidate");
+    m.call("math_ensure");
+    // continue lasciato scadere: la pallina rimbalza accanto alla cifra (tocca terra a ogni
+    // secondo, gialla negli ultimi tre), poi il GAME OVER animato, poi iniziali o classifica
     quiet_inputs(m);
     for (name, v) in [("cg_active", 1u8), ("ch_level", 2), ("ch_side", 0)] {
         m.write_u8(name, 0, v);
     }
     m.call("enter_cont");
-    let (mut over_at, mut left) = (None, None);
-    for n in 0..3000u32 {
+    let (mut floor, mut lowest, mut yellow, mut white) = (0u32, 0u8, 0u32, 0u32);
+    let mut n = 0u32;
+    while m.read_u8("state", 0) == ST_CONT && n < 600 {
         full_frame(m).map_err(|e| format!("continue, frame {n}: {e}"))?;
-        if m.read_u8("state", 0) != ST_CONT {
-            left = Some(n);
-            break;
+        n += 1;
+        if m.read_u8("state", 0) != ST_CONT || m.read_u8("ch_phase", 0) != 0 {
+            continue;
         }
-        if over_at.is_none() && m.read_u8("ch_go", 0) != 0 && m.read_u8("ch_phase", 0) == 0 {
-            over_labels_at(m, &[OV_GAME_OVER], 11).map_err(|e| format!("continue scaduto: {e}"))?;
-            over_at = Some(n);
+        if m.read_u8("sh_enable", 0) & 1 == 0 {
+            return Err(format!("continue, frame {n}: pallina spenta"));
+        }
+        let y = m.read_u8("sh_y", 0);
+        lowest = lowest.max(y);
+        floor += (y == lowest) as u32;
+        match m.read_u8("sh_col", 0) & 15 {
+            1 => white += 1,
+            7 => yellow += 1,
+            c => return Err(format!("continue, frame {n}: pallina del colore {c}")),
         }
     }
-    let (Some(over_at), Some(left)) = (over_at, left) else {
-        return Err(format!("continue scaduto: GAME OVER al frame {over_at:?}, uscita al frame {left:?}"));
-    };
-    if ![ST_INITIALS, ST_SCORES].contains(&m.read_u8("state", 0)) || left - over_at < 100 {
-        return Err(format!("continue scaduto: GAME OVER per {} frame, poi lo stato {}", left - over_at, m.read_u8("state", 0)));
+    if m.read_u8("state", 0) != ST_OVER || !(8..=12).contains(&floor) || !(140..=160).contains(&yellow) || white < 300 {
+        return Err(format!(
+            "continue: dopo {n} frame lo stato {}; pallina a terra {floor} volte, gialla {yellow} frame, bianca {white}",
+            m.read_u8("state", 0)
+        ));
+    }
+    let mut watch = OverWatch::new(&[OV_GAME_OVER], 10);
+    let mut over = 0u32;
+    while m.read_u8("state", 0) == ST_OVER && over < 300 {
+        full_frame(m).map_err(|e| format!("continue scaduto, frame {over}: {e}"))?;
+        over += 1;
+        if m.read_u8("state", 0) == ST_OVER {
+            watch.frame(m).map_err(|e| format!("continue scaduto: {e}"))?;
+        }
+    }
+    let seen = watch.finish(m).map_err(|e| format!("continue scaduto: {e}"))?;
+    if ![ST_INITIALS, ST_SCORES].contains(&m.read_u8("state", 0)) {
+        return Err(format!("continue scaduto: dopo il GAME OVER lo stato {}", m.read_u8("state", 0)));
     }
     m.call("math_ensure");
     Ok(format!(
-        "finale saltato con il fuoco (frame giocati: {}), sempre con l'uscita pulita; YOU WIN nel GAME OVER solo se vince chi gioca contro la CPU (da sola e centrata), detta non all'ultimo livello; CPU WINS da sola a un livello perso, GAME OVER quando il continue scade ({} frame, poi iniziali o classifica)",
-        lines.join(", "),
-        left - over_at
+        "finale saltato con il fuoco (frame giocati: {}), sempre con l'uscita pulita; YOU WIN nel GAME OVER solo se vince chi gioca contro la CPU (da sola e centrata), detta non all'ultimo livello; CPU WINS da sola a un livello perso; continue con Start dopo un quarto di secondo, pallina che tocca terra a ogni secondo (gialla negli ultimi tre), GAME OVER animato quando scade ({seen}, poi iniziali o classifica)",
+        lines.join(", ")
     ))
 }
 
@@ -4666,7 +4952,7 @@ fn perfect_ui(m: &mut Machine) -> Result<String, String> {
         return Err("PERFECT: un carattere riusato non è l'originale".into());
     }
     const CHARSET: usize = 0xC800;
-    const OV_RUN: usize = 0xF800;
+    const OV_RUN: usize = 0xC400;
     m.call("math_ensure");
     let squares: Vec<u8> = m.cpu.mem[0xF000..0xF800].to_vec();
     let (mut worst_enter, mut worst) = (0u64, 0u64);
@@ -4707,7 +4993,7 @@ fn perfect_ui(m: &mut Machine) -> Result<String, String> {
         // i caratteri di PERFECT originali (come dopo la demo), il codice del GAME OVER cancellato
         // (BRK): deve copiarlo enter_over
         m.cpu.mem[CHARSET + 8 * c0..CHARSET + 8 * (c0 + n)].copy_from_slice(&charset[8 * c0..8 * (c0 + n)]);
-        m.cpu.mem[OV_RUN..OV_RUN + 0x200].fill(0);
+        m.cpu.mem[OV_RUN..OV_RUN + 0x400].fill(0);
         let before: Vec<u8> = m.cpu.mem[CHARSET..CHARSET + 0x800].to_vec();
         // il frame dopo l'ultimo punto
         m.write_u8("state", 0, ST_PLAY);
@@ -4719,25 +5005,27 @@ fn perfect_ui(m: &mut Machine) -> Result<String, String> {
             return Err(format!("{what}: frame del GAME OVER con lo stato {} e {c} cicli", m.read_u8("state", 0)));
         }
         worst_enter = worst_enter.max(c);
-        over_labels(m, labels).map_err(|e| format!("{what}: {e}"))?;
         let shown = labels[0] == OV_PERFECT;
-        if shown != big_codes_at(m, &perfect, 10) {
-            return Err(format!("{what}: PERFECT {} nelle righe 10-11", if shown { "non" } else { "di troppo" }));
-        }
-        for code in 0..256usize {
-            let want = if shown && (first..first + 32).contains(&code) { tile_of(code as u8) } else { before[8 * code..8 * code + 8].to_vec() };
-            if m.cpu.mem[CHARSET + 8 * code..CHARSET + 8 * code + 8] != want[..] {
-                return Err(format!("{what}: carattere {code} cambiato dal GAME OVER"));
-            }
-        }
-        if shown && perfect.iter().any(|&code| m.cpu.mem[CHARSET + 8 * code as usize..CHARSET + 8 * code as usize + 8] != tile_of(code)[..]) {
-            return Err(format!("{what}: caratteri di PERFECT sbagliati"));
-        }
         let mut frames = 0;
         let mut rebuilt = None;
-        while m.read_u8("state", 0) == ST_OVER && frames < 200 {
+        let mut watch = OverWatch::new(labels, 10);
+        while m.read_u8("state", 0) == ST_OVER && frames < 300 {
             if m.read_u8("timer", 0) == 1 {
                 rebuilt = Some(m.read_u8("math_ready", 0) != 0 && m.cpu.mem[0xF000..0xF800] == squares[..]);
+                // all'ultimo frame: PERFECT a schermo (con GAME OVER in alto lo schermo è già nero),
+                // e del set di caratteri cambiata solo la sua pagina, solo con PERFECT
+                if shown != big_codes_at(m, &perfect, 10) {
+                    return Err(format!("{what}: PERFECT {} nelle righe 10-11", if shown { "non" } else { "di troppo" }));
+                }
+                for code in 0..256usize {
+                    let want = if shown && (first..first + 32).contains(&code) { tile_of(code as u8) } else { before[8 * code..8 * code + 8].to_vec() };
+                    if m.cpu.mem[CHARSET + 8 * code..CHARSET + 8 * code + 8] != want[..] {
+                        return Err(format!("{what}: carattere {code} cambiato dal GAME OVER"));
+                    }
+                }
+                if shown && perfect.iter().any(|&code| m.cpu.mem[CHARSET + 8 * code as usize..CHARSET + 8 * code as usize + 8] != tile_of(code)[..]) {
+                    return Err(format!("{what}: caratteri di PERFECT sbagliati"));
+                }
             }
             let ef = m.cpu.ef_cycles;
             let c = full_frame(m).map_err(|e| format!("{what}, frame {frames} (win_pg {}): {e}", m.read_u8("win_pg", 0)))?;
@@ -4748,7 +5036,11 @@ fn perfect_ui(m: &mut Machine) -> Result<String, String> {
             }
             worst = worst.max(c);
             frames += 1;
+            if m.read_u8("state", 0) == ST_OVER {
+                watch.frame(m).map_err(|e| format!("{what}: {e}"))?;
+            }
         }
+        watch.finish(m).map_err(|e| format!("{what}: {e}"))?;
         let got: Vec<u8> = m.cpu.writes.iter().map(|w| w.1).collect();
         m.cpu.watch = None;
         for file in ["perfect.bin", "you_win.bin"] {
@@ -4793,8 +5085,12 @@ fn perfect_ui(m: &mut Machine) -> Result<String, String> {
     }
     m.write_u8("state", 0, ST_PLAY);
     m.write_u8("over_next", 0, 1);
-    full_frame(m)?;
-    if !big_codes_at(m, &perfect, 10) {
+    let mut stamped = false;
+    for _ in 0..60 {
+        full_frame(m)?;
+        stamped |= big_codes_at(m, &perfect, 10);
+    }
+    if !stamped {
         return Err("prima della demo: PERFECT non a schermo".into());
     }
     let labels = [assets_list("BIG_INSERT_COIN"), assets_list("BIG_PRESS_START")];

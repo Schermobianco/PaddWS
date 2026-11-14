@@ -706,6 +706,7 @@ def attract_assets(lines: list[str]) -> dict[str, bytes]:
         "AT_TITLE_FRAMES": f50(fr["title"]),
         "AT_DEMO_FRAMES": f50(fr["demo"]),
         "AT_GAME_OVER_FRAMES": f50(fr["game_over"]),
+        "AT_GAME_OVER_BLACK": f50(SPEC["game_over"]["black_frames"]),
         "AT_BOOT_LINE_FRAMES": f50(b["line_frames"]),
         "AT_BOOT_GRID_FROM": f50(b["grid_from"]),
         "AT_CURSOR_HALF": f50(b["cursor_period"] / 2),

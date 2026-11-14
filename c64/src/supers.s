@@ -32,13 +32,13 @@
 ; A schermo (sm_hud): la barra di ciascun giocatore accanto alle riserve (riga BAR_ROW, caratteri
 ; di PRESS START presi in prestito: gialla per settore pieno, cioè quando la mossa è pronta),
 ; l'icona gialla della mossa armata accanto alla racchetta (sprite dell'icona del bonus, sm_icon),
-; la racchetta gialla con la mossa di livello 2, la scritta "P1 STRAIGHT SHOT!" (o "P1 MAX ...")
-; all'attivazione, la palla gialla con la coda nel tiro della mossa e a lampi quando RISING STRIKE
+; la racchetta gialla con la mossa di livello 2, la scritta della mossa nella metà di chi la fa
+; (sm_labels: trattini da armata, la scritta al colpo), la palla gialla con la coda nel tiro della mossa e a lampi quando RISING STRIKE
 ; s'impenna. Suoni: gli effetti MOVE (attivazione) e SPECIAL (colpo) della ROM della musica, con
 ; le priorità del player Verilog.
 
 SM_RUN   = $C400                ; dove gira (paddws.cfg, SMRAM)
-SM_IMG   = $D800                ; dove sta nel .prg (SMIMG), poi nella flash
+SM_IMG   = $D500                ; dove sta nel .prg (SMIMG), poi nella flash
 SM_BANK  = PRG_BANK + (SM_IMG - $0800) / $4000
 SM_SRC   = $80 + ((SM_IMG - $0800) .mod $4000) / 256
 SM_PAGES = >(__SMCODE_SIZE__ + 255)
@@ -89,8 +89,6 @@ sm_rise:   .res 1
 cpu_wrise: .res 8               ; CPU: al tick prima un RISING STRIKE doveva ancora impennarsi
 sm_age:    .res 8               ; joystick: frame da giù, giù-avanti, avanti tenuti (passo 4)
 sm_shown:  .res 8               ; barra a schermo + 1 (0 = da disegnare)
-sm_lnew:   .res 1               ; scritta da mostrare: $80 + mossa armata (sm_tick)
-sm_lside:  .res 1
 sm_fxp:    .res 1               ; effetto da suonare (SFX_*)
 sm_flash:  .res 1
 sm_icons:  .res 1               ; icone già preparate
@@ -206,63 +204,441 @@ min_tab: .dword T_SM_MIN_STRAIGHT, T_SM_MIN_RISE
     rts
 .endproc
 
-; Scritta della mossa attivata (label_draw con il bit 7 di lb_bonus: $80 + mossa armata) nella
-; riga LABEL_ROW: "P1 STRAIGHT SHOT!", con "MAX" davanti al livello 2, gialla.
-.proc sm_label
-    lda lb_bonus
-    and #$7f
-    sta m_lo                    ; 1-4
-    lsr a                       ; C = 1: livello 1
-    lda #3 + 14
-    bcs :+
-    lda #3 + 4 + 14
-:   sta lb_len
+; Scritte delle mosse speciali, una per giocatore come sul PC (next_ui.rs, draw_labels), nella metà
+; del suo lato: lettere nella riga MV_ROW, trattini sotto (CH_GRID_T, due righe con la MAX: BAR_C0,
+; che in NEXT ha le righe 0 e 4), tra il muro del GUARDIAN e la mezzeria. Armata: i trattini sotto
+; le lettere uno ogni MV_STEP frame dal lato del giocatore (l'ultimo bianco, gli altri grigi), poi
+; gialli man mano che la palla arriva verso di lui. Al colpo blocchi bianchi al posto delle lettere,
+; la scritta (bianca, poi gialla) con i trattini accesi, poi lampeggia; via dopo un secondo. La mossa
+; che sparisce senza il colpo (un punto) toglie i trattini. Si ridisegna solo quando cambia quello
+; che deve esserci (mv_key), e solo se il frame ha tempo.
+MV_ROW    = 4                   ; sotto i punteggi (righe 1-3)
+MV_COL    = 2                   ; prima colonna a sinistra, a destra MV_COL + 19: 17 celle
+MV_W      = 17                  ; "MAX STRAIGHT SHOT"
+MV_STEP   = 2                   ; armata: un trattino ogni MV_STEP frame (SPECIAL_DASH_STEP)
+MV_BLOCK  = 2                   ; colpo (a 50 Hz): blocchi bianchi (SPECIAL_BLOCK), lettere bianche
+MV_WHITE  = 3                   ; fino a MV_WHITE (SPECIAL_WHITE), trattini accesi fino a MV_LIT
+MV_LIT    = 20                  ; (SPECIAL_DASH_LIT), lampeggio da MV_BLINK (SPECIAL_BLINK, 7 frame
+MV_BLINK  = 37                  ; spenta e 7 accesa), via a MV_END (SPECIAL_HIT_SECONDS)
+MV_END    = 50
+MV_ALL    = 32                  ; mv_key: armata i trattini disegnati (meno di tutti) o MV_ALL +
+MV_HIT    = 64                  ; quelli accesi; al colpo MV_HIT + la fase (mv_r4m)
+.assert MV_COL + 19 + MV_W <= 38 .and MV_COL + MV_W <= 19, error, "scritte delle mosse sul muro o sulla mezzeria"
+
+.proc sm_labels
+    lda sm_on
+    beq done
+    ldx #1
+side:
+    jsr one
+    dex
+    bpl side
+done:
+    rts
+one:
+    txa
+    asl a
+    asl a
+    tay                         ; Y = lato * 4 (sm_arm)
+    lda mv_st,x
+    beq idle
+    cmp #2
+    beq hit
+    lda sm_arm,y                ; armata: finché c'è la mossa
+    bne tick
+    ; finita: il colpo (la mossa in volo e la palla che si allontana da lui), o via
+    lda sm_fl
+    beq gone
+    lda ball_vx+3
+    eor mv_sign,x
+    bmi gone
+    lda #2
+start:
+    sta mv_st,x
+    lda #0
+    sta mv_t,x
+    sta mv_wait,x
+    lda #$ff
+    sta mv_key,x
+    bne draw
+idle:
+    lda sm_arm,y
+    beq out
+    sta mv_kind,x
+    lda #1
+    bne start
+hit:
+    lda mv_t,x
+    cmp #MV_END
+    bcc tick
+gone:
+    lda #0
+    sta mv_st,x
+    jmp mv_erase
+tick:
+    inc mv_t,x
+    bne draw
+    dec mv_t,x                  ; (armata a lungo: resta a 255)
+draw:
+    jsr mv_look
+    cmp mv_key,x
+    beq out
+    pha
+    txa
+    pha
+    jsr frame_late              ; frame già avanti: al prossimo, con il conto fermo per al più
+    pla                         ; MV_WAIT frame di fila (in partita molti frame arrivano qui tardi,
+    tax                         ; e i blocchi del colpo si saltavano)
+    pla
+    bcs late
+    sta mv_key,x
+    lda #0
+    sta mv_wait,x
+    jmp mv_draw
+late:
+    lda mv_wait,x
+    cmp #MV_WAIT
+    bcs out
+    inc mv_wait,x
+    lda mv_t,x
+    beq out
+    dec mv_t,x
+out:
+    rts
+.endproc
+MV_WAIT = 3
+mv_sign: .byte $00, $80         ; con eor sul bit 7 di ball_vx: 1 se la palla va verso il lato, 0 se
+                                ; se ne allontana
+
+; A = cosa deve esserci a schermo per il lato X (mv_key, vedi MV_ALL). X resta.
+.proc mv_look
+    jsr mv_geometry
+    lda mv_st,x
+    cmp #2
+    beq hit
+    lda mv_t,x                  ; trattini: t / MV_STEP + 1, al più tutti
     lsr a
-    eor #$ff
+    clc
+    adc #1
+    cmp mv_n
+    bcs all
+    rts
+all:
+    ; tutti: accesi man mano che la palla arriva verso di lui, dalla sua x (a pixel doppi, 160 da
+    ; un bordo all'altro): mv_n * strada fatta / 160
+    lda ball_vx+3
+    eor mv_sign,x
+    bpl none
+    lda ball_x+3
+    lsr a
+    lda ball_x+2
+    ror a
+    cpx #0
+    bne :+
+    eor #$ff                    ; il giocatore sinistro: dal bordo destro
     sec
-    adc #20
-    sta lb_col
-    sta v_col                   ; colonna del pezzo dopo
-    lda #<s_p1
-    ldy #>s_p1
-    ldx lb_player
-    beq :+
-    lda #<s_p2
-    ldy #>s_p2
-:   jsr text
-    lda m_lo
-    lsr a
-    bcs :+
-    lda #<s_max
-    ldy #>s_max
-    jsr text
-:   lda #<s_straight
-    ldy #>s_straight
-    ldx m_lo
-    cpx #3
+    adc #160
+:   sta mv_tmp
+    lda #0
+    sta mv_acc
+    sta mv_acc+1
+    ldy mv_n
+mul:
+    lda mv_acc
+    clc
+    adc mv_tmp
+    sta mv_acc
     bcc :+
-    lda #<s_rise
-    ldy #>s_rise
-:   jsr text
-    lda lb_len
-    sta v_n
-    ldy lb_col
-    ldx #LABEL_ROW
-    lda #COL_YELLOW
-    jmp color_span
-text:
-    sta ptr2
-    sty ptr2+1
-    ldx v_col
-    ldy #LABEL_ROW
-    jsr print_str
-    stx v_col
+    inc mv_acc+1
+:   dey
+    bne mul
+    ldy #0
+div:
+    lda mv_acc
+    sec
+    sbc #160
+    sta mv_acc
+    lda mv_acc+1
+    sbc #0
+    sta mv_acc+1
+    bcc got
+    iny
+    bne div
+got:
+    tya
+    cmp mv_n
+    bcc :+
+    lda mv_n
+:   ora #MV_ALL
+    rts
+none:
+    lda #MV_ALL
+    rts
+hit:
+    ; fasi: blocchi, lettere bianche, gialle con i trattini, gialle, poi il lampeggio (spenta nei
+    ; primi 7 frame di ogni 14, come sul PC)
+    lda mv_t,x
+    ldy #0
+    cmp #MV_BLOCK
+    bcc phase
+    iny
+    cmp #MV_WHITE
+    bcc phase
+    iny
+    cmp #MV_LIT
+    bcc phase
+    iny
+    cmp #MV_BLINK
+    bcc phase
+    sbc #MV_BLINK               ; (C = 1)
+:   cmp #14
+    bcc :+
+    sbc #14
+    bcs :-
+:   cmp #7
+    bcs phase
+    iny
+phase:
+    tya
+    ora #MV_HIT
     rts
 .endproc
 
-s_max:      .byte "MAX ", 0
-s_straight: .byte "STRAIGHT SHOT!", 0
-s_rise:     .byte "RISING STRIKE!", 0
+; Per il lato X: lunghezza della scritta (13 o 17), lettere (12 o 15), trattino, prima colonna
+; (centrata nelle 17 del lato) e il titolo in ptr2. X resta.
+.proc mv_geometry
+    lda mv_kind,x               ; 1-2 STRAIGHT SHOT, 3-4 RISING STRIKE (livello 1-2)
+    sec
+    sbc #1
+    tay                         ; bit 0: livello 2, bit 1: RISING STRIKE
+    lsr a
+    bcc one
+    lda #MV_W
+    sta mv_len
+    lda #15
+    sta mv_n
+    lda #BAR_C0
+    sta mv_dash
+    lda #0
+    beq title
+one:
+    lda #MV_W - 4               ; senza "MAX "
+    sta mv_len
+    lda #12
+    sta mv_n
+    lda #CH_GRID_T
+    sta mv_dash
+    lda #4
+title:
+    sta mv_tmp
+    cpy #2
+    bcc :+
+    adc #MV_W - 1               ; (C = 1) RISING STRIKE
+:   clc
+    adc #<mv_titles
+    sta ptr2
+    lda #>mv_titles
+    adc #0
+    sta ptr2+1
+    lda mv_tmp
+    lsr a
+    clc
+    adc #MV_COL
+    cpx #0
+    beq :+
+    adc #19 - 1                 ; (C = 1 da cpx)
+:   sta mv_col
+    rts
+.endproc
+mv_titles: .byte "MAX STRAIGHT SHOT", "MAX RISING STRIKE"
+
+; Le due righe della scritta del lato X come dice mv_key,x (vedi MV_ALL). X resta.
+.proc mv_draw
+    stx mv_side
+    jsr shots_erase             ; (i colpi del BLASTER rimetterebbero quello che c'era)
+    ldx mv_side
+    jsr mv_geometry
+    ; come disegnare: lettere (mv_r4: 0 vuote, 1 blocchi, 2 lettere) e trattini (mv_r5: 0 no, 1
+    ; sì), colori; per la mossa armata i trattini disegnati (mv_shown) e quelli accesi (mv_lit)
+    lda mv_key,x
+    cmp #MV_HIT
+    bcs hit
+    ldy #0
+    sty mv_r4
+    iny
+    sty mv_r5
+    ldy #COL_WHITE              ; (lettere vuote: il colore non si vede, ma resta definito)
+    sty mv_c4
+    cmp #MV_ALL
+    bcs all
+    sta mv_shown
+    lda #0
+    sta mv_lit
+    beq rows
+all:
+    sbc #MV_ALL                 ; (C = 1)
+    sta mv_lit
+    lda mv_n
+    sta mv_shown
+    bne rows
+hit:
+    and #7
+    tay
+    lda mv_r4m,y
+    sta mv_r4
+    lda mv_r5m,y
+    sta mv_r5
+    lda mv_hcol,y
+    jsr mv_color
+    sta mv_c4
+    lda #$ff                    ; trattini tutti, del colore della fase
+    sta mv_shown
+rows:
+    lda #0
+    sta mv_p
+    sta mv_j
+loop:
+    ldy mv_p
+    lda (ptr2),y
+    sta mv_ch
+    tya
+    clc
+    adc mv_col
+    tay                         ; colonna
+    lda mv_ch
+    cmp #' '
+    bne letter
+    lda #CH_BLANK
+    sta SCREEN + MV_ROW * 40,y
+    sta SCREEN + (MV_ROW + 1) * 40,y
+    jmp next
+letter:
+    ldx mv_r4                   ; la riga delle lettere
+    lda #CH_BLANK
+    dex
+    bmi put
+    lda #CH_SOLID
+    dex
+    bmi put
+    lda mv_ch
+    sec
+    sbc #32
+    tax
+    lda font_map,x
+put:
+    sta SCREEN + MV_ROW * 40,y
+    lda mv_c4
+    sta $d800 + MV_ROW * 40,y
+    ; il trattino della lettera k, contata dal lato del giocatore
+    lda mv_j
+    ldx mv_side
+    beq :+
+    eor #$ff
+    sec
+    adc mv_n
+    sec
+    sbc #1                      ; mv_n - 1 - j
+:   sta mv_k
+    lda mv_r5
+    beq nodash
+    lda mv_k
+    cmp mv_shown
+    bcs nodash
+    lda mv_c4                   ; al colpo il colore della fase
+    ldx mv_shown
+    inx
+    beq color
+    ; armata: l'ultimo disegnato bianco (se non sono ancora tutti), gli accesi gialli, gli altri
+    ; grigi
+    ldx mv_k
+    inx
+    cpx mv_shown
+    bne :+
+    lda #COL_WHITE
+    ldx mv_shown
+    cpx mv_n
+    bcc color
+:   lda egg_yel
+    ldx mv_k
+    cpx mv_lit
+    bcc color
+    lda #COL_MGRAY
+color:
+    sta $d800 + (MV_ROW + 1) * 40,y
+    lda mv_dash
+    bne dash
+nodash:
+    lda #CH_BLANK
+dash:
+    sta SCREEN + (MV_ROW + 1) * 40,y
+    inc mv_j
+next:
+    inc mv_p
+    lda mv_p
+    cmp mv_len
+    jne loop
+    ldx mv_side
+    rts
+.endproc
+; fasi del colpo (mv_look): blocchi, lettere bianche, gialle con i trattini, gialle, spenta
+mv_r4m:  .byte 1, 2, 2, 2, 0
+mv_r5m:  .byte 1, 1, 1, 0, 0
+mv_hcol: .byte COL_WHITE, COL_WHITE, COL_YELLOW, COL_YELLOW, COL_WHITE
+
+; A = colore, con il giallo dell'easter egg (egg_yel).
+.proc mv_color
+    cmp #COL_YELLOW
+    bne :+
+    lda egg_yel
+:   rts
+.endproc
+
+; Via la scritta del lato X: le 17 celle delle sue due righe. X resta.
+.proc mv_erase
+    stx mv_side
+    jsr shots_erase
+    ldx mv_side
+    lda #$ff
+    sta mv_key,x
+    lda #MV_COL
+    cpx #0
+    beq :+
+    lda #MV_COL + 19
+:   tay
+    lda #MV_W
+    sta mv_tmp
+    lda #CH_BLANK
+:   sta SCREEN + MV_ROW * 40,y
+    sta SCREEN + (MV_ROW + 1) * 40,y
+    iny
+    dec mv_tmp
+    bne :-
+    rts
+.endproc
+
+; stato delle scritte, per lato (mv_st azzerato da hud_reset), poi le temporanee
+mv_st:    .byte 0, 0            ; 0 nessuna, 1 mossa armata (trattini), 2 colpo
+mv_kind:  .byte 0, 0            ; la mossa, come sm_arm: 1-2 STRAIGHT SHOT, 3-4 RISING STRIKE
+mv_t:     .byte 0, 0            ; frame dall'inizio
+mv_key:   .byte 0, 0            ; quello che c'è a schermo (mv_look; $ff da disegnare)
+mv_wait:  .byte 0, 0            ; frame di fila che il passo ha aspettato (sm_labels)
+mv_len:   .byte 0
+mv_n:     .byte 0
+mv_col:   .byte 0
+mv_dash:  .byte 0
+mv_tmp:   .byte 0
+mv_acc:   .word 0
+mv_shown: .byte 0
+mv_lit:    .byte 0
+mv_r4:    .byte 0
+mv_r5:    .byte 0
+mv_c4:    .byte 0
+mv_j:     .byte 0
+mv_k:     .byte 0
+mv_p:     .byte 0
+mv_ch:    .byte 0
+mv_side:  .byte 0
+
 bar_glyphs: .byte BAR_GLYPHS
 ; tracce degli effetti 6 e 7 del player (sid.s, fx_start), dalla ROM della musica
 sid_track_move:    .byte SID_TRACK_MOVE
@@ -386,9 +762,6 @@ one:
     adc #2
     ldy #EV_RISE_HI
 :   sta sm_arm,x
-    ora #$80                    ; scritta e suono (sm_hud)
-    sta sm_lnew
-    stx sm_lside
     tya
     ora events+1
     sta events+1
@@ -702,21 +1075,6 @@ pads:
     jsr pad
     jsr frame_late_small        ; frame già avanti: il resto al prossimo
     bcs done
-    lda sm_lnew                 ; scritta della mossa attivata: next_fx_scene la disegna appena
-    beq sound                   ; il frame ha tempo
-    lda lb_frames
-    beq :+
-    jsr label_erase
-    lda #0
-    sta lb_frames
-:   lda sm_lnew
-    sta lb_bonus
-    lda sm_lside
-    sta lb_player
-    lda #1
-    sta lb_pend
-    lda #0
-    sta sm_lnew
 sound:
     lda sm_fxp                  ; MOVE dopo BOOST e punto, SPECIAL solo dopo il punto (pong_sid.v)
     beq bars

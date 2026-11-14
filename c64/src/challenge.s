@@ -21,6 +21,7 @@ CH_CONT_FRAMES   = 500          ; 10 s
 CH_INIT_FRAMES   = 1500         ; 30 s
 CH_SCORES_FRAMES = 400          ; 8 s
 CH_SKIP_FRAMES   = 60           ; prima non si salta (niente salti per sbaglio)
+CONT_SKIP_FRAMES = 13           ; continue: Start vale dopo un quarto di secondo (CONTINUE_SKIP_AFTER)
 CH_CHAL_FRAMES   = 150          ; HERE COMES A NEW CHALLENGER!: 3 s
 CG_LADDER        = 1            ; cg_active: la scala contro la CPU
 CG_DUEL          = 2            ; sfida tra il campione e un nuovo sfidante (da quando entra)
@@ -67,8 +68,9 @@ ch_phase:  .res 1               ; 1: schermo da pulire, 2: da disegnare
 ch_elapsed: .res 1              ; frame dall'inizio della schermata (fino a 255)
 ch_more:   .res 1               ; il disegno continua al prossimo frame
 ch_digit:  .res 1
-ch_go:     .res 1               ; presentazione finita: la partita al prossimo frame; nel continue
-                                ; il GAME OVER dopo il conto alla rovescia
+ch_go:     .res 1               ; presentazione finita: la partita al prossimo frame (poi le pagine
+                                ; delle mosse speciali); $ff: continue scaduto, dopo il GAME OVER
+                                ; iniziali o classifica (ch_after)
 .segment "ZEROPAGE"
 ch_tmp:    .res 4
 .segment "BSS"
@@ -202,9 +204,9 @@ bm_diff:   .res 1
     sta ch_load,x
     dex
     bpl :-
-    lda pk_cursor
+    lda cfg_kinds               ; (le racchette scelte: bonus_enter)
     sta ch_kinds
-    lda pk_cursor+1
+    lda cfg_kinds+4
     sta ch_kinds+1
     rts
 .endproc
@@ -214,6 +216,26 @@ bm_diff:   .res 1
 .proc ch_duel_prep
     jsr ch_keep
     jmp ch_rung
+.endproc
+
+; La musica della sfida (dalla scelta, PH_THEME, in un frame a schermo pulito): il tema di un
+; avversario a caso (dal tempo, come il seme: non tocca il generatore della partita), dal suo file
+; voce come nella presentazione. La copia (circa 60.000 cicli, tre frame fermi) è un caricamento; il
+; file del livello torna con la presentazione dopo la sfida, e intanto il player resta lo stesso
+; (voice.s).
+.proc ch_duel_theme
+    lda $dc04
+    eor frame_count
+    and #$7f
+:   cmp #KINDS
+    bcc :+
+    sbc #KINDS
+    bcs :-
+:   jsr ef_voice
+    jsr VOICE_TICK              ; primo frame del file: il tema a THEME_BASE
+    jsr VOICE_STOP              ; A = SID_SONG_THEME
+    sta match_song
+    rts
 .endproc
 
 ; Dopo il tick: punti arcade (Score::on_tick) di chi gioca, dal lato ch_side; non nella sfida.
@@ -365,6 +387,8 @@ done:
 ; Fine di una partita CHALLENGE (dopo il GAME OVER): livello superato o continue; dopo la sfida
 ; riprende il vincitore.
 .proc ch_after
+    lda ch_go                   ; continue scaduto (cont_over): iniziali o classifica
+    bmi ch_finish
     lda cg_active
     cmp #CG_DUEL
     bne :+
@@ -438,7 +462,10 @@ found:
     sta state
     stx ch_timer
     sty ch_timer+1
+    lda #$c8                    ; lo scroll e la priorità degli sprite di sempre (le scosse e il
+    sta $d016                   ; TITAN della presentazione)
     lda #0
+    sta $d01b
     sta sh_enable
     sta sh_bg
     lda #MODE_TEXT
@@ -490,24 +517,23 @@ none:
 ; C = 1 se il tempo è finito.
 ; Niente continue: GAME OVER, la partita è finita davvero (con la sua musica e per il suo tempo,
 ; come quello sopra la partita), poi iniziali o classifica (cont_scene, ch_finish).
+; Continue scaduto: il GAME OVER animato della fine partita (play.s) da solo, come in singolo (niente
+; voce), su uno schermo vuoto e con il bordo nero; si scrive subito (ov_at), poi la chiusura da
+; televisore e il nero; dopo, iniziali o classifica (ch_after, con ch_go = $ff). La musica è quella
+; del GAME OVER.
 .proc cont_over
-    inc ch_go
-    lda #<draw_cont_over
-    sta ch_draw
-    lda #>draw_cont_over
-    sta ch_draw+1
+    dec ch_go                   ; ($ff: enter_cont lo azzera)
+    lda #1
+    sta m_players
+    jsr clear_screen
+    jsr enter_over
+    lda #OA_TYPE1
+    sta ov_at
+    lda #0
+    sta sh_enable
+    sta sh_brd
     lda #SID_SONG_GAME_OVER
-    jsr sid_song
-    lda #ST_CONT
-    ldx #<AT_GAME_OVER_FRAMES
-    ldy #>AT_GAME_OVER_FRAMES
-    jmp ch_screen
-.endproc
-
-.proc draw_cont_over
-    ldx #OV_GAME_OVER
-    ldy #11
-    jmp over_big
+    jmp sid_song
 .endproc
 
 .proc ch_timeout
@@ -604,12 +630,30 @@ next:
 .proc enter_intro
     ldx ch_level                ; il file voce dell'avversario dalla cartuccia (src/ef.s)
     lda rung_kind,x
+    pha
     jsr ef_voice
+    ; e il codice della presentazione (intro.s): la parte comune, poi l'entrata dell'avversario
+    lda #IN_SRC
+    sta ef_src+2
+    lda #IN_BANK
+    ldx #4
+    ldy #>IN_RUN
+    jsr ef_copy
+    pla
+    asl a
+    adc #INV_SRC                ; (C = 0)
+    sta ef_src+2
+    lda #IN_BANK
+    ldx #2
+    ldy #>INV_RUN
+    jsr ef_copy
+    lda #1                      ; (sopra le tabelle dei quadrati: math_step non le rifà fino a
+    sta math_ready              ; IN_DONE, intro.s)
     lda #0
     sta ch_go
-    lda #<draw_intro
+    lda #<in_draw
     sta ch_draw
-    lda #>draw_intro
+    lda #>in_draw
     sta ch_draw+1
     lda #SID_SONG_INTRO
     jsr sid_song
@@ -619,166 +663,33 @@ next:
     jmp ch_screen
 .endproc
 
-INTRO_COL0    = 10              ; colonne dei bonus: centri alle celle 10, 20 e 30
-INTRO_STEP    = 10
-INTRO_CAP_ROW = 13              ; capsule nelle righe 13-14, nomi nella 15
-
-.proc draw_intro
-    ; LEVEL n OF 7, o FINAL LEVEL
-    lda ch_level
-    cmp #CH_LEVELS - 1
-    bne :+
-    jsr print_at
-    .byte 14, 3, "FINAL LEVEL", 0
-    jmp :++
-:   jsr print_at
-    .byte 14, 3, "LEVEL   OF 7", 0
-    lda ch_level
-    clc
-    adc #'1'
-    ldx #20
-    ldy #3
-    sty v_row
-    jsr put_ascii
-:   lda #COL_YELLOW
-    ldy #3
-    jsr color_row
-    ; racchetta (centrata, kind_col), frase e bonus dell'avversario
-    ldx ch_level
-    lda rung_kind,x
-    tax
-    asl a
-    tay
-    lda kind_names,y
-    sta ptr2
-    lda kind_names+1,y
-    sta ptr2+1
-    lda kind_col,x
-    tax
-    ldy #8
-    jsr print_str
-    ldx ch_level
-    lda rung_kind,x
-    asl a
-    tay
-    lda kind_tags,y
-    sta ptr2
-    lda kind_tags+1,y
-    sta ptr2+1
-    ldx #12
-    ldy #10
-    jsr print_str
-    lda #COL_GRAY
-    ldy #10
-    jsr color_row
-    ; bonus dell'avversario: capsula gialla con l'icona e nome sotto, su tre colonne centrate
-    lda ch_level
-    asl a
-    adc ch_level
-    sta ch_tmp                  ; primo bonus del livello
-    lda #INTRO_COL0
-    sta ch_tmp+1                ; centro della colonna: la cella a destra del centro
-bonus:
-    ldy ch_tmp
-    lda rung_loadout,y
-    sta ch_tmp+2
-    asl a
-    asl a
-    asl a                       ; bonus * 8: capsula normale
-    tay
-    lda #INTRO_CAP_ROW
-    sta v_row
-    ldx ch_tmp+1
-    dex
-    jsr put_cap
-    lda ch_tmp+2
-    asl a
-    tay
-    lda bonus_names,y
-    sta ptr2
-    lda bonus_names+1,y
-    sta ptr2+1
-    ; nome centrato sotto la capsula: lunghezza fino allo spazio (o allo 0)
-    ldy #0
-:   lda (ptr2),y
-    beq :+
-    cmp #' '
-    beq :+
-    iny
-    bne :-
-:   tya
-    lsr a
-    sta m_t
-    lda ch_tmp+1
-    sec
-    sbc m_t
-    tax
-    ldy #INTRO_CAP_ROW + 2
-    jsr print_str
-    inc ch_tmp
-    lda ch_tmp+1
-    clc
-    adc #INTRO_STEP
-    sta ch_tmp+1
-    cmp #INTRO_COL0 + 3 * INTRO_STEP
-    bne bonus
-    lda #COL_YELLOW
-    ldy #INTRO_CAP_ROW
-    jsr color_row
-    lda #COL_YELLOW
-    ldy #INTRO_CAP_ROW + 1
-    jsr color_row
-    lda #COL_YELLOW
-    ldy #INTRO_CAP_ROW + 2
-    jsr color_row
-    ; punti per vincere (una o due cifre)
-    jsr print_at
-    .byte 15, INTRO_CAP_ROW + 5, "FIRST TO", 0
-    ldx ch_level
-    lda rung_points,x
-    cmp #10
-    bcc :+
-    ldx #24
-    ldy #INTRO_CAP_ROW + 5
-    jsr print_num2
-    jmp :++
-:   adc #'0'
-    ldx #24
-    ldy #INTRO_CAP_ROW + 5
-    sty v_row
-    jsr put_ascii
-:   lda #COL_GRAY
-    ldy #INTRO_CAP_ROW + 5
-    jsr color_row
-    ; punti e record
-    jsr print_at
-    .byte 7, 22, "SCORE           HI", 0
-    ldx #13
-    ldy #22
-    jsr print_score
-    ldx #0
-:   lda ch_table+3,x
-    sta ch_tmp,x
-    inx
-    cpx #4
-    bne :-
-    ldx #26
-    ldy #22
-    jmp print_tmp
-.endproc
-
 .proc intro_scene
     lda ch_go
+    beq intro
+    ; la partita, dopo il codice delle mosse speciali dalla cartuccia, una pagina per frame (al
+    ; suo posto ci sono stati la presentazione o il GAME OVER), e con le tabelle dei quadrati
+    ; pronte (sotto c'era l'entrata dell'avversario, intro.s)
+    cmp #SM_PAGES + 1
+    bcs begin
+    inc ch_go
+    sbc #0                      ; (C = 0) pagina ch_go - 1
+    jmp sm_page
+begin:
+    lda math_ready
     beq :+
     jmp ch_begin
-:   jsr VOICE_TICK              ; la voce, 0,5 s dopo il primo frame
+:   rts
+intro:
+    jsr VOICE_TICK              ; la voce, 0,5 s dopo il primo frame
     jsr ch_phases
     bcs done
     jsr ch_join                 ; nuovo sfidante
     bcc :+
     jsr VOICE_STOP
+    jsr math_invalidate         ; (sotto le tabelle c'è l'entrata, intro.s)
     jmp enter_challenger
-:   jsr join_hint
+:   jsr in_tick                 ; l'entrata dell'avversario (intro.s)
+    jsr join_hint
     jsr ch_skip
     bcs go
     jsr ch_timeout
@@ -788,7 +699,13 @@ go:
     ; prendono il posto del file voce, non della parte che resta); con il file voce la musica è il
     ; tema dell'avversario, che il file ha già copiato a THEME_BASE (senza file VOICE_STOP è un
     ; RTS: resta A = 0, silenzio)
-    lda #0
+    lda ch_elapsed              ; saltata prima che le tabelle dei quadrati si rifacessero
+    cmp #IN_DONE + 2
+    bcs :+
+    jsr math_invalidate
+:   lda #0
+    sta sh_enable               ; (gli sprite della presentazione)
+    sta $d01b
     jsr VOICE_STOP
     sta match_song
     inc ch_go
@@ -1328,18 +1245,36 @@ challenger:
     jsr put_ascii
     lda #COL_GRAY
     ldy #18
-    jmp color_row
+    jsr color_row
+    ; la pallina accanto alla cifra (sprite 0, la palla con il boost) e sotto il suo trattino grigio
+    lda #CH_GRID_T
+    sta SCREEN + CONT_FLOOR_ROW * 40 + CONT_COL
+    lda #COL_GRAY
+    sta $d800 + CONT_FLOOR_ROW * 40 + CONT_COL
+    lda #SP_BALL6
+    sta sh_ptr
+    lda #CONT_X
+    sta sh_x
+    lda #0
+    sta sh_msb
+    sta sh_mc
+    sta sh_xexp
+    sta sh_yexp
+    lda #1
+    sta sh_enable
+    rts
 .endproc
+CONT_COL       = 24             ; pallina: la colonna, e la riga del trattino
+CONT_FLOOR_ROW = 13
+CONT_X         = SPR_X0 + CONT_COL * 8 + 1  ; la palla di 6 pixel al centro della cella
+CONT_FLOOR     = SPR_Y0 + CONT_FLOOR_ROW * 8 - 6
+; altezza della pallina a m frame dal tocco più vicino: 29 pixel * 4 s (1 - s), s = m / 50
+cont_hop: .byte 0, 2, 5, 7, 9, 10, 12, 14, 16, 17, 19, 20, 21, 22, 23, 24, 25, 26, 27, 27, 28, 28, 29, 29, 29, 29
 
 .proc cont_scene
     jsr ch_phases
     jcs done
-    lda ch_go                   ; GAME OVER: poi iniziali o classifica
-    beq :+
-    jsr ch_timeout
-    jcc done
-    jmp ch_finish
-:   ; gettone
+    ; gettone
     lda #KEY_5
     jsr key_pressed
     bcc :+
@@ -1351,8 +1286,11 @@ challenger:
     inc credits
     lda #EV_COIN
     jsr sid_fx
-:   ; continue: Start con un credito (o Free Play)
-    jsr ch_skip
+:   ; continue: Start con un credito (o Free Play), già con il 9 (dopo un quarto di secondo)
+    lda ch_elapsed
+    cmp #CONT_SKIP_FRAMES
+    bcc wait
+    jsr champ_start
     bcc wait
     lda opt_free
     bne go
@@ -1385,6 +1323,24 @@ wait:
     sta ch_tmp+1
     bcs :-
 got:
+    ; la pallina tocca terra a ogni secondo (quando la cifra cambia); gialla negli ultimi tre
+    lda ch_tmp
+    clc
+    adc #50                     ; frame al prossimo secondo (50: appena toccata terra)
+    cmp #26
+    bcc :+
+    eor #$ff
+    adc #50                     ; (C = 1) 50 - A
+:   tay
+    lda #CONT_FLOOR
+    sec
+    sbc cont_hop,y
+    sta sh_y
+    lda #COL_WHITE
+    cpx #4
+    bcs :+
+    lda egg_yel
+:   sta sh_col
     cpx #10
     bcc :+
     ldx #9
@@ -1421,7 +1377,26 @@ done:
 
 ; --- iniziali
 
+; Il disegno e la scena delle iniziali (e l'inserimento in classifica) stanno nella cartuccia, nel
+; file del finale dopo le sue aree (segmento INICODE, area ENDF di paddws.cfg: dall'offset $2700 dei
+; banchi da END_BANK), e girano nel secondo schermo, libero a partita finita (la presentazione e la
+; scelta di NEXT ci ricopiano le mosse speciali). enter_initials ne copia le pagine (circa 3.800
+; cicli l'una), poi la classifica le copre a $E000 (HSCODE).
+INI_RUN   = SCREEN2
+INI_OFF   = $2700               ; nel file del finale: ENDA, ENDB, ENDC, ENDCH, ENDD, ENDE prima
+INI_BANK  = END_BANK + INI_OFF / $2000
+INI_SRC   = $80 + (INI_OFF .mod $2000) / 256
+INI_PAGES = >(__INICODE_SIZE__ + 255)
+.import __INICODE_RUN__, __INICODE_SIZE__
+.assert __INICODE_RUN__ = INI_RUN .and __INICODE_SIZE__ <= $400, lderror, "iniziali fuori posto"
+.assert (INI_OFF .mod $2000) + $0400 <= $2000, error, "iniziali su due banchi"
 .proc enter_initials
+    lda #INI_SRC
+    sta ef_src+2
+    lda #INI_BANK
+    ldx #INI_PAGES
+    ldy #>INI_RUN
+    jsr ef_copy
     lda #0
     sta ch_pos
     sta ch_letter
@@ -1437,6 +1412,33 @@ done:
     jmp ch_screen
 .endproc
 
+.proc egg_check
+    ldx #2
+:   lda ch_name,x
+    cmp egg_name,x
+    bne done
+    dex
+    bpl :-
+    ldx #3
+:   lda egg_x,x
+    eor egg_flip,x
+    sta egg_x,x
+    dex
+    bpl :-
+    lda egg_yel
+    sta $d026                   ; segni gialli delle racchette (multicolore %11)
+done:
+    rts
+.endproc
+egg_name: .byte "RED"
+; egg_x, egg_yel, egg_red ed egg_song (video.s, in quest'ordine)
+egg_flip: .byte COL_YELLOW ^ COL_RED, COL_YELLOW ^ COL_RED, COL_YELLOW ^ COL_RED
+          .byte SID_SONG_TITLE ^ SID_SONG_EGG
+.assert egg_yel = egg_x + 1 .and egg_red = egg_x + 2 .and egg_song = egg_x + 3, error, "variabili dell'easter egg in fila"
+
+; Nuova riga in classifica alla posizione ch_rank (le altre scendono), salvata nella flash; poi la
+; classifica con la riga in evidenza.
+.segment "INICODE"
 .proc draw_initials
     jsr print_at
     .byte 14, 4, "NEW RECORD!", 0
@@ -1593,32 +1595,6 @@ done:
 ; si scambiano ovunque: color_span per le scritte, egg_yel ed egg_red dove i colori si scrivono
 ; direttamente, $D026 per i segni delle racchette; al posto della canzone del titolo quella del
 ; finale, letta dalla cartuccia (egg_song, SID_SONG_EGG). Si vede subito nella classifica.
-.proc egg_check
-    ldx #2
-:   lda ch_name,x
-    cmp egg_name,x
-    bne done
-    dex
-    bpl :-
-    ldx #3
-:   lda egg_x,x
-    eor egg_flip,x
-    sta egg_x,x
-    dex
-    bpl :-
-    lda egg_yel
-    sta $d026                   ; segni gialli delle racchette (multicolore %11)
-done:
-    rts
-.endproc
-egg_name: .byte "RED"
-; egg_x, egg_yel, egg_red ed egg_song (video.s, in quest'ordine)
-egg_flip: .byte COL_YELLOW ^ COL_RED, COL_YELLOW ^ COL_RED, COL_YELLOW ^ COL_RED
-          .byte SID_SONG_TITLE ^ SID_SONG_EGG
-.assert egg_yel = egg_x + 1 .and egg_red = egg_x + 2 .and egg_song = egg_x + 3, error, "variabili dell'easter egg in fila"
-
-; Nuova riga in classifica alla posizione ch_rank (le altre scendono), salvata nella flash; poi la
-; classifica con la riga in evidenza.
 .proc table_insert
     ; da ch_rank in giù di una riga: dall'ultimo byte della penultima riga
     lda ch_rank
@@ -1665,6 +1641,8 @@ egg_flip: .byte COL_YELLOW ^ COL_RED, COL_YELLOW ^ COL_RED, COL_YELLOW ^ COL_RED
     jmp enter_scores
 .endproc
 
+.segment "CODE"
+
 ; --- classifica
 
 ; Il codice della classifica (disegno della tabella, scena) sta nella
@@ -1674,13 +1652,14 @@ egg_flip: .byte COL_YELLOW ^ COL_RED, COL_YELLOW ^ COL_RED, COL_YELLOW ^ COL_RED
 ; già il testo pulito: la copia non si vede. Nel programma restano enter_scores, hs_load e l'inizio
 ; di scores_scene (le fasi comuni, prima della copia).
 HS_RUN   = $E000                ; dove gira (paddws.cfg, HSRAM)
-HS_IMG   = $DC00                ; dove sta nel .prg (HSIMG), poi nella flash
+HS_IMG   = $D900                ; dove sta nel .prg (HSIMG), poi nella flash
 HS_BANK  = PRG_BANK + (HS_IMG - $0800) / $4000
 HS_SRC   = $80 + ((HS_IMG - $0800) .mod $4000) / 256
 HS_PAGES = >(__HSCODE_SIZE__ + 255)
 .import __HSCODE_LOAD__, __HSCODE_RUN__, __HSCODE_SIZE__
 .assert __HSCODE_LOAD__ = HS_IMG .and __HSCODE_RUN__ = HS_RUN, lderror, "classifica fuori posto"
-.assert ((HS_IMG - $0800) .mod $4000) + $0400 <= $2000, error, "classifica oltre la ROML del banco"
+.assert ((HS_IMG - $0800) .mod $4000) + $0600 <= $2000, error, "classifica oltre la ROML del banco"
+HS_FIRST = 3                   ; pagine copiate nel primo frame (hs_load), le altre nel secondo
 
 ; Classifica (ch_hl in evidenza); ch_attract = 1 dall'attract (poi la demo).
 .proc enter_scores
@@ -1702,10 +1681,15 @@ HS_PAGES = >(__HSCODE_SIZE__ + 255)
     lda #HS_SRC
     sta ef_src+2
     lda #HS_BANK
-    ldx #HS_PAGES
+    ldx #HS_FIRST
     ldy #>HS_RUN
     jsr ef_copy
-    jmp hs_init
+    lda #<hs_load2
+    sta ch_draw
+    lda #>hs_load2
+    sta ch_draw+1
+    inc ch_more
+    rts
 .endproc
 
 ; Le fasi comuni (pulizia, disegno); il resto nella cartuccia, copiato nella fase di disegno.
@@ -1718,15 +1702,388 @@ HS_PAGES = >(__HSCODE_SIZE__ + 255)
 
 .segment "HSCODE"
 
-; Dopo la copia (hs_load): il disegno della tabella dal prossimo frame.
+; Classifica animata, come Scores::draw di rust/game/src/challenge_ui.rs, a 50 Hz dal disegno: una
+; palla con la scia (sprite 0-3) scende rimbalzando fra i bordi e accende le righe che tocca (prima
+; grigio scuro con i punti a zero, poi grigie mentre le cifre girano e si fermano una ogni 5 frame,
+; poi bianche, il posto nuovo giallo); da HS_MARK due racchette gialle arrivano dai bordi ai lati
+; del posto nuovo, e da HS_GLINT un riflesso lo attraversa ogni HS_GLINT_P frame. PRESS START
+; quando la palla ha passato l'ultima riga.
+HS_T0      = 18                 ; la riga i si accende al frame HS_T0 + HS_STEP * i
+HS_STEP    = 11
+HS_COUNT   = 35                 ; frame in cui i punti contano (SCORES_COUNT)
+HS_MARK    = 160                ; racchette (SCORES_MARK), arrivate in 30 frame (hs_mark_at)
+HS_GLINT   = 190                ; riflesso: HS_GLINT_W frame ogni HS_GLINT_P (SCORES_GLINT...)
+HS_GLINT_W = 25
+HS_GLINT_P = 80
+HS_BALL_END = 145               ; palla oltre l'ultima riga
+HS_X0      = 51                 ; la palla rimbalza tra queste x (16% e 84% dello schermo)
+HS_X1      = 269
+.assert HS_STEP = 11, error, "hs_anim: HS_STEP * i si fa come 8i + 2i + i"
+
+; Il secondo frame della copia (dalle prime pagine, già copiate: assert sotto), poi hs_init.
+.proc hs_load2
+    lda #HS_SRC + HS_FIRST
+    sta ef_src+2
+    lda #HS_BANK
+    ldx #HS_PAGES - HS_FIRST
+    ldy #>HS_RUN + HS_FIRST
+    jsr ef_copy
+.endproc
+.assert * <= HS_RUN + HS_FIRST * $100, lderror, "classifica: la seconda copia oltre le prime pagine"
+; (prosegue)
+; Dopo la copia: il disegno della tabella dal prossimo frame, la palla pronta.
 .proc hs_init
     lda #<draw_scores_table
     sta ch_draw
     lda #>draw_scores_table
     sta ch_draw+1
     inc ch_more
+    ldx #3
+:   lda #SP_BALL4
+    sta sh_ptr,x
+    lda hs_cols,x
+    sta sh_col,x
+    dex
+    bpl :-
+    lda #$f0
+    and sh_mc
+    sta sh_mc
+    lda #$f0
+    and sh_xexp
+    sta sh_xexp
+    lda #$f0
+    and sh_yexp
+    sta sh_yexp
     rts
 .endproc
+hs_cols: .byte COL_WHITE, COL_GRAY, COL_MGRAY, COL_DGRAY
+
+; Un frame della classifica animata (da hs_scene).
+.proc hs_anim
+    inc hs_t
+    bne :+
+    inc hs_t+1
+:   jsr hs_ball
+    ldx #0
+row:
+    stx hs_i
+    ; d = t - (HS_T0 + HS_STEP * i): prima niente, a 0 grigia, fino a HS_COUNT le cifre girano,
+    ; a HS_COUNT i punti veri, bianca o gialla
+    txa
+    asl a
+    sta hs_d
+    asl a
+    asl a
+    adc hs_d
+    adc hs_i
+    adc #HS_T0
+    sta hs_d
+    lda hs_t+1
+    jne next
+    lda hs_t
+    sec
+    sbc hs_d
+    bcc next
+    sta hs_d
+    cmp #HS_COUNT + 1
+    bcs next
+    lda hs_i                    ; i punti della riga in cifre (ch_txt)
+    asl a
+    asl a
+    asl a
+    tax
+    ldy #0
+copy:
+    lda ch_table+3,x
+    sta ch_tmp,y
+    inx
+    iny
+    cpy #4
+    bne copy
+    jsr num7
+    ldx #0
+digit:
+    ; la cifra k si ferma a d = 5k; prima gira: (d + 3k) mod 10
+    stx hs_k
+    txa
+    asl a
+    asl a
+    adc hs_k
+    cmp hs_d
+    bcc fixed
+    beq fixed
+    lda hs_k
+    asl a
+    adc hs_k
+    adc hs_d
+mod:
+    cmp #10
+    bcc :+
+    sbc #10
+    bcs mod
+:   adc #'0'
+    sta ch_txt,x
+fixed:
+    inx
+    cpx #7
+    bne digit
+    jsr row_y
+    lda #<ch_txt
+    sta ptr2
+    lda #>ch_txt
+    sta ptr2+1
+    ldx #19
+    jsr print_str
+    lda hs_d
+    beq gray
+    cmp #HS_COUNT
+    bne next
+    lda #COL_WHITE
+    ldx hs_i
+    cpx ch_hl
+    bne color
+    lda #COL_YELLOW
+    bne color
+gray:
+    lda #COL_GRAY
+color:
+    pha
+    jsr row_y
+    pla
+    jsr color_row
+next:
+    ldx hs_i
+    inx
+    cpx #CH_TABLE
+    jne row
+    ; il posto nuovo
+    ldx ch_hl
+    cpx #CH_TABLE
+    jcs done
+    stx hs_i
+    lda hs_t
+    sec
+    sbc #<HS_MARK
+    sta hs_d
+    lda hs_t+1
+    sbc #>HS_MARK
+    jcc done
+    bne glint
+    lda hs_d
+    cmp #31
+    bcs glint
+    ; le racchette: la colonna dal bordo (0-6) secondo hs_mark_at
+    ldx #0
+find:
+    inx
+    cpx #7
+    beq found
+    lda hs_mark_at,x
+    cmp hs_d
+    bcc find
+    beq find
+found:
+    dex
+    cpx hs_c
+    jeq done
+    stx hs_c
+    jsr row_y
+    lda #1
+    sta v_n
+    lda #7
+    ldx #0
+    jsr blank_box
+    lda #1
+    sta v_n
+    jsr row_y
+    lda #7
+    ldx #33
+    jsr blank_box
+    jsr row_y
+    ldx hs_c
+    lda #CH_WALL
+    jsr put_char
+    jsr row_y
+    lda #39
+    sec
+    sbc hs_c
+    tax
+    lda #CH_WALL
+    jsr put_char
+    jsr row_y
+    lda #COL_YELLOW
+    jmp color_row
+glint:
+    ; il riflesso: (t - HS_GLINT) mod HS_GLINT_P, i primi HS_GLINT_W frame: tre celle bianche
+    ; attorno alla colonna 7 + k della riga gialla
+    lda hs_t
+    sec
+    sbc #<HS_GLINT
+    tax
+    lda hs_t+1
+    sbc #>HS_GLINT
+    bcc done
+    txa
+period:
+    cmp #HS_GLINT_P
+    bcc :+
+    sbc #HS_GLINT_P
+    bcs period
+:   cmp #HS_GLINT_W + 1
+    bcs done
+    sta hs_k
+    jsr row_y
+    lda #COL_YELLOW
+    jsr color_row
+    lda hs_k
+    cmp #HS_GLINT_W
+    beq done
+    lda #3
+    sta v_n
+    jsr row_y
+    tya
+    tax
+    lda hs_k
+    clc
+    adc #6
+    tay
+    lda #COL_WHITE
+    jmp color_span
+done:
+    rts
+; Y = v_row = riga della classifica hs_i (X resta)
+row_y:
+    lda hs_i
+    asl a
+    adc #4
+    tay
+    sty v_row
+    rts
+.endproc
+hs_mark_at: .byte 0, 2, 4, 6, 9, 14, 30    ; frame da HS_MARK della colonna 0-6 (1 - (1 - k)^3)
+
+; La palla con la scia: scende di 16/11 di pixel a frame (una riga della classifica ogni HS_STEP),
+; rimbalza tra HS_X0 e HS_X1 a 6 pixel a frame; la scia sono le sue posizioni nei 3 frame prima.
+; Via oltre l'ultima riga.
+.proc hs_ball
+    lda hs_t+1
+    bne off
+    lda hs_t
+    cmp #HS_BALL_END
+    bcc on
+off:
+    lda #$f0
+    and sh_enable
+    sta sh_enable
+    rts
+on:
+    ldx #2                      ; la scia: le posizioni di prima scorrono
+shift:
+    lda hs_hx,x
+    sta hs_hx+1,x
+    lda hs_hm,x
+    sta hs_hm+1,x
+    lda hs_hy,x
+    sta hs_hy+1,x
+    dex
+    bpl shift
+    lda hs_x
+    sta hs_hx
+    lda hs_x+1
+    sta hs_hm
+    lda hs_y+1
+    sta hs_hy
+    lda hs_dir                  ; avanti
+    bmi left
+    lda hs_x
+    clc
+    adc #6
+    sta hs_x
+    bcc :+
+    inc hs_x+1
+:   lda hs_x+1
+    beq down
+    lda hs_x
+    cmp #<HS_X1
+    bcc down
+    lda #$ff
+    sta hs_dir
+    bne down
+left:
+    lda hs_x
+    sec
+    sbc #6
+    sta hs_x
+    bcs :+
+    dec hs_x+1
+:   lda hs_x+1
+    bne down
+    lda hs_x
+    cmp #HS_X0
+    bcs down
+    lda #1
+    sta hs_dir
+down:
+    lda hs_y
+    clc
+    adc #<(16 * 256 / 11)
+    sta hs_y
+    lda hs_y+1
+    adc #>(16 * 256 / 11)
+    sta hs_y+1
+    ldx #3                      ; gli sprite: 1-3 la scia, 0 la palla
+trail:
+    lda hs_hy - 1,x
+    clc
+    adc #SPR_Y0 - 2
+    sta sh_y,x
+    lda hs_hx - 1,x
+    clc
+    adc #SPR_X0 - 2
+    sta sh_x,x
+    lda hs_hm - 1,x
+    adc #0
+    lsr a
+    lda bit_of,x
+    eor #$ff
+    and sh_msb
+    bcc :+
+    ora bit_of,x
+:   sta sh_msb
+    dex
+    bne trail
+    lda hs_y+1
+    clc
+    adc #SPR_Y0 - 2
+    sta sh_y
+    lda hs_x
+    clc
+    adc #SPR_X0 - 2
+    sta sh_x
+    lda hs_x+1
+    adc #0
+    lsr a
+    lda sh_msb
+    and #$fe
+    adc #0
+    sta sh_msb
+    lda #$0f
+    ora sh_enable
+    sta sh_enable
+    rts
+.endproc
+; stato (si ricopia con il codice a ogni classifica)
+hs_t:   .word 0                 ; frame dal disegno
+hs_i:   .byte 0
+hs_d:   .byte 0
+hs_k:   .byte 0
+hs_c:   .byte $ff               ; colonna delle racchette a schermo
+hs_x:   .word HS_X0
+hs_dir: .byte 1
+hs_y:   .word 10 * 256          ; (pixel * 256)
+hs_hx:  .byte HS_X0, HS_X0, HS_X0, HS_X0  ; le ultime posizioni (la quarta solo di passaggio)
+hs_hm:  .byte 0, 0, 0, 0
+hs_hy:  .byte 10, 10, 10, 10
 
 ; Quattro righe per frame (tutta la tabella non sta nel budget).
 .proc draw_scores_table
@@ -1779,14 +2136,11 @@ row:
     lda ch_table+2,x
     ldx #15
     jsr put_ascii
-    ldx pk_dirty
-    ldy #0
-:   lda ch_table+3,x
-    sta ch_tmp,y
-    inx
-    iny
-    cpy #4
-    bne :-
+    lda #0                      ; i punti da zero (contano quando la palla tocca la riga)
+    ldy #3
+:   sta ch_tmp,y
+    dey
+    bpl :-
     ldx #19
     ldy pk_p
     jsr print_tmp
@@ -1809,12 +2163,8 @@ row:
     ldx #30
     jsr put_ascii
 color:
-    lda #COL_WHITE
-    ldx pk_i
-    cpx ch_hl
-    bne :+
-    lda #COL_YELLOW
-:   ldy pk_p
+    lda #COL_DGRAY              ; spenta finché la palla non la tocca (hs_anim)
+    ldy pk_p
     jsr color_row
     inc pk_i
     lda pk_i
@@ -1846,10 +2196,16 @@ last:
 
 ; La classifica con la tabella già disegnata (da scores_scene).
 .proc hs_scene
-    ; come nell'attract: gettone e Start
+    ; come nell'attract: gettone e Start; PRESS START dopo la palla
+    jsr hs_anim
     jsr coin_and_start
     bcs done
-    lda frame_count
+    lda hs_t+1
+    bne :+
+    lda hs_t
+    cmp #HS_BALL_END
+    bcc time
+:   lda frame_count
     and #$20
     beq off
     lda opt_free

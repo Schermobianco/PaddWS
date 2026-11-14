@@ -535,6 +535,7 @@ row:
 ; Campo sullo schermo già pulito (clear_text).
 .proc draw_field
     jsr bullet_chars
+    jsr net_setup               ; la rete della partita
     lda #0
     sta v_row
 :   jsr center_line_row
@@ -637,6 +638,19 @@ bullet_dst_hi:
     sta ptr
     lda row_hi,y
     sta ptr+1
+    tya                         ; righe vuote della rete dell'avversario (net_skip)
+    and #3
+    tay
+    lda bit_of,y
+    and net_skip
+    beq on
+    lda #CH_BLANK
+    ldy #19
+    sta (ptr),y
+    iny
+    sta (ptr),y
+    rts
+on:
     ldy #19
     lda #CH_LINE_L
     sta (ptr),y
@@ -645,6 +659,186 @@ bullet_dst_hi:
     sta (ptr),y
     rts
 .endproc
+
+; Reti degli avversari nella CHALLENGE contro la CPU, come draw_net di rust/game/src/scenes.rs (e
+; net_px del MiSTer), con i due caratteri della mezzeria (8 pixel di altezza, a cavallo tra le
+; colonne 19 e 20) ridefiniti da net_setup per la partita; per i motivi lunghi 16 o 32 righe alcune
+; righe di caratteri restano vuote (net_skip). ARCADE quadratini, HAMMER rete doppia, TITAN
+; trattini lunghi, BLASTER due file di puntini, GUARDIAN mattoni (non sfalsati), TWIST trattini
+; inclinati che si piegano tutti insieme verso la palla quando passa, HAMMER che salta di un pixel
+; ai colpi della CPU, RUSH trattini che scorrono (net_tick, ogni frame). Nelle altre partite la
+; mezzeria di sempre (K_NONE).
+NET_CH = CHARSET + 8 * CH_LINE_L
+.assert CH_LINE_R = CH_LINE_L + 1 .and K_NONE = 7, error, "reti: i due caratteri della mezzeria in fila, K_NONE ultimo"
+.proc net_setup
+    lda #K_NONE
+    ldx cg_active
+    cpx #CG_LADDER
+    bne :+
+    ldx ch_level
+    lda rung_kind,x
+:   sta net_kind
+    tax
+    lda net_skips,x
+    sta net_skip
+    lda #$ff
+    sta net_var
+    lda #12                     ; HAMMER fermo
+    sta net_t
+    txa
+    asl a
+    asl a
+    asl a
+    tax
+    ldy #0
+:   lda net_l,x
+    sta NET_CH,y
+    lda net_r,x
+    sta NET_CH + 8,y
+    inx
+    iny
+    cpy #8
+    bne :-
+    rts
+.endproc
+
+.proc net_tick
+    lda net_kind
+    cmp #K_RUSH
+    beq rush
+    cmp #K_TWIST
+    beq twist
+    cmp #K_HAMMER
+    beq hammer
+    rts
+rush:
+    ; trattini di 4 righe ogni 8 che scendono di una riga a tick
+    lda tick
+    and #7
+    sta net_t
+    ldx #7
+row:
+    txa
+    sec
+    sbc net_t
+    and #7
+    cmp #4
+    lda #0
+    ldy #0
+    bcs :+
+    lda #$01
+    ldy #$80
+:   sta NET_CH,x
+    tya
+    sta NET_CH + 8,x
+    dex
+    bpl row
+    rts
+twist:
+    ; palla entro 30 pixel dalla rete: inclinata di 2 pixel verso dove va (variante 1 a destra,
+    ; 2 a sinistra)
+    ldx #0
+    lda ball_x+2
+    cmp #<(160 - 30)
+    lda ball_x+3
+    sbc #>(160 - 30)
+    bcc :+
+    lda ball_x+2
+    cmp #<(160 + 30)
+    lda ball_x+3
+    sbc #>(160 + 30)
+    bcs :+
+    inx
+    lda ball_vx+3
+    bpl :+
+    inx
+:   cpx net_var
+    beq done
+    stx net_var
+    txa
+    asl a
+    asl a
+    tax
+    ldy #0
+:   lda tw_l,x
+    sta NET_CH,y
+    lda tw_r,x
+    sta NET_CH + 8,y
+    inx
+    iny
+    cpy #4
+    bne :-
+done:
+    rts
+hammer:
+    ; colpo della CPU (la palla che si allontana da lei): 12 frame di vibrazione, un pixel da
+    ; una parte e dall'altra
+    lda events
+    and #EV_HIT
+    beq count
+    lda ball_vx+3
+    ldx cpu_side
+    beq :+
+    eor #$80
+:   bmi count
+    lda #0
+    sta net_t
+count:
+    ldx #0
+    lda net_t
+    cmp #12
+    bcs set
+    inc net_t
+    and #2
+    beq set
+    inx
+    lda net_t
+    and #4
+    beq set
+    inx
+set:
+    cpx net_var
+    beq done
+    stx net_var
+    lda ham_l,x
+    ldy ham_r,x
+    ldx #7
+:   sta NET_CH,x
+    pha
+    tya
+    sta NET_CH + 8,x
+    pla
+    dex
+    bpl :-
+    rts
+.endproc
+
+net_kind: .byte K_NONE          ; rete della partita (net_setup)
+net_skip: .byte 0               ; righe di caratteri vuote: bit (riga and 3)
+net_var:  .byte 0               ; animazione a schermo
+net_t:    .byte 0
+; i due caratteri per tipo (K_*, poi K_NONE): colonna 19 (bit 0 = x 159) e colonna 20 (bit 7 = x 160)
+net_l: .byte $00, $00, $07, $04, $04, $04, $04, $07   ; ARCADE: quadratini, ogni 16 righe
+       .byte $01, $01, $01, $01, $01, $01, $01, $01   ; TITAN: trattini di 24 righe ogni 32
+       .byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E   ; HAMMER: rete doppia, 8 righe ogni 16
+       .byte $03, $03, $01, $01, $00, $00, $00, $00   ; TWIST: trattini inclinati
+       .byte $06, $06, $00, $00, $00, $00, $00, $00   ; BLASTER: due file di puntini
+       .byte $01, $01, $01, $01, $00, $00, $00, $00   ; RUSH (poi scorre)
+       .byte $07, $07, $07, $07, $00, $00, $00, $00   ; GUARDIAN: mattoni
+       .byte $01, $01, $01, $01, $00, $00, $00, $00   ; la mezzeria di sempre
+net_r: .byte $00, $00, $E0, $20, $20, $20, $20, $E0
+       .byte $80, $80, $80, $80, $80, $80, $80, $80
+       .byte $70, $70, $70, $70, $70, $70, $70, $70
+       .byte $00, $00, $80, $80, $00, $00, $00, $00
+       .byte $00, $00, $00, $00, $60, $60, $00, $00
+       .byte $80, $80, $80, $80, $00, $00, $00, $00
+       .byte $BC, $BC, $BC, $BC, $00, $00, $00, $00
+       .byte $80, $80, $80, $80, $00, $00, $00, $00
+net_skips: .byte %1010, %1000, %1010, 0, 0, 0, 0, 0
+tw_l:  .byte $03, $03, $01, $01,  $00, $00, $00, $00,  $0C, $0C, $06, $06
+tw_r:  .byte $00, $00, $80, $80,  $C0, $C0, $60, $60,  $00, $00, $00, $00
+ham_l: .byte $0E, $07, $1C
+ham_r: .byte $70, $38, $E0
 
 ; Punteggi: in due ai lati della mezzeria; in singolo i colpi a sinistra, record e palle a destra.
 .proc draw_scores
