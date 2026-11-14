@@ -122,6 +122,8 @@ struct GameOver {
     label_y: f32,
     /// riga di chi ha vinto, sotto GAME OVER
     winner_y: f32,
+    /// frame di schermo nero dopo la chiusura del GAME OVER
+    black_frames: u32,
 }
 
 /// Bitmap a 1 bit: texture per il disegno e pixel per i rimbalzi della pallina.
@@ -218,6 +220,12 @@ impl AttractArt {
     /// Durata del "GAME OVER" in secondi.
     pub fn game_over_seconds(&self) -> f64 {
         self.spec.frames.game_over as f64 * FRAME
+    }
+
+    /// Secondi di schermo nero dopo la chiusura del GAME OVER (`draw_crt_close`), prima di passare
+    /// oltre: si aggiungono a `game_over_seconds` solo quando lo schermo si chiude.
+    pub fn game_over_black_seconds(&self) -> f64 {
+        self.spec.game_over.black_frames as f64 * FRAME
     }
 
     /// Durata della demo in frame a 60 Hz.
@@ -648,9 +656,10 @@ const CLOSE_SQUASH: f64 = 8.0;
 const CLOSE_LINE: f64 = 8.0;
 const CLOSE_DOT: f64 = 6.0;
 const CLOSE_FRAMES: f64 = CLOSE_SQUASH + CLOSE_LINE + CLOSE_DOT;
-/// PERFECT: scala del timbro nei primi frame, scossa del riquadro, chi ha vinto da `STAMP_WIN`,
-/// riflesso da `GLINT_AT` ogni `GLINT_PERIOD` frame.
+/// PERFECT: scala del timbro nei primi frame (`STAMP_HOLD` frame ciascuna), scossa del riquadro,
+/// chi ha vinto da `STAMP_WIN`, riflesso da `GLINT_AT` ogni `GLINT_PERIOD` frame.
 const STAMP: [f32; 3] = [6.0, 4.5, 3.0];
+const STAMP_HOLD: f64 = 4.0;
 const STAMP_SHAKE: [(f32, f32); 8] = [
     (3.0, 0.0),
     (-3.0, 2.0),
@@ -661,8 +670,8 @@ const STAMP_SHAKE: [(f32, f32); 8] = [
     (1.0, 0.0),
     (0.0, 0.0),
 ];
-const STAMP_WIN: f64 = 20.0;
-const GLINT_AT: f64 = 40.0;
+const STAMP_WIN: f64 = 28.0;
+const GLINT_AT: f64 = 48.0;
 const GLINT_PERIOD: f64 = 60.0;
 /// YOU WIN: la palla arriva sulla prima lettera in `HOP_FIRST` frame, poi un salto ogni `HOP`;
 /// la lettera colpita si abbassa per `HOP_PRESS` frame; finiti i salti la scritta lampeggia.
@@ -748,16 +757,17 @@ pub fn draw_game_over_anim(
     let hop = title.is_none() && winner == Some("you_win");
     if perfect {
         // timbro: enorme nei primi frame, poi il riquadro trema e si accende il bordo
-        if let Some(&scale) = STAMP.get(f as usize) {
+        if let Some(&scale) = STAMP.get((f / STAMP_HOLD) as usize) {
             let bm = o.label;
             let y = ly + bm.height() - bm.height() * scale / 2.0;
             view.bitmap(bm, ((VW - bm.width() * scale) / 2.0).round(), y, scale, o.label_color);
             return;
         }
-        let (dx, dy) = STAMP_SHAKE.get(f as usize - STAMP.len()).copied().unwrap_or_default();
+        let stamped = STAMP.len() as f64 * STAMP_HOLD;
+        let (dx, dy) = STAMP_SHAKE.get((f - stamped) as usize).copied().unwrap_or_default();
         let b = o.back;
         view.rect(b.x + dx, b.y + dy, b.w, b.h, black);
-        if f < STAMP.len() as f64 + 5.0 {
+        if f < stamped + 5.0 {
             for (x, y, w, h) in [(0.0, 0.0, b.w, 1.0), (0.0, b.h - 1.0, b.w, 1.0), (0.0, 0.0, 1.0, b.h), (b.w - 1.0, 0.0, 1.0, b.h)] {
                 view.rect(b.x + dx + x, b.y + dy + y, w, h, accent);
             }

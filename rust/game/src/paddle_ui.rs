@@ -283,9 +283,15 @@ impl PaddlePick {
         (165.0 * s + (i as f32 + 0.5) * row_h, row_h)
     }
 
+    /// Conferma o annulla la racchetta sotto il cursore di `side`; confermata, il SID ne dice il
+    /// nome (come quello degli avversari della CHALLENGE), interrompendo quello di prima.
     fn toggle(&mut self, app: &App, side: usize) {
         self.chosen[side] = !self.chosen[side];
         app.play(if self.chosen[side] { Event::Hit } else { Event::Wall });
+        if self.chosen[side] {
+            app.stop_announce();
+            app.announce(PaddleKind::ALL[self.cursor[side]]);
+        }
     }
 
     pub fn update(&mut self, app: &mut App, dt: f64) -> Option<Scene> {
@@ -341,23 +347,23 @@ impl PaddlePick {
                 _ => {}
             }
         }
-        // touch: un tocco su una riga della propria colonna mostra quella racchetta, un altro tocco
-        // sulla stessa riga la sceglie (o la lascia)
+        // touch: un tocco su una riga della propria colonna mostra quella racchetta (e annulla la
+        // conferma); si conferma toccando OK in cima alla colonna, come nella scelta dei bonus (vale
+        // tutto lo spazio sopra le righe), e un altro tocco lì la lascia
+        let (first, row_h) = Self::row(app, 0);
         for p in touch::taps() {
             let side = usize::from(p.x >= app.renderer.world_w / 2.0);
             if self.fixed == Some(side) {
                 continue;
             }
-            if let Some(i) = (0..n).find(|&i| {
+            if p.y < first - row_h / 2.0 {
+                self.toggle(app, side);
+            } else if let Some(i) = (0..n).find(|&i| {
                 let (cy, row_h) = Self::row(app, i);
                 (p.y - cy).abs() < row_h / 2.0
             }) {
-                if i == self.cursor[side] {
-                    self.toggle(app, side);
-                } else {
-                    self.cursor[side] = i;
-                    self.chosen[side] = false;
-                }
+                self.cursor[side] = i;
+                self.chosen[side] = false;
             }
         }
         // tempo scaduto: vale la racchetta sotto il cursore
@@ -411,6 +417,11 @@ impl PaddlePick {
             r.text_centered(&self.name(side), font, 30.0 * s, x0 + half * 0.19, 132.0 * s, 0.0, white);
             if self.chosen[side] {
                 r.text_centered("OK", font, 30.0 * s, x0 + half * 0.68, 132.0 * s, 0.0, accent);
+            } else if app.touch && self.fixed != Some(side) && self.ready.is_none() {
+                // touch: il pulsante con cui si conferma, come nella scelta dei bonus
+                let cx = x0 + half * 0.68;
+                draw_rectangle(cx - 35.0 * s, 132.0 * s - 18.0 * s, 70.0 * s, 36.0 * s, accent);
+                r.text_centered("OK", font, 30.0 * s, cx, 132.0 * s, 0.0, App::color(app.cfg.colors.black));
             }
             // anteprima a grandezza reale della racchetta sotto il cursore
             let sel = PaddleKind::ALL[self.cursor[side]];
@@ -487,7 +498,7 @@ impl PaddlePick {
             for side in 0..2 {
                 if self.fixed != Some(side) && !self.chosen[side] {
                     let x = if side == 0 { w / 4.0 } else { 3.0 * w / 4.0 };
-                    r.text_centered("TAP AGAIN TO CHOOSE", font, 20.0 * s, x, h - 16.0 * s, 0.0, gray);
+                    r.text_centered("TAP OK TO CHOOSE", font, 20.0 * s, x, h - 16.0 * s, 0.0, gray);
                 }
             }
         } else if self.ready.is_none() {

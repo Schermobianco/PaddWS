@@ -30,6 +30,7 @@ localparam integer AT_BLINK_ON = 37;
 localparam integer AT_DEMO_LABEL_Y = 112;
 localparam integer AT_GAME_OVER_Y = 112;
 localparam integer AT_WINNER_Y = 132;
+localparam integer AT_GAME_OVER_BLACK = 120;
 localparam integer AT_STRIPE_ROW_0 = 96;
 localparam integer AT_STRIPE_ROW_1 = 115;
 localparam integer AT_STRIPE_ROW_2 = 134;

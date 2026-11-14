@@ -249,7 +249,7 @@ pd_dirty:  .res 2               ; immagine da copiare nella RAM degli sprite
     lda #0
     sta egg_x
 .ifdef EGGTEST
-    ; prova per VICE (-Define EGGTEST): easter egg acceso dall'avvio, come dopo le iniziali WS!
+    ; prova per VICE (-Define EGGTEST): easter egg acceso dall'avvio, come dopo le iniziali RED
     ldx #3
 :   lda egg_x,x
     eor egg_flip,x

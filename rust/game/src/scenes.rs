@@ -193,7 +193,7 @@ pub struct App {
     /// musica che sta suonando, e la musica del SID suonata in tempo reale
     pub music: Option<Song>,
     pub sid_music: crate::music::SidMusic,
-    /// easter egg (iniziali "WS!", `challenge_ui::egg_after`): fino allo spegnimento, mai nella
+    /// easter egg (iniziali "RED", `challenge_ui::egg_after`): fino allo spegnimento, mai nella
     /// configurazione
     pub egg: bool,
     /// partita lasciata per il menu (pausa, Esc, encoder): la voce RESUME la riprende
@@ -463,6 +463,8 @@ impl Scene {
             Scene::Game(s) => match (s.game_over, &s.challenge) {
                 (Some(_), None) => Some(Song::GameOver),
                 (None, Some((level, _))) => Some(Song::Theme(RUNGS[*level].kind)),
+                // la sfida della CHALLENGE tra due giocatori: il tema di un avversario a caso
+                (None, None) if s.duel.is_some() => Some(Song::Theme(s.theme)),
                 _ => None,
             },
             Scene::Demo(_) => None,
@@ -1305,6 +1307,9 @@ pub struct Play {
     duel: Option<usize>,
     /// secondi dall'ultimo colpo dell'HAMMER (la sua rete vibra subito dopo)
     hammer_net: f64,
+    /// tema della sfida della CHALLENGE tra due giocatori: quello di un avversario, a caso (dal seme
+    /// della partita, che il core usa per altro: la partita non cambia)
+    theme: PaddleKind,
 }
 
 /// Seme della prossima partita.
@@ -1362,6 +1367,7 @@ impl Play {
             solo: Side::Left,
             duel: None,
             hammer_net: 1.0,
+            theme: PaddleKind::ALL[(app.seed >> 16) as usize % PaddleKind::COUNT],
         };
         play.pad_draw_x = [to_f32(play.game.paddles[0].x), to_f32(play.game.paddles[1].x)];
         play.previous = play.snapshot();
@@ -1789,9 +1795,15 @@ impl Play {
         // il lampo del punto si spegne anche a partita finita: quello del punto decisivo, se si
         // fermasse qui, coprirebbe di bianco tutto il GAME OVER (e YOU WIN)
         self.flash = (self.flash - dt).max(0.0);
+        // con GAME OVER, dopo la chiusura da televisore lo schermo resta nero per un po'
+        let black = if self.over_texts().0 == Some("game_over") {
+            app.attract.game_over_black_seconds()
+        } else {
+            0.0
+        };
         if let Some(left) = &mut self.game_over {
             *left -= dt;
-            if *left > 0.0 {
+            if *left > -black {
                 return None;
             }
             // CHALLENGE: fine della sfida, livello vinto o continue; altrimenti l'attract

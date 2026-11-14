@@ -4867,10 +4867,10 @@ fn egg_initials(m: &mut Machine, name: &[u8; 3]) {
 }
 
 /// Easter egg nel banco `ui` (egg_check, challenge.s; egg_after di rust/game/src/challenge_ui.rs):
-/// il "!" in fondo alle lettere delle iniziali, dopo lo spazio; spento all'avvio; "WS!" lo accende
+/// il "!" in fondo alle lettere delle iniziali, dopo lo spazio; spento all'avvio; "RED" lo accende
 /// e la volta dopo lo spegne, le altre iniziali no; giallo e rosso scambiati nelle scritte
 /// (color_row, color_span) e nei segni delle racchette ($D026); nell'attract e nel menu la canzone
-/// del finale (attract_song); scritto con il joystick (W, S e il "!") il record va primo in
+/// del finale (attract_song); scritto con il joystick (R, E e D) il record va primo in
 /// classifica e parte la classifica. Alla fine di nuovo spento.
 fn egg_ui(m: &mut Machine) -> Result<String, String> {
     let letters: Vec<u8> = (0..38).map(|i| m.read_u8("letters", i)).collect();
@@ -4886,7 +4886,7 @@ fn egg_ui(m: &mut Machine) -> Result<String, String> {
         Ok(())
     };
     check(m, false, "all'avvio")?;
-    for (name, on) in [(b"ABC", false), (b"WS!", true), (b"WS ", true), (b"!WS", true), (b"SW!", true), (b"WS!", false)] {
+    for (name, on) in [(b"ABC", false), (b"RED", true), (b"RE ", true), (b"DER", true), (b"ERD", true), (b"RED", false)] {
         egg_initials(m, name);
         check(m, on, &format!("dopo le iniziali {}", String::from_utf8_lossy(name)))?;
     }
@@ -4900,7 +4900,7 @@ fn egg_ui(m: &mut Machine) -> Result<String, String> {
     };
     for on in [false, true] {
         if on {
-            egg_initials(m, b"WS!");
+            egg_initials(m, b"RED");
         }
         for (color, swapped) in [(COL_YELLOW, COL_RED), (COL_RED, COL_YELLOW), (1, 1), (COL_GRAY, COL_GRAY)] {
             let want = if on { swapped } else { color };
@@ -4916,11 +4916,11 @@ fn egg_ui(m: &mut Machine) -> Result<String, String> {
             return Err(format!("canzone dell'attract con l'easter egg {on}: {}", m.read_u8("sid_song_n", 0)));
         }
         if on {
-            egg_initials(m, b"WS!");
+            egg_initials(m, b"RED");
         }
     }
     check(m, false, "spento di nuovo")?;
-    // con il joystick (porta 2): W (22 passi in giù dalla A), S (4 in su), "!" (19 in giù), il fuoco
+    // con il joystick (porta 2): R (17 passi in giù dalla A), E (13 in su), D (1 in su), il fuoco
     // dopo ogni lettera; il record entra primo in classifica, poi la classifica
     for i in 0..80 {
         let b = m.image_u8("table_init", i);
@@ -4944,7 +4944,7 @@ fn egg_ui(m: &mut Machine) -> Result<String, String> {
     for _ in 0..3 {
         frame(m, 0xFF);
     }
-    for (moves, bit) in [(22, 0x02u8), (4, 0x01), (19, 0x02)] {
+    for (moves, bit) in [(17, 0x02u8), (13, 0x01), (1, 0x01)] {
         for b in std::iter::repeat_n(bit, moves).chain([0x10]) {
             frame(m, 0xFF);
             frame(m, !b);
@@ -4952,18 +4952,18 @@ fn egg_ui(m: &mut Machine) -> Result<String, String> {
     }
     m.cpu.joy_port2 = 0xFF;
     let name: Vec<u8> = (0..3).map(|i| m.read_u8("ch_table", i)).collect();
-    if rank != 0 || name != b"WS!" || m.read_u8("state", 0) != ST_SCORES || m.read_u8("ch_hl", 0) != 0 {
+    if rank != 0 || name != b"RED" || m.read_u8("state", 0) != ST_SCORES || m.read_u8("ch_hl", 0) != 0 {
         return Err(format!(
             "iniziali con il joystick: posto {rank}, nome {:?}, scena {}",
             String::from_utf8_lossy(&name),
             m.read_u8("state", 0)
         ));
     }
-    check(m, true, "dopo WS! con il joystick")?;
-    egg_initials(m, b"WS!");
+    check(m, true, "dopo RED con il joystick")?;
+    egg_initials(m, b"RED");
     check(m, false, "spento alla fine")?;
     Ok(
-        "easter egg: il \"!\" dopo lo spazio nelle iniziali; WS! lo accende e lo spegne (anche con il joystick, con il record in classifica), le altre iniziali no; giallo e rosso scambiati nelle scritte e in $D026; la canzone del finale nell'attract"
+        "easter egg: il \"!\" dopo lo spazio nelle iniziali; RED lo accende e lo spegne (anche con il joystick, con il record in classifica), le altre iniziali no; giallo e rosso scambiati nelle scritte e in $D026; la canzone del finale nell'attract"
             .into(),
     )
 }
@@ -5100,7 +5100,7 @@ fn egg_run(m: &mut Machine, what: &str, frames: u32, joy: EggJoy) -> Result<EggR
 }
 
 /// Easter egg nel banco `frames`: gli stessi tratti giocati due volte dalla stessa copia della
-/// macchina, senza e con l'easter egg ("WS!", egg_check), con gli stessi comandi. Con l'easter egg
+/// macchina, senza e con l'easter egg ("RED", egg_check), con gli stessi comandi. Con l'easter egg
 /// ogni frame deve avere i colori di quello senza con giallo e rosso scambiati (registri del VIC,
 /// RAM dei colori, colori della bitmap, multicolore dei fuochi) e stare nel budget:
 /// - l'attract (strisce, logo, titolo, classifica), dove deve suonare la canzone del finale dalla
@@ -5110,7 +5110,7 @@ fn egg_run(m: &mut Machine, what: &str, frames: u32, joy: EggJoy) -> Result<EggR
 /// - la classifica con il record in evidenza, con il bordo nero (i colori scritti in $D020);
 /// - il finale di CHALLENGE da capo (sfilata, timbri, fuochi, titoli), con i suoi controlli.
 fn egg_frames(m: &mut Machine) -> Result<String, String> {
-    let egg_on = |m: &mut Machine| egg_initials(m, b"WS!");
+    let egg_on = |m: &mut Machine| egg_initials(m, b"RED");
     let idle: EggJoy = |_, _, _| 0xFF;
     let play: EggJoy = |m, rng, f| {
         // a metà partita un punto alla vittoria per tutti e due: il match point (bordo rosso)

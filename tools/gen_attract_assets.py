@@ -169,7 +169,7 @@ def verilog_timing(spec: dict, ease: list[int]) -> str:
         "AT_LABEL_Y": t["label_y"], "AT_CREDIT_Y": t["credit_y"], "AT_COPYRIGHT_Y": t["copyright_y"],
         "AT_LABEL_FROM": t["label_from"], "AT_BLINK_PERIOD": t["blink_period"], "AT_BLINK_ON": t["blink_on"],
         "AT_DEMO_LABEL_Y": spec["demo"]["label_y"], "AT_GAME_OVER_Y": spec["game_over"]["label_y"],
-        "AT_WINNER_Y": spec["game_over"]["winner_y"],
+        "AT_WINNER_Y": spec["game_over"]["winner_y"], "AT_GAME_OVER_BLACK": spec["game_over"]["black_frames"],
     }
     lines = [f"localparam integer {k} = {v};" for k, v in values.items()]
     lines += [f"localparam integer AT_STRIPE_ROW_{i} = {r};" for i, r in enumerate(st["rows"])]
@@ -211,7 +211,8 @@ def main() -> None:
                   "blink_period": 60, "blink_on": 37, "label_from": 54,
                   "ball": {"x": 10, "y": 60, "vx": 1.6, "vy": 1.1667, "size": 4}},
         "demo": {"label_y": 112, "box_pad": 6, "credit_x": 8, "credit_y": 6},
-        "game_over": {"label_y": 112, "winner_y": 132},
+        # black_frames: dopo la chiusura del GAME OVER lo schermo resta nero (Rust e MiSTer)
+        "game_over": {"label_y": 112, "winner_y": 132, "black_frames": 120},
         "texts": {name: list(mask.size) for name, mask in images.items()},
     }
     (OUT / "attract.json").write_text(json.dumps(spec, indent=2) + "\n", encoding="utf-8")

@@ -131,14 +131,14 @@ module next_render (
 
 localparam integer W = P_WIDTH >>> 16;
 localparam integer H = P_HEIGHT >>> 16;
-localparam [23:0] WHITE = 24'hFFFFFF, GRAY = 24'hB4B4B4, BLACK = 24'h000000;
+localparam [23:0] RGB_WHITE = 24'hFFFFFF, RGB_GRAY = 24'hB4B4B4, RGB_BLACK = 24'h000000;
 // colore di accento, come `colors.accent` del gioco Rust (il giallo dell'attract): solo per
 // titolo, cursore e READY! della scelta, freccetta della riserva, portali, scritta del bonus,
 // capsula e palla del SUPER, capsula del BULLET, bordo della racchetta di chi ha il BULLET
-localparam [23:0] ACCENT = 24'hFFD225;
+localparam [23:0] RGB_ACCENT = 24'hFFD225;
 // codici dei bonus a 4 bit come nelle parole dei giocatori di pong_logic_rv (8 = posto vuoto)
 localparam [3:0] B_SUPER = 4'd5, B_STEER = 4'd6, B_BULLET = 4'd7, B_NONE = 4'd8;
-localparam [23:0] DETAIL = 24'hA9B0B8, DIM = 24'h3F3F3F;
+localparam [23:0] RGB_DETAIL = 24'hA9B0B8, RGB_DIM = 24'h3F3F3F;
 // tipi di racchetta (come `PaddleKind`)
 localparam [2:0] K_ARCADE = 3'd0, K_TITAN = 3'd1, K_HAMMER = 3'd2, K_TWIST = 3'd3, K_BLASTER = 3'd4,
                  K_RUSH = 3'd5, K_GUARDIAN = 3'd6, K_NONE = 3'd7;
@@ -147,11 +147,17 @@ localparam [2:0] KP_NONE = 3'd0, KP_BODY = 3'd1, KP_MARK = 3'd2, KP_DETAIL = 3'd
 // RUSH: immagini della racchetta dietro di lei, dalla più lontana (la più scura) alla più vicina:
 // l'accento al 18, 36 e 54% (come su PC, alpha 0,18 * k sul nero)
 localparam [2:0] KP_GHOST1 = 3'd5, KP_GHOST2 = 3'd6, KP_GHOST3 = 3'd7;
-localparam [23:0] GHOST1 = 24'h2E2607, GHOST2 = 24'h5C4C0D, GHOST3 = 24'h8A7114;
+localparam [23:0] RGB_GHOST1 = 24'h2E2607, RGB_GHOST2 = 24'h5C4C0D, RGB_GHOST3 = 24'h8A7114;
 // colpo di una mossa (draw_kick di next_ui.rs), KICK_FRAMES frame come in pong_top: l'onda d'urto
 // sfuma con l'accento a 2/3 e 1/3; le immagini della racchetta della MAX all'accento al 50 e 25%
 localparam integer KICK_FRAMES = 18;
-localparam [23:0] KICK2 = 24'hAA8C18, KICK1 = 24'h55460C, KICK_IMG1 = 24'h806912, KICK_IMG2 = 24'h403409;
+localparam [23:0] RGB_KICK2 = 24'hAA8C18, RGB_KICK1 = 24'h55460C, RGB_KICK_IMG1 = 24'h806912, RGB_KICK_IMG2 = 24'h403409;
+// Colori come indici della tavolozza `pal` (7 bit invece di 24): la catena del pixel sceglie
+// fra indici e il colore vero si legge una volta sola, all'uscita. Dopo i colori fissi le code:
+// trail_col, trail_acc e trail_long grigia e gialla, una voce per passo (81 in tutto).
+localparam [6:0] WHITE = 7'd0, GRAY = 7'd1, BLACK = 7'd2, ACCENT = 7'd3, DETAIL = 7'd4, DIM = 7'd5, GHOST1 = 7'd6,
+                 GHOST2 = 7'd7, GHOST3 = 7'd8, KICK2 = 7'd9, KICK1 = 7'd10, KICK_IMG1 = 7'd11, KICK_IMG2 = 7'd12;
+localparam [6:0] T_COL = 7'd13, T_ACC = 7'd25, T_LONG_GRAY = 7'd37, T_LONG_ACC = 7'd59;
 // TWIST: inclinazione a gradini (fino a circa 20 gradi) dalla velocità della racchetta
 localparam signed [31:0] TILT1 = P_PAD_MAX_SPEED / 6, TILT2 = P_PAD_MAX_SPEED / 2,
                          TILT3 = P_PAD_MAX_SPEED * 5 / 6;
@@ -189,9 +195,9 @@ endfunction
 function [23:0] trail_acc(input integer j);
     reg [7:0] r, g, b;
     begin
-        r = ACCENT[23:16] * (2 * TRAIL + 1 - j) / (2 * TRAIL + 1);
-        g = ACCENT[15:8] * (2 * TRAIL + 1 - j) / (2 * TRAIL + 1);
-        b = ACCENT[7:0] * (2 * TRAIL + 1 - j) / (2 * TRAIL + 1);
+        r = RGB_ACCENT[23:16] * (2 * TRAIL + 1 - j) / (2 * TRAIL + 1);
+        g = RGB_ACCENT[15:8] * (2 * TRAIL + 1 - j) / (2 * TRAIL + 1);
+        b = RGB_ACCENT[7:0] * (2 * TRAIL + 1 - j) / (2 * TRAIL + 1);
         trail_acc = {r, g, b};
     end
 endfunction
@@ -200,15 +206,45 @@ localparam integer TRAIL_LONG = HIST - 1;
 function [23:0] trail_long(input acc, input integer j);
     reg [7:0] r, g, b;
     begin
-        r = (acc ? ACCENT[23:16] : 8'hB4) * (2 * TRAIL_LONG + 1 - j) / (2 * TRAIL_LONG + 1);
-        g = (acc ? ACCENT[15:8] : 8'hB4) * (2 * TRAIL_LONG + 1 - j) / (2 * TRAIL_LONG + 1);
-        b = (acc ? ACCENT[7:0] : 8'hB4) * (2 * TRAIL_LONG + 1 - j) / (2 * TRAIL_LONG + 1);
+        r = (acc ? RGB_ACCENT[23:16] : 8'hB4) * (2 * TRAIL_LONG + 1 - j) / (2 * TRAIL_LONG + 1);
+        g = (acc ? RGB_ACCENT[15:8] : 8'hB4) * (2 * TRAIL_LONG + 1 - j) / (2 * TRAIL_LONG + 1);
+        b = (acc ? RGB_ACCENT[7:0] : 8'hB4) * (2 * TRAIL_LONG + 1 - j) / (2 * TRAIL_LONG + 1);
         trail_long = {r, g, b};
     end
 endfunction
 // colore della coda al passo j: accento per il tiro di una mossa, lunga nel bullet time
-function [23:0] trail_pick(input acc, input lng, input integer j);
-    trail_pick = lng ? (acc ? trail_long(1'b1, j) : trail_long(1'b0, j)) : (acc ? trail_acc(j) : trail_col(j));
+function [6:0] trail_pick(input acc, input lng, input integer j);
+    trail_pick = (lng ? (acc ? T_LONG_ACC : T_LONG_GRAY) : (acc ? T_ACC : T_COL)) + j - 1;
+endfunction
+// tavolozza: i colori fissi e le code (trail_col, trail_acc, trail_long), una voce per passo; con
+// j costante le funzioni delle code danno costanti, e il tutto è una piccola ROM
+function [23:0] pal(input [6:0] i);
+    integer j;
+    begin
+        case (i)
+            WHITE:     pal = RGB_WHITE;
+            GRAY:      pal = RGB_GRAY;
+            ACCENT:    pal = RGB_ACCENT;
+            DETAIL:    pal = RGB_DETAIL;
+            DIM:       pal = RGB_DIM;
+            GHOST1:    pal = RGB_GHOST1;
+            GHOST2:    pal = RGB_GHOST2;
+            GHOST3:    pal = RGB_GHOST3;
+            KICK2:     pal = RGB_KICK2;
+            KICK1:     pal = RGB_KICK1;
+            KICK_IMG1: pal = RGB_KICK_IMG1;
+            KICK_IMG2: pal = RGB_KICK_IMG2;
+            default:   pal = RGB_BLACK;
+        endcase
+        for (j = 1; j <= 2 * TRAIL; j = j + 1) begin
+            if (i == T_COL + j - 1) pal = trail_col(j);
+            if (i == T_ACC + j - 1) pal = trail_acc(j);
+        end
+        for (j = 1; j <= 2 * TRAIL_LONG; j = j + 1) begin
+            if (i == T_LONG_GRAY + j - 1) pal = trail_long(1'b0, j);
+            if (i == T_LONG_ACC + j - 1) pal = trail_long(1'b1, j);
+        end
+    end
 endfunction
 // BULLET: immagini grigie della palla (solo il contorno) ogni GHOST_STEP frame, oltre la coda:
 // GHOSTS posizioni prese dalla più vecchia della storia
@@ -573,6 +609,33 @@ initial begin
     gph = 2'd0;
 end
 
+// v / 3 per v fino a 31 (le cifre a scala 3, sempre dentro la loro casella), senza divisore
+function [3:0] div3(input [9:0] v);
+    reg [9:0] t;
+    begin
+        t = v[4:0] * 10'd11;
+        div3 = t[8:5];
+    end
+endfunction
+// v / 5 esatto per v a 14 bit (il lato della cometa), con una moltiplicazione per una costante
+function [9:0] div5(input [13:0] v);
+    reg [31:0] t;
+    begin
+        t = v * 32'd52429;
+        div5 = t[27:18];
+    end
+endfunction
+
+// il pixel p è nel tratto lungo s che parte h pixel prima di c (0 <= p - c + h < s), con i conti a
+// 14 bit: come `p - (c - h) < s` con le costanti intere (a 32 bit), che però costa tre volte tanto
+function span(input [9:0] p, input [9:0] c, input [10:0] h, input [11:0] s);
+    reg signed [13:0] d;
+    begin
+        d = $signed({4'b0, p}) - $signed({4'b0, c}) + $signed({3'b0, h});
+        span = !d[13] && d < $signed({2'b0, s});
+    end
+endfunction
+
 function [9:0] px_of(input signed [31:0] v);
     px_of = v[25:16];
 endfunction
@@ -775,7 +838,7 @@ always @(posedge clk) begin
         bhide <= ball_hidden;
         steer_side <= next_flags[6];
         ring_on <= nxt && slow_timer != 0 && tick[4];
-        bside <= (next_flags[2] && next_flags[4:3] == 2'd2) ? (px_of(ball_r) * 16) / 5 : px_of(ball_r) * 2;
+        bside <= (next_flags[2] && next_flags[4:3] == 2'd2) ? div5({px_of(ball_r), 4'd0}) : px_of(ball_r) * 2;
         bx <= ball_col(ball_x);
         by <= ball_row(ball_y);
         bleft <= ball_vx < 0;
@@ -844,7 +907,7 @@ reg        on, gray_px, lb;
 reg        lbox, ltext, lcol, ldash;      // scritta del bonus o della mossa
 reg        pad_box;                       // pixel di una racchetta: la scritta passa sotto
 reg [9:0]  ldx, lpos;
-reg [23:0] col;
+reg [6:0]  col;                        // indice della tavolozza (pal)
 reg [9:0]  dx, dy, sx, cxl;
 reg [1:0]  t_count;
 reg [3:0]  rb;                         // codice del bonus della riga r della scelta
@@ -866,6 +929,25 @@ reg        mv_code, mv_on, hb_p;
 reg [9:0]  mv_dx, mv_dy, bq_x, bq_y;
 reg [7:0]  bq_lvl;
 reg [1:0]  bq;
+// scelta dei bonus: lato (1 = destra) e riga del pixel, con la sua prima riga, bonus presi e cursore
+reg        bp;
+// riserve in partita: lato e posto del pixel, il suo bonus, se è il selezionato, e il pixel che ne esce
+reg        rv_p, rv_sel, rv_on;
+reg [1:0]  rv_k;
+reg [3:0]  rv_b;
+reg [6:0]  rv_col;
+// chiamate condivise tra le schermate (vedi il pixel)
+reg        sh_game, sh_pickb, sh_name, sh_kname;
+reg [9:0]  sh_cxb, sh_cxl, sh_kcx;
+reg [2:0]  sh_kcur, sh_ka, sh_kb;
+integer    sh_p, sh_r;
+reg signed [11:0] sh_kx, sh_kq, sh_kr, sh_mx, sh_mq, sh_my, sh_x0, sh_x1;
+// pixel delle due racchette in partita: codice del tipo (kind_px) e dentro il rettangolo
+reg [2:0]  kcp [0:1];
+reg        kin [0:1];
+reg [2:0]  br, bcur;
+reg [9:0]  by0;
+reg [5:0]  bmask;
 
 always @(*) begin
     on = 1'b0;
@@ -905,6 +987,21 @@ always @(*) begin
     ldash = 1'b0;
     lpos = 10'd0;
     pad_box = 1'b0;
+    bp = 1'b0;
+    br = 3'd0;
+    bcur = 3'd0;
+    by0 = 10'd0;
+    bmask = 6'd0;
+    rv_p = 1'b0;
+    rv_k = 2'd0;
+    rv_b = 4'd0;
+    rv_sel = 1'b0;
+    rv_on = 1'b0;
+    rv_col = BLACK;
+    kcp[0] = KP_NONE;
+    kcp[1] = KP_NONE;
+    kin[0] = 1'b0;
+    kin[1] = 1'b0;
     // barre nella banda in alto: la sinistra da BAR_X, la destra speculare
     bq_x = hb_p ? (W - 1 - BAR_X) - x : x - BAR_X;
     bq_y = y - (BAR_Y - 2);
@@ -918,6 +1015,58 @@ always @(*) begin
     pdx = (pk == 3'd0) ? END_COL0 : (pk == 3'd1) ? END_COL1 : (pk == 3'd2) ? END_COL2 : (pk == 3'd3) ? END_COL3 :
           (pk == 3'd4) ? END_COL4 : (pk == 3'd5) ? END_COL5 : END_COL6;
 
+    // Chiamate condivise. Le schermate di scelta e la partita non sono mai insieme sullo schermo:
+    // le funzioni più grandi (due kind_px, il nome del bonus e quello della racchetta) si fanno una
+    // volta sola, con gli argomenti della schermata in corso; ogni schermata qui sotto ne usa il
+    // risultato (sh_ka, sh_kb, sh_name, sh_kname) al posto della propria chiamata.
+    sh_game = !((pick && pick_paddle) || intro || parade) && !pick;
+    sh_pickb = !((pick && pick_paddle) || intro || parade) && pick;
+    // scelta dei bonus: lato e riga del pixel (vedi la schermata)
+    bp = x >= W / 2;
+    bmask = bp ? pick_mask1 : pick_mask0;
+    bcur = bp ? pick_cursor1 : pick_cursor0;
+    br = (y >= 100) + (y >= 124) + (y >= 148) + (y >= 172) + (y >= 196);
+    by0 = 76 + {br, 4'd0} + {br, 3'd0};
+    rb = (br == 3'd5) ? B_STEER : {1'b0, br};
+    sh_cxb = bp ? 3 * W / 4 : W / 4;
+    // scelta della racchetta, presentazione e sfilata: anteprima (come la schermata qui sotto) e riga
+    // della miniatura
+    sh_p = (intro || parade) ? 0 : (x >= W / 2);
+    sh_cxl = (sh_p == 0) ? W / 4 : 3 * W / 4;
+    sh_kcur = parade ? pk : intro ? intro_kind : (sh_p == 0) ? kind_cursor0 : kind_cursor1;
+    sh_kcx = parade ? pdx : intro ? W / 2 + (intro_right ? -ip_dx : ip_dx) : sh_cxl - 60;
+    sh_kx = $signed({2'b0, x}) - ($signed({2'b0, sh_kcx}) - PW / 2);
+    sh_kq = (parade || (intro ? intro_right : sh_p == 0)) ? sh_kx : PW - 1 - sh_kx;
+    sh_kr = $signed({2'b0, y}) - ((parade ? END_PARADE_Y : intro ? INTRO_Y + ip_dy : 12'sd144) -
+                                  ($signed({2'b0, intro ? ip_h : kind_px_h(sh_kcur)}) >>> 1));
+    sh_r = row20(y);
+    sh_mx = $signed({2'b0, x}) - ($signed({2'b0, sh_cxl}) - 25);
+    sh_mq = (sh_p == 0) ? sh_mx : 1 - sh_mx;
+    sh_my = $signed({2'b0, y}) - (74 + ((sh_r <<< 4) + (sh_r <<< 2)) + 9 - ($signed({2'b0, kind_px_h(sh_r[2:0])}) >>> 2));
+    // partita: le due racchette
+    sh_x0 = $signed({2'b0, x}) - kl[0];
+    sh_x1 = $signed({2'b0, x}) - kl[1];
+    // si scelgono gli argomenti e poi si chiama una volta (con due chiamate e la scelta del risultato
+    // il circuito resterebbe doppio)
+    sh_ka = kind_px(sh_game ? kd[0] : sh_kcur,
+                    sh_game ? sh_x0 : sh_kq,
+                    sh_game ? $signed({2'b0, y}) - kt[0] : sh_kr,
+                    sh_game ? kh[0] : intro ? ip_h : kind_px_h(sh_kcur),
+                    sh_game ? ktilt[0] : intro ? ip_tilt : (sh_kcur == K_TWIST) ? 3'sd3 : 3'sd0,
+                    !sh_game && !intro, !sh_game && !intro);
+    sh_kb = kind_px(sh_game ? kd[1] : sh_r[2:0],
+                    sh_game ? PW - 1 - sh_x1 : sh_mq <<< 1,
+                    sh_game ? $signed({2'b0, y}) - kt[1] : sh_my <<< 1,
+                    sh_game ? kh[1] : kind_px_h(sh_r[2:0]),
+                    sh_game ? ktilt[1] : (sh_r == K_TWIST) ? 3'sd3 : 3'sd0,
+                    1'b0, !sh_game);
+    sh_name = name_lit(sh_pickb ? rb[2:0] : label_bonus,
+                       sh_pickb ? (x - (sh_cxb - 34)) >> 1 : ldx - (NX_P1_W + 3),
+                       sh_pickb ? (y - by0) >> 1 : y - LABEL_TOP);
+    sh_kname = kind_name_lit(parade ? pk : sh_r[2:0],
+                             parade ? x - (pdx - kind_name_w(pk) / 2) : (x - (sh_cxl - 14)) >> 1,
+                             parade ? y - (END_PARADE_NAME_Y - NX_NAME0_H / 2) : (y - 74 - ((sh_r <<< 4) + (sh_r <<< 2))) >> 1);
+
     if ((pick && pick_paddle) || intro || parade) begin
         // ------------------------------------------------- scelta della racchetta
         // Con `intro` (presentazione di CHALLENGE) solo l'anteprima della racchetta dell'avversario,
@@ -930,15 +1079,18 @@ always @(*) begin
         on = !intro && !parade;
         if (!intro && !parade) begin
             if (nx_ppick_lit((x - (W - 2 * NX_PPICK_W) / 2) >> 1, (y - 6) >> 1)) col = ACCENT;
-            trow = text_glyph(pick_secs >= 4'd10 ? 4'd1 : 4'd0, (y - 30) / 3);
+            trow = text_glyph(pick_secs >= 4'd10 ? 4'd1 : 4'd0, div3(y - 10'd30));
             if (y >= 30 && y < 30 + 3 * TEXT_H && x >= W / 2 - 17 && x < W / 2 - 17 + 3 * TEXT_W &&
-                trow[TEXT_W - 1 - (x - (W / 2 - 17)) / 3]) col = WHITE;
-            trow = text_glyph(pick_secs >= 4'd10 ? 4'd0 : pick_secs, (y - 30) / 3);
+                trow[TEXT_W - 1 - div3(x - (W / 2 - 17))]) col = WHITE;
+            trow = text_glyph(pick_secs >= 4'd10 ? 4'd0 : pick_secs, div3(y - 10'd30));
             if (y >= 30 && y < 30 + 3 * TEXT_H && x >= W / 2 + 2 && x < W / 2 + 2 + 3 * TEXT_W &&
-                trow[TEXT_W - 1 - (x - (W / 2 + 2)) / 3]) col = WHITE;
+                trow[TEXT_W - 1 - div3(x - (W / 2 + 2))]) col = WHITE;
             if ((x == W / 2 - 1 || x == W / 2) && y >= 56 && y[2] == 1'b0) col = WHITE;
         end
-        for (p = 0; p < 2; p = p + 1) begin
+        // ogni colonna sta nella sua metà dello schermo: il lato viene dal pixel e la colonna si disegna
+        // una volta sola; nella presentazione e nella sfilata c'è solo quella di sinistra (p = 0)
+        p = (intro || parade) ? 0 : (x >= W / 2);
+        begin
             cxl = (p == 0) ? W / 4 : 3 * W / 4;
             kcur = parade ? pk : intro ? intro_kind : (p == 0) ? kind_cursor0 : kind_cursor1;
             if (!intro && !parade) begin
@@ -955,8 +1107,7 @@ always @(*) begin
             kq = (parade || (intro ? intro_right : p == 0)) ? kx : PW - 1 - kx;
             kr = $signed({2'b0, y}) - ((parade ? END_PARADE_Y : intro ? INTRO_Y + ip_dy : 12'sd144) -
                                        ($signed({2'b0, intro ? ip_h : kind_px_h(kcur)}) >>> 1));
-            kc = kind_px(kcur, kq, kr, intro ? ip_h : kind_px_h(kcur),
-                         intro ? ip_tilt : (kcur == K_TWIST) ? 3'sd3 : 3'sd0, !intro, !intro);
+            kc = sh_ka;
             if ((intro || parade) && p != 0) kc = KP_NONE;     // nella presentazione una sola racchetta
             if (parade && pk >= parade_n) kc = KP_NONE;         // avversario non ancora entrato
             if (intro && !ip_show) kc = KP_NONE;
@@ -987,7 +1138,7 @@ always @(*) begin
             end
             // sfilata: il nome sotto la racchetta
             if (parade && p == 0 && pk < parade_n &&
-                kind_name_lit(pk, x - (pdx - kind_name_w(pk) / 2), y - (END_PARADE_NAME_Y - NX_NAME0_H / 2))) begin
+                sh_kname) begin
                 on = 1'b1;
                 col = WHITE;
             end
@@ -1001,15 +1152,14 @@ always @(*) begin
                 kx = $signed({2'b0, x}) - ($signed({2'b0, cxl}) - 25);
                 kq = (p == 0) ? kx : 1 - kx;
                 ky = $signed({2'b0, y}) - (74 + ((r <<< 4) + (r <<< 2)) + 9 - ($signed({2'b0, kind_px_h(r[2:0])}) >>> 2));
-                kc = kind_px(r[2:0], kq <<< 1, ky <<< 1, kind_px_h(r[2:0]), (r == K_TWIST) ? 3'sd3 : 3'sd0,
-                             1'b0, 1'b1);
+                kc = sh_kb;
                 if (kc == KP_BODY) col = (kcur == r) ? WHITE : GRAY;
                 if (kc == KP_MARK) col = (kcur == r) ? ACCENT : DIM;
                 if (kc == KP_DETAIL) col = (kcur == r) ? DETAIL : DIM;
                 if (kc == KP_GHOST1 || (kc == KP_GHOST2 && kcur != r)) col = GHOST1;
                 if (kc == KP_GHOST2 && kcur == r) col = GHOST2;
                 if (kc == KP_GHOST3) col = (kcur == r) ? GHOST3 : GHOST2;
-                if (kind_name_lit(r[2:0], (x - (cxl - 14)) >> 1, (y - 74 - ((r <<< 4) + (r <<< 2))) >> 1))
+                if (sh_kname)
                     col = (kcur == r) ? (kind_chosen[p] ? ACCENT : WHITE) : GRAY;
             end
             // frase del tipo sotto la colonna
@@ -1023,69 +1173,83 @@ always @(*) begin
         on = 1'b1;                                         // schermo tutto nero
         if (nx_pick_lit((x - (W - 2 * NX_PICK_W) / 2) >> 1, (y - 6) >> 1)) col = ACCENT;
         // secondi rimasti, cifre a scala 3
-        trow = text_glyph(pick_secs >= 4'd10 ? 4'd1 : 4'd0, (y - 30) / 3);
+        trow = text_glyph(pick_secs >= 4'd10 ? 4'd1 : 4'd0, div3(y - 10'd30));
         if (y >= 30 && y < 30 + 3 * TEXT_H && x >= W / 2 - 17 && x < W / 2 - 17 + 3 * TEXT_W &&
-            trow[TEXT_W - 1 - (x - (W / 2 - 17)) / 3]) col = WHITE;
-        trow = text_glyph(pick_secs >= 4'd10 ? 4'd0 : pick_secs, (y - 30) / 3);
+            trow[TEXT_W - 1 - div3(x - (W / 2 - 17))]) col = WHITE;
+        trow = text_glyph(pick_secs >= 4'd10 ? 4'd0 : pick_secs, div3(y - 10'd30));
         if (y >= 30 && y < 30 + 3 * TEXT_H && x >= W / 2 + 2 && x < W / 2 + 2 + 3 * TEXT_W &&
-            trow[TEXT_W - 1 - (x - (W / 2 + 2)) / 3]) col = WHITE;
+            trow[TEXT_W - 1 - div3(x - (W / 2 + 2))]) col = WHITE;
         // mezzeria
         if ((x == W / 2 - 1 || x == W / 2) && y >= 56 && y[2] == 1'b0) col = WHITE;
-        for (p = 0; p < 2; p = p + 1) begin
-            cxl = (p == 0) ? W / 4 : 3 * W / 4;
-            // intestazione: P1 / P2 / CPU e bonus presi su 3
-            if (p == 0 ? nx_p1_lit(x - (cxl - 50), y - 58) :
-                (cpu ? nx_cpu_lit(x - (cxl - 50), y - 58) : nx_p2_lit(x - (cxl - 50), y - 58)))
-                col = WHITE;
-            t_count = (p == 0) ? (pick_mask0[0] + pick_mask0[1] + pick_mask0[2] + pick_mask0[3] + pick_mask0[4] + pick_mask0[5])
-                               : (pick_mask1[0] + pick_mask1[1] + pick_mask1[2] + pick_mask1[3] + pick_mask1[4] + pick_mask1[5]);
-            trow = text_glyph({2'd0, t_count}, y - 59);
-            if (y >= 59 && y < 59 + TEXT_H && x >= cxl + 26 && x < cxl + 26 + TEXT_W && trow[TEXT_W - 1 - (x - cxl - 26)])
-                col = (t_count == 2'd3) ? WHITE : GRAY;
-            if (nx_of3_lit(x - (cxl + 31), y - 58)) col = (t_count == 2'd3) ? WHITE : GRAY;
-            // le sei righe, ogni 24 pixel: cursore, capsula e nome; l'ultima è STEER (codice 6)
-            for (r = 0; r < 6; r = r + 1) begin
-                rb = (r == 5) ? B_STEER : r[3:0];
-                if (y >= 76 + 24 * r && y < 76 + 24 * r + 18) begin
-                    if ((p == 0 ? pick_cursor0 : pick_cursor1) == r && !lock[p] && t_count != 2'd3 && !pick_ready &&
-                        nx_cursor_lit((x - (cxl - 66)) >> 1, (y - 76 - 24 * r) >> 1))
-                        col = ACCENT;
-                    if (cap_px(x, y, cxl - 52, 76 + 24 * r + 2, rb, (p == 0 ? pick_mask0[r] : pick_mask1[r])))
-                        col = ((p == 0 ? pick_mask0[r] : pick_mask1[r]) || (p == 0 ? pick_cursor0 : pick_cursor1) == r) ? WHITE : GRAY;
-                    if (name_lit(rb[2:0], (x - (cxl - 34)) >> 1, (y - 76 - 24 * r) >> 1))
-                        col = ((p == 0 ? pick_mask0[r] : pick_mask1[r]) || (p == 0 ? pick_cursor0 : pick_cursor1) == r) ? WHITE : GRAY;
-                end
-            end
+        // ogni colonna sta nella sua metà dello schermo e ogni riga nelle sue 24 righe: lato e riga
+        // vengono dal pixel, così cursore, capsula e nome si disegnano una volta sola (e non 12)
+        cxl = sh_cxb;
+        // intestazione: P1 / P2 / CPU e bonus presi su 3
+        if (!bp ? nx_p1_lit(x - (cxl - 50), y - 58) :
+            (cpu ? nx_cpu_lit(x - (cxl - 50), y - 58) : nx_p2_lit(x - (cxl - 50), y - 58)))
+            col = WHITE;
+        t_count = bmask[0] + bmask[1] + bmask[2] + bmask[3] + bmask[4] + bmask[5];
+        trow = text_glyph({2'd0, t_count}, y - 59);
+        if (y >= 59 && y < 59 + TEXT_H && x >= cxl + 26 && x < cxl + 26 + TEXT_W && trow[TEXT_W - 1 - (x - cxl - 26)])
+            col = (t_count == 2'd3) ? WHITE : GRAY;
+        if (nx_of3_lit(x - (cxl + 31), y - 58)) col = (t_count == 2'd3) ? WHITE : GRAY;
+        // le sei righe, ogni 24 pixel da y = 76, alte 18: cursore, capsula e nome; l'ultima è STEER
+        // (codice 6)
+        if (y >= by0 && y < by0 + 18) begin
+            if (bcur == br && !lock[bp] && t_count != 2'd3 && !pick_ready &&
+                nx_cursor_lit((x - (cxl - 66)) >> 1, (y - by0) >> 1))
+                col = ACCENT;
+            if (cap_px(x, y, cxl - 52, by0 + 2, rb, bmask[br]))
+                col = (bmask[br] || bcur == br) ? WHITE : GRAY;
+            if (sh_name)
+                col = (bmask[br] || bcur == br) ? WHITE : GRAY;
         end
         if (pick_ready && blink < 6'd37 && nx_ready_lit((x - (W - 2 * NX_READY_W) / 2) >> 1, (y - 220) >> 1))
             col = ACCENT;
     end else if (nxt) begin
         // --------------------------------------------------------------- partita
-        // riserve in alto: tre posti per lato, il selezionato in negativo con una freccetta
+        // riserve in alto: tre posti per lato, il selezionato in negativo con una freccetta. I posti
+        // non si toccano (4 pixel tra l'uno e l'altro): il lato e il posto vengono dal pixel e se ne
+        // disegna uno solo (rv_on e rv_col), messo al suo turno nel giro dei lati qui sotto
+        rv_p = x >= W / 2;
+        rv_k = !rv_p ? (x >= 6 + CAP + 2) + (x >= 6 + 2 * (CAP + 4) - 2)
+                     : (x < W - 6 - CAP - (CAP + 4) + CAP + 2) + (x < W - 6 - CAP - 2 * (CAP + 4) + CAP + 2);
+        sx = !rv_p ? 6 + rv_k * (CAP + 4) : W - 6 - CAP - rv_k * (CAP + 4);
+        rv_b = rs[3 * rv_p + rv_k];
+        rv_sel = sl[rv_p] == rv_k;
+        if (rv_b != B_NONE) begin
+            if (cap_px(x, y, sx, 4, rv_b, rv_sel)) begin
+                rv_on = 1'b1;
+                // i bonus rari (SUPER e BULLET) in giallo
+                rv_col = (rv_b == B_SUPER || rv_b == B_BULLET) ? ACCENT : WHITE;
+            end
+            // in negativo: dentro il riquadro pieno, l'icona resta nera
+            if (rv_sel && x - sx < CAP && y - 4 < CAP && !cap_px(x, y, sx, 4, rv_b, 1'b1)) begin
+                rv_on = 1'b1;
+                rv_col = BLACK;
+            end
+            if (rv_sel && y >= 4 + CAP + 2 && y < 4 + CAP + 5 &&
+                x >= sx + CAP / 2 - (4 + CAP + 4 - y) && x <= sx + CAP / 2 + (4 + CAP + 4 - y)) begin
+                rv_on = 1'b1;
+                rv_col = ACCENT;
+            end
+        end else if (x - sx < CAP && y - 4 < CAP && ((x - sx) == 0 || (y - 4) == 0 || (x - sx) == CAP - 1 || (y - 4) == CAP - 1) &&
+                     x[0] == y[0]) begin
+            rv_on = 1'b1;                                      // posto vuoto: bordo a puntini
+            rv_col = GRAY;
+        end
+        // pixel delle due racchette (rettangolo di pong_render più i segni del tipo): servono ai
+        // segni qui sotto e alla scritta, che ci passa sotto
+        for (k = 0; k < 2; k = k + 1) begin
+            kx = $signed({2'b0, x}) - kl[k];
+            kr = $signed({2'b0, y}) - kt[k];
+            kcp[k] = (k == 0) ? sh_ka : sh_kb;
+            kin[k] = kx >= 0 && kx < PW && kr >= 0 && kr < $signed({2'b0, kh[k]});
+        end
         for (p = 0; p < 2; p = p + 1) begin
-            for (k = 0; k < 3; k = k + 1) begin
-                sx = (p == 0) ? 6 + k * (CAP + 4) : W - 6 - CAP - k * (CAP + 4);
-                if (rs[3*p + k] != B_NONE) begin
-                    if (cap_px(x, y, sx, 4, rs[3*p + k], sl[p] == k)) begin
-                        on = 1'b1;
-                        // i bonus rari (SUPER e BULLET) in giallo
-                        col = (rs[3*p + k] == B_SUPER || rs[3*p + k] == B_BULLET) ? ACCENT : WHITE;
-                    end
-                    // in negativo: dentro il riquadro pieno, l'icona resta nera
-                    if (sl[p] == k && x - sx < CAP && y - 4 < CAP && !cap_px(x, y, sx, 4, rs[3*p + k], 1'b1)) begin
-                        on = 1'b1;
-                        col = BLACK;
-                    end
-                    if (sl[p] == k && y >= 4 + CAP + 2 && y < 4 + CAP + 5 &&
-                        x >= sx + CAP / 2 - (4 + CAP + 4 - y) && x <= sx + CAP / 2 + (4 + CAP + 4 - y)) begin
-                        on = 1'b1;
-                        col = ACCENT;
-                    end
-                end else if (x - sx < CAP && y - 4 < CAP && ((x - sx) == 0 || (y - 4) == 0 || (x - sx) == CAP - 1 || (y - 4) == CAP - 1) &&
-                             x[0] == y[0]) begin
-                    on = 1'b1;                                 // posto vuoto: bordo a puntini
-                    col = GRAY;
-                end
+            if (rv_on && rv_p == p) begin
+                on = 1'b1;
+                col = rv_col;
             end
             // icona grigia del bonus armato accanto alla racchetta
             if (arm[p] != B_NONE && !(wv && wsd == p) &&
@@ -1105,10 +1269,7 @@ always @(*) begin
             // inclinata), non durante la rotazione del SUPER e il salto del TELEPORT; con una mossa
             // di livello 2 armata la racchetta è gialla (anche senza tipo)
             if ((kd[p] != K_NONE || mmax[p]) && !spin[p] && !(wv && wsd == p)) begin
-                kx = $signed({2'b0, x}) - kl[p];
-                kq = (p == 0) ? kx : PW - 1 - kx;
-                kr = $signed({2'b0, y}) - kt[p];
-                kc = kind_px(kd[p], kq, kr, kh[p], ktilt[p], 1'b0, 1'b0);
+                kc = kcp[p];
                 if (kc == KP_BODY && (kd[p] == K_TWIST || kd[p] == K_HAMMER || mmax[p])) begin
                     on = 1'b1;
                     col = mmax[p] ? (bcold[p] ? GRAY : ACCENT) : kgray[p] ? GRAY : WHITE;
@@ -1138,7 +1299,7 @@ always @(*) begin
                     col = ACCENT;
                 end
                 for (k = 0; k < 4; k = k + 1)
-                    if (kshot[4*p + k] && x - (ksx[4*p + k] - 3) < 7 && (y == ksy[4*p + k] - 2 || y == ksy[4*p + k] + 2)) begin
+                    if (kshot[4*p + k] && span(x, ksx[4*p + k], 3, 7) && (y == ksy[4*p + k] - 2 || y == ksy[4*p + k] + 2)) begin
                         on = 1'b1;
                         col = ACCENT;
                     end
@@ -1205,7 +1366,7 @@ always @(*) begin
             end
             // STEER: chi guida ha la racchetta ferma, grigia, con il volante giallo accanto
             if (steer_on && steer_side == p) begin
-                if (x - (pcx[p] - PW / 2) < PW && y - (pcy[p] - kh[p] / 2) < kh[p]) begin
+                if (span(x, pcx[p], PW / 2, PW) && span(y, pcy[p], kh[p] / 2, kh[p])) begin
                     on = 1'b1;
                     col = GRAY;
                 end
@@ -1263,7 +1424,7 @@ always @(*) begin
                     col = ACCENT;
                 end
             end
-            if (rbon && x - (rbx - 7) < 15 && y - (rby - 7) < 15 &&
+            if (rbon && span(x, rbx, 7, 15) && span(y, rby, 7, 15) &&
                 (x == rbx - 7 || x == rbx + 7 || y == rby - 7 || y == rby + 7)) begin
                 on = 1'b1;
                 col = ACCENT;
@@ -1296,7 +1457,7 @@ always @(*) begin
                 on = 1'b1;
                 col = (cbon[k] == B_SUPER[2:0] || cbon[k] == B_BULLET[2:0]) ? ACCENT : bon ? GRAY : WHITE;
             end
-            else if (cv[k] && cbon[k] == B_SUPER[2:0] && cap_blink && x - csx[k] < CAP && y - csy[k] < CAP) begin
+            else if (cv[k] && cbon[k] == B_SUPER[2:0] && cap_blink && span(x, csx[k], 0, CAP) && span(y, csy[k], 0, CAP)) begin
                 on = 1'b1;
                 col = BLACK;
             end
@@ -1308,7 +1469,7 @@ always @(*) begin
         lbox = x >= label_x - 4 && x < label_x + label_w + 4 && y >= LABEL_MID - 10 && y < LABEL_MID + 10;
         ltext = (label_player ? nx_p2_lit(ldx, y - LABEL_TOP) : nx_p1_lit(ldx, y - LABEL_TOP)) ||
                 (label_mx && nx_max_lit(ldx - (NX_P1_W + 3), y - LABEL_TOP)) ||
-                (label_move != 2'd0 ? mv_on : name_lit(label_bonus, ldx - (NX_P1_W + 3), y - LABEL_TOP)) ||
+                (label_move != 2'd0 ? mv_on : sh_name) ||
                 nx_bang_lit(ldx - (NX_P1_W + 3 + label_name_w + 1), y - LABEL_TOP);
         // colonne con una lettera (solo per le mosse): sotto di loro i trattini, al colpo i blocchi
         lcol = x - label_x < label_w &&
@@ -1323,14 +1484,7 @@ always @(*) begin
         // le racchette stanno sopra alla scritta: sui pixel della racchetta (il rettangolo di
         // pong_render e quelli del suo tipo, anche la HAMMER più spessa) la scritta non si disegna e
         // restano pong_render e i segni qui sopra; accanto la scritta resta intera
-        pad_box = 1'b0;
-        for (k = 0; k < 2; k = k + 1) begin
-            kx = $signed({2'b0, x}) - kl[k];
-            kr = $signed({2'b0, y}) - kt[k];
-            if (kind_px(kd[k], (k == 0) ? kx : PW - 1 - kx, kr, kh[k], ktilt[k], 1'b0, 1'b0) != KP_NONE ||
-                (kx >= 0 && kx < PW && kr >= 0 && kr < $signed({2'b0, kh[k]})))
-                pad_box = 1'b1;
-        end
+        pad_box = kcp[0] != KP_NONE || kin[0] || kcp[1] != KP_NONE || kin[1];
         if (pad_box) ;
         else if (label_on && label_kind == LK_ARMED) begin
             // solo i trattini: l'ultimo disegnato bianco, poi grigi che si accendono mentre la palla arriva
@@ -1371,7 +1525,7 @@ always @(*) begin
         // sfuma dal grigio al nero (dalla più vecchia, così le nuove la coprono), fuori dalla palla:
         // questo livello sta sopra a pong_render, che la disegna
         for (k = 1; k < HIST; k = k + 1)
-            if (hv[k] && comet && !ghost_on && x - (hx[k] - (bside - k / 2) / 2) < bside - k / 2 && y - (hy[k] - (bside - k / 2) / 2) < bside - k / 2) begin
+            if (hv[k] && comet && !ghost_on && span(x, hx[k], (bside - k / 2) / 2, bside - k / 2) && span(y, hy[k], (bside - k / 2) / 2, bside - k / 2)) begin
                 on = 1'b1;
                 col = (k < 4) ? ACCENT : GRAY;
             end
@@ -1379,7 +1533,7 @@ always @(*) begin
             // BULLET: immagini della palla (contorno grigio) dove è passata, oltre la coda; solo fuori
             // dalle rampe, come su PC
             for (k = GHOSTS - 1; k >= 0; k = k - 1)
-                if (bon && !bramp && gv[k] && x - (gx[k] - bside / 2) < bside && y - (gy[k] - bside / 2) < bside &&
+                if (bon && !bramp && gv[k] && span(x, gx[k], bside / 2, bside) && span(y, gy[k], bside / 2, bside) &&
                     (x == gx[k] - bside / 2 || x == gx[k] - bside / 2 + bside - 1 ||
                      y == gy[k] - bside / 2 || y == gy[k] - bside / 2 + bside - 1)) begin
                     on = 1'b1;
@@ -1387,17 +1541,17 @@ always @(*) begin
                 end
             // la coda lunga del bullet time: le posizioni oltre TRAIL, senza i punti a metà
             for (k = TRAIL_LONG; k > TRAIL; k = k - 1)
-                if (bon && hv[k] && x - (hx[k] - bside / 2) < bside && y - (hy[k] - bside / 2) < bside) begin
+                if (bon && hv[k] && span(x, hx[k], bside / 2, bside) && span(y, hy[k], bside / 2, bside)) begin
                     on = 1'b1;
                     col = trail_pick(mspf != 2'd0, 1'b1, 2 * k);
                 end
             for (k = TRAIL; k >= 1; k = k - 1)
                 if (hv[k]) begin
-                    if (x - (hx[k] - bside / 2) < bside && y - (hy[k] - bside / 2) < bside) begin
+                    if (span(x, hx[k], bside / 2, bside) && span(y, hy[k], bside / 2, bside)) begin
                         on = 1'b1;
                         col = trail_pick(mspf != 2'd0, bon, 2 * k);
                     end
-                    if (x - (mx[k] - bside / 2) < bside && y - (my[k] - bside / 2) < bside) begin
+                    if (span(x, mx[k], bside / 2, bside) && span(y, my[k], bside / 2, bside)) begin
                         on = 1'b1;
                         col = trail_pick(mspf != 2'd0, bon, 2 * k - 1);
                     end
@@ -1410,12 +1564,12 @@ always @(*) begin
             col = ACCENT;
         end
         // palla cometa (pong_render non la disegna), gialla come ogni palla del SUPER
-        if (comet && !bhide && x - (bx - bside / 2) < bside && y - (by - bside / 2) < bside) begin
+        if (comet && !bhide && span(x, bx, bside / 2, bside) && span(y, by, bside / 2, bside)) begin
             on = 1'b1;
             col = ACCENT;
         end
         // alone di SLOW
-        if (ring_on && x - (bx - bside * 3 / 2) < bside * 3 && y - (by - bside * 3 / 2) < bside * 3 &&
+        if (ring_on && span(x, bx, bside * 3 / 2, bside * 3) && span(y, by, bside * 3 / 2, bside * 3) &&
             (x == bx - bside * 3 / 2 || x == bx - bside * 3 / 2 + bside * 3 - 1 ||
              y == by - bside * 3 / 2 || y == by - bside * 3 / 2 + bside * 3 - 1)) begin
             on = 1'b1;
@@ -1442,7 +1596,7 @@ always @(*) begin
 end
 
 always @(posedge clk) begin
-    rgb <= col;
+    rgb <= pal(col);
     opaque <= on;
     label <= lb;
     halo <= (bon && bblur != 2'd0 && cgm <= {2'd0, bblur}) ? cgm[1:0] : 2'd0;

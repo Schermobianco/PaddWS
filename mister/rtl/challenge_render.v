@@ -43,7 +43,7 @@ module challenge_render (
 `include "pong_attract.vh"
 
 localparam integer W = P_WIDTH >>> 16;
-localparam [23:0] WHITE = 24'hFFFFFF, GRAY = 24'hB4B4B4, BLACK = 24'h000000, ACCENT = 24'hFFD225;
+localparam [23:0] RGB_WHITE = 24'hFFFFFF, RGB_GRAY = 24'hB4B4B4, RGB_BLACK = 24'h000000, RGB_ACCENT = 24'hFFD225;
 localparam [5:0] G_SPACE = 6'd36, G_PLUS = 6'd37, G_DOT = 6'd38, G_X = 6'd39, G_L = 6'd21;
 localparam integer C = CH_CELL;
 // presentazione: nome della racchetta, capsule dei bonus (lato 13 come nel gioco PC, l'icona 9x9
@@ -54,7 +54,7 @@ localparam integer FIRST_X1 = (W - (CH_FIRST_W + 2 + C)) / 2, FIRST_X2 = (W - (C
 localparam integer HUD_R = 196, HUD_SPAN = 74 + 2 * C, HUD_L = W - HUD_R - HUD_SPAN;
 // nuovo sfidante: banda rossa con le due righe a scala 4
 localparam integer NEW_BAND_Y = 58, NEW_BAND_H = 104, NEW_Y1 = 70, NEW_Y2 = 116;
-localparam [23:0] BAND = 24'h8C1414;
+localparam [23:0] RGB_BAND = 24'h8C1414;
 // invito allo sfidante, in alto al centro del lato libero: "P2 PRESS START" o "INSERT COIN"
 localparam integer JOIN_Y = 2, JOIN_W = 2 * C + 4 + CH_PRESS_W;
 localparam integer JOIN_XL = W / 4 - JOIN_W / 2, JOIN_XR = 3 * W / 4 - JOIN_W / 2;
@@ -65,8 +65,37 @@ localparam [5:0] G_P = 6'd25;
 localparam integer TB_NAMES = 36, TB_SCORE = 80, TB_LEVEL = 160, TB_SPAN = TB_LEVEL + 3 * C - 1;
 localparam integer TB_X = (W - TB_SPAN) / 2;
 
+// Colori come indici della tavolozza `pal` (4 bit invece di 24): le scelte del pixel si fanno fra
+// indici e il colore vero si legge una volta sola, all'uscita
+localparam [3:0] WHITE = 4'd0, GRAY = 4'd1, BLACK = 4'd2, ACCENT = 4'd3, BAND = 4'd4, DIM = 4'd5, GHOST = 4'd6,
+                 TRAIL1 = 4'd7, TRAIL2 = 4'd8, TRAIL3 = 4'd9;
+function [23:0] pal(input [3:0] i);
+    case (i)
+        WHITE:  pal = RGB_WHITE;
+        GRAY:   pal = RGB_GRAY;
+        ACCENT: pal = RGB_ACCENT;
+        BAND:   pal = RGB_BAND;
+        DIM:    pal = RGB_DIM;
+        GHOST:  pal = RGB_GHOST;
+        TRAIL1: pal = RGB_TRAIL1;
+        TRAIL2: pal = RGB_TRAIL2;
+        TRAIL3: pal = RGB_TRAIL3;
+        default: pal = RGB_BLACK;
+    endcase
+endfunction
+
 wire [9:0] x = hc;
 wire [9:0] y = vc;
+
+// il pixel p è nel tratto lungo s che parte h pixel prima di c (0 <= p - c + h < s), con i conti a
+// 14 bit: come `p - (c - h) < s` con le costanti intere (a 32 bit), che però costa tre volte tanto
+function span(input [9:0] p, input [9:0] c, input [10:0] h, input [11:0] s);
+    reg signed [13:0] d;
+    begin
+        d = $signed({4'b0, p}) - $signed({4'b0, c}) + $signed({3'b0, h});
+        span = !d[13] && d < $signed({2'b0, s});
+    end
+endfunction
 
 // cifra i (0 = la più a sinistra) di un numero BCD a 7 cifre
 function [5:0] bcd7(input [27:0] v, input [2:0] i);
@@ -77,8 +106,8 @@ endfunction
 reg        g_on;
 reg [5:0]  g_code;
 reg [9:0]  g_dx, g_dy;
-reg [23:0] g_col;
-reg [23:0] col;
+reg [3:0]  g_col;                       // indice della tavolozza (pal)
+reg [3:0]  col;
 reg        on;
 reg [3:0]  row;
 reg [2:0]  b_sel;                       // presentazione: bonus della colonna sotto il pixel
@@ -93,16 +122,16 @@ reg [2:0]  n_li;
 reg        n_px, c_lit;
 
 // numero di 7 cifre in (x0, y0), scala 1
-task digits7(input [9:0] x0, input [9:0] y0, input [27:0] v, input [23:0] c);
+task digits7(input [9:0] x0, input [9:0] y0, input [27:0] v, input [3:0] c);
     for (j = 0; j < 7; j = j + 1)
-        if (x - (x0 + C * j) < C && y - y0 < CH_GLYPH_H) begin
+        if (span(x, x0 + C * j, 11'd0, C) && span(y, y0, 11'd0, CH_GLYPH_H)) begin
             g_on = 1'b1; g_code = bcd7(v, j[2:0]); g_dx = x - (x0 + C * j); g_dy = y - y0; g_col = c;
         end
 endtask
 
 // una cella in (x0, y0) alla scala 2^s
-task put(input [9:0] x0, input [9:0] y0, input [5:0] code, input [1:0] s, input [23:0] c);
-    if (x - x0 < (C << s) && y - y0 < (CH_GLYPH_H << s)) begin
+task put(input [9:0] x0, input [9:0] y0, input [5:0] code, input [1:0] s, input [3:0] c);
+    if (span(x, x0, 11'd0, C << s) && span(y, y0, 11'd0, CH_GLYPH_H << s)) begin
         g_on = 1'b1; g_code = code; g_dx = (x - x0) >> s; g_dy = (y - y0) >> s; g_col = c;
     end
 endtask
@@ -120,8 +149,8 @@ localparam integer NAME_GROUND = INTRO_KIND_Y + 17;   // TITAN: il pavimento sot
 localparam integer WALL_TOP = IP_Y - 34;          // GUARDIAN: 5 settori da 12 righe ogni 14
 localparam [2:0] K_ARCADE = 3'd0, K_TITAN = 3'd1, K_HAMMER = 3'd2, K_TWIST = 3'd3, K_BLASTER = 3'd4,
                  K_RUSH = 3'd5, K_GUARDIAN = 3'd6;
-localparam [23:0] DIM = 24'h3A3A3A, GHOST = 24'h7F6912, TRAIL1 = 24'h9A9A9A, TRAIL2 = 24'h5E5E5E,
-                  TRAIL3 = 24'h303030;
+localparam [23:0] RGB_DIM = 24'h3A3A3A, RGB_GHOST = 24'h7F6912, RGB_TRAIL1 = 24'h9A9A9A, RGB_TRAIL2 = 24'h5E5E5E,
+                  RGB_TRAIL3 = 24'h303030;
 
 function signed [10:0] ax(input signed [10:0] d);
     ax = W / 2 + (side ? -d : d);
@@ -173,7 +202,7 @@ endfunction
 // che si scrive (una lettera ogni 5 frame dal 12, cursore) e si chiude (dal frame 158)
 reg signed [10:0] cont_ball_y;
 reg [5:0]  go_cols;
-reg        go_cur, go_close, go_close_line, go_close_dot;
+reg        go_cur, go_close, go_close_line, go_close_dot, go_close_black;
 reg signed [10:0] go_cur_x;
 reg [6:0]  go_close_w, go_close_h;
 reg [11:0] cb_m;
@@ -189,7 +218,8 @@ always @(posedge clk) begin
     go_cur <= intro_age >= 8'd12 && (go_n < GAME_OVER_LETTERS || intro_age[4]);
     go_close <= intro_age >= 8'd158;
     go_close_line <= intro_age >= 8'd166 && intro_age < 8'd174;
-    go_close_dot <= intro_age >= 8'd174;
+    go_close_dot <= intro_age >= 8'd174 && intro_age < 8'd180;
+    go_close_black <= intro_age >= 8'd180;     // poi nero fino alla fine (AT_GAME_OVER_BLACK, pong_top)
     go_close_h <= (intro_age >= 8'd165) ? 7'd1 : 7'd120 - 7'd15 * (intro_age[6:0] - 7'd30);   // 158 = 128 + 30
     go_close_w <= (intro_age >= 8'd173) ? 7'd1 : 7'd127 - 7'd16 * (intro_age[6:0] - 7'd38);   // 166 = 128 + 38
 end
@@ -515,10 +545,57 @@ end
 `define CENTER2(lit, w, y0) lit((x - (W - 2 * (w)) / 2) >> 1, (y - (y0)) >> 1)
 `define CENTER1(lit, w, y0) lit(x - (W - (w)) / 2, y - (y0))
 
+// ------------------------------------------------ classifica animata (schermata 5)
+// Come Scores::draw di rust/game/src/challenge_ui.rs, con intro_age che conta i frame della schermata:
+// la palla parte sopra la prima riga e scende di 1,25 pixel per frame (sc_ball_y) rimbalzando fra
+// x = 32 e 288 a 4 pixel per frame (sc_ball_x), con una scia; le righe che ha già toccato si accendono
+// e le cifre dei punti girano come un contatore (sc_roll) e si fermano una alla volta da sinistra, una
+// ogni SC_LOCK_STEP pixel di discesa dopo i primi SC_LOCK0: grigie mentre girano, poi bianche (gialle
+// per il posto appena inserito). Su PC i punti contano davvero; qui servirebbero una moltiplicazione e
+// una conversione in decimale per riga. Dal frame SC_MARK due racchette gialle arrivano dai bordi ai
+// lati del posto nuovo e, nella prima metà di ogni secondo (blink), un riflesso bianco lo attraversa.
+localparam [7:0] SC_MARK = 8'd190;
+localparam integer SC_LOCK0 = 8, SC_LOCK_STEP = 6, SC_DONE = SC_LOCK0 + 7 * SC_LOCK_STEP, SC_BOTTOM = 226;
+reg [3:0]  sc_roll = 4'd0;              // cifra che gira, avanza a ogni frame
+reg [7:0]  sc_age_q = 8'd0;
+always @(posedge clk) begin
+    sc_age_q <= intro_age;
+    if (intro_age != sc_age_q) sc_roll <= (sc_roll == 4'd9) ? 4'd0 : sc_roll + 4'd1;
+end
+function [9:0] sc_ball_y(input [7:0] f);
+    sc_ball_y = 10'd30 + {2'd0, f} + {4'd0, f[7:2]};
+endfunction
+function [9:0] sc_ball_x(input [7:0] f);
+    reg [8:0] p;
+    begin
+        p = {f[6:0], 2'b0};
+        sc_ball_x = 10'd32 + (p[8] ? {2'd0, ~p[7:0]} : {2'd0, p[7:0]});
+    end
+endfunction
+reg  signed [10:0] sc_lit;              // pixel di discesa della palla oltre la riga del pixel
+reg  signed [10:0] sc_pl, sc_pr;        // x delle racchette ai lati del posto nuovo
+reg  [9:0]  sc_row_y;
+reg  [27:0] sc_bcd;
+reg  [3:0]  sc_rc, sc_lc;               // colori della riga e del livello
+reg  [4:0]  sc_t;
+reg         sc_glint;
+reg  [7:0]  sc_k;
+integer     sk;
+
 always @(*) begin
     col = BLACK;
     on = 1'b0;
     g_on = 1'b0;
+    sc_lit = 11'sd0;
+    sc_pl = 11'sd0;
+    sc_pr = 11'sd0;
+    sc_row_y = 10'd0;
+    sc_bcd = 28'd0;
+    sc_rc = WHITE;
+    sc_lc = GRAY;
+    sc_t = 5'd0;
+    sc_glint = 1'b0;
+    sc_k = 8'd0;
     g_code = 6'd0;
     g_dx = 10'd0;
     g_dy = 10'd0;
@@ -669,11 +746,11 @@ always @(*) begin
                 if (`CENTER2(game_over_lit, GAME_OVER_W, AT_GAME_OVER_Y) && (x - (W - 2 * GAME_OVER_W) / 2) >> 1 < go_cols)
                     col = WHITE;
                 if (go_cur && in_box(go_cur_x, AT_GAME_OVER_Y, 7'd8, 7'd14)) col = WHITE;
-                if (go_close && (go_close_dot ? (x == W / 2 - 1 || x == W / 2) && (y == 119 || y == 120) :
+                if (go_close && !go_close_black && (go_close_dot ? (x == W / 2 - 1 || x == W / 2) && (y == 119 || y == 120) :
                                  go_close_line ? (y == 119 || y == 120) && x >= W / 2 - go_close_w && x < W / 2 + go_close_w :
                                  (y == 120 - go_close_h || y == 119 + go_close_h)))
                     col = WHITE;
-                else if (go_close && (go_close_dot || go_close_line || y < 120 - go_close_h || y > 119 + go_close_h))
+                else if (go_close && (go_close_black || go_close_dot || go_close_line || y < 120 - go_close_h || y > 119 + go_close_h))
                     col = BLACK;
             end else begin
                 if (`CENTER2(ch_cont_lit, CH_CONT_W, 36)) col = ACCENT;
@@ -710,29 +787,61 @@ always @(*) begin
             // dieci righe da 18 pixel: si sceglie la riga, poi la cella
             for (i = 0; i < 10; i = i + 1)
                 if (y - (36 + 18 * i) < CH_GLYPH_H) row = i[3:0];
-            if (y >= 36 && y < 36 + 18 * 10) begin
-                // posizione: 1-10
-                if (row == 4'd9) begin
-                    put(TB_X, 10'd36 + 18 * 9, 6'd1, 2'd0, (highlight == row) ? ACCENT : WHITE);
-                    put(TB_X + C, 10'd36 + 18 * 9, 6'd0, 2'd0, (highlight == row) ? ACCENT : WHITE);
-                end else
-                    put(TB_X + C, 10'd36 + 18 * row, {2'd0, row} + 6'd1, 2'd0, (highlight == row) ? ACCENT : WHITE);
-                for (j = 0; j < 3; j = j + 1)
-                    put(TB_X + TB_NAMES + C * j, 10'd36 + 18 * row, table_names[18 * row + 6 * j +: 6], 2'd0,
-                         (highlight == row) ? ACCENT : WHITE);
-                digits7(TB_X + TB_SCORE, 10'd36 + 18 * row, table_bcd[28 * row +: 28], (highlight == row) ? ACCENT : WHITE);
-                if (table_levels[4 * row +: 4] > 4'd7) begin
-                    // scala finita: ALL
-                    put(TB_X + TB_LEVEL, 10'd36 + 18 * row, 6'd10, 2'd0, (highlight == row) ? ACCENT : GRAY);
-                    put(TB_X + TB_LEVEL + C, 10'd36 + 18 * row, G_L, 2'd0, (highlight == row) ? ACCENT : GRAY);
-                    put(TB_X + TB_LEVEL + 2 * C, 10'd36 + 18 * row, G_L, 2'd0, (highlight == row) ? ACCENT : GRAY);
-                end else begin
-                    put(TB_X + TB_LEVEL, 10'd36 + 18 * row, G_L, 2'd0, (highlight == row) ? ACCENT : GRAY);
-                    put(TB_X + TB_LEVEL + C, 10'd36 + 18 * row, {2'd0, table_levels[4 * row +: 4]}, 2'd0,
-                         (highlight == row) ? ACCENT : GRAY);
+            // la palla, con la scia, finché non ha passato l'ultima riga (sotto le scritte)
+            if (sc_ball_y(intro_age) < SC_BOTTOM) begin
+                for (sk = 3; sk >= 0; sk = sk - 1) begin
+                    sc_k = (intro_age >= 2 * sk) ? intro_age - 2 * sk : 8'd0;
+                    if (in_box($signed({1'b0, sc_ball_x(sc_k)}), $signed({1'b0, sc_ball_y(sc_k)}), 7'd4, 7'd4))
+                        col = (sk == 0) ? WHITE : (sk == 1) ? TRAIL1 : (sk == 2) ? TRAIL2 : TRAIL3;
                 end
             end
-            if (blink < 6'd30 &&
+            // racchette ai lati del posto nuovo, dai bordi (3 pixel per frame)
+            if (highlight < 4'd10 && intro_age >= SC_MARK) begin
+                sc_k = intro_age - SC_MARK;
+                sc_pl = $signed({3'd0, sc_k}) * 3 - 11'sd4;
+                sc_pr = 11'sd320 - $signed({3'd0, sc_k}) * 3;
+                if (sc_pl > TB_X - 14) sc_pl = TB_X - 14;
+                if (sc_pr < TB_X + TB_SPAN + 10) sc_pr = TB_X + TB_SPAN + 10;
+                if (in_box(sc_pl, $signed({1'b0, 10'd32 + 18 * highlight}), 7'd4, 7'd15) ||
+                    in_box(sc_pr, $signed({1'b0, 10'd32 + 18 * highlight}), 7'd4, 7'd15))
+                    col = ACCENT;
+            end
+            if (y >= 36 && y < 36 + 18 * 10) begin
+                // la riga si accende quando la palla la tocca; le cifre girano e si fermano da sinistra
+                sc_row_y = 10'd36 + 18 * row;
+                sc_lit = $signed({1'b0, sc_ball_y(intro_age)}) - $signed({1'b0, sc_row_y}) - 11'sd3;
+                sc_rc = (sc_lit < 0) ? DIM : (sc_lit < SC_DONE) ? GRAY : (highlight == row) ? ACCENT : WHITE;
+                sc_lc = (sc_lit < 0) ? DIM : (sc_lit < SC_DONE) ? GRAY : (highlight == row) ? ACCENT : GRAY;
+                for (j = 0; j < 7; j = j + 1) begin
+                    sc_t = {1'b0, sc_roll} + 3 * j;
+                    sc_t = (sc_t >= 5'd20) ? sc_t - 5'd20 : (sc_t >= 5'd10) ? sc_t - 5'd10 : sc_t;
+                    sc_bcd[4 * (6 - j) +: 4] = (sc_lit < 0) ? 4'd0 :
+                                               (sc_lit >= SC_LOCK0 + SC_LOCK_STEP * j) ? table_bcd[28 * row + 4 * (6 - j) +: 4]
+                                                                                        : sc_t[3:0];
+                end
+                // riflesso: banda in diagonale larga 12 sulle lettere del posto nuovo
+                sc_glint = highlight == row && intro_age >= SC_MARK + 8'd20 && blink < 6'd30 &&
+                           span(x - (y - sc_row_y), TB_X - 20 + {blink, 3'b0}, 11'd0, 12);
+                // posizione: 1-10
+                if (row == 4'd9) begin
+                    put(TB_X, 10'd36 + 18 * 9, 6'd1, 2'd0, sc_rc);
+                    put(TB_X + C, 10'd36 + 18 * 9, 6'd0, 2'd0, sc_rc);
+                end else
+                    put(TB_X + C, 10'd36 + 18 * row, {2'd0, row} + 6'd1, 2'd0, sc_rc);
+                for (j = 0; j < 3; j = j + 1)
+                    put(TB_X + TB_NAMES + C * j, 10'd36 + 18 * row, table_names[18 * row + 6 * j +: 6], 2'd0, sc_rc);
+                digits7(TB_X + TB_SCORE, 10'd36 + 18 * row, sc_bcd, sc_rc);
+                if (table_levels[4 * row +: 4] > 4'd7) begin
+                    // scala finita: ALL
+                    put(TB_X + TB_LEVEL, 10'd36 + 18 * row, 6'd10, 2'd0, sc_lc);
+                    put(TB_X + TB_LEVEL + C, 10'd36 + 18 * row, G_L, 2'd0, sc_lc);
+                    put(TB_X + TB_LEVEL + 2 * C, 10'd36 + 18 * row, G_L, 2'd0, sc_lc);
+                end else begin
+                    put(TB_X + TB_LEVEL, 10'd36 + 18 * row, G_L, 2'd0, sc_lc);
+                    put(TB_X + TB_LEVEL + C, 10'd36 + 18 * row, {2'd0, table_levels[4 * row +: 4]}, 2'd0, sc_lc);
+                end
+            end
+            if (sc_ball_y(intro_age) >= SC_BOTTOM && blink < 6'd30 &&
                 (coin_prompt ? `CENTER1(ch_coin_lit, CH_COIN_W, 226) : `CENTER1(ch_press_lit, CH_PRESS_W, 226)))
                 col = GRAY;
         end
@@ -761,7 +870,7 @@ always @(*) begin
     endcase
     if (g_on && glyph_lit(g_code, g_dx, g_dy)) begin
         on = 1'b1;
-        col = g_col;
+        col = sc_glint ? WHITE : g_col;
     end
 end
 
@@ -769,7 +878,7 @@ end
 `undef CENTER2
 
 always @(posedge clk) begin
-    rgb <= col;
+    rgb <= pal(col);
     opaque <= on;
 end
 

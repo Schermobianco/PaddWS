@@ -34,6 +34,22 @@ const CLEAR_SECONDS: f64 = 4.0;
 const CONTINUE_SECONDS: f64 = 10.0;
 const INITIALS_SECONDS: f64 = 30.0;
 const SCORES_SECONDS: f64 = 8.0;
+/// Classifica animata (`Scores::draw`): la palla parte da `SCORES_BALL_Y` sopra la prima riga e
+/// scende di `SCORES_BALL_VY` unità al secondo rimbalzando fra i bordi (`SCORES_BALL_VX` larghezze
+/// al secondo); ogni riga che tocca si accende e i suoi punti contano da zero in `SCORES_COUNT`
+/// secondi. Da `SCORES_MARK` due racchette arrivano dai bordi ai lati del posto appena inserito (in
+/// `SCORES_MARK_IN`) e un riflesso lo attraversa in `SCORES_GLINT` secondi, ogni `SCORES_GLINT_PERIOD`.
+const SCORES_BALL_Y: f32 = 60.0;
+const SCORES_BALL_VY: f32 = 140.0;
+const SCORES_BALL_VX: f32 = 0.9;
+const SCORES_COUNT: f64 = 0.7;
+const SCORES_MARK: f64 = 3.2;
+const SCORES_MARK_IN: f64 = 0.6;
+const SCORES_GLINT: f64 = 0.5;
+const SCORES_GLINT_PERIOD: f64 = 1.6;
+/// prima riga della classifica (centro) e passo, in unità
+const SCORES_ROW_Y: f32 = 110.0;
+const SCORES_ROW_STEP: f32 = 31.0;
 const CHALLENGER_SECONDS: f64 = 3.0;
 /// touch: tocco prolungato nella metà libera con cui entra uno sfidante
 pub(crate) const HOLD_SECONDS: f64 = 1.0;
@@ -53,9 +69,9 @@ const LETTERS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 !";
 
 /// Iniziali segrete: confermate accendono l'easter egg, la volta dopo lo spengono
 /// (`App::set_egg`). Il record si salva come gli altri.
-const EGG_NAME: &[u8; 3] = b"WS!";
+const EGG_NAME: &[u8; 3] = b"RED";
 
-/// Easter egg dopo le iniziali `name`, se prima era `on`: "WS!" lo accende o lo spegne.
+/// Easter egg dopo le iniziali `name`, se prima era `on`: "RED" lo accende o lo spegne.
 pub(crate) fn egg_after(on: bool, name: &[u8; 3]) -> bool {
     on ^ (name == EGG_NAME)
 }
@@ -1162,8 +1178,10 @@ impl Continue {
 
     pub fn update(&mut self, app: &mut App, dt: f64) -> Option<Scene> {
         if let Some(left) = &mut self.over {
+            // dopo la chiusura del GAME OVER lo schermo resta nero per un po'
             *left -= dt;
-            return (*left <= 0.0 || input::pressed(KeyCode::Escape)).then(|| finish(app));
+            let black = app.attract.game_over_black_seconds();
+            return (*left <= -black || input::pressed(KeyCode::Escape)).then(|| finish(app));
         }
         if input::pressed(KeyCode::Escape) {
             self.over = Some(app.attract.game_over_seconds());
@@ -1468,6 +1486,14 @@ impl Scores {
         }
     }
 
+    /// Per la verifica automatica: la classifica a `t` secondi dall'inizio.
+    pub fn at(highlight: Option<usize>, t: f64) -> Self {
+        Self {
+            left: SCORES_SECONDS - t,
+            ..Self::new(highlight)
+        }
+    }
+
     /// La classifica dell'attract, dopo il titolo.
     pub fn attract() -> Self {
         Self {
@@ -1495,6 +1521,8 @@ impl Scores {
         })
     }
 
+    /// Classifica animata (vedi `SCORES_BALL_Y` e seguenti): righe spente finché la palla non le
+    /// tocca, punti che contano, poi il posto nuovo con le racchette ai lati e il riflesso.
     pub fn draw(&self, app: &App) {
         let colors = &app.cfg.colors;
         let (white, gray, accent) = (
@@ -1502,15 +1530,38 @@ impl Scores {
             App::color(colors.lgray),
             App::color(colors.accent),
         );
+        let dim = Color::from_rgba(0x3A, 0x3A, 0x3A, 255);
         app.renderer.fill(BLACK);
         text(app, "CHALLENGE HIGH SCORES", 40.0, 55.0, accent);
+        let t = SCORES_SECONDS - self.left;
         let sc = app.scale();
         let r = &app.renderer;
         let font = &app.assets.font_text;
         let w = r.world_w;
+        let ball_y = |t: f64| SCORES_BALL_Y + SCORES_BALL_VY * t as f32;
+        let rows = app.scores.entries.len().min(TABLE_SIZE);
+        // posto nuovo: racchette in arrivo (0..1) e riflesso (posizione 0..1 sulla riga, se c'è)
+        let mark = (t - SCORES_MARK).max(0.0);
+        let glint = (mark > SCORES_MARK_IN)
+            .then(|| ((mark - SCORES_MARK_IN) % SCORES_GLINT_PERIOD) / SCORES_GLINT)
+            .filter(|&g| g < 1.0);
         for (i, e) in app.scores.entries.iter().enumerate().take(TABLE_SIZE) {
-            let y = (110.0 + i as f32 * 31.0) * sc;
-            let color = if Some(i) == self.highlight { accent } else { white };
+            let row_y = SCORES_ROW_Y + i as f32 * SCORES_ROW_STEP;
+            let y = row_y * sc;
+            // secondi da quando la palla ha toccato la riga
+            let lit = t - ((row_y - SCORES_BALL_Y) / SCORES_BALL_VY) as f64;
+            let counted = (lit / SCORES_COUNT).clamp(0.0, 1.0);
+            let shown = (e.score as f64 * (1.0 - (1.0 - counted).powi(3))) as u32;
+            let new = Some(i) == self.highlight;
+            let color = if lit < 0.0 {
+                dim
+            } else if counted < 1.0 {
+                gray
+            } else if new {
+                accent
+            } else {
+                white
+            };
             let level = if e.level as usize > LEVELS {
                 "ALL".to_string()
             } else {
@@ -1520,10 +1571,48 @@ impl Scores {
             for (s, x) in [
                 (format!("{}", i + 1), 0.24),
                 (name, 0.36),
-                (pad(e.score), 0.56),
+                (pad(shown), 0.56),
                 (level, 0.76),
             ] {
-                r.text_centered(&s, font, 30.0 * sc, w * x, y, 0.0, color);
+                let (size, cx) = (30.0 * sc, w * x);
+                r.text_centered(&s, font, size, cx, y, 0.0, color);
+                // riflesso: le lettere sotto la banda che attraversa la riga diventano bianche
+                if let (true, Some(g)) = (new, glint) {
+                    let band = w * (0.18 + 0.66 * g as f32);
+                    for (ch, ink) in s.chars().zip(r.ink_boxes(&s, font, size)) {
+                        if let Some((x0, x1)) = ink
+                            && cx + x1 > band - 0.02 * w
+                            && cx + x0 < band + 0.02 * w
+                        {
+                            r.text_centered(&ch.to_string(), font, size, cx + (x0 + x1) / 2.0, y, 0.0, white);
+                        }
+                    }
+                }
+            }
+            // racchette ai lati del posto nuovo, dai bordi dello schermo
+            if new && mark > 0.0 {
+                let p = 1.0 - (1.0 - (mark / SCORES_MARK_IN).min(1.0) as f32).powi(3);
+                let (pw, ph) = (8.0 * sc, 30.0 * sc);
+                let left = -pw + p * (w * 0.17 + pw);
+                let right = w - p * (w - w * 0.83);
+                draw_rectangle(left, y - ph / 2.0, pw, ph, accent);
+                draw_rectangle(right - pw, y - ph / 2.0, pw, ph, accent);
+            }
+        }
+        // la palla, con una scia, finché non ha passato l'ultima riga
+        let bottom = SCORES_ROW_Y + rows as f32 * SCORES_ROW_STEP;
+        if ball_y(t) < bottom + 20.0 {
+            let (x0, x1) = (w * 0.16, w * 0.84);
+            let span = x1 - x0;
+            let ball_x = |t: f64| {
+                let p = (t as f32 * SCORES_BALL_VX * w) % (2.0 * span);
+                x0 + if p < span { p } else { 2.0 * span - p }
+            };
+            let size = 8.0 * sc;
+            for (k, v) in [(3, 0x30), (2, 0x5E), (1, 0x9A), (0, 0xFF)] {
+                let tk = (t - k as f64 * 0.03).max(0.0);
+                let c = Color::from_rgba(v, v, v, 255);
+                draw_rectangle(ball_x(tk) - size / 2.0, ball_y(tk) * sc - size / 2.0, size, size, c);
             }
         }
         let prompt = if app.cfg.game.free_play || app.credits > 0 {
@@ -1531,7 +1620,7 @@ impl Scores {
         } else {
             "INSERT COIN"
         };
-        if (get_time() * 2.0) as i64 % 2 == 0 {
+        if ball_y(t) >= bottom + 20.0 && (get_time() * 2.0) as i64 % 2 == 0 {
             text(app, prompt, 24.0, r.world_h / sc - 25.0, gray);
         }
     }
@@ -1613,7 +1702,7 @@ mod tests {
     #[test]
     fn ws_switches_the_egg_on_and_off() {
         let mut on = false;
-        for (name, want) in [(b"WS!", true), (b"ABC", true), (b"WS ", true), (b"WS!", false), (b"!WS", false)] {
+        for (name, want) in [(b"RED", true), (b"ABC", true), (b"RE ", true), (b"RED", false), (b"DER", false)] {
             on = egg_after(on, name);
             assert_eq!(on, want, "{}", String::from_utf8_lossy(name));
         }

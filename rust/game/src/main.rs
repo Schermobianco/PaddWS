@@ -494,14 +494,22 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         play.fill_challenge_demo();
         Scene::Game(Box::new(play))
     }
+    // classifica a `t` secondi dall'inizio, con il terzo posto appena inserito
+    fn scores_at(app: &mut App, t: f64) -> Scene {
+        app.run = None;
+        app.challenge = false;
+        app.cpu = false;
+        app.next = false;
+        Scene::Scores(challenge_ui::Scores::at(Some(2), t))
+    }
     use ending_ui::Part as E;
     use paddws_core::PaddleKind as K;
-    // easter egg acceso (iniziali "WS!"): giallo e rosso scambiati
+    // easter egg acceso (iniziali "RED"): giallo e rosso scambiati
     fn egg(app: &mut App, scene: Scene) -> Scene {
         app.set_egg(true);
         scene
     }
-    let shots: [(&str, MakeScene); 92] = [
+    let shots: [(&str, MakeScene); 94] = [
         ("1_demo_classic", |app| demo_at(app, DemoMode::Classic)),
         ("1_demo_evo", |app| demo_at(app, DemoMode::Evo)),
         ("1_demo_next", |app| demo_at(app, DemoMode::Next)),
@@ -583,7 +591,7 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
             app.challenge = false;
             app.cpu = false;
             app.next = false;
-            Scene::Scores(challenge_ui::Scores::new(Some(2)))
+            Scene::Scores(challenge_ui::Scores::at(Some(2), 6.0))
         }),
         ("0_boot", |app| attract_at(app, true, 100)),
         ("0_boot_grid", |app| attract_at(app, true, 210)),
@@ -821,6 +829,9 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         ("8_net_5_blaster", |app| net_at(app, 4)),
         ("8_net_6_rush", |app| net_at(app, 5)),
         ("8_net_7_guardian", |app| net_at(app, 6)),
+        // classifica animata: la palla a metà, poi il riflesso sul posto nuovo
+        ("8_scores_1_ball", |app| scores_at(app, 1.3)),
+        ("8_scores_2_mark", |app| scores_at(app, 4.0)),
         // presentazioni dei sette avversari, a metà dell'entrata e a entrata finita
         ("8_intro_1_arcade", |app| intro_at(app, 0, 0.6)),
         ("8_intro_1_arcade_end", |app| intro_at(app, 0, 2.9)),

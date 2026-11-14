@@ -142,7 +142,9 @@ introduction stays still. Matches are NEXT, to 5 points.
   match, if the opponent didn't score.
 - **Continue**: after losing a level, 10 seconds to insert a coin (or press Start in Free Play) and
   try the same level again, with the score reset.
-- **High-score table**: the top 10 with initials, also shown in the attract mode. On PC it is saved
+- **High-score table**: the top 10 with initials, also shown in the attract mode. It lights up with a
+  ball coming down between the rows and the scores counting up; the entry just added gets paddles
+  at its sides and a yellow glint (on the C64 it stays still). On PC it is saved
   in `padd_scores.json` next to the configuration, in the browser in `localStorage`, on the C64 in
   the cartridge flash; on the MiSTer on the SD card (`PaddWS.nvm`, automatically with the OSD
   option *Autosave scores* or with *Save settings*), if the core is started from the `.mra`.
@@ -162,9 +164,11 @@ introduction stays still. Matches are NEXT, to 5 points.
   winner didn't let the opponent score a single point, PERFECT replaces YOU WIN (or GAME OVER, with
   two players), shouted by the voice.
 - **Voice**: in the introduction a digitised "SID-style" voice announces the opponent's name (on the
-  C64 and MiSTer with the trick of the SID volume register; on the C64 from the cartridge).
+  C64 and MiSTer with the trick of the SID volume register; on the C64 from the cartridge). On PC,
+  web and MiSTer the same voice also says the name of the paddle just confirmed in the pick.
 - **Opponent themes**: in the match against the CPU each opponent has its own theme, on the first
-  two SID voices (the third is left for the effects). They are turned off with **MUSIC VOLUME: 0%**
+  two SID voices (the third is left for the effects); the challenge between two players plays the
+  theme of a random opponent (not on the C64). They are turned off with **MUSIC VOLUME: 0%**
   in the menu (on the MiSTer *Music volume: 0%*, which turns off all music); on the C64 the theme
   comes with the voice, from the cartridge.
 
@@ -251,7 +255,7 @@ CPU the whole screen belongs to the player; with two players each has their own 
 - menu: drag the wheel with your finger, a tap on the item in the middle changes or uses it;
 - power-up pick: tap the three power-ups (another tap removes them), then OK at the top of the
   column;
-- paddle pick: a tap shows it, a second tap on the same row picks it;
+- paddle pick: a tap on the row shows it, then OK at the top of the column picks it;
 - in the attract mode a tap counts as Start;
 - pause: a tap on the ❚❚ symbol at the top of the centre line; in pause tap to resume or tap MENU
   (in the menu RESUME picks up the match);

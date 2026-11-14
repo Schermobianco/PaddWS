@@ -159,7 +159,8 @@
   },
   "game_over": {
     "label_y": 112,
-    "winner_y": 132
+    "winner_y": 132,
+    "black_frames": 120
   },
   "texts": {
     "logo": [

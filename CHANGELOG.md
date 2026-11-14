@@ -15,6 +15,19 @@ crea il commit e il tag `vX.Y.Z`.
 ## [Non rilasciato]
 
 ### Modificato
+- **Classifica animata** della CHALLENGE (PC, web e MiSTer): una palla scende rimbalzando fra i
+  bordi e accende le righe che tocca; i punti di ogni riga contano da zero mentre si accende (sul
+  MiSTer le cifre girano e si fermano una alla volta); poi due racchette gialle affiancano il posto
+  appena inserito e un riflesso lo attraversa. Sul C64 resta ferma.
+- GAME OVER: dopo la chiusura da televisore lo schermo resta nero per due secondi, prima di passare
+  oltre (PC, web e MiSTer).
+- Scelta della racchetta: confermata, il SID ne dice il nome (PC, web e MiSTer).
+- CHALLENGE: la sfida tra due giocatori suona il tema di un avversario a caso (PC, web e MiSTer).
+- Scelta della racchetta al tocco (web e Deck): un tocco sulla riga la mostra e la conferma è un
+  pulsante OK in cima alla colonna, come nella scelta dei bonus (prima: un secondo tocco sulla riga).
+- PERFECT si stampa più lentamente: ogni grandezza del timbro dura qualche frame invece di uno.
+- MiSTer: il core occupa il 72% della FPGA invece del 78% (stesse immagini, pixel per pixel), con
+  più margine sui tempi.
 - Mosse speciali: l'urlo con il nome della mossa ("STRAIGHT SHOT!", "RISING STRIKE!") parte al colpo,
   insieme al tiro e alla scritta, non più quando la mossa viene armata.
 - CHALLENGE, continue: accanto al numero una pallina rimbalza e tocca terra a ogni secondo, gialla
@@ -49,6 +62,9 @@ crea il commit e il tag `vX.Y.Z`.
   GUARDIAN si costruisce il muro e rimanda una palla. Sul C64 la presentazione resta ferma.
 - Release in due tempi: `build_onforge.bat` mette i pacchetti in `dist\` senza pubblicarli e, dopo
   le prove, `build_onforge.bat -PublishOnly` pubblica quelli senza ricostruirli.
+
+### Corretto
+- MiSTer: il timbro di PERFECT non si vedeva (durava due frame, sotto il lampo del punto).
 
 ## [4.1.0] - 2026-11-10
 

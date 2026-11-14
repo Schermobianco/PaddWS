@@ -59,7 +59,8 @@ if ($WorkingTree) {
     Fail "-Synth va con -WorkingTree (la release fa sempre la sintesi)"
 }
 Write-Host "PADD WS $version (commit $commit) su $vm"
-if (-not $WorkingTree -and (git status --porcelain)) { Fail "il repository ha modifiche non committate: forge riceve il commit, non i file modificati (per provarle: check_onforge.bat)" }
+# -PublishOnly non manda sorgenti a forge: le modifiche in corso non contano
+if (-not $WorkingTree -and -not $PublishOnly -and (git status --porcelain)) { Fail "il repository ha modifiche non committate: forge riceve il commit, non i file modificati (per provarle: check_onforge.bat)" }
 if ($PublishOnly) {
     if ($Publish -or $WorkingTree -or $CheckOnly) { Fail "-PublishOnly va da solo: pubblica i pacchetti già in dist" }
     $Publish = $true

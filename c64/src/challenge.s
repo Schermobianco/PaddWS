@@ -1588,7 +1588,7 @@ done:
     rts
 .endproc
 
-; Easter egg, come egg_after di rust/game/src/challenge_ui.rs: le iniziali "WS!" lo accendono e la
+; Easter egg, come egg_after di rust/game/src/challenge_ui.rs: le iniziali "RED" lo accendono e la
 ; volta dopo lo spengono, fino allo spegnimento (il record si salva come gli altri). Giallo e rosso
 ; si scambiano ovunque: color_span per le scritte, egg_yel ed egg_red dove i colori si scrivono
 ; direttamente, $D026 per i segni delle racchette; al posto della canzone del titolo quella del
@@ -1611,7 +1611,7 @@ done:
 done:
     rts
 .endproc
-egg_name: .byte "WS!"
+egg_name: .byte "RED"
 ; egg_x, egg_yel, egg_red ed egg_song (video.s, in quest'ordine)
 egg_flip: .byte COL_YELLOW ^ COL_RED, COL_YELLOW ^ COL_RED, COL_YELLOW ^ COL_RED
           .byte SID_SONG_TITLE ^ SID_SONG_EGG

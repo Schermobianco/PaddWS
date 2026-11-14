@@ -67,9 +67,9 @@
 // lunghe si accorciano portando avanti il contatore del finale (e lo scorrimento dei titoli). In THE END
 // Start salta alle iniziali. Stampa le voci "YOU WIN!" (attese 2), la canzone del SID e i punti.
 // Argomento "egg": l'easter egg delle iniziali. Dal titolo (giallo) le iniziali di un record forzato:
-// il giocatore scrive "WS!" con il joystick (su dalla A porta al "!") e la classifica che segue ha
+// il giocatore scrive "RED" con il joystick (su dalla A porta al "!") e la classifica che segue ha
 // giallo e rosso scambiati; poi strisce, logo, titolo, una CHALLENGE (scelta, presentazione del RUSH,
-// partita con una capsula BULLET) e di nuovo "WS!", che lo spegne. Salva egg_*.ppm, stampa a ogni
+// partita con una capsula BULLET) e di nuovo "RED", che lo spegne. Salva egg_*.ppm, stampa a ogni
 // fotografia i pixel gialli (FFD225) e rossi (E62828) e la canzone del SID (il finale al posto del
 // titolo con l'easter egg acceso).
 // Dopo lo scenario si possono indicare i frame da salvare al posto di quelli predefiniti, singoli o
@@ -585,12 +585,25 @@ int main(int argc, char** argv) {
                 set_score(r, 1, perfect_test ? 0 : 10);
             }
             if (music_test && r->pong_top__DOT__mode == 6 && ++over_frames == 120) break;
-            if (win_test && r->pong_top__DOT__mode == 6 && ++over_frames == 30) {
-                const std::string name = "win_" + arg + ".ppm";
-                FILE* f = std::fopen(name.c_str(), "wb");
-                std::fprintf(f, "P6\n%d %d\n255\n", W, H);
-                std::fwrite(frame.data(), 1, frame.size(), f);
-                std::fclose(f);
+            // GAME OVER (modo 6): il frame 30; con PERFECT anche il timbro a scala 8 e 4 (frame 5 e 9,
+            // dopo il lampo del punto); senza, lo schermo nero dopo la chiusura (frame 200) e la durata,
+            // AT_GAME_OVER_FRAMES + AT_GAME_OVER_BLACK
+            if (win_test && r->pong_top__DOT__mode == 6) {
+                ++over_frames;
+                std::string name;
+                if (over_frames == 30) name = "win_" + arg + ".ppm";
+                if (perfect_test && (over_frames == 5 || over_frames == 9))
+                    name = "win_" + arg + "_stamp" + std::to_string(over_frames) + ".ppm";
+                if (!perfect_test && over_frames == 200) name = "win_" + arg + "_black.ppm";
+                if (!name.empty()) {
+                    FILE* f = std::fopen(name.c_str(), "wb");
+                    std::fprintf(f, "P6\n%d %d\n255\n", W, H);
+                    std::fwrite(frame.data(), 1, frame.size(), f);
+                    std::fclose(f);
+                }
+                if (perfect_test && over_frames == 30) break;
+            } else if (win_test && over_frames > 0) {
+                std::printf("GAME OVER durato %d frame (attesi 300)\n", over_frames);
                 break;
             }
             const int warp = r->pong_top__DOT__warp_on;
@@ -638,9 +651,9 @@ int main(int argc, char** argv) {
                 struct OverShot { int kind, age; };   // 0 YOU WIN, 1 PERFECT, 2 CPU WINS, 3 GAME OVER
                 static const OverShot over_plan[] = {
                     {0, 8}, {0, 16}, {0, 22}, {0, 30}, {0, 50}, {0, 60}, {0, 80},
-                    {1, 0}, {1, 1}, {1, 4}, {1, 6}, {1, 22}, {1, 44}, {1, 48},
+                    {1, 4}, {1, 8}, {1, 12}, {1, 14}, {1, 30}, {1, 52}, {1, 56},
                     {2, 14}, {2, 22}, {2, 40},
-                    {3, 24}, {3, 52}, {3, 60}, {3, 70}, {3, 100}, {3, 112}, {3, 125}, {3, 160}, {3, 166}, {3, 170}, {3, 176},
+                    {3, 24}, {3, 52}, {3, 60}, {3, 70}, {3, 100}, {3, 112}, {3, 125}, {3, 160}, {3, 166}, {3, 170}, {3, 176}, {3, 200},
                 };
                 static const char* over_names[] = {"youwin", "perfect", "cpuwins", "gameover"};
                 const int n_intro = sizeof intro_plan / sizeof intro_plan[0];
@@ -1043,7 +1056,7 @@ int main(int argc, char** argv) {
                 if (m == 11 && t == 20) { end_shot = true; end_name = "end_initials"; }
                 if (m == 11 && t == 21) break;
             }
-            // "egg": iniziali "WS!" (accende), giro dell'attract e una CHALLENGE, di nuovo "WS!" (spegne)
+            // "egg": iniziali "RED" (accende), giro dell'attract e una CHALLENGE, di nuovo "RED" (spegne)
             bool egg_shot = false;
             std::string egg_name;
             int egg_joy = 0;
@@ -1064,11 +1077,11 @@ int main(int argc, char** argv) {
                     r->pong_top__DOT__ch_letter = 0;
                     egg_round++;
                 }
-                // "WS!" con il joystick: lettere 0-25 A-Z, 26-35 cifre, 36 spazio, 37 "!". Dalla A 16 volte
-                // su (passando dal "!") fino alla W, A; 4 su fino alla S, A; 19 su fino al "!", A (un
+                // "RED" con il joystick: lettere 0-25 A-Z, 26-35 cifre, 36 spazio, 37 "!". Dalla A 21 volte
+                // su (passando dal "!") fino alla R, A; 13 su fino alla E, A; 1 su fino alla D, A (un
                 // frame premuto e uno lasciato)
                 if (m == 11) {
-                    static const int ups[3] = {16, 4, 19};
+                    static const int ups[3] = {21, 13, 1};
                     int at = 10;
                     for (int k = 0; k < 3; k++) {
                         if (t >= at && t < at + 2 * ups[k] && (t - at) % 2 == 0) egg_joy |= 0x08;
@@ -1137,7 +1150,7 @@ int main(int argc, char** argv) {
                 }
             }
             // canzone del SID: a ogni cambio; in partita (dopo un secondo) il tema dell'avversario del
-            // livello, SID_SONG_THEME0 + rung_kind, solo contro la CPU
+            // livello, SID_SONG_THEME0 + rung_kind, contro la CPU; nella sfida uno dei sette temi
             if (ch_test || chal_test || end_test || egg_test) {
                 const int song = r->pong_top__DOT__sid__DOT__song_q, m = r->pong_top__DOT__mode;
                 if (song != sid_song) {
@@ -1148,10 +1161,12 @@ int main(int argc, char** argv) {
                     static const int kinds[7] = {0, 3, 2, 1, 4, 5, 6};   // rung_kind dei livelli
                     const int lvl = r->pong_top__DOT__ch_level;
                     const bool vs_cpu = r->pong_top__DOT__ch_active && !r->pong_top__DOT__duel;
-                    const int want = vs_cpu ? 7 + kinds[lvl % 7] : 0;
-                    std::printf("frame %d: partita del livello %d %s, canzone %d (attesa %d)%s\n", frames, lvl + 1,
-                                vs_cpu ? "contro la CPU" : "tra due giocatori", song, want, song == want ? "" : " ERRORE");
-                    if (song != want) song_errors++;
+                    const int want = vs_cpu ? 7 + kinds[lvl % 7] : -1;
+                    const bool ok = vs_cpu ? song == want : song >= 7 && song <= 13;
+                    std::printf("frame %d: partita del livello %d %s, canzone %d (attesa %s)%s\n", frames, lvl + 1,
+                                vs_cpu ? "contro la CPU" : "tra due giocatori", song,
+                                vs_cpu ? std::to_string(want).c_str() : "un tema, 7-13", ok ? "" : " ERRORE");
+                    if (!ok) song_errors++;
                 }
             }
             if (wanted.count(frames) || chal_shot || end_shot || warp_shot || steer_shot || ghost_shot || pick_shot || kpick_shot || kgame_shot || ch_shot ||

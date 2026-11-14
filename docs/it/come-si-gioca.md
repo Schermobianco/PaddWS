@@ -139,7 +139,9 @@ partite sono NEXT a 5 punti.
   partita perfetta, se l'avversario non ha fatto punti.
 - **Continue**: perso un livello, 10 secondi per inserire un gettone (o premere Start in Free
   Play) e riprovare lo stesso livello, con i punti da zero.
-- **Classifica**: i 10 migliori con le iniziali, mostrata anche nell'attract. Sul PC si salva in
+- **Classifica**: i 10 migliori con le iniziali, mostrata anche nell'attract. Si accende con una
+  palla che scende fra le righe e i punti che contano; il posto appena inserito ha le racchette ai
+  lati e un riflesso giallo (sul C64 resta ferma). Sul PC si salva in
   `padd_scores.json` accanto alla configurazione, nel browser nel `localStorage`, sul C64 nella
   flash della cartuccia; sul MiSTer nella SD (`PaddWS.nvm`, da solo con l'OSD *Autosave scores*
   o con *Save settings*), se il core è avviato dal `.mra`.
@@ -159,9 +161,11 @@ partite sono NEXT a 5 punti.
   partita vinta contro la CPU. Se chi vince non ha lasciato neanche un punto all'avversario, al posto
   di YOU WIN (o di GAME OVER, in due) compare PERFECT, urlato dalla voce.
 - **Voce**: nella presentazione una voce digitalizzata "da SID" annuncia il nome dell'avversario
-  (su C64 e MiSTer con il trucco del registro del volume del SID; sul C64 dalla cartuccia).
+  (su C64 e MiSTer con il trucco del registro del volume del SID; sul C64 dalla cartuccia). Su PC,
+  web e MiSTer la stessa voce dice anche il nome della racchetta appena confermata nella scelta.
 - **Musiche degli avversari**: in partita contro la CPU ogni avversario ha il suo tema, sulle prime
-  due voci del SID (la terza resta agli effetti). Si spengono con **MUSIC VOLUME: 0%** nel menu
+  due voci del SID (la terza resta agli effetti); la sfida tra due giocatori suona il tema di un
+  avversario a caso (non sul C64). Si spengono con **MUSIC VOLUME: 0%** nel menu
   (sul MiSTer *Music volume: 0%*, che spegne tutte le musiche); sul C64 il tema arriva con la voce,
   dalla cartuccia.
 
@@ -248,7 +252,7 @@ la CPU tutto lo schermo è del giocatore; in due ognuno ha la sua metà.
 - NEXT: un tocco su una capsula della propria riserva in alto usa subito quel bonus;
 - menu: si trascina la ruota col dito, un tocco sulla voce al centro la cambia o la usa;
 - scelta dei bonus: si toccano i tre bonus (un altro tocco li toglie), poi OK in cima alla colonna;
-- scelta della racchetta: un tocco la mostra, un secondo tocco sulla stessa riga la sceglie;
+- scelta della racchetta: un tocco sulla riga la mostra, poi OK in cima alla colonna la sceglie;
 - nell'attract un tocco vale come Start;
 - pausa: un tocco sul simbolo ❚❚ in cima alla linea centrale; in pausa si tocca per riprendere o
   su MENU (nel menu RESUME riprende la partita);

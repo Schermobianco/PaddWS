@@ -396,6 +396,10 @@ wire howto_done = mode == M_HOWTO && ((frame_start && mframe >= HOWTO_FRAMES) ||
                                       ((a_press || start_press) && mframe >= HOWTO_SKIP_FRAMES));
 wire pick_done = (pick_go && mode == M_PICK && !want_howto) || howto_done;
 
+// GAME OVER che chiude lo schermo come un televisore: poi resta nero per AT_GAME_OVER_BLACK frame
+// (assegnato con le scritte della fine partita, più sotto)
+wire over_closes;
+
 function [10:0] mode_frames(input [3:0] m);
     case (m)
         M_BOOT:    mode_frames = AT_BOOT_FRAMES;
@@ -458,13 +462,13 @@ reg [3:0]  ch_highlight = 4'd15;      // posto appena inserito in classifica
 reg [1:0]  ch_pos = 2'd0;             // iniziali: lettera in corso, indice della lettera, scelte
 reg [5:0]  ch_letter = 6'd0;
 reg [17:0] ch_name = 18'd0;
-// Easter egg (come egg_after di rust/game/src/challenge_ui.rs): le iniziali "WS!" confermate lo
+// Easter egg (come egg_after di rust/game/src/challenge_ui.rs): le iniziali "RED" confermate lo
 // accendono, la volta dopo lo spengono. Giallo e rosso si scambiano su tutto lo schermo (egg_swap,
 // in fondo) e al posto della canzone del titolo suona quella del finale. Resta acceso fino a
-// egg_clear e non si salva: né nella classifica (il record con "WS!" si salva come gli altri) né
+// egg_clear e non si salva: né nella classifica (il record con "RED" si salva come gli altri) né
 // nell'OSD
 reg        egg = 1'b0;
-localparam [17:0] EGG_NAME = {6'd40, 6'd28, 6'd32};   // "WS!" (W 32, S 28, "!" 40; la prima nei bit bassi)
+localparam [17:0] EGG_NAME = {6'd13, 6'd14, 6'd27};   // "RED" (R 27, E 14, D 13; la prima nei bit bassi)
 wire [17:0] ini_name;                 // iniziali complete alla conferma (anche a tempo scaduto)
 // classifica dei 10 migliori: iniziali (codici del font), punti, punti in BCD, livello raggiunto
 reg [17:0] tb_name [0:9];
@@ -671,7 +675,7 @@ always @(posedge clk) begin
         // niente continue: GAME OVER, la partita è finita davvero
         cont_over <= 1'b1;
         mframe <= 11'd0;
-    end else if (mode == M_CONT && cont_over && frame_start && mframe + 11'd1 >= AT_GAME_OVER_FRAMES) begin
+    end else if (mode == M_CONT && cont_over && frame_start && mframe + 11'd1 >= AT_GAME_OVER_FRAMES + AT_GAME_OVER_BLACK) begin
         // dopo il GAME OVER le iniziali, se il miglior punteggio entra in classifica
         cont_over <= 1'b0;
         ch_active <= 1'b0;
@@ -689,7 +693,7 @@ always @(posedge clk) begin
             ins_go <= 1'b1;
             ins_at <= ch_rank;
             ins_name <= ini_name;
-            // "WS!" accende o spegne l'easter egg: la classifica che segue ha già i colori nuovi
+            // "RED" accende o spegne l'easter egg: la classifica che segue ha già i colori nuovi
             if (ini_name == EGG_NAME) egg <= !egg;
             ins_score <= ch_best;
             ins_bcd <= ch_best_bcd;
@@ -742,7 +746,8 @@ always @(posedge clk) begin
     end else if (game_over_now && mode == M_GAME) begin
         mode <= M_GAME_OVER;
         mframe <= 11'd0;
-    end else if (duel && mode == M_GAME_OVER && frame_start && mframe + 11'd1 >= AT_GAME_OVER_FRAMES) begin
+    end else if (duel && mode == M_GAME_OVER && frame_start && mframe + 11'd1 >= AT_GAME_OVER_FRAMES +
+                 (over_closes ? AT_GAME_OVER_BLACK : 0)) begin
         // fine della sfida: se perde il campione e il suo miglior punteggio entra in classifica, prima
         // le sue iniziali; altrimenti la scalata riprende subito con il vincitore, dal suo lato
         mframe <= 11'd0;
@@ -769,7 +774,7 @@ always @(posedge clk) begin
         // le schermate di CHALLENGE (tranne la classifica) cambiano qui sopra
         if (mode != M_GAME && mode != M_PICK && mode != M_INTRO && mode != M_CLEAR && mode != M_CONT &&
             mode != M_INITIALS && mode != M_HOWTO && mode != M_CHALLENGER && mode != M_ENDING &&
-            next_frame >= mode_frames(mode)) begin
+            next_frame >= mode_frames(mode) + (over_closes ? AT_GAME_OVER_BLACK : 0)) begin
             next_frame = 11'd0;
             case (mode)
                 M_BOOT: next_mode = M_STRIPES;
@@ -1757,6 +1762,7 @@ wire        over_solo = over_winner == 3'd3 || over_winner == 3'd5 || (ch_active
 // frame 48 anche le aggiunte di NEXT se ne vanno con palla e racchette
 wire [7:0]  over_age = (mframe > 11'd255) ? 8'd255 : mframe[7:0];
 wire        over_off = mode == M_GAME_OVER && !over_solo && !over_perfect && mframe >= 11'd48;
+assign over_closes = mode == M_GAME_OVER && !over_solo && !over_perfect;
 
 // presentazione animata della CHALLENGE: frame dall'inizio e scossa dello schermo (pixel), come
 // Stage::shake_at di rust/game/src/challenge_ui.rs con le distanze dimezzate: il colpo e il nome
@@ -2014,11 +2020,15 @@ wire sfx_slow = bul_on && game_sound && (mode == M_GAME || mode == M_DEMO) && !s
 // (`attract_mute`) toglie invece tutto l'audio dell'attract e della demo (musica ed effetti, non
 // gettone e Start): le due si sommano
 wire       music_off = music_vol >= 4'd10;
+// La sfida della CHALLENGE tra due giocatori suona il tema di un avversario a caso, preso all'inizio
+// della partita da un contatore che gira da 0 a 6 a ogni ciclo (come il seme del gioco Rust, la
+// partita non cambia); le partite fuori dalla CHALLENGE restano senza musica.
 reg  [3:0] theme_song = SID_SONG_THEME0;
-reg        theme_on = 1'b0;
+reg  [2:0] theme_roll = 3'd0, theme_any = 3'd0;
 always @(posedge clk) begin
-    theme_song <= SID_SONG_THEME0 + {1'b0, rung_kind(ch_level)};
-    theme_on <= ch_active && !duel;
+    theme_roll <= (theme_roll == 3'd6) ? 3'd0 : theme_roll + 3'd1;
+    if (match_reset) theme_any <= theme_roll;
+    theme_song <= SID_SONG_THEME0 + {1'b0, duel ? theme_any : rung_kind(ch_level)};
 end
 // musica dinamica (come la musica del gioco Rust): al match point, quando uno dei due è a un punto
 // dalla vittoria, la canzone accelera fino alla fine della partita; nel bullet time rallenta
@@ -2026,7 +2036,7 @@ reg        music_fast = 1'b0;
 always @(posedge clk) music_fast <= mode == M_GAME && two &&
                                     (score0 + 16'd1 >= points_to_win || score1 + 16'd1 >= points_to_win);
 wire [3:0] sid_song = ch_join || music_off ? 4'd0 :
-                      mode == M_GAME ? (theme_on ? theme_song : 4'd0) :
+                      mode == M_GAME ? (ch_active ? theme_song : 4'd0) :
                       mode == M_GAME_OVER ? (ch_active ? 4'd0 : SID_SONG_GAME_OVER) :
                       mode == M_INTRO || mode == M_CHALLENGER ? SID_SONG_INTRO :
                       mode == M_CLEAR ? (ch_level == CH_LEVELS - 1 ? SID_SONG_CHAMPION : SID_SONG_CLEAR) :
@@ -2072,6 +2082,26 @@ always @(posedge clk) begin
     end
 end
 
+// Scelta della racchetta: quando un giocatore conferma la sua (non allo scadere del tempo, né la
+// CPU o il campione già scelti), il SID ne dice il nome, come quello dell'avversario; se sta già
+// parlando la voce di prima si ferma (voice_stop) e la nuova parte appena il SID è libero.
+reg  [1:0] kc_q = 2'b00;
+reg        say_pend = 1'b0;
+reg  [2:0] say_kind = 3'd0;
+wire       voice_busy;
+integer    spk;
+always @(posedge clk) begin
+    kc_q <= kind_chosen;
+    if (mode != M_PICK) say_pend <= 1'b0;
+    else if (say_pend && !voice_busy) say_pend <= 1'b0;   // voice_go in questo ciclo
+    if (mode == M_PICK && pick_paddle && !pick_ready)
+        for (spk = 0; spk < 2; spk = spk + 1)
+            if (kind_chosen[spk] && !kc_q[spk] && !pick_lock[spk]) begin
+                say_pend <= 1'b1;
+                say_kind <= kind_cur[spk];
+            end
+end
+
 // CHALLENGE: la voce del SID dice il nome dell'avversario nella presentazione; si ferma se la
 // presentazione finisce prima (saltata) o arriva uno sfidante
 pong_sid #(.ROM_FILE(SID_ROM), .VOICE_FILE(VOICE_ROM)) sid (
@@ -2084,10 +2114,10 @@ pong_sid #(.ROM_FILE(SID_ROM), .VOICE_FILE(VOICE_ROM)) sid (
     .slow(sfx_slow),
     .music_fast(music_fast),
     .music_slow(bul_on),
-    .voice_go(frame_start && mode == M_INTRO && mframe == CH_VOICE_FRAME),
-    .voice_id(rung_kind(ch_level)),
-    .voice_stop(mode != M_INTRO),
-    .voice_on(),
+    .voice_go((frame_start && mode == M_INTRO && mframe == CH_VOICE_FRAME) || (say_pend && !voice_busy)),
+    .voice_id(mode == M_PICK ? say_kind : rung_kind(ch_level)),
+    .voice_stop((mode != M_INTRO && mode != M_PICK) || (say_pend && voice_busy)),
+    .voice_on(voice_busy),
     .call_go(call_go),
     .call_id(call_id),
     .call_level(call_level),
@@ -2272,7 +2302,7 @@ end
 
 endmodule
 
-// Easter egg delle iniziali "WS!": giallo e rosso scambiati sull'uscita video, come lo shader di
+// Easter egg delle iniziali "RED": giallo e rosso scambiati sull'uscita video, come lo shader di
 // rust/game/src/render.rs (swap_color), ma sui colori esatti della palette dei renderer. Il giallo
 // d'accento FFD225 diventa il rosso E62828 e il rosso diventa il giallo; le versioni scure del giallo
 // (le code di next_render, accento * n / 13 e * n / 23; le immagini del RUSH al 18, 36 e 54%; la

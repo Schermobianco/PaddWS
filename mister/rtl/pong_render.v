@@ -227,8 +227,10 @@ end
 //   dal 56, e chi ha vinto una ogni 3 dal 106; dal 158 lo schermo si chiude come un televisore: il
 //   nero stringe una fascia bordata di bianco (8), riga che si stringe (8), puntino;
 // - OV_TYPE, CPU WINS a un livello perso: si scrive con il cursore dal frame 12;
-// - OV_STAMP, PERFECT: a scala 8 e 4 nei primi due frame, poi il riquadro trema (8 frame) con il
-//   bordo giallo; chi ha vinto dal 20; dal 40 un riflesso in diagonale ogni 60 frame;
+// - OV_STAMP, PERFECT: a scala 8 fino al frame 6 (i primi 3 sono sotto il lampo del punto) e a
+//   scala 4 dal 7 al 10, poi il riquadro trema (8 frame) con il bordo giallo; chi ha vinto dal 28;
+//   dal 48 un riflesso in diagonale ogni 60 frame. Da tavolo fino al frame 10 la scritta di chi ha
+//   vinto è ruotata a scala 4, poi normale, senza scossa, bordo e riflesso;
 // - OV_HOP, YOU WIN: la palla parte dalla racchetta del giocatore, arriva sulla prima lettera in 16
 //   frame e salta di lettera in lettera (8 frame per salto) accendendole, poi vola via; finiti i
 //   salti la scritta lampeggia.
@@ -237,6 +239,7 @@ localparam integer TYPE_AT = 56, WIN_TYPE_AT = TYPE_AT + 5 * GAME_OVER_LETTERS +
 localparam [7:0] TYPE_AT8 = TYPE_AT, WIN_AT8 = WIN_TYPE_AT, CLOSE_AT8 = CLOSE_AT;
 localparam [3:0] GO_LETTERS4 = GAME_OVER_LETTERS;
 localparam integer YW_X0 = (W - 2 * YOU_WIN_W) / 2;
+localparam integer YW_ROT_Y0 = (H - 2 * YOU_WIN_W) / 2;   // da tavolo: prima riga della scritta ruotata
 localparam integer HOP_TOP = AT_GAME_OVER_Y - 4;
 
 function [5:0] winner_l1(input [2:0] w, input [3:0] i);
@@ -306,7 +309,9 @@ reg [5:0]  glint_ph;
 reg [5:0]  hop_lit, hop_press;          // YOU WIN: lettere accese e lettere abbassate
 reg        hop_white, hop_on;
 reg signed [11:0] hop_x, hop_y;
-reg        close_on, close_line, close_dot;
+reg signed [11:0] rhop_x, rhop_y;       // la stessa palla, da tavolo, verso il giocatore
+reg signed [15:0] hx_n, hy_n, hpu, hpv;
+reg        close_on, close_line, close_dot, close_black;
 reg [7:0]  close_hh;
 reg [8:0]  close_hw;
 
@@ -347,13 +352,13 @@ always @(posedge clk) begin
                        (winner != 3'd0 && !win_solo) || over_age[4]);
         end
         // timbro e riflesso (OV_STAMP)
-        stamp_sh <= (over_age == 8'd0) ? 2'd3 : (over_age == 8'd1) ? 2'd2 : 2'd1;
-        shk_x <= (over_age >= 8'd3 && over_age < 8'd11) ? stamp_dx(over_age[2:0] - 3'd3) : 4'sd0;
-        shk_y <= (over_age >= 8'd3 && over_age < 8'd11) ? stamp_dy(over_age[2:0] - 3'd3) : 4'sd0;
-        pf_edge <= over_age >= 8'd3 && over_age < 8'd8;
-        pf_win <= over_age >= 8'd20;
-        glint_on <= over_age >= 8'd40;
-        glint_ph <= (over_age < 8'd40 || glint_ph == 6'd59) ? 6'd0 : glint_ph + 6'd1;
+        stamp_sh <= (over_age < 8'd7) ? 2'd3 : (over_age < 8'd11) ? 2'd2 : 2'd1;
+        shk_x <= (over_age >= 8'd11 && over_age < 8'd19) ? stamp_dx(over_age[2:0] - 3'd3) : 4'sd0;
+        shk_y <= (over_age >= 8'd11 && over_age < 8'd19) ? stamp_dy(over_age[2:0] - 3'd3) : 4'sd0;
+        pf_edge <= over_age >= 8'd11 && over_age < 8'd16;
+        pf_win <= over_age >= 8'd28;
+        glint_on <= over_age >= 8'd48;
+        glint_ph <= (over_age < 8'd48 || glint_ph == 6'd59) ? 6'd0 : glint_ph + 6'd1;
         // palla sulle lettere (OV_HOP): lettere accese e abbassate, lampeggio finale
         for (li = 0; li < 6; li = li + 1) begin
             hp = you_right ? 4'd5 - li[3:0] : li[3:0];                 // posto nei salti
@@ -372,25 +377,43 @@ always @(posedge clk) begin
             hs = $signed({12'd0, hf[3:0]});
             ha = hop_cx(you_right ? YOU_WIN_LETTERS - 1 : 0) - hsx;
             hb = HOP_TOP - hsy;
-            hop_x <= hsx + ((ha * hs) >>> 4);
-            hop_y <= hsy + ((hb * hs) >>> 4) - ((hs * (16'sd16 - hs) * 16'sd5) >>> 4);
+            hx_n = hsx + ((ha * hs) >>> 4);
+            hy_n = hsy + ((hb * hs) >>> 4) - ((hs * (16'sd16 - hs) * 16'sd5) >>> 4);
         end else if (hf < 8'd56) begin
             hj = (hf - 8'd16) >> 3;
             hs = $signed({13'd0, hf[2:0]});
             ha = hop_cx(you_right ? YOU_WIN_LETTERS - 1 - hj : hj);
             hb = hop_cx(you_right ? YOU_WIN_LETTERS - 2 - hj : hj + 1);
-            hop_x <= ha + (((hb - ha) * hs) >>> 3);
-            hop_y <= HOP_TOP - ((hs * (16'sd8 - hs) * 16'sd9) >>> 3);
+            hx_n = ha + (((hb - ha) * hs) >>> 3);
+            hy_n = HOP_TOP - ((hs * (16'sd8 - hs) * 16'sd9) >>> 3);
         end else begin
             hs = $signed({8'd0, (hf - 8'd56 > 8'd63) ? 8'd63 : hf - 8'd56});
-            hop_x <= hop_cx(you_right ? 0 : YOU_WIN_LETTERS - 1) + (you_right ? -(hs <<< 2) : (hs <<< 2));
-            hop_y <= HOP_TOP - hs * 16'sd6 + ((hs * hs * 16'sd5) >>> 3);
+            hx_n = hop_cx(you_right ? 0 : YOU_WIN_LETTERS - 1) + (you_right ? -(hs <<< 2) : (hs <<< 2));
+            hy_n = HOP_TOP - hs * 16'sd6 + ((hs * hs * 16'sd5) >>> 3);
             hop_on <= hs < 16'sd48;
+        end
+        hop_x <= hx_n[11:0];
+        hop_y <= hy_n[11:0];
+        // da tavolo: dopo l'arrivo i salti nelle coordinate della scritta ruotata verso il giocatore
+        // (hpu lungo la scritta, hpv in giù, sopra le lettere è negativo; il sopra delle lettere
+        // guarda verso la mezzeria); prima l'arco dalla racchetta, dritto, fino alla prima lettera
+        hpu = (hf < 8'd16) ? hop_cx(you_right ? YOU_WIN_LETTERS - 1 : 0) - YW_X0 : hx_n - YW_X0;
+        hpv = (hf < 8'd16) ? HOP_TOP - AT_GAME_OVER_Y : hy_n - AT_GAME_OVER_Y;
+        ha = you_right ? ROT_CX_R - TEXT_H + hpv : ROT_CX_L + TEXT_H - 16'sd4 - hpv;
+        hb = you_right ? YW_ROT_Y0 + 2 * YOU_WIN_W - 16'sd4 - hpu : YW_ROT_Y0 + hpu;
+        if (hf < 8'd16) begin
+            rhop_x <= hsx + (((ha - hsx) * hs) >>> 4);
+            rhop_y <= hsy + (((hb - hsy) * hs) >>> 4) - ((hs * (16'sd16 - hs) * 16'sd5) >>> 4);
+        end else begin
+            rhop_x <= ha[11:0];
+            rhop_y <= hb[11:0];
         end
         // chiusura del televisore (OV_OFF, dal frame CLOSE_AT)
         close_on <= over_age >= CLOSE_AT8;
         close_line <= over_age >= CLOSE_AT8 + 8'd8 && over_age < CLOSE_AT8 + 8'd16;
-        close_dot <= over_age >= CLOSE_AT8 + 8'd16;
+        close_dot <= over_age >= CLOSE_AT8 + 8'd16 && over_age < CLOSE_AT8 + 8'd22;
+        // poi lo schermo resta nero fino alla fine (AT_GAME_OVER_BLACK frame in più, pong_top)
+        close_black <= over_age >= CLOSE_AT8 + 8'd22;
         close_hh <= (over_age >= CLOSE_AT8 + 8'd8) ? 8'd1 : 8'd120 - 8'd15 * (over_age - CLOSE_AT8);
         close_hw <= (over_age >= CLOSE_AT8 + 8'd15) ? 9'd1 : 9'd160 - 9'd20 * (over_age - CLOSE_AT8 - 8'd7);
     end
@@ -542,6 +565,21 @@ function mode_lit(input [1:0] m, input [9:0] dx, input [9:0] dy);
     endcase
 endfunction
 
+// La stessa scritta a scala 4 (il timbro di PERFECT nella modalità da tavolo): lunga `len` pixel
+function [20:0] rot_coord4(input right, input signed [11:0] px, input signed [11:0] py,
+                           input signed [11:0] cx, input signed [11:0] len);
+    reg signed [11:0] dx, dy, along;
+    reg [9:0] u, v;
+    begin
+        dx = px - (cx - 2 * TEXT_H);
+        dy = py - ((H - len) >>> 1);
+        along = right ? len - 12'sd1 - dy : dy;
+        u = along[11:2];
+        v = right ? dx[11:2] : TEXT_H - 1 - dx[11:2];
+        rot_coord4 = {dx >= 0 && dx < 4 * TEXT_H && dy >= 0 && dy < len, u, v};
+    end
+endfunction
+
 // riquadro nero attorno a una scritta ruotata
 function rot_box(input signed [11:0] px, input signed [11:0] py, input signed [11:0] cx, input signed [11:0] len);
     rot_box = px >= cx - TEXT_H - 5 && px < cx + TEXT_H + 5 &&
@@ -555,6 +593,9 @@ reg        ul_px, ur_px, ut_px, ub_px;
 reg        credit_px, label_px, label_box, go_px, go_box;
 reg        label_rot_px, label_rot_box, go_rot_px, go_rot_box, cd_px, cd_box;
 reg [20:0] wl, wr;
+reg [20:0] sr;                          // timbro ruotato (modalità da tavolo)
+reg        st_right;                    // ... dalla parte del giocatore destro
+reg        win_right;                   // da tavolo, chi ha vinto da solo sta a destra
 reg        win_px, win_rot_px;
 reg signed [11:0] win_w2;
 reg [11:0] cd_cx;
@@ -768,6 +809,7 @@ always @(*) begin
     // chi ha vinto, una riga sotto GAME OVER; ruotata, la riga sotto è quella verso il giocatore
     win_w2 = 2 * winner_w(winner);
     win_px = 1'b0;
+    win_right = 1'b0;
     win_rot_px = 1'b0;
     if (win_solo && winner != 3'd0) begin
         // solo chi ha vinto, nella riga di GAME OVER e nel suo colore, su un riquadro della sua
@@ -778,10 +820,13 @@ always @(*) begin
         win_px = winner_lit(winner, (ox - ((W - win_w2) >>> 1)) >> 1, (oy - AT_GAME_OVER_Y) >> 1);
         wl = rot_coord(1'b0, x, y, ROT_CX_L, win_w2);
         wr = rot_coord(1'b1, x, y, ROT_CX_R, win_w2);
-        go_rot_box = rot_box(x, y, ROT_CX_L, win_w2) || (show_rs && rot_box(x, y, ROT_CX_R, win_w2));
         go_rot_px = 1'b0;
-        win_rot_px = (wl[20] && winner_lit(winner, wl[19:10], wl[9:0])) ||
-                     (show_rs && wr[20] && winner_lit(winner, wr[19:10], wr[9:0]));
+        // da tavolo solo verso chi ha vinto: YOU WIN (e PERFECT al suo posto) verso il giocatore,
+        // CPU WINS verso la CPU
+        win_right = (winner == 3'd4) ? !you_right : you_right;
+        go_rot_box = win_right ? show_rs && rot_box(x, y, ROT_CX_R, win_w2) : rot_box(x, y, ROT_CX_L, win_w2);
+        win_rot_px = win_right ? show_rs && wr[20] && winner_lit(winner, wr[19:10], wr[9:0])
+                               : wl[20] && winner_lit(winner, wl[19:10], wl[9:0]);
     end else if (winner != 3'd0) begin
         go_box = ox >= GO_BOX_X && ox < GO_BOX_X + GO_W2 + 12 && oy >= AT_GAME_OVER_Y - 5 && oy < AT_WINNER_Y + 19;
         // vinta senza punti dell'avversario: PERFECT al posto di GAME OVER, nello stesso riquadro;
@@ -813,6 +858,8 @@ always @(*) begin
     // ---- animazioni della fine partita (OV_*)
     extra_px = 1'b0;                    // pixel fuori dal riquadro: cursore, palla, timbro
     extra_col = WHITE;
+    sr = 21'd0;
+    st_right = 1'b0;
     win_col_dim = 1'b0;
     gu = 12'sd0;
     gv = 12'sd0;
@@ -840,7 +887,20 @@ always @(*) begin
         if (cur_on && x - cur_x >= 0 && x - cur_x < 8 && y - cur_y >= 0 && y - cur_y < 14)
             extra_px = 1'b1;
     end else if (ov == OV_STAMP) begin
-        if (stamp_sh != 2'd1) begin
+        if (stamp_sh != 2'd1 && !upright) begin
+            // da tavolo: il timbro solo dalla parte di chi ha vinto, ruotato verso di lui e a scala 4
+            // (a scala 8 la scritta non starebbe nella sua metà); dall'altra parte la scritta resta
+            st_right = winner == 3'd2 || (winner == 3'd5 && you_right);
+            sr = rot_coord4(st_right, x, y, st_right ? ROT_CX_R : ROT_CX_L, 4 * PERFECT_W);
+            extra_px = sr[20] && perfect_lit(sr[19:10], sr[9:0]);
+            extra_col = winner == 3'd5 && winner_accent ? ACCENT : WHITE;
+            go_box = 1'b0;
+            if (winner == 3'd5)
+                go_rot_box = 1'b0;      // contro la CPU c'è solo la scritta verso il giocatore
+            else
+                go_rot_box = st_right ? rot_box(x, y, ROT_CX_L, GO_W2) || rot_box(x, y, ROT_CX_L - WIN_STEP, GO_W2)
+                                      : show_rs && (rot_box(x, y, ROT_CX_R, GO_W2) || rot_box(x, y, ROT_CX_R + WIN_STEP, GO_W2));
+        end else if (stamp_sh != 2'd1) begin
             // timbro: PERFECT a scala 8 o 4, centrato dove starà, senza riquadro
             go_box = 1'b0;
             go_rot_box = 1'b0;
@@ -871,6 +931,15 @@ always @(*) begin
         win_px = you_win_lit(gu[9:0], (oy - AT_GAME_OVER_Y - (hop_press[li_idx] ? 12'sd2 : 12'sd0)) >> 1);
         win_col_dim = !hop_lit[li_idx];
         if (hop_on && x - hop_x >= 0 && x - hop_x < 4 && y - hop_y >= 0 && y - hop_y < 4)
+            extra_px = 1'b1;
+    end else if (ov == OV_HOP) begin
+        // da tavolo: le lettere della scritta verso il giocatore spente finché la palla non ci salta
+        // sopra (senza abbassarsi), la palla nelle coordinate ruotate (rhop_x, rhop_y)
+        gu = $signed({2'b0, you_right ? wr[19:10] : wl[19:10]});
+        li_idx = (gu >= you_win_l1(0)) + (gu >= you_win_l1(1)) + (gu >= you_win_l1(2)) +
+                 (gu >= you_win_l1(3)) + (gu >= you_win_l1(4));
+        win_col_dim = !hop_lit[li_idx];
+        if (hop_on && x - rhop_x >= 0 && x - rhop_x < 4 && y - rhop_y >= 0 && y - rhop_y < 4)
             extra_px = 1'b1;
     end
 end
@@ -945,7 +1014,8 @@ always @(*) begin
     close_white = 1'b0;
     if (overlay == 2'd2 && ov == OV_OFF && close_on) begin
         close_px = 1'b1;
-        if (close_dot)
+        if (close_black) ;
+        else if (close_dot)
             close_white = (x == W / 2 - 1 || x == W / 2) && (y == H / 2 - 1 || y == H / 2);
         else if (close_line)
             close_white = (y == H / 2 - 1 || y == H / 2) && x - (W / 2 - $signed({3'd0, close_hw})) >= 0 &&
@@ -959,10 +1029,11 @@ always @(*) begin
 end
 
 wire ov_box = overlay == 2'd2 && (upright ? go_box : go_rot_box);
-wire ov_extra = overlay == 2'd2 && upright && extra_px;
+// dritte tutte le aggiunte; da tavolo il timbro di PERFECT e la palla di YOU WIN (cursori dritti)
+wire ov_extra = overlay == 2'd2 && (upright || ov == OV_STAMP || ov == OV_HOP) && extra_px;
 // colore di chi ha vinto: giallo in NEXT; YOU WIN spento prima della palla, bianco nel lampeggio
-wire [23:0] win_rgb = (ov == OV_HOP && upright && win_col_dim) ? 24'h4A4A4A :
-                      (ov == OV_HOP && upright && hop_white) ? (winner_accent ? WHITE : 24'h4A4A4A) :
+wire [23:0] win_rgb = (ov == OV_HOP && win_col_dim) ? 24'h4A4A4A :
+                      (ov == OV_HOP && hop_white) ? (winner_accent ? WHITE : 24'h4A4A4A) :
                       winner_accent ? ACCENT : WHITE;
 // riflesso su PERFECT: giallo, o bianco se PERFECT è già giallo
 wire [23:0] glint_rgb = (winner == 3'd5 && winner_accent) ? WHITE : ACCENT;
