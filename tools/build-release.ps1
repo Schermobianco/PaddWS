@@ -126,8 +126,10 @@ if (-not $PublishOnly) { try {
     scp @sshOpts -q $tar "${vm}:forge/src.tar"
     if ($LASTEXITCODE -ne 0) { throw "copia dei sorgenti" }
     Remove-Item $tar
-    # cartella nuova e scambio alla fine: la vista della console legge status.sh da lì
-    ssh @sshOpts $vm "set -e; cd ~/forge; rm -rf src.new; mkdir src.new; tar -xf src.tar -C src.new; rm src.tar; echo 'commit $commit ($version)' > src.new/.source; rm -rf src; mv src.new src"
+    # cartella nuova e scambio alla fine: la vista della console legge status.sh da lì. Prima si
+    # fermano i container di una build interrotta, se sono ancora accesi; se la cartella vecchia ha
+    # file di root (build interrotta prima di rimettere i permessi) la cancella un container
+    ssh @sshOpts $vm "set -e; cd ~/forge; docker stop -t 2 forge-build quartus-synth >/dev/null 2>&1 || true; rm -rf src.new; mkdir src.new; tar -xf src.tar -C src.new; rm src.tar; echo 'commit $commit ($version)' > src.new/.source; rm -rf src 2>/dev/null || docker run --rm -v `$PWD:/f paddws-build rm -rf /f/src; mv src.new src"
     if ($LASTEXITCODE -ne 0) { throw "estrazione dei sorgenti su forge" }
 
     $opts = @()

@@ -31,7 +31,12 @@ fixown() {
     docker run --rm -v "$src:/src" -v "$out:/out" paddws-build \
         find /src /out -xdev -exec chown "$(id -u):$(id -g)" {} + 2>/dev/null || true
 }
-trap 'fixown; result fallita' EXIT
+# build interrotta (Ctrl+C, connessione caduta, build fermata dal PC): un segnale non passa dal trap
+# di EXIT, quindi lo si trasforma in un'uscita; i container non vanno avanti da soli (Quartus
+# continuerebbe la sintesi) e i file non restano di root (la build dopo non cancellerebbe src)
+stopall() { docker stop -t 2 forge-build quartus-synth > /dev/null 2>&1 || true; }
+trap 'stopall; fixown; result fallita' EXIT
+trap 'exit 1' HUP INT TERM
 
 echo "== immagine paddws-build"
 ctx=$(mktemp -d)

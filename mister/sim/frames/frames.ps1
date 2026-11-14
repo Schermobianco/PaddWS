@@ -34,8 +34,17 @@ try {
         '-I../../rtl/gen' --top-module pong_top --Mdir obj -o frames.exe public.vlt $rtl frames.cpp 2>&1 |
         ForEach-Object { "$_" }
     if ($LASTEXITCODE -ne 0) { $out; exit 1 }
-    $out = & mingw32-make -s -C obj -j8 -f Vpong_top.mk OPT_FAST=-O2 OPT_SLOW=-O1 OPT_GLOBAL=-O2 2>&1 |
-        ForEach-Object { "$_" }
+    # un frames.exe rimasto acceso (simulazione interrotta) bloccherebbe il link
+    Get-Process frames -ErrorAction SilentlyContinue |
+        Where-Object { $_.Path -eq (Join-Path $dir "obj\frames.exe") } | Stop-Process -Force
+    $make = { & mingw32-make -s -C obj -j8 -f Vpong_top.mk OPT_FAST=-O2 OPT_SLOW=-O1 OPT_GLOBAL=-O2 2>&1 |
+        ForEach-Object { "$_" } }
+    $out = & $make
+    if ($LASTEXITCODE -ne 0 -and ($out -match "pch|PCH")) {
+        # intestazione precompilata rovinata da una compilazione interrotta: si rifà da capo
+        Remove-Item obj\*__pch.h.* -ErrorAction SilentlyContinue
+        $out = & $make
+    }
     if ($LASTEXITCODE -ne 0) { $out | Where-Object { $_ -match "error" }; exit 1 }
     & .\obj\frames.exe @args
     exit $LASTEXITCODE
