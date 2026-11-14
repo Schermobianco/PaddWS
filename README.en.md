@@ -1,7 +1,5 @@
 [<img src="docs/flags/it.svg" alt="" height="14"> Italiano](README.md) · [<img src="docs/flags/gb.svg" alt="" height="14"> **English**](README.en.md)
 
-# PADD WS
-
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/paddws-logo-dark.png">
