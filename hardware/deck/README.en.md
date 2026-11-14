@@ -143,9 +143,9 @@ optical encoder diagram (`pulses_per_revolution: 600`, `debounce_us: 0`).
    logo into the seats on the side of the tray. The letters straddling the joint are glued after
    joining the halves.
 4. Put the display into the opening from above, with the glass on the lip of the frame, and screw
-   the four short bars underneath, one per corner: to the display frame (slot, on the boss of the
-   hole) and to the top plate tube. Under the screw heads the bars have raised pads, so the
-   M3 × 10 screws don't reach the bottom of the holes. The bars hold the glass against the frame: tighten them without
+   the four short identical bars underneath, one per corner: to the display frame (slot, on the
+   boss of the hole) and to the top plate tube. The bars are 8 mm thick; the screw heads sit in
+   counterbores from below, just deep enough that the M3 × 10 screws don't reach the bottom of the holes. The bars hold the glass against the frame: tighten them without
    forcing, because the frame is only glued. The middle of the frame stays free for the display
    board and the Pi, with their connectors.
 5. Encoders from below, with 3 screws from above each; SELECT and USE with their nut; DASH snaps
@@ -167,7 +167,7 @@ optical encoder diagram (`pulses_per_revolution: 600`, `debounce_us: 0`).
 - **Glass thickness** (`vetro_sp`, now 1.1 mm): the official drawing doesn't give it. Measure it
   with a caliper and change the parameter: the lip of the frame is rebuilt by itself.
 - **Glass corner radius** (now 6.5 mm: not dimensioned, 6.5-7 mm measured on samples) and **M3
-  holes of the frame**: the slots of the bars take up ±4 mm in length, not in width.
+  holes of the frame**: the slots of the bars take up ±3 mm in length, not in width.
 - **Height of the M3 hole bosses** (now 2.5 mm from the back of the frame, i.e. 8.46 mm from the
   glass): the bars rest there. If they stick out less, the bars pull the display down and the glass
   sinks below the top plate: put an M3 washer between bar and boss. If they stick out more, the

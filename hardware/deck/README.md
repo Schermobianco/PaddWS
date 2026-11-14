@@ -141,9 +141,9 @@ schema degli encoder ottici (`pulses_per_revolution: 600`, `debounce_us: 0`).
    nelle sedi del fianco della vasca. Le lettere che stanno a cavallo della giunta si incollano dopo
    aver unito le metà.
 4. Mettere il display nell'apertura dall'alto, con il vetro sul labbro della cornice, e avvitare sotto
-   le quattro barre corte, una per angolo: al telaio del display (asola, sulla borchia del foro) e
-   al tubo del piano. Sotto le teste delle viti le barre hanno dei rialzi, così le M3 × 10 non
-   toccano il fondo dei fori. Le barre tengono il vetro contro la cornice: si stringono senza forzare,
+   le quattro barre corte, uguali, una per angolo: al telaio del display (asola, sulla borchia del
+   foro) e al tubo del piano. Le barre sono spesse 8 mm; le teste delle viti stanno in sedi dal
+   sotto, profonde quanto basta perché le M3 × 10 non tocchino il fondo dei fori. Le barre tengono il vetro contro la cornice: si stringono senza forzare,
    perché la cornice è solo incollata. Il centro del telaio resta libero per la scheda del display
    e il Pi, con i loro connettori.
 5. Encoder da sotto, con 3 viti dall'alto ciascuno; SELECT e USE con il dado; DASH si aggancia a
@@ -166,7 +166,7 @@ schema degli encoder ottici (`pulses_per_revolution: 600`, `debounce_us: 0`).
 - **Spessore del vetro** (`vetro_sp`, ora 1,1 mm): il disegno ufficiale non lo quota. Si misura
   col calibro e si cambia il parametro: il labbro della cornice si rifà da solo.
 - **Raggio degli angoli del vetro** (ora 6,5 mm: non è quotato, sugli esemplari si misura 6,5-7 mm) e **fori M3 del telaio**: le asole delle
-  barre assorbono ±4 mm in lunghezza, non in larghezza.
+  barre assorbono ±3 mm in lunghezza, non in larghezza.
 - **Altezza delle borchie dei fori M3** (ora 2,5 mm dal dietro del telaio, cioè 8,46 mm dal vetro):
   le barre appoggiano lì. Se sporgono meno, le barre tirano giù il display e il vetro scende sotto
   il piano: una rondella M3 tra barra e borchia. Se sporgono di più, le barre spingono il vetro
