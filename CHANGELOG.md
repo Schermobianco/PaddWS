@@ -80,6 +80,8 @@ crea il commit e il tag `vX.Y.Z`.
   chiusura era un pezzo della rete dell'avversario.
 - C64 (4.1.1-beta.4): alla prima scelta della racchetta dopo l'accensione a volte mancava
   l'anteprima della racchetta di P1.
+- Web: con il campo largo (nel browser fino a 2,2:1) le schermate della CHALLENGE finivano con le
+  ultime righe sotto il bordo e sopra il punteggio; ora la loro scala non supera l'altezza.
 - C64: la scritta della mossa speciale non compariva quando la mossa si armava e partiva nello
   stesso tick (con la racchetta avanti): ora parte dal colpo, come sul PC.
 - C64: nella HOW TO PLAY le palline dei joystick non erano tonde e le frecce si mangiavano un pezzo

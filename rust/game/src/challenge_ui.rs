@@ -248,7 +248,7 @@ fn draw_join_hint(app: &App, free: Side) {
     };
     let prompt = format!("P{} {action}", free as usize + 1);
     let r = &app.renderer;
-    let sc = app.scale();
+    let sc = scale(app);
     let x = if free == Side::Left { r.world_w * 0.15 } else { r.world_w * 0.85 };
     let gray = App::color(app.cfg.colors.lgray);
     r.text_centered(&prompt, &app.assets.font_text, 20.0 * sc, x, 20.0 * sc, 0.0, gray);
@@ -286,7 +286,7 @@ impl Challenger {
     pub fn draw(&self, app: &App) {
         let r = &app.renderer;
         let (w, h) = (r.world_w, r.world_h);
-        let sc = app.scale();
+        let sc = scale(app);
         let colors = &app.cfg.colors;
         let (white, gray, accent) = (
             App::color(colors.white),
@@ -336,9 +336,16 @@ fn pad(n: u32) -> String {
     format!("{n:07}")
 }
 
+/// Scala delle schermate della CHALLENGE, disegnate su 480 righe: quella del campo, ma non oltre
+/// l'altezza. Con il campo largo (nel browser fino a 2,2:1) la scala del campo, media tra larghezza
+/// e altezza, porterebbe le ultime righe sotto il bordo e sopra il punteggio.
+fn scale(app: &App) -> f32 {
+    app.scale().min(app.renderer.world_h / 480.0)
+}
+
 /// Testo centrato su `y` (coordinate di disegno), nel font dei testi.
 fn text(app: &App, s: &str, size: f32, y: f32, color: Color) {
-    let sc = app.scale();
+    let sc = scale(app);
     app.renderer.text_centered(
         s,
         &app.assets.font_text,
@@ -440,7 +447,7 @@ impl Intro {
             app,
             &format!("SCORE {}    HI {}", pad(run.score), pad(app.scores.entries[0].score)),
             28.0,
-            r.world_h / app.scale() - 30.0,
+            r.world_h / scale(app) - 30.0,
             App::color(app.cfg.colors.white),
         );
         draw_join_hint(app, run.side.opponent());
@@ -501,7 +508,7 @@ impl<'a> Stage<'a> {
             level: run.level,
             f,
             away: if run.side == Side::Left { 1.0 } else { -1.0 },
-            sc: app.scale(),
+            sc: scale(app),
             u: unit(app),
             shake: (0.0, 0.0),
             white: App::color(colors.white),
@@ -1236,7 +1243,7 @@ impl Continue {
             return;
         }
         text(app, "CONTINUE?", 56.0, 120.0, accent);
-        let sc = app.scale();
+        let sc = scale(app);
         let r = &app.renderer;
         let digit = format!("{}", (self.left.ceil() as u32).min(9));
         r.text_centered(
@@ -1438,7 +1445,7 @@ impl Initials {
             None => "ENTER YOUR INITIALS".to_string(),
         };
         text(app, &prompt, 28.0, 215.0, gray);
-        let sc = app.scale();
+        let sc = scale(app);
         let r = &app.renderer;
         let blink = (get_time() * 4.0) as i64 % 2 == 0;
         for i in 0..3 {
@@ -1534,7 +1541,7 @@ impl Scores {
         app.renderer.fill(BLACK);
         text(app, "CHALLENGE HIGH SCORES", 40.0, 55.0, accent);
         let t = SCORES_SECONDS - self.left;
-        let sc = app.scale();
+        let sc = scale(app);
         let r = &app.renderer;
         let font = &app.assets.font_text;
         let w = r.world_w;
