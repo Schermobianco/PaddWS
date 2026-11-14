@@ -8,9 +8,10 @@
 </p>
 
 Table-top Pong for two players sitting at opposite ends of the screen, with an 80s arcade attract
-mode, coin-op credits, power-ups, fighting-game special moves and a ladder against seven
-opponents. It runs on PC, in the browser, in a Raspberry Pi cabinet, on the MiSTer FPGA and on the
-Commodore 64, and everywhere it plays exactly the same match.
+mode, coin-op credits and an arcade mode like in fighting games: a ladder against seven opponents,
+with power-ups and special moves, where a friend can join in and challenge you at any time. It runs
+on PC, in the browser, in a Raspberry Pi cabinet, on the MiSTer FPGA and on the Commodore 64, and
+everywhere it plays exactly the same match.
 
 <p align="center"><img src="docs/badges/powered-by-sid.svg" alt="Powered by SID 6581 / 8580" width="440"></p>
 
@@ -38,17 +39,19 @@ More screenshots in [How to play](docs/en/how-to-play.md#screenshots).
 
 ## Modes
 
-- **CLASSIC**: good old Pong, two players up to 11 points, or alone against a wall with 3 balls.
-- **EVO**: hitting the ball with the centre of the paddle powers it up; the forward dash
-  intercepts the ball and sends it back.
-- **NEXT**: the arcade mode, like in a fighting game. Alone you climb the ladder against 7 ever
-  stronger CPU opponents, with arcade scoring, continues, a high-score table and an ending; a
-  second player can join at any time and challenge whoever is playing (*HERE COMES A NEW
-  CHALLENGER!*), and duels won in a row are counted. Before the match each player picks 3
-  power-ups out of 6 (TELEPORT, SMASH, SLOW, CURVE, GHOST, STEER) and one of seven paddle types;
-  power-ups arrive in capsules to be collected, and there are two special moves performed with a
-  sequence of inputs. Finishing the ladder unlocks training against the opponent of your choice.
-- **VS CPU**: CLASSIC and EVO alone against the computer.
+**NEXT**, the main mode, works like the arcade mode of a fighting game:
+
+- alone you climb a ladder against 7 CPU opponents, each with its own paddle, power-ups and theme,
+  up to the final boss; there is arcade scoring, continues, a high-score table and an ending;
+- a second player joins whenever they like (*HERE COMES A NEW CHALLENGER!*): the winner of the duel
+  carries on up the ladder, and duels won in a row are counted;
+- 7 paddle types, 6 power-ups that arrive in capsules to be collected and two special moves
+  performed with a sequence of inputs;
+- finishing the ladder unlocks training against the opponent of your choice.
+
+There are also **CLASSIC**, good old Pong (two players, against the CPU or alone against a wall),
+and **EVO**, for two players or against the CPU, where a ball hit with the centre of the paddle
+powers up and the forward dash intercepts it.
 
 Rules, power-ups, paddles, moves and controls: **[How to play](docs/en/how-to-play.md)**.
 
@@ -59,7 +62,7 @@ Rules, power-ups, paddles, moves and controls: **[How to play](docs/en/how-to-pl
 | **Web** (Rust in WebAssembly) | browser on computers, Android, iPhone and iPad | play [online](https://schermobianco.github.io/PaddWS/), or `paddws-X.Y.Z-web.zip` |
 | **Rust** (macroquad), a single executable | Windows, Linux x86_64, Raspberry Pi (Linux ARM64 and 32-bit ARM) | `paddws-X.Y.Z-windows-x86_64.zip`, `-linux-x86_64.tar.gz`, `-linux-aarch64.tar.gz`, `-linux-armv7.tar.gz`: runs straight away |
 | **MiSTer core** FPGA, 320×240 at 15 kHz | DE10-Nano with MiSTer | `PaddWS_MiSTer_YYYYMMDD.zip`: unzip it into the root of the SD card (`/media/fat`), it shows up among the arcade titles |
-| **Commodore 64** (preview, PAL), 6502 assembly | C64, C64 Ultimate, VICE | `paddws-X.Y.Z-c64.zip`: the EasyFlash cartridge `paddws.crt` |
+| **Commodore 64** (PAL), 6502 assembly | C64, C64 Ultimate, VICE | `paddws-X.Y.Z-c64.zip`: the EasyFlash cartridge `paddws.crt` |
 | **Python** (Arcade 3.3), the first version | Windows, Linux, macOS, Raspberry Pi | `paddws-X.Y.Z-python.zip`: `pip install -r python/requirements.txt`, then `python python/main.py` |
 
 Everything is in the [releases](https://github.com/Schermobianco/PaddWS/releases). The Python

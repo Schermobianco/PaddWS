@@ -8,9 +8,10 @@
 </p>
 
 Pong da tavolo per due giocatori seduti ai lati opposti dello schermo, con l'attract dei cabinati
-anni '80, le partite a gettoni, i bonus, le mosse speciali da picchiaduro e una scalata contro sette
-avversari. Gira su PC, nel browser, su un cabinato Raspberry Pi, sul MiSTer FPGA e sul Commodore 64,
-e ovunque si gioca la stessa identica partita.
+anni '80, le partite a gettoni e una modalità arcade come nei picchiaduro: una scalata contro sette
+avversari, con bonus e mosse speciali, in cui un amico può entrare a sfidarti quando vuole. Gira su
+PC, nel browser, su un cabinato Raspberry Pi, sul MiSTer FPGA e sul Commodore 64, e ovunque si gioca
+la stessa identica partita.
 
 <p align="center"><img src="docs/badges/powered-by-sid.svg" alt="Powered by SID 6581 / 8580" width="440"></p>
 
@@ -38,17 +39,19 @@ Altre schermate in [Come si gioca](docs/it/come-si-gioca.md#schermate).
 
 ## Modalità
 
-- **CLASSIC**: il Pong di sempre, in due fino a 11 punti, oppure da soli contro un muro con 3 palle.
-- **EVO**: colpendo la palla al centro della racchetta la si potenzia; lo scatto in avanti la
-  intercetta e la rilancia.
-- **NEXT**: la modalità arcade, come in un picchiaduro. Da soli si sale la scalata contro 7
-  avversari CPU sempre più forti, con punti arcade, continue, classifica e il finale; un secondo
-  giocatore può entrare quando vuole e sfidare chi sta giocando (*HERE COMES A NEW CHALLENGER!*), e
-  le sfide vinte di fila si contano. Prima della partita ognuno sceglie 3 bonus su 6 (TELEPORT,
-  SMASH, SLOW, CURVE, GHOST, STEER) e uno di sette tipi di racchetta; i bonus arrivano in capsule da
-  raccogliere, e ci sono due mosse speciali da fare con una serie di comandi. Finita la scalata si
-  sblocca l'allenamento contro l'avversario che si vuole.
-- **VS CPU**: CLASSIC ed EVO da soli contro il computer.
+**NEXT**, la modalità principale, funziona come l'arcade di un picchiaduro:
+
+- da soli si sale una scalata contro 7 avversari CPU, ognuno con la sua racchetta, i suoi bonus e
+  il suo tema, fino al boss finale; ci sono punti arcade, continue, classifica e un finale;
+- un secondo giocatore entra quando vuole (*HERE COMES A NEW CHALLENGER!*): chi vince la sfida
+  continua la scalata, e le sfide vinte di fila si contano;
+- 7 tipi di racchetta, 6 bonus che arrivano in capsule da raccogliere e due mosse speciali da fare
+  con una sequenza di comandi;
+- finita la scalata si sblocca l'allenamento contro l'avversario che si vuole.
+
+Ci sono anche **CLASSIC**, il Pong di sempre (in due, contro la CPU o da soli contro un muro), ed
+**EVO**, in due o contro la CPU, dove la palla colpita al centro della racchetta si potenzia e lo
+scatto in avanti la intercetta.
 
 Regole, bonus, racchette, mosse e comandi: **[Come si gioca](docs/it/come-si-gioca.md)**.
 
@@ -59,7 +62,7 @@ Regole, bonus, racchette, mosse e comandi: **[Come si gioca](docs/it/come-si-gio
 | **Web** (Rust in WebAssembly) | browser su computer, Android, iPhone e iPad | si gioca [online](https://schermobianco.github.io/PaddWS/), oppure `paddws-X.Y.Z-web.zip` |
 | **Rust** (macroquad), un eseguibile | Windows, Linux x86_64, Raspberry Pi (Linux ARM64 e ARM a 32 bit) | `paddws-X.Y.Z-windows-x86_64.zip`, `-linux-x86_64.tar.gz`, `-linux-aarch64.tar.gz`, `-linux-armv7.tar.gz`: si avvia direttamente |
 | **Core MiSTer** FPGA, 320×240 a 15 kHz | DE10-Nano con MiSTer | `PaddWS_MiSTer_AAAAMMGG.zip`: si scompatta nella radice della SD (`/media/fat`), compare tra i titoli arcade |
-| **Commodore 64** (anteprima, PAL), assembly 6502 | C64, C64 Ultimate, VICE | `paddws-X.Y.Z-c64.zip`: la cartuccia EasyFlash `paddws.crt` |
+| **Commodore 64** (PAL), assembly 6502 | C64, C64 Ultimate, VICE | `paddws-X.Y.Z-c64.zip`: la cartuccia EasyFlash `paddws.crt` |
 | **Python** (Arcade 3.3), la prima versione | Windows, Linux, macOS, Raspberry Pi | `paddws-X.Y.Z-python.zip`: `pip install -r python/requirements.txt`, poi `python python/main.py` |
 
 Tutto è nelle [release](https://github.com/Schermobianco/PaddWS/releases). La versione Python è
