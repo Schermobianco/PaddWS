@@ -7,7 +7,8 @@
 
 A table-top console for PADD WS: a flat 320 × 160 × 47.5 mm box with the official 7" screen in the
 middle and one station per player at each end (knob, DASH, SELECT, USE). Every part is a single
-colour and prints without supports; all parts fit on the 256 mm build plate.
+colour and prints without supports, except the socket plates; all parts fit on the 256 mm build
+plate.
 
 ![Render of the assembled Deck](previews/render.png)
 
@@ -30,7 +31,7 @@ tray (the bottom shell), *cornice* the glass frame, *manopola* the knob and *moz
 | `deck.sc` | the model for SolidCraft, with the timeline and the main parameters |
 | `deck.step` | all the parts to print, for other CAD programs |
 | `parts/*.3mf` | the same parts split up, one file per group, oriented as in the model, with the spare power socket plates; the G1 and G2 halves of top plate and tray are the `-P1` and `-P2` files |
-| `deck-bambu-studio.3mf` | the Bambu Studio project (X1 Carbon, 0.20 mm Standard): all parts already turned to their print orientation and split into 6 plates, each of a single colour and material |
+| `deck-bambu-studio.3mf` | the Bambu Studio project (X1 Carbon, 0.20 mm Standard): all parts already turned to their print orientation and split into 7 plates, each of a single colour and material |
 
 In the `.sc` file, the parameters window changes `lunghezza` (length), `larghezza` (width),
 `raggio` (corner radius), `parete` (wall thickness) and `vetro_sp` (glass thickness).
@@ -38,7 +39,7 @@ In the `.sc` file, the parameters window changes `lunghezza` (length), `larghezz
 ## Parts to print
 
 Everything is in `deck-bambu-studio.3mf`, the Bambu Studio project: the parts are already turned to
-their print orientation (none needs supports) and split into six plates, each of a single colour
+their print orientation and split into seven plates, each of a single colour
 and material. The filament only changes between one plate and the next, never during a print.
 
 | plate | parts | filament |
@@ -47,8 +48,9 @@ and material. The filament only changes between one plate and the next, never du
 | 2 | G2 half of the top plate, 2 knobs (upside down), 10 knob hubs | 1: black PETG |
 | 3 | glass frame (flange on the build plate), 4 display bars (upside down) | 1: black PETG |
 | 4 | G1 half of the tray (upright), 2 notch rings, 2 pointers, 8 DASH letters | 2: yellow PETG |
-| 5 | G2 half of the tray, micro-USB socket plate (face down) | 2: yellow PETG |
-| 6 | 8 feet | 3: TPU 95A |
+| 5 | G2 half of the tray | 2: yellow PETG |
+| 6 | the 5 socket plates (face down), with tree supports under the wings: the only plate with supports | 2: yellow PETG |
+| 7 | 8 feet | 3: TPU 95A |
 
 The top plate prints face down: its top is the face on the build plate and takes its finish, for
 example the texture of a textured PEI plate. That is why the glass seat is a separate part, the
@@ -60,7 +62,7 @@ The project is for the X1 Carbon with a 0.4 mm nozzle and the 0.20mm Standard pr
 PETG Basic and TPU 95A HF filaments; with other filaments, change them in the list on the left.
 Top plate, frame, tray and knobs already have 3 walls and 15% infill.
 
-The parts to glue are 1.2 mm thick and go 0.6 mm deep into seats with 0.15 mm of clearance per side;
+The parts to glue are 1.2 mm thick and go 0.6 mm deep into seats with 0.15 mm of clearance per side (0.3 mm for the logo parts);
 on PETG, cyanoacrylate glue alone holds poorly: better with its primer for difficult plastics, or
 print the parts to glue in PLA.
 
@@ -96,7 +98,7 @@ wings, there are 40 mm of width for the socket; under the middle there is the 5 
 
 | file | socket |
 |---|---|
-| `parts/power-plate-micro-usb.3mf` | panel-mount micro-USB extension with two M3 screws 28 mm apart (the one in the Bambu Studio project) |
+| `parts/power-plate-micro-usb.3mf` | panel-mount micro-USB extension with two M3 screws 28 mm apart (the one fitted in the model) |
 | `parts/power-plate-micro-usb-snap.3mf` | square snap-in micro-USB extension, no screws: 26.2 × 13.2 opening for the 30 × 18 flange |
 | `parts/power-plate-usb-c.3mf` | round USB-C socket with nut, Ø12.2 hole (M12 thread) |
 | `parts/power-plate-dc-jack.3mf` | 5.5 × 2.1 DC jack with 8 mm thread and 6 mm toggle switch |

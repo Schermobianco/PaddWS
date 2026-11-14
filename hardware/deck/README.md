@@ -7,7 +7,8 @@
 
 Console da tavolo per PADD WS: una scatola piatta di 320 × 160 × 47,5 mm con lo schermo ufficiale da 7" al
 centro e una postazione per giocatore a ogni capo (manopola, DASH, SELECT, USE). Ogni pezzo è di un
-solo colore e si stampa senza supporti; tutti i pezzi entrano sul piatto da 256 mm.
+solo colore e si stampa senza supporti, tranne le placche della presa; tutti i pezzi entrano sul
+piatto da 256 mm.
 
 ![Render del Deck montato](previews/render.png)
 
@@ -27,7 +28,7 @@ trasparente, sono componenti da comprare e non si stampano.
 | `deck.sc` | il modello per SolidCraft, con la timeline e i parametri principali |
 | `deck.step` | tutti i pezzi da stampare, per altri CAD |
 | `parts/*.3mf` | gli stessi pezzi separati, un file per gruppo, nel verso del modello, con le placche della presa di ricambio; le metà G1 e G2 di piano e vasca sono i file `-P1` e `-P2` |
-| `deck-bambu-studio.3mf` | il progetto per Bambu Studio (X1 Carbon, 0,20 mm Standard): tutti i pezzi già girati nel verso di stampa e divisi in 6 piatti, ognuno di un solo colore e materiale |
+| `deck-bambu-studio.3mf` | il progetto per Bambu Studio (X1 Carbon, 0,20 mm Standard): tutti i pezzi già girati nel verso di stampa e divisi in 7 piatti, ognuno di un solo colore e materiale |
 
 Nel file `.sc` si cambiano dalla finestra dei parametri `lunghezza`, `larghezza`, `raggio`,
 `parete` e `vetro_sp`.
@@ -35,7 +36,7 @@ Nel file `.sc` si cambiano dalla finestra dei parametri `lunghezza`, `larghezza`
 ## Pezzi da stampare
 
 Tutto sta in `deck-bambu-studio.3mf`, il progetto per Bambu Studio: i pezzi sono già girati nel verso di
-stampa (nessuno richiede supporti) e divisi in sei piatti, ognuno di un solo colore e materiale. Si
+stampa e divisi in sette piatti, ognuno di un solo colore e materiale. Si
 cambia solo il filamento tra un piatto e l'altro, mai durante una stampa.
 
 | piatto | pezzi | filamento |
@@ -44,8 +45,9 @@ cambia solo il filamento tra un piatto e l'altro, mai durante una stampa.
 | 2 | metà G2 del piano, 2 manopole (capovolte), 10 mozzi delle manopole | 1: PETG nero |
 | 3 | cornice del vetro (flangia sulla piastra), 4 barre del display (capovolte) | 1: PETG nero |
 | 4 | metà G1 della vasca (dritta), 2 anelli delle tacche, 2 indicatori, 8 lettere di DASH | 2: PETG giallo |
-| 5 | metà G2 della vasca, placca della presa micro-USB (a faccia in giù) | 2: PETG giallo |
-| 6 | 8 piedini | 3: TPU 95A |
+| 5 | metà G2 della vasca | 2: PETG giallo |
+| 6 | le 5 placche della presa (a faccia in giù), con i supporti ad albero sotto le ali: è l'unico piatto con i supporti | 2: PETG giallo |
+| 7 | 8 piedini | 3: TPU 95A |
 
 Il piano si stampa a faccia in giù: il sopra è la faccia sulla piastra e ne prende la finitura, per
 esempio la texture della piastra PEI testurizzata. Per questo la battuta del vetro è un pezzo a
@@ -58,7 +60,7 @@ Bambu PETG Basic e TPU 95A HF; se si usano altri filamenti si cambiano nell'elen
 Piano, cornice, vasca e manopole hanno già 3 perimetri e il 15% di riempimento.
 
 I pezzi da incollare sono spessi 1,2 mm ed entrano per 0,6 mm in sedi con 0,15 mm di gioco per
-lato; sul PETG l'Attack (cianoacrilato) tiene poco da solo: meglio con il suo primer per
+lato (0,3 mm i pezzi del logo); sul PETG l'Attack (cianoacrilato) tiene poco da solo: meglio con il suo primer per
 plastiche difficili, oppure stampare i pezzi da incollare in PLA.
 
 ## Mozzi delle manopole
@@ -94,7 +96,7 @@ La faccia è larga 43,6 mm e alta 34,3, spessa come la parete (2,5 mm). Dietro, 
 
 | file | presa |
 |---|---|
-| `parts/power-plate-micro-usb.3mf` | prolunga micro-USB da pannello con due viti M3 a 28 mm (è quella del progetto Bambu Studio) |
+| `parts/power-plate-micro-usb.3mf` | prolunga micro-USB da pannello con due viti M3 a 28 mm (è quella montata nel modello) |
 | `parts/power-plate-micro-usb-snap.3mf` | prolunga micro-USB quadrata a scatto, senza viti: apertura 26,2 × 13,2 per la flangia da 30 × 18 |
 | `parts/power-plate-usb-c.3mf` | presa USB-C rotonda con il dado, foro Ø12,2 (filetto M12) |
 | `parts/power-plate-dc-jack.3mf` | jack DC 5,5 × 2,1 con filetto da 8 mm e interruttore a levetta da 6 mm |
