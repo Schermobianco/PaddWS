@@ -21,8 +21,8 @@ NEXT power-ups and paddles are random; in CHALLENGE you see the opponent of a ra
 
 With a coin, or in Free Play, Start opens the menu (on the MiSTer it starts the match right away
 with the OSD options); each match costs one credit, even with two players. The match begins after a
-3-second countdown. The menu sets the mode (**GAME TYPE**), the players (**PLAYERS**: TWO and VS
-CPU, plus CHALLENGE in NEXT and ONE in CLASSIC), difficulty, volumes and the other options; the
+3-second countdown. The menu sets the mode (**GAME TYPE**), the players (**PLAYERS**: TWO, VS CPU
+and ONE in CLASSIC, TWO and VS CPU in EVO, TWO and CHALLENGE in NEXT), difficulty, volumes and the other options; the
 choices are kept for next time. The
 first time, the game starts in NEXT with PLAYERS: CHALLENGE (on the MiSTer *Game type: Challenge*,
 on the C64 at every power-on). If you go back to the menu during a match, **RESUME** picks it up
@@ -35,12 +35,13 @@ again.
   record.
 - **EVO** (2 players): hitting the ball with the grey area in the middle of the paddle powers it up
   (the area shrinks with each boost); the forward dash intercepts the ball and sends it back.
-- **NEXT** (2 players or against the CPU): Classic with the forward dash and power-ups. Before the
+- **NEXT** (2 players; alone, you play the CHALLENGE): Classic with the forward dash and power-ups. Before the
   match each player picks a paddle and 3 power-ups out of 6; capsules start from the centre line
   and are collected by touching them with the paddle, then the power-ups are selected and activated
   from the reserve at the top.
-- **VS CPU**: alone against the computer, in every mode (menu **PLAYERS: VS CPU**); the CPU's skill
-  follows the difficulty.
+- **VS CPU**: alone against the computer in CLASSIC and EVO (menu **PLAYERS: VS CPU**); the CPU's
+  skill follows the difficulty. Alone in NEXT you play the CHALLENGE (on the MiSTer *Game type:
+  Challenge*).
 - **CHALLENGE**: the ladder against 7 opponents, see [below](#challenge).
 
 ### NEXT power-ups
@@ -177,8 +178,11 @@ entrances in characters, simpler). Matches are NEXT, to 5 points.
   comes with the voice, from the cartridge.
 
 The ladder is tuned for an average player with a joystick (they almost always win the first level,
-and beat the boss about one time in four); the difficulty in the menu changes the ball speed: with a
-spinner or paddles, HARD or EXPERT is a better choice.
+and beat the boss about one time in four). The difficulty in the menu changes the ball speed and
+the opponents' skill: on HARD each one plays like the next one up the ladder, on EXPERT like the one
+two places up (the GUARDIAN gets two extra levels of its own), on EASY like the one before. If you
+finish it on one coin at NORMAL, HARD and EXPERT are the real challenge; with a spinner or paddles
+it is worth going up anyway.
 
 ## Sound
 
@@ -332,7 +336,7 @@ used with `F` / `C` (left) and `.` / `-` (right). Key **5** coin, fire or **RETU
 | ![MiSTer core: title](../screenshots/mister-title.png) | ![MiSTer core: NEXT demo](../screenshots/mister-demo.png) |
 | MiSTer core at 320×240: title after the coin | MiSTer core: CPU against CPU demo of the chosen mode (here NEXT) |
 | ![Commodore 64: title](../screenshots/c64-title.png) | ![Commodore 64: NEXT match](../screenshots/c64-next.png) |
-| Commodore 64: title in Free Play | Commodore 64: NEXT against the CPU, with the CURVE capsule |
+| Commodore 64: title in Free Play | Commodore 64: NEXT, with the CURVE capsule |
 | ![Commodore 64: power-up pick](../screenshots/c64-pick.png) | ![Commodore 64: CHALLENGE](../screenshots/c64-challenge.png) |
 | Commodore 64: power-up pick (the CPU has already picked) | Commodore 64: introduction of the first CHALLENGE opponent |
 

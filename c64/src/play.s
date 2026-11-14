@@ -1023,6 +1023,13 @@ value_fn: .word v_game - 1, v_players - 1, v_level - 1, v_control - 1, v_free - 
     ldy #>game_names
     jmp pick_name
 .endproc
+.segment "RODATA"
+; giocatori validi per gioco, indice opt_mode * 5 + opt_players (1 ONE, 2 TWO, 3 VS CPU, 4 CHALLENGE)
+players_ok:
+    .byte 0, 1, 1, 1, 0                 ; CLASSIC
+    .byte 0, 0, 1, 1, 0                 ; EVO
+    .byte 0, 0, 1, 0, 1                 ; NEXT: da soli c'è solo la CHALLENGE
+.segment "MENUCODE"
 .proc v_players
     lda opt_players
     sec
@@ -1247,26 +1254,12 @@ mode_hi:
     lda #0
 mode_ok:
     sta opt_mode
-    ; CHALLENGE si gioca in NEXT: con un altro gioco diventa VS CPU
-    cmp #2
-    beq :+
-    lda opt_players
-    cmp #OPT_CHALLENGE
-    bne :+
-    lda #3
-    sta opt_players
-:   lda opt_mode
-    beq mode_done
-    lda opt_players
-    cmp #1
-    bne mode_done
-    lda #2
-    sta opt_players
-mode_done:
-    rts
+    ; giocatori di prima che il gioco nuovo non ha: il primo valido nel verso del cambio
+    jmp players_fix
 not_game:
     cpx #MI_PLAYERS
     bne not_players
+players_step:
     lda opt_players
     clc
     adc at_tmp
@@ -1279,17 +1272,17 @@ wrap_hi:
     lda #OPT_CHALLENGE
 store_p:
     sta opt_players
-    ; il singolo è solo CLASSIC, CHALLENGE solo NEXT
-    cmp #OPT_CHALLENGE
-    bne :+
-    lda #2
-    sta opt_mode
-    rts
-:   cmp #1
-    bne players_done
-    lda #0
-    sta opt_mode
-players_done:
+players_fix:
+    ; solo i giocatori del gioco scelto (players_ok, come sul PC): ONE in CLASSIC, CHALLENGE in
+    ; NEXT, VS CPU in CLASSIC ed EVO; gli altri si saltano
+    lda opt_mode
+    asl a
+    asl a
+    adc opt_mode
+    adc opt_players
+    tax
+    lda players_ok,x
+    beq players_step
     rts
 not_players:
     cpx #MI_LEVEL

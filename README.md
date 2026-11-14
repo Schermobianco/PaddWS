@@ -34,7 +34,7 @@ gamepad o mouse.
 | ![NEXT: STRAIGHT SHOT in volo](docs/screenshots/next-supers.png) | ![CHALLENGE: nuovo sfidante](docs/screenshots/challenge-challenger.png) |
 | Mosse speciali: MAX STRAIGHT SHOT in volo | CHALLENGE: entra un secondo giocatore |
 | ![Core MiSTer: demo NEXT](docs/screenshots/mister-demo.png) | ![Commodore 64: partita NEXT](docs/screenshots/c64-next.png) |
-| Core MiSTer a 320×240 | Commodore 64: NEXT contro la CPU |
+| Core MiSTer a 320×240 | Commodore 64: NEXT |
 
 Altre schermate in [Come si gioca](docs/it/come-si-gioca.md#schermate).
 
@@ -46,7 +46,7 @@ Altre schermate in [Come si gioca](docs/it/come-si-gioca.md#schermate).
 - **NEXT**: prima della partita ognuno sceglie 3 bonus su 6 (TELEPORT, SMASH, SLOW, CURVE, GHOST,
   STEER) e uno di sette tipi di racchetta; i bonus arrivano in capsule da raccogliere. Ci sono
   anche due mosse speciali da fare con una serie di comandi specifici.
-- **VS CPU**: tutte le modalità da soli contro il computer.
+- **VS CPU**: CLASSIC ed EVO da soli contro il computer; da soli in NEXT c'è la CHALLENGE.
 - **CHALLENGE**: da soli contro 7 avversari CPU sempre più forti, con punti arcade, continue,
   classifica e il finale. Un secondo giocatore può entrare e sfidare chi sta giocando: *HERE COMES
   A NEW CHALLENGER!*

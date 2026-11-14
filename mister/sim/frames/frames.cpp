@@ -283,7 +283,8 @@ int main(int argc, char** argv) {
 
     // senza input la partita a un giocatore finisce in fretta; NEXT contro la CPU
     // CHALLENGE è il tipo di partita 3 dell'OSD; i giocatori allora non contano
-    top.players_mode = (ch_test || chal_test || end_test || egg_test) ? 0 : next_test ? 2 : (mute_test || win_test) ? 0 : 1;
+    // NEXT contro la CPU: Players a 3, che l'OSD non ha (sul MiSTer da soli in NEXT c'è solo Challenge)
+    top.players_mode = (ch_test || chal_test || end_test || egg_test) ? 0 : next_test ? 3 : (mute_test || win_test) ? 0 : 1;
     top.game_type = (ch_test || chal_test || end_test || egg_test) ? 3 : (next_test || howto_test) ? 2 : 0;
     top.free_play = 0;
     top.difficulty = 1;

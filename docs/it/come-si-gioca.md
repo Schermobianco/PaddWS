@@ -22,7 +22,7 @@ NEXT bonus e racchette sono a caso; in CHALLENGE si vede l'avversario di un live
 Con un gettone, o in Free Play, Start apre il menu (sul MiSTer avvia subito la partita con le
 opzioni dell'OSD); ogni partita costa un credito, anche in due. La partita comincia dopo un conto
 alla rovescia di 3 secondi. Dal menu si scelgono modalità (**GAME TYPE**), giocatori
-(**PLAYERS**: TWO e VS CPU, più CHALLENGE in NEXT e ONE in CLASSIC), difficoltà, volumi e le
+(**PLAYERS**: in CLASSIC TWO, VS CPU e ONE, in EVO TWO e VS CPU, in NEXT TWO e CHALLENGE), difficoltà, volumi e le
 altre opzioni; le scelte
 restano per la volta dopo. La prima volta il gioco parte in NEXT con PLAYERS: CHALLENGE (sul
 MiSTer *Game type: Challenge*, sul C64 a ogni accensione). Se si torna al menu durante una
@@ -34,11 +34,12 @@ partita, **RESUME** la riprende.
   si gioca contro un muro con 3 palle, ogni rimbalzo vale un punto e `TOP` è il record.
 - **EVO** (2 giocatori): colpire la palla nell'area grigia al centro della racchetta la potenzia
   (l'area si restringe a ogni boost); lo scatto in avanti intercetta la palla e la rilancia.
-- **NEXT** (2 giocatori o contro la CPU): Classic con lo scatto in avanti e i bonus. Prima della
+- **NEXT** (2 giocatori; da soli c'è la CHALLENGE): Classic con lo scatto in avanti e i bonus. Prima della
   partita ognuno sceglie la sua racchetta e 3 bonus su 6; le capsule partono dalla mezzeria e si
   raccolgono toccandole con la racchetta, poi si scelgono e si attivano dalla riserva in alto.
-- **VS CPU**: da soli contro il computer, in tutte le modalità (menu **PLAYERS: VS CPU**); la
-  bravura della CPU segue la difficoltà.
+- **VS CPU**: da soli contro il computer in CLASSIC ed EVO (menu **PLAYERS: VS CPU**); la
+  bravura della CPU segue la difficoltà. In NEXT da soli si gioca la CHALLENGE (sul MiSTer
+  *Game type: Challenge*).
 - **CHALLENGE**: la scalata contro 7 avversari, vedi [sotto](#challenge).
 
 ### Bonus di NEXT
@@ -174,8 +175,11 @@ semplici). Le partite sono NEXT a 5 punti.
   dalla cartuccia.
 
 La scala è tarata per un giocatore medio con il joystick (vince il primo livello quasi sempre, il
-boss circa una volta su quattro); la difficoltà del menu sposta la velocità della palla: con spinner
-o paddle conviene HARD o EXPERT.
+boss circa una volta su quattro). La difficoltà del menu sposta la velocità della palla e la bravura
+degli avversari: a HARD ognuno gioca come quello dopo di lui, a EXPERT come quello due posti dopo
+(il GUARDIAN ha due livelli in più tutti suoi), a EASY come quello prima. Chi la finisce con un
+gettone a NORMAL trova la sfida vera a HARD ed EXPERT; con spinner o paddle conviene comunque
+salire.
 
 ## Suono
 
@@ -327,7 +331,7 @@ menu. Solo PAL; finora provata in VICE. Dettagli in [c64/README.md](../../c64/RE
 | ![Core MiSTer: titolo](../screenshots/mister-title.png) | ![Core MiSTer: demo NEXT](../screenshots/mister-demo.png) |
 | Core MiSTer a 320×240: titolo dopo il gettone | Core MiSTer: demo CPU contro CPU della modalità scelta (qui NEXT) |
 | ![Commodore 64: titolo](../screenshots/c64-title.png) | ![Commodore 64: partita NEXT](../screenshots/c64-next.png) |
-| Commodore 64: titolo in Free Play | Commodore 64: NEXT contro la CPU, con la capsula di CURVE |
+| Commodore 64: titolo in Free Play | Commodore 64: NEXT, con la capsula di CURVE |
 | ![Commodore 64: scelta dei bonus](../screenshots/c64-pick.png) | ![Commodore 64: CHALLENGE](../screenshots/c64-challenge.png) |
 | Commodore 64: scelta dei bonus (la CPU ha già scelto) | Commodore 64: presentazione del primo avversario di CHALLENGE |
 

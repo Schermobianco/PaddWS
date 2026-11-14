@@ -549,6 +549,17 @@ fn challenge_params() -> String {
         let _ = writeln!(out, "    endcase");
         let _ = writeln!(out, "endfunction");
     }
+    // livello della CPU con la difficoltà del menu (Rung::cpu_at): {livello, difficoltà}
+    let _ = writeln!(out, "function [3:0] rung_cpu_at(input [2:0] lvl, input [1:0] diff);");
+    let _ = writeln!(out, "    case ({{lvl, diff}})");
+    for (i, r) in RUNGS.iter().enumerate() {
+        for d in 0..DIFFICULTY_LEVELS {
+            let _ = writeln!(out, "        5'd{}: rung_cpu_at = 4'd{};", i * 4 + d as usize, r.cpu_at(d));
+        }
+    }
+    let _ = writeln!(out, "        default: rung_cpu_at = 4'd{};", RUNGS[LEVELS - 1].cpu_at(1));
+    let _ = writeln!(out, "    endcase");
+    let _ = writeln!(out, "endfunction");
     // premi della vittoria per livello: (vittoria, partita perfetta)
     for (name, perfect) in [("ch_win_bonus", false), ("ch_perfect_bonus", true)] {
         let _ = writeln!(out, "function [15:0] {name}(input [2:0] lvl);");
@@ -1297,7 +1308,8 @@ fn challenge_stats(a: &Args) {
                     seed,
                 );
                 let mut human = Human::new(&game, skill, a.control[0], Side::Left, seed);
-                let mut cpu = Cpu::new(&params, rung.cpu, Side::Right, seed ^ 1).with_control(a.control[1]);
+                let mut cpu =
+                    Cpu::new(&params, rung.cpu_at(a.difficulty), Side::Right, seed ^ 1).with_control(a.control[1]);
                 let mut score = Score::new(Side::Left);
                 for _ in 0..a.tick_hz * 60 * 30 {
                     let mut input = Input::default();

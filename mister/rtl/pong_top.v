@@ -136,7 +136,9 @@ wire [1:0] players = (players_mode == 2'd3) ? 2'd2 : players_mode;          // 3
 wire want_challenge = game_type == 2'd3;                                         // sempre in NEXT
 wire want_next = game_type == 2'd2 || want_challenge;
 wire want_evo = game_type == 2'd1;
-wire want_cpu = players == 2'd2 || want_challenge || (want_next && players == 2'd1);   // NEXT è sempre in due
+// NEXT è sempre a due umani: da soli in NEXT c'è solo Challenge (Players: One o Vs CPU non contano).
+// Resta NEXT contro la CPU con Players a 3, che l'OSD non ha più: serve al simulatore dei frame
+wire want_cpu = (players == 2'd2 && (!want_next || players_mode == 2'd3)) || want_challenge;
 wire want_two = players != 2'd1 || want_next;
 
 // eventi sonori (bit come quelli della logica): 0 ping, 1 pong, 2 boost, 3 punto, 4 gettone
@@ -636,7 +638,7 @@ always @(posedge clk) begin
         match_lo1 <= ch_side ? ch_lo : rung_loadout(ch_level);
         match_kinds <= ch_side ? {ch_kind, rung_kind(ch_level)} : {rung_kind(ch_level), ch_kind};
         match_level <= speed_at(rung_speed(ch_level), difficulty);
-        match_cpu_level <= rung_cpu(ch_level);
+        match_cpu_level <= rung_cpu_at(ch_level, difficulty);   // spostata dalla difficoltà (Rung::cpu_at)
         match_supers <= super_moves;
         match_reset <= 1'b1;
         attract_sound <= SND_PING;

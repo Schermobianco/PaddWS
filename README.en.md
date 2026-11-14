@@ -34,7 +34,7 @@ keyboard, a gamepad or the mouse.
 | ![NEXT: STRAIGHT SHOT in flight](docs/screenshots/next-supers.png) | ![CHALLENGE: new challenger](docs/screenshots/challenge-challenger.png) |
 | Special moves: MAX STRAIGHT SHOT in flight | CHALLENGE: a second player joins in |
 | ![MiSTer core: NEXT demo](docs/screenshots/mister-demo.png) | ![Commodore 64: NEXT match](docs/screenshots/c64-next.png) |
-| MiSTer core at 320×240 | Commodore 64: NEXT against the CPU |
+| MiSTer core at 320×240 | Commodore 64: NEXT |
 
 More screenshots in [How to play](docs/en/how-to-play.md#screenshots).
 
@@ -46,7 +46,7 @@ More screenshots in [How to play](docs/en/how-to-play.md#screenshots).
 - **NEXT**: before the match each player picks 3 power-ups out of 6 (TELEPORT, SMASH, SLOW, CURVE,
   GHOST, STEER) and one of seven paddle types; power-ups arrive in capsules to be collected. There
   are also two special moves, performed with a specific sequence of inputs.
-- **VS CPU**: every mode, alone against the computer.
+- **VS CPU**: CLASSIC and EVO alone against the computer; alone in NEXT you play the CHALLENGE.
 - **CHALLENGE**: alone against 7 ever stronger CPU opponents, with arcade scoring, continues, a
   high-score table and an ending. A second player can join in and challenge whoever is playing:
   *HERE COMES A NEW CHALLENGER!*

@@ -17,15 +17,24 @@ crea il commit e il tag `vX.Y.Z`.
 ## [4.1.1] - 2026-11-14
 
 ### Modificato
-- Menu di PC e web: PLAYERS propone solo le scelte del tipo di gioco (CHALLENGE in NEXT, ONE in
-  CLASSIC) e non cambia più GAME TYPE da solo; prima ONE passava a CLASSIC e CHALLENGE a NEXT.
+- **In NEXT da soli si gioca solo la CHALLENGE** (tutte le versioni tranne Python, che non ha
+  NEXT): niente più NEXT VS CPU. PLAYERS propone solo le scelte del tipo di gioco (CLASSIC: TWO,
+  VS CPU, ONE; EVO: TWO, VS CPU; NEXT: TWO, CHALLENGE) e non cambia più GAME TYPE da solo; prima
+  ONE passava a CLASSIC e CHALLENGE a NEXT. Una configurazione salvata con NEXT VS CPU parte in
+  CHALLENGE. Sul MiSTer NEXT è sempre in due, da soli c'è *Game type: Challenge*.
 - MiSTer, finale della CHALLENGE: nella sfilata degli avversari un K.O. rosso sulla racchetta, che
   si spegne, al posto del timbro inclinato DEFEATED. A 320x240 il timbro era più largo delle
   colonne, si sovrapponeva a quelli vicini e a 1 bit la scritta non si leggeva.
-- Difficoltà NORMAL un po' più dura (tutte le versioni tranne Python): la CPU sbaglia apposta meno
-  palle, reagisce prima e usa più spesso scatto e bonus. Con gli umani simulati di `paddws-trace`
-  un giocatore medio vince il 56% dei punti in EVO e il 47% in NEXT, contro il 64% e il 54% di
-  prima; HARD resta più dura. CHALLENGE ha i suoi livelli e non cambia.
+- Difficoltà NORMAL un po' più dura nelle partite contro la CPU (tutte le versioni tranne Python):
+  la CPU sbaglia apposta meno palle, reagisce prima e usa più spesso scatto e bonus. Con gli umani
+  simulati di `paddws-trace` un giocatore medio vince il 56% dei punti in EVO e il 47% in NEXT,
+  contro il 64% e il 54% di prima; HARD resta più dura.
+- **CHALLENGE: la difficoltà del menu cambia anche la bravura degli avversari** (PC, web, MiSTer e
+  C64), non più solo la velocità della palla: a HARD ogni avversario gioca come quello dopo di
+  lui, a EXPERT come quello due posti dopo, a EASY come quello prima. Per il GUARDIAN ci sono due
+  livelli nuovi oltre il boss, e a NORMAL è un po' più duro di prima. Con gli umani simulati un
+  giocatore esperto finisce la scala senza perdere un livello circa 37 volte su 100 a NORMAL, 22 a
+  HARD e 7 a EXPERT (prima circa 39 sia a NORMAL sia a HARD).
 - **Classifica animata** della CHALLENGE (PC, web e MiSTer): una palla scende rimbalzando fra i
   bordi e accende le righe che tocca; i punti di ogni riga contano da zero mentre si accende (sul
   MiSTer le cifre girano e si fermano una alla volta); poi due racchette gialle affiancano il posto

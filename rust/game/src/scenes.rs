@@ -222,7 +222,8 @@ impl App {
     }
 
     /// GAME TYPE e PLAYERS della configurazione (`Game::game_type`, `Game::players`), con gli
-    /// stessi vincoli del menu: EVO e NEXT sono a due, la CHALLENGE è in NEXT.
+    /// stessi vincoli del menu: EVO e NEXT sono a due, la CHALLENGE è in NEXT e in NEXT contro la
+    /// CPU c'è solo lei (un `cpu` di una configurazione vecchia diventa `challenge`).
     pub fn load_mode(&mut self) {
         let g = &self.cfg.game;
         (self.evo, self.next) = match g.game_type.as_str() {
@@ -236,6 +237,7 @@ impl App {
             "one" if !self.evo && !self.next => (1, false, false),
             _ => (2, false, false),
         };
+        self.challenge |= self.next && self.cpu;
         if self.challenge {
             (self.evo, self.next) = (false, true);
         }
@@ -943,16 +945,18 @@ impl Menu {
                 if app.evo || app.next {
                     app.players = 2; // EVO e NEXT sono modalità a due giocatori
                 }
-                app.challenge &= app.next; // CHALLENGE si gioca in NEXT
+                app.challenge &= app.next; // CHALLENGE si gioca in NEXT ...
+                app.challenge |= app.next && app.cpu; // ... e in NEXT contro la CPU c'è solo lei
                 app.save_mode();
             }
             Item::Players => {
-                // TWO -> VS CPU -> CHALLENGE -> ONE -> TWO, solo con le voci del tipo di gioco scelto
-                // (CHALLENGE in NEXT, ONE in CLASSIC): PLAYERS non cambia GAME TYPE
+                // solo le voci del tipo di gioco scelto, PLAYERS non cambia GAME TYPE: in CLASSIC
+                // TWO -> VS CPU -> ONE, in EVO TWO -> VS CPU, in NEXT TWO -> CHALLENGE (da soli in
+                // NEXT c'è solo la scalata)
                 let classic = !app.evo && !app.next;
                 (app.players, app.cpu, app.challenge) = match (app.players, app.cpu, app.challenge) {
+                    (2, false, _) if app.next => (2, true, true),
                     (2, false, _) => (2, true, false),
-                    (2, true, false) if app.next => (2, true, true),
                     (2, true, _) if classic => (1, false, false),
                     _ => (2, false, false),
                 };
@@ -1390,7 +1394,8 @@ impl Play {
         next_seed(app);
         let mut game = Match::new_next_paddles(params.clone(), loadouts, kinds, app.seed);
         game.set_super_moves(true);
-        let cpus = vec![Cpu::new(&params, rung.cpu, side.opponent(), app.seed)];
+        // la CPU del livello spostata dalla difficoltà del menu (`Rung::cpu_at`)
+        let cpus = vec![Cpu::new(&params, rung.cpu_at(app.cfg.game.difficulty), side.opponent(), app.seed)];
         let mut play = Self::with_match(app, game, cpus);
         play.solo = side;
         let mut score = Score::new(side);

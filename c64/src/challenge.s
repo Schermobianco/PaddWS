@@ -176,11 +176,23 @@ bm_diff:   .res 1
 .endproc
 
 ; Partita al livello in corso: CPU, punti per vincere e velocità della palla (speed_at: velocità
-; del livello + difficoltà - 1, tra 0 e 3). Anche per la sfida tra due giocatori.
+; del livello + difficoltà - 1, tra 0 e 3). Anche per la sfida tra due giocatori. La CPU è quella
+; del livello spostata dalla difficoltà (Rung::cpu_at): + difficoltà - 1, tra il primo livello di
+; CHALLENGE (4) e l'ultimo, oltre il GUARDIAN (P_CPU_LEVELS - 1).
 .proc ch_rung
     ldx ch_level
     lda rung_cpu,x
-    sta bm_cpu
+    clc
+    adc opt_level
+    sec
+    sbc #1
+    cmp #4
+    bcs :+
+    lda #4
+:   cmp #P_CPU_LEVELS
+    bcc :+
+    lda #P_CPU_LEVELS - 1
+:   sta bm_cpu
     lda rung_points,x
     sta win_points
     lda rung_speed,x

@@ -389,6 +389,39 @@ function [4:0] rung_points(input [2:0] lvl);
         default: rung_points = 5'd5;
     endcase
 endfunction
+function [3:0] rung_cpu_at(input [2:0] lvl, input [1:0] diff);
+    case ({lvl, diff})
+        5'd0: rung_cpu_at = 4'd4;
+        5'd1: rung_cpu_at = 4'd4;
+        5'd2: rung_cpu_at = 4'd5;
+        5'd3: rung_cpu_at = 4'd6;
+        5'd4: rung_cpu_at = 4'd4;
+        5'd5: rung_cpu_at = 4'd5;
+        5'd6: rung_cpu_at = 4'd6;
+        5'd7: rung_cpu_at = 4'd7;
+        5'd8: rung_cpu_at = 4'd5;
+        5'd9: rung_cpu_at = 4'd6;
+        5'd10: rung_cpu_at = 4'd7;
+        5'd11: rung_cpu_at = 4'd8;
+        5'd12: rung_cpu_at = 4'd6;
+        5'd13: rung_cpu_at = 4'd7;
+        5'd14: rung_cpu_at = 4'd8;
+        5'd15: rung_cpu_at = 4'd9;
+        5'd16: rung_cpu_at = 4'd7;
+        5'd17: rung_cpu_at = 4'd8;
+        5'd18: rung_cpu_at = 4'd9;
+        5'd19: rung_cpu_at = 4'd10;
+        5'd20: rung_cpu_at = 4'd8;
+        5'd21: rung_cpu_at = 4'd9;
+        5'd22: rung_cpu_at = 4'd10;
+        5'd23: rung_cpu_at = 4'd11;
+        5'd24: rung_cpu_at = 4'd9;
+        5'd25: rung_cpu_at = 4'd10;
+        5'd26: rung_cpu_at = 4'd11;
+        5'd27: rung_cpu_at = 4'd12;
+        default: rung_cpu_at = 4'd10;
+    endcase
+endfunction
 function [15:0] ch_win_bonus(input [2:0] lvl);
     case (lvl)
         3'd0: ch_win_bonus = 16'd1000;

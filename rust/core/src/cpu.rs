@@ -87,9 +87,13 @@ const SKILLS: [Skill; DIFFICULTY_LEVELS as usize] = [
     },
 ];
 
+/// Livelli della CPU oltre il boss finale, per il GUARDIAN a HARD ed EXPERT (`Rung::cpu_at`).
+pub const CHALLENGE_EXTRA: usize = 2;
+
 /// Livelli della modalità CHALLENGE, più graduali di quelli della difficoltà: vanno dal
-/// primo avversario (più facile di EASY) al boss finale. Indici `DIFFICULTY_LEVELS..CPU_LEVELS`.
-const CHALLENGE_SKILLS: [Skill; crate::challenge::LEVELS] = [
+/// primo avversario (più facile di EASY) al boss finale, poi i `CHALLENGE_EXTRA` oltre il boss.
+/// Indici `DIFFICULTY_LEVELS..CPU_LEVELS`.
+const CHALLENGE_SKILLS: [Skill; crate::challenge::LEVELS + CHALLENGE_EXTRA] = [
     Skill {
         error_px: 34,
         miss_permille: 240,
@@ -150,21 +154,44 @@ const CHALLENGE_SKILLS: [Skill; crate::challenge::LEVELS] = [
         forward_odds: 110,
         bonus_odds: 180,
     },
+    // GUARDIAN, il boss finale
     Skill {
         error_px: 28,
-        miss_permille: 175,
-        reaction_ticks: 58,
+        miss_permille: 150,
+        reaction_ticks: 56,
         react_permille: 820,
         fast: true,
         predict: true,
         forward_odds: 90,
         bonus_odds: 140,
     },
+    // oltre il boss: il GUARDIAN a HARD
+    Skill {
+        error_px: 26,
+        miss_permille: 125,
+        reaction_ticks: 52,
+        react_permille: 860,
+        fast: true,
+        predict: true,
+        forward_odds: 70,
+        bonus_odds: 110,
+    },
+    // ... e a EXPERT
+    Skill {
+        error_px: 24,
+        miss_permille: 100,
+        reaction_ticks: 48,
+        react_permille: 900,
+        fast: true,
+        predict: true,
+        forward_odds: 55,
+        bonus_odds: 90,
+    },
 ];
 
 /// Livelli della CPU: i primi `DIFFICULTY_LEVELS` sono quelli della difficoltà, poi quelli di
-/// CHALLENGE.
-pub const CPU_LEVELS: u8 = DIFFICULTY_LEVELS + crate::challenge::LEVELS as u8;
+/// CHALLENGE (con i due oltre il boss).
+pub const CPU_LEVELS: u8 = DIFFICULTY_LEVELS + (crate::challenge::LEVELS + CHALLENGE_EXTRA) as u8;
 
 const fn skill(level: u8) -> Skill {
     if level < DIFFICULTY_LEVELS {
@@ -172,7 +199,7 @@ const fn skill(level: u8) -> Skill {
     } else if level < CPU_LEVELS {
         CHALLENGE_SKILLS[(level - DIFFICULTY_LEVELS) as usize]
     } else {
-        CHALLENGE_SKILLS[crate::challenge::LEVELS - 1]
+        CHALLENGE_SKILLS[CHALLENGE_SKILLS.len() - 1]
     }
 }
 

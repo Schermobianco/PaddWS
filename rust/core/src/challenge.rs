@@ -113,6 +113,22 @@ impl Rung {
         }) as u8
     }
 
+    /// Livello della CPU con la difficoltà scelta nel menu: a NORMAL quello del livello, a HARD ed
+    /// EXPERT quello di uno e due livelli dopo (oltre il GUARDIAN i livelli in più di
+    /// `CHALLENGE_SKILLS`), a EASY quello del livello prima (mai sotto il primo).
+    pub const fn cpu_at(&self, difficulty: u8) -> u8 {
+        let first = crate::params::DIFFICULTY_LEVELS as i32;
+        let last = crate::cpu::CPU_LEVELS as i32 - 1;
+        let c = self.cpu as i32 + difficulty as i32 - 1;
+        (if c < first {
+            first
+        } else if c > last {
+            last
+        } else {
+            c
+        }) as u8
+    }
+
     /// Bonus e racchette della partita del livello con il giocatore sul lato `human` e la CPU
     /// sull'altro: indici come `Match::new_next_paddles` (0 sinistra, 1 destra). Dopo una sfida
     /// tra due giocatori il vincitore continua dal suo lato, anche a destra.
