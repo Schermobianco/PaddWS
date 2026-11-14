@@ -240,6 +240,29 @@ one:
     asl a
     asl a
     tay                         ; Y = lato * 4 (sm_arm)
+    ; il colpo con la mossa (EV_SPECIAL) di chi la palla lascia: la scritta parte anche se la mossa
+    ; armata non si è mai vista (con la racchetta avanti si arma e parte nello stesso tick)
+    lda events+1
+    and #EV_SPECIAL_HI
+    beq poll
+    lda ball_vx+3
+    eor mv_sign,x
+    bmi poll
+    lda sm_fl                   ; tipo come sm_arm: 1 + 2 * RISING STRIKE + livello 2
+    beq poll
+    lsr a
+    lsr a
+    and #1
+    sta mv_tmp
+    lda sm_fl
+    and #2
+    ora mv_tmp
+    clc
+    adc #1
+    sta mv_kind,x
+    lda #2
+    bne start
+poll:
     lda mv_st,x
     beq idle
     cmp #2

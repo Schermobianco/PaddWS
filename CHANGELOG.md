@@ -80,6 +80,8 @@ crea il commit e il tag `vX.Y.Z`.
   chiusura era un pezzo della rete dell'avversario.
 - C64 (4.1.1-beta.4): alla prima scelta della racchetta dopo l'accensione a volte mancava
   l'anteprima della racchetta di P1.
+- C64: la scritta della mossa speciale non compariva quando la mossa si armava e partiva nello
+  stesso tick (con la racchetta avanti): ora parte dal colpo, come sul PC.
 - C64: nella HOW TO PLAY le palline dei joystick non erano tonde e le frecce si mangiavano un pezzo
   del joystick dopo (troppi colori nella stessa cella 8x8 della bitmap). Joystick, frecce e
   pulsante sono ridisegnati sulla griglia delle celle, e il generatore controlla che nessuna

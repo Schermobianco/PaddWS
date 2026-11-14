@@ -565,6 +565,17 @@ fn supers_ui(m: &mut Machine) -> Result<String, String> {
     if m.read_u8("mv_st", 0) != 0 || m.cpu.mem[l5..l5 + 13].iter().any(|&c| c != 0) {
         return Err("mossa persa senza colpo: i trattini restano".into());
     }
+    // mossa armata e colpo nello stesso tick (racchetta avanti): la mossa armata non si vede mai,
+    // la scritta parte dall'evento del colpo (EV_SPECIAL) con la mossa in volo
+    m.write_u8("sm_fl", 0, 1); // STRAIGHT SHOT di livello 1
+    m.write_i32("ball_vx", 0, 0x0002_0000); // la palla lascia P1
+    m.write_u8("events", 1, 0x10);
+    frames(m, 1);
+    m.write_u8("events", 1, 0);
+    let l4 = 0xC000 + 4 * 40 + 4;
+    if m.read_u8("mv_st", 0) != 2 || m.read_u8("mv_kind", 0) != 1 || m.cpu.mem[l4..l4 + 13].iter().filter(|&&c| c == 255).count() != 12 {
+        return Err("colpo con la mossa nello stesso tick dell'armata: niente scritta STRAIGHT SHOT di P1".into());
+    }
     m.write_u8("sm_on", 0, 0);
     // barra: 40 su 64, cioè la prima metà gialla (un settore pieno), poi 8 su 16 (4 pixel) e vuota
     let c0 = assets_supers().0;
