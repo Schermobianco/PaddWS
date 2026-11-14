@@ -11,6 +11,7 @@
 VOICE_BASE  = $E000
 VOICE_TICK  = VOICE_BASE        ; jsr a ogni frame della presentazione (dal primo)
 VOICE_STOP  = VOICE_BASE + 3    ; jsr quando la presentazione finisce (anche prima della voce)
+VOICE_FRAMES = VOICE_BASE + 6   ; frame della presentazione contati dal file ($FF: finita)
 VOICE_END   = $F000             ; i file devono finire prima delle tabelle dei quadrati
 
 ; Parte che resta (dal file del primo livello): sopra le immagini degli effetti, fino a VOICE_END.

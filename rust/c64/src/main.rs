@@ -4,7 +4,7 @@
 //!       paddws-c64 [--build DIR] game [--ticks N]   partite intere, stato confrontato a ogni tick
 //!       paddws-c64 [--build DIR] sid                player del SID contro quello Verilog
 //!       paddws-c64 [--build DIR] ui                 scene e menu: nessun ciclo infinito
-//!       paddws-c64 [--build DIR] frames             cicli di ogni frame (attract, demo, partita)
+//!       paddws-c64 [--build DIR] frames             cicli di ogni frame (attract, partita)
 //!       paddws-c64 params [--check]                 scrive (o controlla) c64/gen/params.inc
 
 use std::path::PathBuf;
@@ -73,7 +73,7 @@ fn with_machine(build: &std::path::Path, f: impl FnOnce(&mut Machine) -> bool) -
     }
 }
 
-/// Scene e menu: ogni routine di avvio, attract, demo, menu e partita deve tornare entro un
+/// Scene e menu: ogni routine di avvio, attract, menu e partita deve tornare entro un
 /// milione di cicli (nessun ciclo infinito), anche frame dopo frame e con tutti i valori del menu.
 fn ui(m: &mut Machine) -> bool {
     let run = |m: &mut Machine, name: &str, x: u8, times: u32| -> Result<u64, String> {
@@ -108,8 +108,6 @@ fn ui(m: &mut Machine) -> bool {
         ("logo_frame", 0, 120),
         ("title_enter", 0, 1),
         ("title_frame", 0, 420),
-        ("demo_enter", 0, 1),
-        ("demo_overlay", 0, 60),
         ("enter_menu", 0, 1),
         ("draw_menu", 0, 1),
         ("start_game", 0, 1),
@@ -258,6 +256,20 @@ fn ui(m: &mut Machine) -> bool {
         return false;
     }
     println!("  CHALLENGE: entrata dello sfidante, sfida, cambio di lato, premio e iniziali del perdente");
+    for (what, f) in [
+        ("menu", next_menu_ui as fn(&mut Machine) -> Result<String, String>),
+        ("duelli vinti di fila (WINS)", wins_ui),
+        ("allenamento", training_ui),
+        ("sblocco dell'allenamento", unlock_ui),
+    ] {
+        match f(m) {
+            Ok(s) => println!("  {s}"),
+            Err(e) => {
+                println!("FAIL: {what}: {e}");
+                return false;
+            }
+        }
+    }
     match ending_ui(m) {
         Ok(s) => println!("  {s}"),
         Err(e) => {
@@ -963,6 +975,7 @@ fn hiscore(m: &mut Machine) -> Result<String, String> {
         for i in 0..TABLE as u16 {
             m.cpu.write(table + i, 0xEE);
         }
+        m.write_u8("hi_open", 0, 0xEE);
         let init = 0xBC00..0xC000;
         let vars = m.cpu.mem[init.clone()].to_vec();
         let from = init.start - 0x0801;
@@ -979,17 +992,37 @@ fn hiscore(m: &mut Machine) -> Result<String, String> {
     };
     ef(m).roml[bank..bank + 0x10000].fill(0xFF);
     // flash cancellata: la classifica iniziale, il primo posto per il prossimo salvataggio
-    if boot(m)? != init || m.read_u8("hi_next", 0) != 0 {
-        return Err("con la flash cancellata non c'è la classifica iniziale nel primo posto".into());
+    if boot(m)? != init || m.read_u8("hi_next", 0) != 0 || m.read_u8("hi_open", 0) != 0xFF {
+        return Err("con la flash cancellata non c'è la classifica iniziale nel primo posto, bloccata".into());
     }
-    // salvataggi uno dopo l'altro, oltre i 32 posti: ogni volta all'avvio torna l'ultimo
+    // un posto scritto prima dello sblocco (83 byte: classifica, HI_MAGIC, controllo; poi la flash
+    // cancellata): vale, con l'allenamento bloccato
+    let old: Vec<u8> = (0..TABLE).map(|i| (i as u8).wrapping_mul(5) & 0x7F).collect();
+    let mut slot = old.clone();
+    slot.extend([0x48, 0x50]);
+    slot.push(slot.iter().fold(0xA5u8, |a, &b| a ^ b));
+    ef(m).roml[bank..bank + slot.len()].copy_from_slice(&slot);
+    if boot(m)? != old || m.read_u8("hi_next", 0) != 1 || m.read_u8("hi_open", 0) != 0xFF {
+        return Err("un posto di prima dello sblocco non vale, o sblocca l'allenamento".into());
+    }
+    ef(m).roml[bank..bank + 0x10000].fill(0xFF);
+    boot(m)?;
+    // salvataggi uno dopo l'altro, oltre i 32 posti: ogni volta all'avvio torna l'ultimo; dal 40
+    // (dopo la prima cancellazione) con l'allenamento sbloccato, che poi resta anche dopo la seconda
     let mut worst = 0;
     for n in 0..70u8 {
         write_table(m, n);
+        if n == 40 {
+            m.write_u8("hi_open", 0, 0);
+        }
         let want = read_table(m);
         worst = worst.max(save(m)?);
         if boot(m)? != want {
             return Err(format!("salvataggio {n}: all'avvio non torna"));
+        }
+        let open = m.read_u8("hi_open", 0);
+        if open != if n >= 40 { 0 } else { 0xFF } {
+            return Err(format!("salvataggio {n}: sblocco dell'allenamento ${open:02X} all'avvio"));
         }
     }
     let (erases, dirty) = (ef(m).erases, ef(m).dirty_programs);
@@ -1003,6 +1036,7 @@ fn hiscore(m: &mut Machine) -> Result<String, String> {
     save(m)?;
     let last = bank + next * 128 + TABLE + 2;
     ef(m).roml[last] = 0xFF;
+    ef(m).roml[last + 1] = 0xFF;
     if boot(m)? != before || m.read_u8("hi_next", 0) as usize != next + 1 {
         return Err("un posto scritto a metà conta, o il prossimo salvataggio ci va sopra".into());
     }
@@ -1012,8 +1046,8 @@ fn hiscore(m: &mut Machine) -> Result<String, String> {
         *b = (i as u8).wrapping_mul(13) ^ 0x24;
     }
     let erases = ef(m).erases;
-    if boot(m)? != init {
-        return Err("con dati di prima nella flash non c'è la classifica iniziale".into());
+    if boot(m)? != init || m.read_u8("hi_open", 0) != 0xFF {
+        return Err("con dati di prima nella flash non c'è la classifica iniziale, bloccata".into());
     }
     write_table(m, 77);
     let want = read_table(m);
@@ -1042,9 +1076,368 @@ fn hiscore(m: &mut Machine) -> Result<String, String> {
         m.cpu.write(table + i as u16, b);
     }
     m.write_u8("hi_next", 0, 0);
+    m.write_u8("hi_open", 0, 0xFF);
     Ok(format!(
-        "classifica nella flash: 70 salvataggi con 2 cancellazioni, ognuno torna all'avvio (al più {worst} cicli); posto a metà ignorato, dati di prima cancellati, flash che non si scrive lasciata"
+        "classifica nella flash: 70 salvataggi con 2 cancellazioni, ognuno torna all'avvio (al più {worst} cicli), con lo sblocco dell'allenamento (anche dopo la cancellazione); posto di prima dello sblocco valido e bloccato; posto a metà ignorato, dati di prima cancellati, flash che non si scrive lasciata"
     ))
+}
+
+/// Menu (play.s, MENUCODE): GAME in giro CLASSIC, EVO, NEXT con PLAYERS valido per il gioco (in
+/// NEXT sempre la scala, OPT_CHALLENGE); la riga di PLAYERS in NEXT è vuota e il cursore la salta,
+/// o con l'allenamento sbloccato (hi_open = 0) è OPPONENT: LADDER e gli avversari nell'ordine della
+/// scala, in giro nei due versi.
+fn next_menu_ui(m: &mut Machine) -> Result<String, String> {
+    const MI_GAME: u8 = 0;
+    const MI_PLAYERS: u8 = 1;
+    const ROW: u16 = 6; // MENU_ROW0 + 2 * MI_PLAYERS
+    quiet_inputs(m);
+    let saved_open = m.read_u8("hi_open", 0);
+    m.write_u8("hi_open", 0, 0xFF);
+    m.write_u8("opt_mode", 0, 0);
+    m.write_u8("opt_players", 0, 1);
+    m.write_u8("opt_opp", 0, 0);
+    m.call("enter_menu");
+    let row = |m: &Machine, name: &str, value: &str| text_at(m, 0xC000, ROW, 8, name) && text_at(m, 0xC000, ROW, 25, value);
+    let change = |m: &mut Machine, sel: u8, dir: u8| {
+        m.write_u8("menu_sel", 0, sel);
+        m.cpu.a = dir;
+        m.call("change_value");
+        m.call("draw_menu");
+    };
+    let cursor = |m: &mut Machine, from: u8, joy: u8| -> u8 {
+        m.write_u8("menu_sel", 0, from);
+        m.write_u8("joy_edge", 0, joy);
+        m.call("menu_scene");
+        m.write_u8("joy_edge", 0, 0);
+        m.read_u8("menu_sel", 0)
+    };
+    if !row(m, "PLAYERS ", "ONE     ") {
+        let codes: Vec<u8> = (0..40).map(|c| m.cpu.mem[0xC000 + 6 * 40 + c]).collect();
+        return Err(format!("CLASSIC: la riga non è PLAYERS ONE: {codes:?}"));
+    }
+    // GAME avanti: EVO (ONE non c'è: TWO), NEXT (la scala), CLASSIC (ONE); poi indietro
+    for (dir, mode, players, name, value) in [
+        (1u8, 1u8, 2u8, "PLAYERS ", "TWO     "),
+        (1, 2, 4, "        ", "        "),
+        (1, 0, 1, "PLAYERS ", "ONE     "),
+        (0xFF, 2, 4, "        ", "        "),
+        (0xFF, 1, 3, "PLAYERS ", "VS CPU  "),
+    ] {
+        change(m, MI_GAME, dir);
+        let (got_mode, got_players) = (m.read_u8("opt_mode", 0), m.read_u8("opt_players", 0));
+        if (got_mode, got_players) != (mode, players) || !row(m, name, value) {
+            return Err(format!(
+                "GAME: modo {got_mode}, giocatori {got_players} invece di {mode}, {players}, o la riga non è \"{name}\" \"{value}\""
+            ));
+        }
+    }
+    // in EVO PLAYERS va solo fra TWO e VS CPU
+    for (dir, want) in [(1u8, 2u8), (1, 3), (0xFF, 2), (0xFF, 3)] {
+        change(m, MI_PLAYERS, dir);
+        if m.read_u8("opt_players", 0) != want {
+            return Err(format!("EVO: PLAYERS {} invece di {want}", m.read_u8("opt_players", 0)));
+        }
+    }
+    // NEXT bloccato: il cursore salta la riga vuota nei due versi
+    change(m, MI_GAME, 1);
+    if cursor(m, MI_GAME, 0x02) != 2 || cursor(m, 2, 0x01) != MI_GAME {
+        return Err("NEXT senza allenamento: il cursore si ferma sulla riga vuota".into());
+    }
+    // sbloccato: OPPONENT, e il cursore ci si ferma
+    m.write_u8("hi_open", 0, 0);
+    m.call("draw_menu");
+    if !row(m, "OPPONENT", "LADDER  ") || cursor(m, MI_GAME, 0x02) != MI_PLAYERS {
+        return Err("NEXT con l'allenamento: niente OPPONENT LADDER, o il cursore non ci si ferma".into());
+    }
+    let names: Vec<&str> = std::iter::once("LADDER").chain(RUNGS.iter().map(|r| r.kind.name())).collect();
+    for step in 1..=names.len() * 2 {
+        change(m, MI_PLAYERS, 1);
+        let i = step % names.len();
+        if m.read_u8("opt_opp", 0) as usize != i || !row(m, "OPPONENT", &format!("{:<8}", names[i])) {
+            return Err(format!("OPPONENT avanti, passo {step}: {} invece di {}", m.read_u8("opt_opp", 0), names[i]));
+        }
+    }
+    change(m, MI_PLAYERS, 0xFF);
+    if m.read_u8("opt_opp", 0) as usize != names.len() - 1 || !row(m, "OPPONENT", &format!("{:<8}", names[names.len() - 1])) {
+        return Err("OPPONENT indietro da LADDER: non l'ultimo avversario".into());
+    }
+    // tornando a CLASSIC, PLAYERS
+    change(m, MI_GAME, 1);
+    if !row(m, "PLAYERS ", "ONE     ") {
+        return Err("da NEXT a CLASSIC la riga non torna PLAYERS ONE".into());
+    }
+    m.write_u8("opt_opp", 0, 0);
+    m.write_u8("hi_open", 0, saved_open);
+    Ok("menu: GAME e PLAYERS validi per il gioco, in NEXT la riga vuota saltata, o OPPONENT (LADDER e i 7 avversari, in giro) con l'allenamento sbloccato".into())
+}
+
+/// Frame interi (`each` prima di ognuno) finché `done`, al più `max`; errore con `what` se non
+/// succede. Restituisce i cicli del frame più pesante, senza quelli che caricano un file voce
+/// dalla cartuccia (copie di almeno 50.000 cicli, fuori dal budget come in `frames`).
+fn frames_until(
+    m: &mut Machine,
+    max: u32,
+    what: &str,
+    mut each: impl FnMut(&mut Machine),
+    done: impl Fn(&Machine) -> bool,
+) -> Result<u64, String> {
+    let mut worst = 0;
+    for f in 0..max {
+        if done(m) {
+            return Ok(worst);
+        }
+        each(m);
+        let ef = m.cpu.ef_cycles;
+        let c = full_frame(m).map_err(|e| format!("{what}, frame {f} (stato {}): {e}", m.read_u8("state", 0)))?;
+        if m.cpu.ef_cycles - ef < 50_000 {
+            worst = worst.max(c);
+        }
+    }
+    if done(m) { Ok(worst) } else { Err(format!("{what}: non succede in {max} frame (stato {})", m.read_u8("state", 0))) }
+}
+
+/// Fuoco della porta 1 (il lato destro) premuto un frame sì e uno no.
+fn fire_port1(m: &mut Machine) {
+    m.cpu.joy_port1 = if m.cpu.joy_port1 == 0xFF { !0x10 } else { 0xFF };
+}
+
+/// Duelli vinti di fila (WINS, challenge.s): il campione ne aggiunge uno (fino a 99), lo sfidante
+/// che vince riparte da 1; "n WINS" dal lato del vincitore nel GAME OVER della sfida (riga 24) e
+/// dal lato del campione nella presentazione che riprende (riga 0).
+fn wins_ui(m: &mut Machine) -> Result<String, String> {
+    for (side, wins, winner, want) in [(0u8, 0u8, 0u8, 1u8), (0, 2, 0, 3), (0, 2, 4, 1), (4, 98, 4, 99), (4, 99, 4, 99), (4, 5, 0, 1)] {
+        m.write_u8("ch_side", 0, side);
+        m.write_u8("ch_wins", 0, wins);
+        m.cpu.x = winner;
+        m.call("wins_after");
+        if m.cpu.a != want {
+            return Err(format!("campione {side}, {wins} vinti, vince {winner}: {} invece di {want}", m.cpu.a));
+        }
+    }
+    m.call("clear_screen");
+    for (n, side, row, col, text) in [(12u8, 4u8, 24u16, 32u16, "12 WINS"), (1, 0, 0, 1, "1 WINS"), (7, 4, 0, 33, "7 WINS")] {
+        m.cpu.a = n;
+        m.cpu.x = side;
+        m.cpu.y = row as u8;
+        m.call("print_wins");
+        if !text_at(m, 0xC000, row, col, text) || m.cpu.mem[0xD800 + (row * 40 + col) as usize] & 15 != COL_YELLOW {
+            return Err(format!("\"{text}\" non alla riga {row}, colonna {col}, in giallo"));
+        }
+    }
+    // fine di una sfida, poi la presentazione: lato del campione, vinti, punti a sinistra e a
+    // destra, colonna di "n WINS" nel GAME OVER, lato del campione e colonna nella presentazione
+    let mut seen = Vec::new();
+    for (side, wins, left, right, col, text, after, intro_col) in
+        [(0u8, 2u8, 11u8, 3u8, 1u16, "3 WINS", 0u8, 1u16), (0, 3, 3, 11, 33, "1 WINS", 4, 33)]
+    {
+        quiet_inputs(m);
+        m.call("math_ensure");
+        for (name, v) in [
+            ("cg_active", 2u8),
+            ("ch_side", side),
+            ("ch_wins", wins),
+            ("ch_level", 2),
+            ("cpu_side", 0xFF),
+            ("m_players", 2),
+            ("m_next", 0),
+            ("ch_phase", 0),
+            ("opt_free", 1),
+            ("ch_loser", 0),
+        ] {
+            m.write_u8(name, 0, v);
+        }
+        m.write_i32("ch_best", 0, 0);
+        for (o, v) in [(0u16, left), (1, 0), (4, right), (5, 0)] {
+            m.write_u8("score", o, v);
+        }
+        m.call("clear_screen");
+        m.write_u8("state", 0, ST_PLAY);
+        m.write_u8("over_next", 0, 1);
+        let shown = std::cell::Cell::new(false);
+        frames_until(
+            m,
+            600,
+            "GAME OVER della sfida",
+            |m| shown.set(shown.get() || text_at(m, 0xC000, 24, col, text)),
+            |m| m.read_u8("state", 0) == ST_INTRO,
+        )?;
+        if !shown.get() {
+            return Err(format!("GAME OVER della sfida senza \"{text}\" alla colonna {col}"));
+        }
+        if m.read_u8("ch_wins", 0) != text.as_bytes()[0] - b'0' || m.read_u8("ch_side", 0) != after {
+            return Err(format!(
+                "dopo la sfida {} vinti dal lato {} invece di {text} dal lato {after}",
+                m.read_u8("ch_wins", 0),
+                m.read_u8("ch_side", 0)
+            ));
+        }
+        frames_until(m, 10, "presentazione", |_| {}, |m| m.read_u8("ch_phase", 0) == 0)?;
+        if !text_at(m, 0xC000, 0, intro_col, text) {
+            return Err(format!("presentazione dopo la sfida senza \"{text}\" alla colonna {intro_col}"));
+        }
+        seen.push(text);
+    }
+    quiet_inputs(m);
+    m.write_u8("cg_active", 0, 0);
+    m.write_u8("ch_wins", 0, 0);
+    Ok(format!(
+        "duelli vinti di fila: il campione +1 (fino a 99), lo sfidante da 1; {} nel GAME OVER della sfida dal lato di chi vince e nella presentazione dal lato del campione",
+        seen.join(" e ")
+    ))
+}
+
+/// Allenamento (OPPONENT del menu, cg_active = CG_TRAIN): la scelta con l'avversario del livello a
+/// destra (racchetta e bonus), il file voce del primo livello prima della presentazione (READY e
+/// GO), TRAINING al posto del livello e niente punti; nessuno sfidante; la partita con racchetta,
+/// bonus, CPU, velocità e punti del livello; niente punti arcade; GAME OVER con la sua musica, poi
+/// l'attract, senza classifica né salvataggi.
+fn training_ui(m: &mut Machine) -> Result<String, String> {
+    let mut lines = Vec::new();
+    for level in 0..RUNGS.len() {
+        lines.push(training_level(m, level).map_err(|e| format!("livello {}: {e}", level + 1))?);
+    }
+    Ok(format!("allenamento contro ogni avversario: {}", lines.join("; ")))
+}
+
+/// Un allenamento contro l'avversario del livello `level` (da 0), per `training_ui`.
+fn training_level(m: &mut Machine, level: usize) -> Result<String, String> {
+    const CG_TRAIN: u8 = 3;
+    const SID_SONG_GAME_OVER: u8 = 5;
+    let rung = RUNGS[level];
+    quiet_inputs(m);
+    let table: Vec<u8> = (0..80).map(|i| m.read_u8("ch_table", i)).collect();
+    let hi_next = m.read_u8("hi_next", 0);
+    for (name, v) in [
+        ("opt_mode", 2u8),
+        ("opt_players", 4),
+        ("opt_opp", level as u8 + 1),
+        ("opt_level", 1),
+        ("opt_free", 1),
+        ("credits", 0),
+        ("ctl_paddle", 0),
+        ("hi_open", 0),
+        ("ch_wins", 5),
+        ("state", ST_MENU),
+    ] {
+        m.write_u8(name, 0, v);
+    }
+    m.write_i32("ch_score", 0, 0);
+    m.call("start_game");
+    let loadout: Vec<u8> = rung.loadout.iter().map(|b| *b as u8).collect();
+    let picked: Vec<u8> = (3..6).map(|i| m.read_u8("pk_chosen", i)).collect();
+    if m.read_u8("ch_level", 0) as usize != level || picked != loadout || m.read_u8("pk_cursor", 1) != rung.kind as u8 {
+        return Err(format!(
+            "scelta: livello {}, bonus a destra {picked:?}, racchetta {} invece di quelli del livello {level}",
+            m.read_u8("ch_level", 0),
+            m.read_u8("pk_cursor", 1)
+        ));
+    }
+    let mut worst = frames_until(m, 3000, "dalla scelta alla presentazione", |_| {}, |m| m.read_u8("state", 0) == ST_INTRO)?;
+    if m.read_u8("cg_active", 0) != CG_TRAIN || m.cpu.read(VOICE_COUNT) != 0x4C {
+        return Err(format!(
+            "presentazione: cg_active {}, VOICE_COUNT ${:02X} (il player del primo livello)",
+            m.read_u8("cg_active", 0),
+            m.cpu.read(VOICE_COUNT)
+        ));
+    }
+    // il fuoco del lato libero (porta 1) non porta uno sfidante
+    frames_until(m, 30, "presentazione", fire_port1, |m| m.read_u8("state", 0) != ST_INTRO).ok();
+    m.cpu.joy_port1 = 0xFF;
+    if m.read_u8("state", 0) != ST_INTRO {
+        return Err(format!("nella presentazione il fuoco della porta 1 porta allo stato {}", m.read_u8("state", 0)));
+    }
+    if !text_at(m, 0xC000, 3, 16, "TRAINING")
+        || text_at(m, 0xC000, 23, 7, "SCORE")
+        || text_at(m, 0xC000, 0, 1, "5 WINS")
+        || text_at(m, 0xC000, 0, 26, "2")
+    {
+        return Err("presentazione: non TRAINING, o con i punti, i duelli vinti o l'invito per lo sfidante".into());
+    }
+    let joined = std::cell::Cell::new(false);
+    worst = worst.max(frames_until(
+        m,
+        1500,
+        "verso la partita",
+        |m| joined.set(joined.get() || m.read_u8("state", 0) == ST_CHALLENGER),
+        |m| m.read_u8("state", 0) == ST_PLAY,
+    )?);
+    let kind = m.read_u8("cfg_kinds", 4);
+    let lo: Vec<u8> = (4..7).map(|i| m.read_u8("cfg_loadout", i)).collect();
+    let (cpu, diff, points) = (m.read_u8("bm_cpu", 0), m.read_u8("bm_diff", 0), m.read_u8("win_points", 0));
+    if joined.get()
+        || kind != rung.kind as u8
+        || lo != loadout
+        || cpu != rung.cpu_at(1)
+        || diff != rung.speed_at(1)
+        || points as u16 != rung.points
+        || m.read_u8("cpu_side", 0) != 4
+    {
+        return Err(format!(
+            "partita: racchetta {kind}, bonus {lo:?}, CPU {cpu}, velocità {diff}, punti {points}, CPU al lato {} (sfidante {})",
+            m.read_u8("cpu_side", 0),
+            joined.get()
+        ));
+    }
+    frames_until(m, 300, "partita", fire_port1, |m| m.read_u8("state", 0) != ST_PLAY).ok();
+    m.cpu.joy_port1 = 0xFF;
+    if m.read_u8("state", 0) != ST_PLAY || m.read_i32("ch_score", 0) != 0 {
+        return Err(format!("partita: stato {}, punti arcade {}", m.read_u8("state", 0), m.read_i32("ch_score", 0)));
+    }
+    // la CPU vince: GAME OVER con la sua musica, poi l'attract
+    m.write_u8("score", 4, points);
+    frames_until(m, 10, "GAME OVER", |_| {}, |m| m.read_u8("state", 0) == ST_OVER)?;
+    if m.read_u8("sid_song_n", 0) != SID_SONG_GAME_OVER {
+        return Err(format!("GAME OVER dell'allenamento con la canzone {}", m.read_u8("sid_song_n", 0)));
+    }
+    worst = worst.max(frames_until(m, 600, "dopo il GAME OVER", |_| {}, |m| m.read_u8("state", 0) != ST_OVER)?);
+    if worst > FRAME_BUDGET {
+        return Err(format!("un frame di {worst} cicli, oltre il budget"));
+    }
+    let after: Vec<u8> = (0..80).map(|i| m.read_u8("ch_table", i)).collect();
+    if m.read_u8("state", 0) != 1 || m.read_u8("cg_active", 0) != 0 || after != table || m.read_u8("hi_next", 0) != hi_next {
+        return Err(format!(
+            "dopo il GAME OVER lo stato {} (cg_active {}), o la classifica cambiata",
+            m.read_u8("state", 0),
+            m.read_u8("cg_active", 0)
+        ));
+    }
+    m.write_u8("opt_opp", 0, 0);
+    m.write_u8("ch_wins", 0, 0);
+    Ok(format!("{} {worst}", rung.kind.name()))
+}
+
+/// Sblocco dell'allenamento: il primo arrivo al finale lo salva nella flash con la classifica
+/// (byte HI_OPEN del posto a $00), gli altri non salvano più.
+fn unlock_ui(m: &mut Machine) -> Result<String, String> {
+    const HI_BANK: usize = 16;
+    const HI_OPEN: usize = 83;
+    let close = |m: &mut Machine| -> Result<(), String> {
+        frames_until(m, 100, "finale", |_| {}, |m| m.read_u8("e_part", 0) != 0)?;
+        m.call("close_enter");
+        frames_until(m, 100, "uscita dal finale", |_| {}, |m| m.read_u8("state", 0) != ST_ENDING)?;
+        Ok(())
+    };
+    m.write_u8("hi_open", 0, 0xFF);
+    let next = m.read_u8("hi_next", 0) as usize;
+    ending_start(m, 1000)?;
+    let slot = HI_BANK * EF_HALF + next * 128;
+    let byte = m.cpu.ef.as_ref().map(|ef| ef.roml[slot + HI_OPEN]).unwrap_or(0xFF);
+    if m.read_u8("hi_open", 0) != 0 || m.read_u8("hi_next", 0) as usize != next + 1 || byte != 0 {
+        return Err(format!(
+            "al finale: hi_open ${:02X}, hi_next {}, byte dello sblocco ${byte:02X}",
+            m.read_u8("hi_open", 0),
+            m.read_u8("hi_next", 0)
+        ));
+    }
+    close(m)?;
+    let after = m.read_u8("hi_next", 0);
+    ending_start(m, 1000)?;
+    if m.read_u8("hi_next", 0) != after {
+        return Err("al secondo finale si salva di nuovo".into());
+    }
+    close(m)?;
+    m.write_u8("hi_open", 0, 0xFF);
+    Ok(format!("sblocco dell'allenamento salvato nella flash al primo finale (posto {next}, byte {HI_OPEN} a $00), poi non più"))
 }
 
 /// Scene del programma C64 (`state` in play.s).
@@ -1704,7 +2097,7 @@ impl SuperFrames {
 }
 
 /// Budget del frame: il programma parte come all'accensione e gioca l'attract intero (con la
-/// demo), poi una partita contro la CPU; per ogni scena cicli per frame (massimo e media) e frame
+/// classifica), poi una partita contro la CPU; per ogni scena cicli per frame (massimo e media) e frame
 /// oltre il budget, che non ce ne devono essere (i lavori lunghi si dividono su più frame).
 /// Nessun comando: joystick e tastiera a riposo.
 fn frames(m: &mut Machine) -> bool {
@@ -1713,7 +2106,7 @@ fn frames(m: &mut Machine) -> bool {
         "strisce",
         "logo",
         "titolo",
-        "demo",
+        "(4 libero)",
         "menu",
         "conto",
         "partita",
@@ -1817,7 +2210,7 @@ fn frames(m: &mut Machine) -> bool {
             }
             bonus_labels.set((seen, key, full, shown, open, slowest));
         }
-        if matches!(m.read_u8("state", 0), 4 | 6 | 7) {
+        if matches!(m.read_u8("state", 0), 6 | 7) {
             let (kept, all) = kept_sprites.get();
             kept_sprites.set((kept + (m.read_u8("pd_made", 0) == 0xAA) as u32, all + 1));
         }
@@ -1841,7 +2234,7 @@ fn frames(m: &mut Machine) -> bool {
         m.cpu.idle(start + FRAME_CYCLES)?;
         // (con la voce di CHALLENGE il player aspetta: non è un tick rimandato)
         let voice = voice_before || m.cpu.read(0xFFFB) & 0x80 != 0;
-        if matches!(m.read_u8("state", 0), 4 | 6 | 7 | 8) && !voice {
+        if matches!(m.read_u8("state", 0), 6..=8) && !voice {
             let (late, all) = late_ticks.get();
             late_ticks.set((late + (m.read_u8("sid_phase", 0) == phase) as u32, all + 1));
         }
@@ -2409,7 +2802,6 @@ fn frames(m: &mut Machine) -> bool {
 fn scores_border(m: &mut Machine) -> Result<String, String> {
     let (run, code) = m.moved_segment("HSCODE").map(|(a, c)| (a, c.len())).ok_or("niente HSCODE")?;
     m.cpu.mem[run as usize..run as usize + code].fill(0);
-    m.write_u8("ch_attract", 0, 1);
     m.write_u8("ch_hl", 0, 0xFF);
     m.call("enter_scores");
     let watch = m.cpu.watch.replace((0xD020, 0xD020));
@@ -2460,7 +2852,7 @@ fn border_logic(m: &mut Machine) -> Result<String, String> {
         .collect();
     let mut cases = 0;
     // (stato, BORDER, NEXT, SUPER, sm_fl, bullet time, match point, frame) -> colori ammessi
-    for state in [ST_PLAY, ST_COUNT, 4] {
+    for state in [ST_PLAY, ST_COUNT] {
         for border in [0u8, 1] {
             for next in [0u8, 1] {
                 for (sup, fl) in [(0u8, 0u8), (1, 0), (0, 1), (0, 5)] {
@@ -2512,8 +2904,8 @@ const COL_DGRAY: u8 = 11;
 const COL_MGRAY: u8 = 12;
 const COL_GRAY: u8 = 15;
 
-/// Profilo: cicli per routine (solo le istruzioni della routine, non quelle che chiama) nella
-/// demo e in una partita EVO contro la CPU, su tutti i frame e su quelli oltre PROFILE_HEAVY.
+/// Profilo: cicli per routine (solo le istruzioni della routine, non quelle che chiama) in una
+/// partita EVO contro la CPU, su tutti i frame e su quelli oltre PROFILE_HEAVY.
 fn profile(m: &mut Machine) -> bool {
     const PROFILE_HEAVY: u64 = 14_000;
     for r in ["title_unpack", "clear_vars", "math_init", "video_init", "input_init", "sid_init"] {
@@ -2539,11 +2931,8 @@ fn profile(m: &mut Machine) -> bool {
     let mut all = vec![0u64; labels.len()];
     let mut heavy = vec![0u64; labels.len()];
     let (mut frames, mut heavy_frames, mut total, mut heavy_total, mut worst) = (0u64, 0u64, 0u64, 0u64, 0u64);
-    for part in ["demo_enter", "start_game"] {
+    for part in ["start_game"] {
         m.call(part);
-        if part == "demo_enter" {
-            m.write_u8("state", 0, 4);
-        }
         for _ in 0..50 * 60 * 2 {
             m.cpu.profile = Some(vec![0; 0x10000]);
             let c = match m.cpu.call(frame, 1_000_000) {
@@ -2554,10 +2943,8 @@ fn profile(m: &mut Machine) -> bool {
                 }
             };
             let p = m.cpu.profile.take().unwrap_or_default();
-            // solo i frame della partita: ci si ferma quando la demo torna all'attract o la
-            // partita finisce
-            let state = m.read_u8("state", 0);
-            if (part == "demo_enter" && state != 4) || (part == "start_game" && state == 8) {
+            // solo i frame della partita: ci si ferma quando la partita finisce
+            if m.read_u8("state", 0) == ST_OVER {
                 break;
             }
             frames += 1;
@@ -4270,7 +4657,6 @@ fn dash(m: &mut Machine) -> Result<String, String> {
 const ST_ENDING: u8 = 16;
 const ST_OVER: u8 = 8;
 const ST_CONT: u8 = 12;
-const ST_DEMO: u8 = 4;
 const SID_SONG_ENDING: u8 = 8;
 /// canzone del titolo e quella dell'easter egg delle iniziali (il finale letto dalla cartuccia)
 const SID_SONG_TITLE: u8 = 1;
@@ -4963,8 +5349,8 @@ fn big_codes_at(m: &Machine, codes: &[u8], row: u16) -> bool {
 /// all'ultimo livello di CHALLENGE). Le altre partite come prima. Ogni GAME OVER dal frame con
 /// l'ultimo punto (enter_over copia il suo codice dalla cartuccia), nel budget; cambia solo la
 /// pagina del set di caratteri con PERFECT, e solo con PERFECT; finita la voce le tabelle dei
-/// quadrati si rifanno già nel GAME OVER. Poi, dopo un PERFECT, l'attract fino alla demo: INSERT COIN e PRESS START con i
-/// loro caratteri.
+/// quadrati si rifanno già nel GAME OVER. Poi, dopo un PERFECT, l'attract fino al titolo con
+/// INSERT COIN (nella bitmap: i caratteri di PERFECT restano, non si vedono più altrove).
 fn perfect_ui(m: &mut Machine) -> Result<String, String> {
     let inc = std::fs::read_to_string(c64_dir().join("gen/assets.inc")).map_err(|e| format!("assets.inc: {e}"))?;
     let charset = std::fs::read(c64_dir().join("gen/charset.bin")).map_err(|e| format!("charset.bin: {e}"))?;
@@ -5041,7 +5427,7 @@ fn perfect_ui(m: &mut Machine) -> Result<String, String> {
             m.write_u8("score", o, v);
         }
         m.call("clear_screen");
-        // i caratteri di PERFECT originali (come dopo la demo), il codice del GAME OVER cancellato
+        // i caratteri di PERFECT originali (come all'avvio), il codice del GAME OVER cancellato
         // (BRK): deve copiarlo enter_over
         m.cpu.mem[CHARSET + 8 * c0..CHARSET + 8 * (c0 + n)].copy_from_slice(&charset[8 * c0..8 * (c0 + n)]);
         m.cpu.mem[OV_RUN..OV_RUN + 0x400].fill(0);
@@ -5124,7 +5510,7 @@ fn perfect_ui(m: &mut Machine) -> Result<String, String> {
             }
         }
     }
-    // dopo un PERFECT l'attract, fino alla demo: INSERT COIN e PRESS START con i loro caratteri
+    // dopo un PERFECT l'attract, fino al titolo con INSERT COIN (senza crediti)
     quiet_inputs(m);
     m.call("math_ensure");
     let free = m.read_u8("opt_free", 0);
@@ -5142,38 +5528,22 @@ fn perfect_ui(m: &mut Machine) -> Result<String, String> {
         stamped |= big_codes_at(m, &perfect, 10);
     }
     if !stamped {
-        return Err("prima della demo: PERFECT non a schermo".into());
+        return Err("prima dell'attract: PERFECT non a schermo".into());
     }
-    let labels = [assets_list("BIG_INSERT_COIN"), assets_list("BIG_PRESS_START")];
     let mut frames = 0u32;
-    let mut seen = [false; 2];
-    while frames < 12_000 && !seen[0] {
-        full_frame(m).map_err(|e| format!("verso la demo, frame {frames} (stato {}): {e}", m.read_u8("state", 0)))?;
+    let mut coin = false;
+    while frames < 12_000 && !coin {
+        full_frame(m).map_err(|e| format!("verso il titolo, frame {frames} (stato {}): {e}", m.read_u8("state", 0)))?;
         frames += 1;
-        if m.read_u8("state", 0) != ST_DEMO {
-            continue;
-        }
-        for code in labels.iter().flatten() {
-            let c = *code as usize;
-            if m.cpu.mem[CHARSET + 8 * c..CHARSET + 8 * c + 8] != charset[8 * c..8 * c + 8] {
-                return Err(format!("demo: carattere {c} di INSERT COIN / PRESS START non originale"));
-            }
-        }
-        let label = m.read_u8("demo_label", 0);
-        if (1..=2).contains(&label) {
-            if !big_codes_at(m, &labels[label as usize - 1], 11) {
-                return Err(format!("demo: scritta {label} non a schermo"));
-            }
-            seen[label as usize - 1] = true;
-        }
+        coin = m.read_u8("state", 0) == 3 && m.read_u8("at_label", 0) == 1;
     }
-    if !seen[0] {
-        return Err(format!("demo senza INSERT COIN dopo {frames} frame (stato {})", m.read_u8("state", 0)));
+    if !coin {
+        return Err(format!("titolo senza INSERT COIN dopo {frames} frame (stato {})", m.read_u8("state", 0)));
     }
     m.write_u8("opt_free", 0, free);
     m.call("math_ensure");
     Ok(format!(
-        "PERFECT nel GAME OVER da solo contro la CPU e sopra P1 / P2 WINS in due, con la voce (non all'ultimo livello di CHALLENGE); YOU WIN, CPU WINS, GAME OVER come prima; solo la pagina di PERFECT del set di caratteri cambia; frame dell'ultimo punto al più {worst_enter} cicli, GAME OVER al più {worst}; poi la demo con INSERT COIN e i caratteri originali (dopo {frames} frame)"
+        "PERFECT nel GAME OVER da solo contro la CPU e sopra P1 / P2 WINS in due, con la voce (non all'ultimo livello di CHALLENGE); YOU WIN, CPU WINS, GAME OVER come prima; solo la pagina di PERFECT del set di caratteri cambia; frame dell'ultimo punto al più {worst_enter} cicli, GAME OVER al più {worst}; poi l'attract fino al titolo con INSERT COIN (dopo {frames} frame)"
     ))
 }
 
@@ -5319,7 +5689,7 @@ fn egg_ui(m: &mut Machine) -> Result<String, String> {
 /// vedono (gli altri a zero: $D022-$D024 solo con i caratteri multicolore, $D025-$D026 solo con
 /// uno sprite multicolore acceso, i colori degli sprite accesi), la RAM dei colori, i colori della
 /// bitmap (solo nel modo bitmap: nello schermo che dice $D018, $C400 nell'attract e $C000 nella
-/// HOW TO PLAY) e in fondo i modi (bit 0 bitmap, bit 1 caratteri
+/// HOW TO PLAY; lì la RAM dei colori a zero, non si vede) e in fondo i modi (bit 0 bitmap, bit 1 caratteri
 /// multicolore). A schermo spento ($D011 bit 4 a zero) c'è solo il bordo.
 fn screen_colors(m: &Machine) -> Vec<u8> {
     let mem = &m.cpu.mem;
@@ -5340,8 +5710,9 @@ fn screen_colors(m: &Machine) -> Vec<u8> {
             if seen { mem[a] & 15 } else { 0 }
         })
         .collect();
-    v.extend((0xD800..0xDBE8).map(|a| mem[a] & 15));
     let bitmap = mem[0xD011] & 0x20 != 0;
+    // (nella bitmap hires la RAM dei colori non si vede: conta solo a caratteri o in multicolore)
+    v.extend((0xD800..0xDBE8).map(|a| if bitmap && !mc_text { 0 } else { mem[a] & 15 }));
     if bitmap {
         let matrix = 0xC000 + (mem[0xD018] as usize >> 4) * 0x400;
         v.extend_from_slice(&mem[matrix..matrix + 1000]);
@@ -5509,7 +5880,7 @@ fn egg_frames(m: &mut Machine) -> Result<String, String> {
     egg_on(m);
     m.call("go_stripes");
     let on = egg_run(m, "attract", 1900, idle)?;
-    // (strisce 1, logo 2, titolo 3 e la classifica: la canzone del finale; poi la demo, muta)
+    // (strisce 1, logo 2, titolo 3 e la classifica: la canzone del finale)
     let wrong_song = on.states.iter().filter(|&&(s, song)| matches!(s, 1..=3 | ST_SCORES) && song != SID_SONG_EGG).count();
     if !on.states.iter().any(|s| s.0 == ST_SCORES) || wrong_song > 0 || on.sid_writes < 2000 {
         return Err(format!(
@@ -5565,7 +5936,6 @@ fn egg_frames(m: &mut Machine) -> Result<String, String> {
         let b = m.image_u8("table_init", i);
         m.write_u8("ch_table", i, b);
     }
-    m.write_u8("ch_attract", 0, 0);
     m.write_u8("ch_hl", 0, 0);
     m.call("enter_scores");
     let start = m.cpu.clone();

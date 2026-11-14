@@ -206,8 +206,8 @@ pub struct PaddlePick {
 impl PaddlePick {
     pub fn new(app: &App) -> Self {
         let mut pick = Self {
-            cpu: app.cpu,
-            fixed: app.cpu.then_some(1),
+            cpu: app.vs_cpu(),
+            fixed: app.vs_cpu().then_some(1),
             duel: None,
             cursor: [0; 2],
             chosen: [false; 2],
@@ -215,9 +215,10 @@ impl PaddlePick {
             ready: None,
             knobs_ready: false,
         };
-        if app.run.is_some() {
-            // CHALLENGE: la CPU cambia racchetta a ogni livello, qui si vede quella del primo
-            pick.cursor[1] = paddws_core::challenge::RUNGS[0].kind as usize;
+        if let Some(run) = &app.run {
+            // scalata: la CPU cambia racchetta a ogni livello, qui si vede quella del primo;
+            // allenamento: quella dell'avversario scelto
+            pick.cursor[1] = paddws_core::challenge::RUNGS[run.level].kind as usize;
             pick.chosen[1] = true;
         } else if app.cpu {
             let mut rng = paddws_core::Rng::new(app.seed ^ 0x7A11_E5ED);

@@ -4,8 +4,8 @@
 
 The PADD WS FPGA core for the MiSTer (DE10-Nano): 320×240p video at 15.7 kHz and 60 Hz, the 80s
 attract mode, music and sound effects on an emulated SID (8580 or 6581), joystick, paddle and
-spinner. Every mode is there, Classic, EVO, NEXT and CHALLENGE, and the attract shows a demo played
-by two CPUs. The full rules and controls are in [How to play](../docs/en/how-to-play.md).
+spinner. Every mode is there, Classic, EVO and NEXT with the ladder, challengers and training, and
+the attract shows a demo played by two CPUs. The full rules and controls are in [How to play](../docs/en/how-to-play.md).
 
 The game logic is not rewritten in Verilog: it is the Rust core ([`rust/core`](../rust/core)),
 compiled for RV32IM and run by a VexRiscv processor at 60 MHz inside the core (firmware in
@@ -25,7 +25,8 @@ titles and needs no ROMs.
 
 ## High scores on the SD card
 
-The CHALLENGE high-score table is saved in NVRAM, like in the arcade cores:
+The high-score table of the NEXT ladder, together with the training unlock, is saved in NVRAM, like
+in the arcade cores:
 `/media/fat/config/nvram/PaddWS.nvm`. With *Autosave scores: On* (the default), after every change
 the MiSTer saves it the next time the OSD is opened; with *Off* only through *Save settings* in the
 system menu. It only works when the core is started from the `.mra`: started from the `.rbf`, the
@@ -39,7 +40,9 @@ starts and **Select** inserts a coin. On the keyboard `5` is the coin and `1` is
 arcade cores. Special moves are joystick quarter circles, or a back-and-forth turn of the knob,
 followed by **A**.
 
-The OSD (F12) has the mode (*Game type*), players, Free Play, difficulty, scores upright or facing
+The OSD (F12) has the mode (*Game type*: NEXT, EVO, Classic), the players (*Players*, only in
+Classic and EVO), the training opponent (*Opponent*, only in NEXT and after unlocking it by
+reaching the ending), Free Play, difficulty, scores upright or facing
 the players for a table, attract sounds, SID 8580 or 6581, music and effects volume, high-score
 saving, white level, paddle control (joystick, paddle or spinner) and spinner speed. Scanlines and
 filters are the MiSTer's own.
@@ -106,13 +109,16 @@ PPM images in `mister/sim/frames/`. On the first frame of a match it saves a che
 runs start from; `-f` ignores it, `-u` makes the text upright. The most useful scenarios:
 
 - none: power-on, coin, demo and a one-player match up to GAME OVER;
-- `demo`: the demos of the four modes, one per attract loop;
-- `next`, `kinds`: NEXT against the CPU; `kinds` takes the paddle types from the `PONG_KINDS`
-  variable (`PaddleKind` codes, `4,6` if unset);
+- `demo`: the demos of the modes, one per attract loop;
+- `next`, `kinds`: a free NEXT match against the CPU, which the OSD no longer offers (match type 2,
+  simulator only); `kinds` takes the paddle types from the `PONG_KINDS` variable (`PaddleKind`
+  codes, `4,6` if unset);
 - `supers`, `howto`: special moves in a match and the HOW TO PLAY screen;
 - `bullet`, `ghost`, `warp`, `steer`: single power-ups;
-- `challenge`, `challenger`, `ending`: CHALLENGE, a second player joining in and the ending;
-- `nvram`: the SD high scores with a fake `hps_io`;
+- `challenge`, `challenger`, `ending`: the NEXT ladder, a second player joining in and the ending
+  (with the training unlock);
+- `wins`, `train`: the counter of duels won in a row and training;
+- `nvram`: the SD high scores and unlock with a fake `hps_io`;
 - `win`, `perfect`, `paddle`, `spin`, `mute`, `music`: end of match, paddle and spinner, audio.
 
 The full list, with what each scenario checks, is at the top of `sim/frames/frames.cpp`.
@@ -133,9 +139,9 @@ folder given by `PADDWS_COMPILERS`.
 ## Sources
 
 - `PaddWS.sv`: glue to the Template_MiSTer `sys/` framework (OSD, joystick, PLL, video, audio).
-- `rtl/pong_top.v`: attract sequence, matches, coins and CHALLENGE; the four 240 Hz ticks of each frame.
+- `rtl/pong_top.v`: attract sequence, matches, coins, ladder and training; the four 240 Hz ticks of each frame.
 - `rtl/pong_logic_rv.v`: the processor (`rtl/vexriscv/`), the firmware RAM and the registers.
-- `rtl/*_render.v`: playfield, attract, NEXT, HOW TO PLAY, CHALLENGE and ending.
+- `rtl/*_render.v`: playfield, attract, NEXT, HOW TO PLAY, ladder and ending.
 - `rtl/pong_sid.v` and `rtl/sid/`: music player and voices, with the SID from the MiSTer C64 core.
 - `rtl/ch_nvram.v`: the SD high scores.
 - `sim/`: traces, frame simulator, test benches for the processor and the SID.

@@ -66,11 +66,15 @@ pub struct Game {
     /// punteggi dritti in alto, per un cabinato o un monitor normale, invece che rivolti ai
     /// giocatori seduti ai lati di un tavolo (come l'opzione Scores del MiSTer)
     pub scores_upright: bool,
-    /// GAME TYPE dell'ultima scelta nel menu: "classic", "evo" o "next" (di default NEXT)
+    /// GAME TYPE dell'ultima scelta nel menu: "classic", "evo" o "next" (di default NEXT, la
+    /// scalata contro le CPU)
     pub game_type: String,
-    /// PLAYERS dell'ultima scelta nel menu: "two", "cpu", "challenge" o "one" (di default
-    /// CHALLENGE)
+    /// PLAYERS dell'ultima scelta nel menu per CLASSIC ed EVO: "two", "cpu" o "one" (di default
+    /// TWO). Il "challenge" delle versioni di prima vuol dire NEXT (`App::load_mode`).
     pub players: String,
+    /// allenamento sbloccato: arrivati una volta al finale della scalata, in NEXT il menu ha la
+    /// voce OPPONENT per giocare contro un solo avversario
+    pub training: bool,
 }
 
 impl Default for Game {
@@ -95,7 +99,8 @@ impl Default for Game {
             zoom: 100,
             scores_upright: true,
             game_type: "next".into(),
-            players: "challenge".into(),
+            players: "two".into(),
+            training: false,
         }
     }
 }
@@ -781,6 +786,7 @@ pub fn save_preferences(path: &Path, cfg: &Config) {
     set(&mut data, "game", "scores_upright", cfg.game.scores_upright);
     set(&mut data, "game", "game_type", cfg.game.game_type.as_str());
     set(&mut data, "game", "players", cfg.game.players.as_str());
+    set(&mut data, "game", "training", cfg.game.training);
     set(&mut data, "crt_effects", "enabled", cfg.crt_effects.enabled);
     set(&mut data, "mouse", "spinner", cfg.mouse.spinner);
     write_json(path, &data);
@@ -997,9 +1003,24 @@ mod tests {
     }
 
     #[test]
-    fn the_menu_starts_in_next_challenge() {
+    fn the_menu_starts_in_next_with_training_locked() {
         let g = Game::default();
-        assert_eq!((g.game_type.as_str(), g.players.as_str()), ("next", "challenge"));
+        assert_eq!((g.game_type.as_str(), g.players.as_str()), ("next", "two"));
+        assert!(!g.training);
+    }
+
+    #[test]
+    fn the_training_unlock_is_saved_and_read_back() {
+        let path = std::env::temp_dir().join(format!("paddws_training_{}.json", std::process::id()));
+        fs::write(&path, r#"{"game": {"game_type": "next", "players": "challenge"}}"#).unwrap();
+        let mut cfg = load(&path);
+        assert!(!cfg.game.training);
+        cfg.game.training = true;
+        save_preferences(&path, &cfg);
+        let data: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(data["game"]["training"], true);
+        assert!(load(&path).game.training);
+        let _ = fs::remove_file(path);
     }
 
     #[test]

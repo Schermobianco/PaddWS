@@ -7,6 +7,9 @@
 // Argomento "music": opzione OSD "Music volume: 0%" dall'accensione, titolo, partita a un giocatore senza
 // toccare la racchetta e GAME OVER: si contano i cicli con una canzone del SID (attesi 0) e quelli
 // con un effetto (attesi > 0).
+// Tipi di partita (porta game_type di pong_top): 0 Classic, 1 EVO, 3 NEXT (la scalata, la CHALLENGE
+// fino alla 4.1), 2 NEXT libera contro la CPU, che l'OSD non ha: la usano gli scenari "next", "warp",
+// "steer", "kinds", "supers", "bullet", "ghost" e "howto". Players non conta in NEXT.
 // Argomento "next": NEXT contro la CPU; il giocatore sceglie TELEPORT, SMASH e SLOW con il joystick.
 // Argomento "warp": come "next" ma più lunga, salva i frame dei primi salti del TELEPORT.
 // Argomento "steer": come "warp", ma il giocatore sceglie STEER, TELEPORT e SMASH (salva la scelta
@@ -23,7 +26,8 @@
 // fermo con il joystick su): stampa la posizione attesa e quella della racchetta.
 // Prima della partita prova il doppio tocco: su, su di nuovo entro 300 ms -> rapido.
 // Argomento "demo": un gettone e nessuno Start; a ogni giro dell'attract l'OSD passa a un'altra
-// modalità (NEXT, CHALLENGE, CLASSIC, EVO) e la demo la segue.
+// modalità (NEXT libera, NEXT della scalata, CLASSIC, EVO) e la demo la segue: le due NEXT hanno la
+// stessa scritta.
 // Argomento "supers": NEXT contro la CPU con l'opzione Super moves. Salva la schermata HOW TO PLAY
 // col joystick e con la manopola (howto_*.ppm), la salta con Start; in partita il giocatore insegue
 // la palla, le barre si riempiono ogni secondo, il giocatore fa la mezzaluna + A (STRAIGHT SHOT) e,
@@ -33,7 +37,7 @@
 // scelte), un giro dell'animazione col joystick, uno con lo spinner e un pezzo col paddle (a ogni cambio
 // un frame fuori dalla schermata, così l'animazione riparte): howto_joy_*, howto_spin_* e
 // howto_paddle_*.ppm, col numero del frame dall'inizio del giro (circa 260 frame in tutto).
-// Argomento "challenge": CHALLENGE contro la CPU, un fotogramma per schermata (ch_*.ppm); nella prima
+// Argomento "challenge": la scalata di NEXT contro la CPU, un fotogramma per schermata (ch_*.ppm); nella prima
 // presentazione anche le racchette degli avversari di tutti i livelli (ch_lvl1..7.ppm, e due rivolte
 // a destra, ch_lvl5_right e ch_lvl6_right).
 // Argomento "anim": come "challenge", ma nella prima presentazione i sette avversari a più frame
@@ -56,16 +60,29 @@
 // frame (parola visibile del boost), così la coda degli effetti è accesa. Con GHOST in volo salva
 // gh1_<frame>.ppm ogni 3 frame e conta i pixel grigi o gialli attorno alla palla, fuori da lei e dal
 // suo alone: devono essere zero (niente coda); nei 40 frame dopo GHOST (ghpost_*.ppm) la coda c'è.
-// Argomento "nvram": la classifica di CHALLENGE sulla SD (ch_nvram.v) con un hps_io finto. Dal titolo
+// Argomento "nvram": la classifica della scalata sulla SD (ch_nvram.v) con un hps_io finto. Dal titolo
 // manda tre file da scartare (somma sbagliata, punti in ordine crescente, file troncato) e ne rilegge
 // ogni volta l'immagine, che deve restare la classifica iniziale; poi un file buono, che deve tornare
 // identico, e la classifica (nv_scores.ppm). Controlla anche che senza modifiche non ci sia una
-// richiesta di salvataggio; "challenge" controlla che ci sia dopo le iniziali.
+// richiesta di salvataggio; "challenge" controlla che ci sia dopo le iniziali. Lo sblocco
+// dell'allenamento (byte 4): il file buono di prima (byte 4 a zero) lo lascia spento, uno con il bit 0
+// lo accende e torna identico, poi di nuovo il file di prima non lo spegne (riletto con il byte 4 a 1).
 // Argomento "ending": il finale della CHALLENGE. Livello 1 vinto (la voce "YOU WIN!" con il GAME OVER),
 // poi la presentazione del livello 2 diventa quella dell'ultimo livello (punti forzati a 123456), vinto
 // 7-0: niente voce al GAME OVER, poi il finale (modo 15). Salva end_*.ppm in ogni parte; le parti
 // lunghe si accorciano portando avanti il contatore del finale (e lo scorrimento dei titoli). In THE END
-// Start salta alle iniziali. Stampa le voci "YOU WIN!" (attese 2), la canzone del SID e i punti.
+// Start salta alle iniziali. Stampa le voci "YOU WIN!" (attesa 1, il finale), la canzone del SID e i punti, e alla
+// fine lo sblocco dell'allenamento e la richiesta di salvarlo (attesi 1 e 1).
+// Argomento "train": l'allenamento di NEXT (sblocco forzato al frame 2, Opponent da PONG_TRAIN, 3 se
+// manca: HAMMER). Due giri: scelta, presentazione (tr_intro*), partita senza punti arcade (tr_game*)
+// in cui gettone e Start del joystick 2 non devono portare uno sfidante, vinta dal giocatore (YOU WIN,
+// tr_over1) e poi persa (GAME OVER con CPU WINS, tr_over2); dopo ciascuna si torna all'attract. Stampa
+// e conta come errori le canzoni (tema dell'avversario, game over), lo sfidante e lo stato dopo.
+// Argomento "wins": il contatore "n WINS" dei duelli. Nella presentazione del livello 1 entra uno
+// sfidante dal joystick 2, il campione a sinistra vince il duello (w_over1, "1 WINS" a sinistra), poi
+// un altro (w_intro2 e w_over2 con "2 WINS"; w_over2_12 e w_intro3_12 con il contatore forzato a 12),
+// poi un terzo sfidante vince da destra (w_over3, "1 WINS" a destra, e w_intro3). Stampa il contatore
+// a ogni cambio di modo e conta gli errori.
 // Argomento "egg": l'easter egg delle iniziali. Dal titolo (giallo) le iniziali di un record forzato:
 // il giocatore scrive "RED" con il joystick (su dalla A porta al "!") e la classifica che segue ha
 // giallo e rosso scambiati; poi strisce, logo, titolo, una CHALLENGE (scelta, presentazione del RUSH,
@@ -156,9 +173,10 @@ static void set_meter(Vpong_top___024root* r, int side, int v) {
 
 // immagine della NVRAM della classifica (formato in ch_nvram.v): posti {iniziali, punti, livello}
 struct NvEntry { const char* name; int score; int level; };
-static std::vector<uint8_t> nv_image(const std::vector<NvEntry>& t) {
+// byte 4: segni (bit 0 allenamento sbloccato)
+static std::vector<uint8_t> nv_image(const std::vector<NvEntry>& t, uint8_t flags = 0) {
     std::vector<uint8_t> b(192, 0);
-    b[0] = 'P'; b[1] = 'W'; b[2] = 'S'; b[3] = 1;
+    b[0] = 'P'; b[1] = 'W'; b[2] = 'S'; b[3] = 1; b[4] = flags;
     for (size_t i = 0; i < t.size() && i < 10; i++) {
         uint8_t* e = &b[16 + 16 * i];
         for (int k = 0; k < 3; k++) {
@@ -235,6 +253,11 @@ int main(int argc, char** argv) {
     const bool bul_test = arg == "bullet";
     const bool end_test = arg == "ending";
     const bool egg_test = arg == "egg";
+    const bool train_test = arg == "train";
+    const bool wins_test = arg == "wins";
+    int tr_round = 1, w_duels = 0, w_errors = 0;   // "train": giro; "wins": sfidanti entrati, errori
+    const char* train_env = std::getenv("PONG_TRAIN");
+    const int train_level = train_env ? std::atoi(train_env) : 3;
     int egg_round = 0, egg_paddle = -1, egg_errors = 0;   // "egg": giro delle iniziali, scelta della racchetta, errori
     int end_part = -1, end_at = -1, you_wins = 0;   // "ending": parte del finale, suo inizio, voci "YOU WIN!"
     const bool next_test = arg == "next" || warp_test || steer_test || ghost_test || kinds_test || ch_test || sup_test || chal_test ||
@@ -260,15 +283,15 @@ int main(int argc, char** argv) {
     int over_frames = 0;
     std::set<int> wanted = (mute_test || countdown_only) ? std::set<int>{1650}
                                : (warp_test || steer_test || ghost_test || kinds_test || ch_test || sup_test || chal_test || bul_test || nv_test ||
-                                  howto_test || music_test || end_test || egg_test) ? std::set<int>{}
+                                  howto_test || music_test || end_test || egg_test || train_test || wins_test) ? std::set<int>{}
                                : next_test ? std::set<int>{1104, 1136, 1160, 1300, 1700, 2100, 2500, 2900, 3300, 3700}
                                            : std::set<int>{80, 250, 340, 500, 610, 660, 1050, 1650, 1900, 2300, 2400, 2850};
     // "warp", "steer" e "win" saltano l'attract: al frame 2 il core passa direttamente al titolo
     const bool skip_attract = warp_test || steer_test || ghost_test || kinds_test || ch_test || win_test || paddle_test || spin_test ||
-                              sup_test || chal_test || bul_test || music_test || end_test;
+                              sup_test || chal_test || bul_test || music_test || end_test || train_test || wins_test;
     const int coin_at = egg_test ? -1 : skip_attract ? 10 : 620,
               start_at = egg_test ? -1 : skip_attract ? 30 : next_test ? 1100 : demo_test ? -1 : 1600;
-    int last = (mute_test || countdown_only) ? 1660 : (win_test || music_test) ? 4000 : (warp_test || steer_test || ghost_test || kinds_test || ch_test || sup_test || chal_test || bul_test || end_test) ? 6000
+    int last = (mute_test || countdown_only) ? 1660 : (win_test || music_test) ? 4000 : (warp_test || steer_test || ghost_test || kinds_test || ch_test || sup_test || chal_test || bul_test || end_test || train_test || wins_test) ? 6000
              : demo_test ? 9400 : nv_test ? 60 : egg_test ? 3000 : howto_test ? 400 : next_test ? 3720 : (paddle_test || spin_test) ? start_at + 380 : 2900;
     if (!requested.empty()) {
         wanted = requested;
@@ -281,11 +304,12 @@ int main(int argc, char** argv) {
     long long music_cycles = 0, fx_cycles = 0; // "music": cicli con una canzone del SID e con un effetto
     int enc_prev = 0, pos_prev = 0;   // "paddle" e "spin": valore dato al frame prima, posizione di allora
 
-    // senza input la partita a un giocatore finisce in fretta; NEXT contro la CPU
-    // CHALLENGE è il tipo di partita 3 dell'OSD; i giocatori allora non contano
-    // NEXT contro la CPU: Players a 3, che l'OSD non ha (sul MiSTer da soli in NEXT c'è solo Challenge)
-    top.players_mode = (ch_test || chal_test || end_test || egg_test) ? 0 : next_test ? 3 : (mute_test || win_test) ? 0 : 1;
-    top.game_type = (ch_test || chal_test || end_test || egg_test) ? 3 : (next_test || howto_test) ? 2 : 0;
+    // senza input la partita a un giocatore finisce in fretta; la scalata di NEXT è il tipo 3, NEXT
+    // libera contro la CPU il tipo 2 (solo qui: l'OSD non ce l'ha); in NEXT i giocatori non contano
+    const bool ladder = ch_test || chal_test || end_test || egg_test || train_test || wins_test;
+    top.players_mode = (ladder || next_test || mute_test || win_test) ? 0 : 1;
+    top.game_type = ladder ? 3 : (next_test || howto_test) ? 2 : 0;
+    top.train_level = train_test ? train_level : 0;
     top.free_play = 0;
     top.difficulty = 1;
     top.upright = upright || arg == "up" || arg == "cdup" || arg == "winup" || arg == "perfectup";
@@ -343,6 +367,7 @@ int main(int argc, char** argv) {
         io(&sid_song, sizeof sid_song); io(&song_errors, sizeof song_errors);
         io(&end_part, sizeof end_part); io(&end_at, sizeof end_at); io(&you_wins, sizeof you_wins);
         io(&egg_round, sizeof egg_round); io(&egg_paddle, sizeof egg_paddle); io(&egg_errors, sizeof egg_errors);
+        io(&tr_round, sizeof tr_round); io(&w_duels, sizeof w_duels); io(&w_errors, sizeof w_errors);
         io(frame.data(), frame.size());
     };
     const std::string ckpt = "ckpt_" + (arg.empty() ? std::string("base") : arg) +
@@ -567,7 +592,22 @@ int main(int argc, char** argv) {
                     const int req = top.ioctl_upload_req;
                     std::printf("nvram, richiesta di salvataggio senza modifiche: %d (attesa 0)\n", req);
                     nv_errors += req != 0;
+                    const int un = r->pong_top__DOT__train_unlock_r;
+                    std::printf("nvram, allenamento dopo il file senza sblocco: %d (atteso 0)\n", un);
+                    nv_errors += un != 0;
+                    nv_start(false, nv_image(nv_table, 1));
                 }
+                if (frames == 13) nv_start(true, std::vector<uint8_t>(192, 0));
+                if (frames == 14) {
+                    check("file con lo sblocco riletto identico", nv_image(nv_table, 1));
+                    const int un = r->pong_top__DOT__train_unlock_r, req = top.ioctl_upload_req;
+                    std::printf("nvram, allenamento sbloccato dal file: %d (atteso 1), richiesta di salvataggio %d (attesa 0)\n",
+                                un, req);
+                    nv_errors += un != 1 || req != 0;
+                    nv_start(false, good);
+                }
+                if (frames == 15) nv_start(true, std::vector<uint8_t>(192, 0));
+                if (frames == 16) check("il file senza sblocco non lo toglie", nv_image(nv_table, 1));
                 if (frames == 30) {
                     r->pong_top__DOT__mode = 12;   // M_SCORES
                     r->pong_top__DOT__mframe = 0;
@@ -1150,6 +1190,118 @@ int main(int argc, char** argv) {
                     if (egg_on && yel != 0) egg_errors++;
                 }
             }
+            // scelta automatica per i nuovi scenari: A e giù alternati ogni 10 frame (la racchetta si
+            // conferma al primo A, poi tre bonus diversi)
+            const int pick_tap = (frames % 20 == 0) ? 0x10 : (frames % 20 == 10) ? 0x04 : 0;
+            // "train": allenamento, due giri (vinto, poi perso)
+            bool tr_shot = false;
+            std::string tr_name;
+            int tr_joy0 = 0, tr_joy1 = 0;
+            if (train_test) {
+                const int m = r->pong_top__DOT__mode;
+                if (frames == 2) r->pong_top__DOT__train_unlock_r = 1;
+                if (m != ch_mode) {
+                    ch_mode = m;
+                    ch_at = frames;
+                    if (m == 5) ch_games++;
+                    std::printf("frame %d: modo %d, allenamento %d, scalata %d, livello %d, crediti %d\n", frames, m,
+                                int(r->pong_top__DOT__train), int(r->pong_top__DOT__ch_active),
+                                int(r->pong_top__DOT__ch_level) + 1, int(r->pong_top__DOT__credits));
+                }
+                const int t = frames - ch_at;
+                const int song = r->pong_top__DOT__sid__DOT__song_q;
+                const std::string rs = std::to_string(tr_round);
+                if (m == 7) {
+                    tr_joy0 = pick_tap;
+                    if (tr_round == 1 && t == 15) { tr_shot = true; tr_name = "tr_pick"; }
+                }
+                if (m == 8 && t == 65) { tr_shot = true; tr_name = "tr_intro" + rs; }
+                if (m == 8 && t == 90) tr_joy0 = 0x10;
+                if (m == 5 && t == 1) r->pong_top__DOT__mframe = 179;
+                if (m == 5 && t == 60) {
+                    tr_shot = true;
+                    tr_name = "tr_game" + rs;
+                    static const int kinds[7] = {0, 3, 2, 1, 4, 5, 6};
+                    const int want = 7 + kinds[(train_level + 6) % 7];
+                    std::printf("frame %d: partita dell'allenamento, canzone %d (attesa %d)\n", frames, song, want);
+                    w_errors += song != want;
+                }
+                if (m == 5 && t == 62) tr_joy1 = 0x200;   // gettone e Start del secondo giocatore
+                if (m == 5 && t == 66) tr_joy1 = 0x100;
+                if (m == 5 && t == 80) {
+                    const int d = r->pong_top__DOT__duel;
+                    std::printf("frame %d: dopo lo Start del joystick 2 modo %d, sfida %d (attesi 5 e 0)\n", frames, m, d);
+                    w_errors += d != 0;
+                }
+                if (m == 5 && t == 100) set_score(r, tr_round == 1 ? 0 : 1, 5);
+                if (m == 6 && t == (tr_round == 1 ? 40 : 130)) {
+                    tr_shot = true;
+                    tr_name = "tr_over" + rs;
+                    std::printf("frame %d: fine dell'allenamento, canzone %d (attesa 5)\n", frames, song);
+                    w_errors += song != 5;
+                }
+                if (m == 6 && t == (tr_round == 1 ? 50 : 140)) r->pong_top__DOT__mframe = tr_round == 1 ? 178 : 295;
+                if (m == 1 && t == 2) {
+                    const int ca = r->pong_top__DOT__ch_active, tr = r->pong_top__DOT__train;
+                    std::printf("frame %d: attract dopo l'allenamento, scalata %d, allenamento %d (attesi 0 e 0)\n", frames, ca, tr);
+                    w_errors += ca != 0 || tr != 0;
+                    if (++tr_round > 2) break;
+                }
+                if (m == 1 && t == 10) tr_joy0 = 0x200;
+                if (m == 1 && t == 20) tr_joy0 = 0x100;
+            }
+            // "wins": tre sfidanti, i primi due battuti dal campione, il terzo vince
+            bool w_shot = false;
+            std::string w_name;
+            int w_joy0 = 0, w_joy1 = 0;
+            if (wins_test) {
+                const int m = r->pong_top__DOT__mode;
+                const int wins = r->pong_top__DOT__ch_wins;
+                if (m != ch_mode) {
+                    if (m == 8) {
+                        // presentazione dopo il duello d: contatore atteso
+                        static const int want[4] = {0x00, 0x01, 0x02, 0x01};
+                        const int side = r->pong_top__DOT__ch_side, want_side = w_duels == 3;
+                        const bool ok = wins == want[w_duels] && side == want_side;
+                        std::printf("frame %d: presentazione dopo %d duelli, WINS %x (atteso %x), campione a %s%s\n", frames,
+                                    w_duels, wins, want[w_duels], side ? "destra" : "sinistra", ok ? "" : " ERRORE");
+                        w_errors += !ok;
+                    }
+                    ch_mode = m;
+                    ch_at = frames;
+                    if (m == 5) ch_games++;
+                    if (m == 14) w_duels++;
+                    std::printf("frame %d: modo %d, sfidanti %d, sfida %d, WINS %x, campione a %s\n", frames, m, w_duels,
+                                int(r->pong_top__DOT__duel), wins, r->pong_top__DOT__ch_side ? "destra" : "sinistra");
+                }
+                const int t = frames - ch_at;
+                const std::string ds = std::to_string(w_duels);
+                if (m == 7) {
+                    if (r->pong_top__DOT__duel) w_joy1 = pick_tap; else w_joy0 = pick_tap;
+                }
+                if (m == 8 && t == 65) { w_shot = true; w_name = "w_intro" + ds; }
+                if (m == 8 && w_duels == 3 && t == 66) r->pong_top__DOT__ch_wins = 0x12;
+                if (m == 8 && w_duels == 3 && t == 68) { w_shot = true; w_name = "w_intro3_12"; }
+                if (m == 8 && w_duels == 3 && t == 69) break;
+                if (m == 8 && t == 70) w_joy1 = 0x200;
+                if (m == 8 && t == 75) w_joy1 = 0x100;
+                if (m == 14 && t == 2) r->pong_top__DOT__mframe = 178;
+                if (m == 5 && t == 1) r->pong_top__DOT__mframe = 179;
+                if (m == 5 && r->pong_top__DOT__duel && t == 60) {
+                    set_score(r, 0, w_duels == 3 ? 2 : 5);
+                    set_score(r, 1, w_duels == 3 ? 5 : 1);
+                }
+                if (m == 6 && r->pong_top__DOT__duel) {
+                    if (t == 100) { w_shot = true; w_name = "w_over" + ds; }
+                    if (t == 30) { w_shot = true; w_name = "w_over" + ds + "_30"; }   // prima di "n WINS"
+                    if (w_duels == 2 && t == 101) r->pong_top__DOT__ch_wins = 0x12;
+                    if (w_duels == 2 && t == 103) { w_shot = true; w_name = "w_over2_12"; }
+                    if (w_duels == 2 && t == 104) r->pong_top__DOT__ch_wins = 0x02;
+                    if (t == 110) r->pong_top__DOT__mframe = 295;
+                }
+                // iniziali del campione battuto, se entra in classifica
+                if (m == 11 && (t == 10 || t == 20 || t == 30)) w_joy0 = 0x10;
+            }
             // canzone del SID: a ogni cambio; in partita (dopo un secondo) il tema dell'avversario del
             // livello, SID_SONG_THEME0 + rung_kind, contro la CPU; nella sfida uno dei sette temi
             if (ch_test || chal_test || end_test || egg_test) {
@@ -1171,9 +1323,11 @@ int main(int argc, char** argv) {
                 }
             }
             if (wanted.count(frames) || chal_shot || end_shot || warp_shot || steer_shot || ghost_shot || pick_shot || kpick_shot || kgame_shot || ch_shot ||
-                sup_shot || bul_shot || ht_shot || egg_shot) {
+                sup_shot || bul_shot || ht_shot || egg_shot || tr_shot || w_shot) {
                 char name[64];
-                if (egg_shot)
+                if (tr_shot || w_shot)
+                    std::snprintf(name, sizeof name, "%s.ppm", (tr_shot ? tr_name : w_name).c_str());
+                else if (egg_shot)
                     std::snprintf(name, sizeof name, "%s.ppm", egg_name.c_str());
                 else if (ht_shot)
                     std::snprintf(name, sizeof name, "%s.ppm", ht_name.c_str());
@@ -1211,11 +1365,11 @@ int main(int argc, char** argv) {
             if (warp_test && (warp || warp_end)) warp_f++;
             // moneta e start come pressioni di un frame sul joystick 1 (bit 9 e 8)
             top.joy0 = (frames == coin_at) ? 0x200 : (frames == start_at) ? 0x100 : 0;
-            top.joy0 |= sup_joy | chal_joy0 | bul_joy | ghost_joy | end_joy | egg_joy;
-            top.joy1 = chal_joy1;
+            top.joy0 |= sup_joy | chal_joy0 | bul_joy | ghost_joy | end_joy | egg_joy | tr_joy0 | w_joy0;
+            top.joy1 = chal_joy1 | tr_joy1 | w_joy1;
             if (demo_test) {
                 // la demo segue l'OSD: a ogni giro dell'attract (2436 frame, demo dal frame 1524)
-                // un'altra modalità, NEXT, CHALLENGE, CLASSIC, EVO
+                // un'altra modalità, NEXT libera (2), la scalata di NEXT (3), CLASSIC, EVO
                 const int k = frames / 2436 % 4;
                 top.game_type = k == 0 ? 2 : k == 1 ? 3 : k == 2 ? 0 : 1;
                 top.players_mode = 0;
@@ -1276,7 +1430,8 @@ int main(int argc, char** argv) {
                 }
             }
             // doppio tocco su nella demo (la racchetta non conta, conta il flag)
-            if (!chal_test && !end_test && !egg_test && (frames == 1000 || (frames >= 1010 && frames < 1014))) top.joy0 |= 0x08;
+            if (!chal_test && !end_test && !egg_test && !train_test && !wins_test &&
+                (frames == 1000 || (frames >= 1010 && frames < 1014))) top.joy0 |= 0x08;
             if (frames == 1012)
                 std::printf("doppio tocco: rapido %d (atteso 1)\n", int(r->pong_top__DOT__tap_fast & 1));
             if (frames == 1020)
@@ -1299,8 +1454,13 @@ int main(int argc, char** argv) {
         std::printf("canzoni del SID in partita: %d errori (attesi 0)\n", song_errors);
     if (egg_test)
         std::printf("easter egg: %d errori (attesi 0)\n", egg_errors);
-    if (end_test)
-        std::printf("voci YOU WIN!: %d (attese 2: livello 1 vinto e finale)\n", you_wins);
+    if (end_test) {
+        std::printf("voci YOU WIN!: %d (attesa 1, il finale: il livello 1 vinto 7-0 dice PERFECT)\n", you_wins);
+        std::printf("allenamento sbloccato dal finale: %d, richiesta di salvataggio: %d (attesi 1 e 1)\n",
+                    int(r->pong_top__DOT__train_unlock_r), int(top.ioctl_upload_req));
+    }
+    if (train_test || wins_test)
+        std::printf("%s: %d errori (attesi 0)\n", arg.c_str(), w_errors);
     if (ch_test)
         std::printf("richiesta di salvataggio della classifica dopo le iniziali: %d (attesa 1)\n",
                     int(top.ioctl_upload_req));

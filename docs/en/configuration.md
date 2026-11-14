@@ -33,7 +33,8 @@ different aspect ratio, black bars appear (`game.keep_aspect`) instead of stretc
 | `game.lives` | `3` | balls in single-player |
 | `game.difficulty` | `1` | 0 EASY, 1 NORMAL, 2 HARD, 3 EXPERT |
 | `game.game_type` | `"next"` | mode chosen in the menu (**GAME TYPE**): `"classic"`, `"evo"` or `"next"` |
-| `game.players` | `"challenge"` | players chosen in the menu (**PLAYERS**): `"two"`, `"cpu"`, `"challenge"` or `"one"` |
+| `game.players` | `"two"` | players chosen in the menu for CLASSIC and EVO (**PLAYERS**): `"two"`, `"cpu"` or `"one"`; ignored in NEXT. The `"challenge"` of versions before 4.2.0 leads to NEXT |
+| `game.training` | `false` | training unlocked (it becomes `true` when you reach the ending of the NEXT ladder): the menu has the **OPPONENT** entry |
 | `game.self_test` | `true` | self-test at startup |
 | `game.attract_sound` | `true` | attract mode sounds and music, and menu music (coin and Start are always heard) |
 | `game.music_volume` | `100` | volume of all music in percent, from 0 (no music) to 100 (menu **MUSIC VOLUME**, in 10% steps). It replaces `game.music` (and before it `game.sid_sound` and `game.match_music`): if one of them was `false` it starts from 0 |

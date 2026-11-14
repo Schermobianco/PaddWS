@@ -488,8 +488,9 @@ pub struct Pick {
 impl Pick {
     pub fn new(app: &App) -> Self {
         let mut chosen = [Vec::new(), Vec::new()];
-        if app.run.is_some() {
-            chosen[1] = paddws_core::challenge::RUNGS[0].loadout.to_vec();
+        if let Some(run) = &app.run {
+            // i bonus dell'avversario del primo livello (nell'allenamento di quello scelto)
+            chosen[1] = paddws_core::challenge::RUNGS[run.level].loadout.to_vec();
         } else if app.cpu {
             // tre bonus diversi a caso, dal seme della partita
             let mut rng = paddws_core::Rng::new(app.seed ^ 0x9E37_79B9);
@@ -501,8 +502,8 @@ impl Pick {
             }
         }
         Self {
-            cpu: app.cpu,
-            fixed: app.cpu.then_some(1),
+            cpu: app.vs_cpu(),
+            fixed: app.vs_cpu().then_some(1),
             duel: None,
             cursor: [0; 2],
             chosen,

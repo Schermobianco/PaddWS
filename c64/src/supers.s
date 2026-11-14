@@ -188,8 +188,7 @@ min_tab: .dword T_SM_MIN_STRAIGHT, T_SM_MIN_RISE
 .endproc
 
 ; Inizio della partita NEXT con le mosse accese (next_init, stato già a zero): gesti dimenticati,
-; caratteri della barra al posto di quelli di PRESS START (bullet_chars li rimette nelle altre
-; partite). Le icone si preparano nei primi frame (sm_hud).
+; caratteri della barra al posto di quelli di PRESS START (restano: si vedevano solo nella demo). Le icone si preparano nei primi frame (sm_hud).
 .proc sm_init
     lda #$ff
     ldx #7

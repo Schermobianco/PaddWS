@@ -151,6 +151,38 @@ impl Song {
     }
 }
 
+/// GAME TYPE e PLAYERS letti dalla configurazione: (evo, next, giocatori, VS CPU). NEXT è la
+/// scalata e non ha PLAYERS: i giocatori restano quelli scelti per CLASSIC ed EVO. Il
+/// "challenge" delle versioni di prima (PLAYERS CHALLENGE, da soli contro la scala di CPU) porta
+/// a NEXT con qualsiasi GAME TYPE, e per CLASSIC ed EVO vale VS CPU; in EVO non si gioca da soli.
+fn mode_of(game_type: &str, players: &str) -> (bool, bool, u8, bool) {
+    let next = game_type == "next" || players == "challenge";
+    let evo = game_type == "evo" && !next;
+    let (players, cpu) = match players {
+        "cpu" | "challenge" => (2, true),
+        "one" if !evo => (1, false),
+        _ => (2, false),
+    };
+    (evo, next, players, cpu)
+}
+
+/// Nomi di GAME TYPE e PLAYERS da salvare nella configurazione (il contrario di `mode_of`).
+fn mode_names(evo: bool, next: bool, players: u8, cpu: bool) -> (&'static str, &'static str) {
+    let game_type = if next {
+        "next"
+    } else if evo {
+        "evo"
+    } else {
+        "classic"
+    };
+    let players = match (players, cpu) {
+        (1, _) => "one",
+        (_, true) => "cpu",
+        _ => "two",
+    };
+    (game_type, players)
+}
+
 /// Stato condiviso tra le scene.
 pub struct App {
     pub cfg: Config,
@@ -158,18 +190,22 @@ pub struct App {
     pub params: Params,
     pub renderer: Renderer,
     pub assets: Assets,
+    /// CLASSIC ed EVO (PLAYERS): giocatori e, in due, se il giocatore di destra è il computer.
+    /// In NEXT non contano e restano quelli dell'ultima scelta per CLASSIC ed EVO.
     pub players: u8,
-    /// in due, il giocatore di destra è il computer
     pub cpu: bool,
     pub evo: bool,
-    /// modalità NEXT (a due giocatori, senza EVO)
+    /// GAME TYPE NEXT: la scalata contro le CPU (`Run`), o l'allenamento contro un avversario
     pub next: bool,
     /// bonus scelti da ciascun giocatore per la partita NEXT
     pub loadout: [[Bonus; 3]; 2],
     /// tipi di racchetta scelti per la partita NEXT
     pub paddles: [Option<PaddleKind>; 2],
-    /// modalità CHALLENGE scelta nel menu (NEXT contro la scala di CPU), partita in corso e classifica
-    pub challenge: bool,
+    /// NEXT, voce OPPONENT del menu (con l'allenamento sbloccato, `Game::training`): None per la
+    /// scalata, altrimenti il livello (da 0) dell'avversario dell'allenamento. Non si salva: a
+    /// ogni accensione si riparte da LADDER.
+    pub opponent: Option<usize>,
+    /// scalata o allenamento in corso, e classifica
     pub run: Option<Run>,
     pub scores: Table,
     pub on_raspberry: bool,
@@ -221,46 +257,25 @@ impl App {
         self.renderer.set_world_width(width);
     }
 
-    /// GAME TYPE e PLAYERS della configurazione (`Game::game_type`, `Game::players`), con gli
-    /// stessi vincoli del menu: EVO e NEXT sono a due, la CHALLENGE è in NEXT e in NEXT contro la
-    /// CPU c'è solo lei (un `cpu` di una configurazione vecchia diventa `challenge`).
+    /// GAME TYPE e PLAYERS della configurazione (`Game::game_type`, `Game::players`, vedi
+    /// `mode_of`).
     pub fn load_mode(&mut self) {
         let g = &self.cfg.game;
-        (self.evo, self.next) = match g.game_type.as_str() {
-            "evo" => (true, false),
-            "next" => (false, true),
-            _ => (false, false),
-        };
-        (self.players, self.cpu, self.challenge) = match g.players.as_str() {
-            "cpu" => (2, true, false),
-            "challenge" => (2, true, true),
-            "one" if !self.evo && !self.next => (1, false, false),
-            _ => (2, false, false),
-        };
-        self.challenge |= self.next && self.cpu;
-        if self.challenge {
-            (self.evo, self.next) = (false, true);
-        }
+        (self.evo, self.next, self.players, self.cpu) = mode_of(&g.game_type, &g.players);
     }
 
     /// Salva GAME TYPE e PLAYERS scelti nel menu (nel browser nel localStorage), per ritrovarli
     /// alla prossima accensione.
     fn save_mode(&mut self) {
-        let g = &mut self.cfg.game;
-        g.game_type = match (self.evo, self.next) {
-            (true, _) => "evo",
-            (_, true) => "next",
-            _ => "classic",
-        }
-        .into();
-        g.players = match (self.players, self.cpu, self.challenge) {
-            (1, _, _) => "one",
-            (_, _, true) => "challenge",
-            (_, true, _) => "cpu",
-            _ => "two",
-        }
-        .into();
+        let (game_type, players) = mode_names(self.evo, self.next, self.players, self.cpu);
+        (self.cfg.game.game_type, self.cfg.game.players) = (game_type.into(), players.into());
         config::save_preferences(&self.config_path, &self.cfg);
+    }
+
+    /// Il giocatore di destra è il computer: nella scalata e nell'allenamento, o in CLASSIC ed EVO
+    /// con PLAYERS VS CPU.
+    pub fn vs_cpu(&self) -> bool {
+        self.run.is_some() || self.cpu
     }
 
     /// La partita lasciata per il menu non si riprende più (se ne sceglie un'altra o si esce).
@@ -469,7 +484,9 @@ impl Scene {
                 app.cfg.game.attract_sound.then_some(Song::Title)
             }
             Scene::Game(s) => match (s.game_over, &s.challenge) {
+                // l'allenamento finisce come le altre partite, con il GAME OVER
                 (Some(_), None) => Some(Song::GameOver),
+                (Some(_), Some(_)) if s.training => Some(Song::GameOver),
                 (None, Some((level, _))) => Some(Song::Theme(RUNGS[*level].kind)),
                 // la sfida della CHALLENGE tra due giocatori: il tema di un avversario a caso
                 (None, None) if s.duel.is_some() => Some(Song::Theme(s.theme)),
@@ -665,10 +682,13 @@ const DRAG_START: f32 = 16.0;
 /// secondi tra due passi della rotella del mouse
 const WHEEL_GAP: f64 = 0.06;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Item {
     GameType,
+    /// solo in CLASSIC ed EVO
     Players,
+    /// solo in NEXT, con l'allenamento sbloccato: LADDER (la scalata) o un avversario
+    Opponent,
     Difficulty,
     /// volume di tutte le musiche, in percento (0 = nessuna musica)
     MusicVolume,
@@ -689,6 +709,43 @@ enum Item {
     Play,
     Quit,
     Shutdown,
+}
+
+/// Le prime voci del menu, che dipendono da GAME TYPE: PLAYERS solo in CLASSIC ed EVO, OPPONENT
+/// solo in NEXT con l'allenamento sbloccato (`training`).
+fn mode_items(next: bool, training: bool) -> Vec<Item> {
+    match (next, training) {
+        (false, _) => vec![Item::GameType, Item::Players],
+        (true, true) => vec![Item::GameType, Item::Opponent],
+        (true, false) => vec![Item::GameType],
+    }
+}
+
+/// GAME TYPE dopo una pressione: CLASSIC -> EVO -> NEXT -> CLASSIC (da `(evo, next)`).
+fn next_game_type(evo: bool, next: bool) -> (bool, bool) {
+    match (evo, next) {
+        (false, false) => (true, false),
+        (true, _) => (false, true),
+        (false, true) => (false, false),
+    }
+}
+
+/// OPPONENT dopo un passo (`step` -1 indietro, altrimenti avanti): LADDER (None), poi gli
+/// avversari nell'ordine della scalata (`RUNGS`), e da capo.
+fn step_opponent(opponent: Option<usize>, step: i8) -> Option<usize> {
+    let n = RUNGS.len() + 1;
+    let i = opponent.map_or(0, |level| level.min(RUNGS.len() - 1) + 1);
+    let i = if step < 0 { (i + n - 1) % n } else { (i + 1) % n };
+    i.checked_sub(1)
+}
+
+/// Voce scelta quando le voci del menu passano da `old` a `new`: la stessa se c'è ancora,
+/// altrimenti quella che ha preso il suo posto (mai oltre l'ultima).
+fn keep_selection(old: &[Item], selected: usize, new: &[Item]) -> usize {
+    let item = old.get(selected);
+    new.iter()
+        .position(|i| Some(i) == item)
+        .unwrap_or_else(|| selected.min(new.len().saturating_sub(1)))
 }
 
 /// Un dito sulla ruota: dove è partito, la posizione della ruota in quel momento e se la sta
@@ -744,8 +801,9 @@ impl Menu {
 
     /// Voci del menu (le mosse speciali di NEXT sono sempre accese: non hanno una voce).
     fn items(app: &App, resume: bool) -> Vec<Item> {
-        let mut items = vec![Item::GameType, Item::Players, Item::Difficulty];
+        let mut items = mode_items(app.next, app.cfg.game.training);
         items.extend([
+            Item::Difficulty,
             Item::MusicVolume,
             Item::EffectsVolume,
             Item::AttractSound,
@@ -777,12 +835,12 @@ impl Menu {
         (self.pos, self.from) = (self.selected as f32, self.selected as f32);
     }
 
-    /// Dopo un cambio di modalità le voci possono cambiare: la ruota resta sulla stessa voce.
+    /// Dopo un cambio di modalità le voci possono cambiare (PLAYERS e OPPONENT seguono GAME TYPE):
+    /// la ruota resta sulla stessa voce (`keep_selection`).
     fn refresh_items(&mut self, app: &App) {
         let items = Self::items(app, app.suspended.is_some());
         if items != self.items {
-            let item = self.items[self.selected];
-            let selected = items.iter().position(|i| *i == item).unwrap_or(0);
+            let selected = keep_selection(&self.items, self.selected, &items);
             let shift = selected as f32 - self.selected as f32;
             (self.pos, self.from) = (self.pos + shift, self.from + shift);
             self.selected = selected;
@@ -897,13 +955,16 @@ impl Menu {
                 format!("GAME TYPE : {name}")
             }
             Item::Players => {
-                let name = match (app.players, app.cpu, app.challenge) {
-                    (1, _, _) => "ONE",
-                    (_, _, true) => "CHALLENGE",
-                    (_, true, _) => "VS CPU",
+                let name = match (app.players, app.cpu) {
+                    (1, _) => "ONE",
+                    (_, true) => "VS CPU",
                     _ => "TWO",
                 };
                 format!("PLAYERS : {name}")
+            }
+            Item::Opponent => {
+                let name = app.opponent.map_or("LADDER", |level| RUNGS[level].kind.name());
+                format!("OPPONENT : {name}")
             }
             Item::Difficulty => {
                 let level = app.cfg.game.difficulty.min(DIFFICULTY_LEVELS - 1);
@@ -931,37 +992,32 @@ impl Menu {
     /// le altre voci passano sempre al valore successivo.
     fn change(app: &mut App, item: Item, step: i8) -> bool {
         // con un'altra partita scelta quella lasciata non si riprende più
-        if matches!(item, Item::GameType | Item::Players | Item::Difficulty) {
+        if matches!(item, Item::GameType | Item::Players | Item::Opponent | Item::Difficulty) {
             app.drop_suspended();
         }
         match item {
             Item::GameType => {
-                // CLASSIC -> EVO -> NEXT -> CLASSIC
-                (app.evo, app.next) = match (app.evo, app.next) {
-                    (false, false) => (true, false),
-                    (true, _) => (false, true),
-                    (false, true) => (false, false),
-                };
-                if app.evo || app.next {
-                    app.players = 2; // EVO e NEXT sono modalità a due giocatori
+                // CLASSIC -> EVO -> NEXT -> CLASSIC; PLAYERS resta quello scelto per CLASSIC ed
+                // EVO, tranne ONE, che in EVO non c'è
+                (app.evo, app.next) = next_game_type(app.evo, app.next);
+                if app.evo && app.players == 1 {
+                    app.players = 2;
                 }
-                app.challenge &= app.next; // CHALLENGE si gioca in NEXT ...
-                app.challenge |= app.next && app.cpu; // ... e in NEXT contro la CPU c'è solo lei
                 app.save_mode();
             }
             Item::Players => {
                 // solo le voci del tipo di gioco scelto, PLAYERS non cambia GAME TYPE: in CLASSIC
-                // TWO -> VS CPU -> ONE, in EVO TWO -> VS CPU, in NEXT TWO -> CHALLENGE (da soli in
-                // NEXT c'è solo la scalata)
+                // TWO -> VS CPU -> ONE, in EVO TWO -> VS CPU (in NEXT la voce non c'è)
                 let classic = !app.evo && !app.next;
-                (app.players, app.cpu, app.challenge) = match (app.players, app.cpu, app.challenge) {
-                    (2, false, _) if app.next => (2, true, true),
-                    (2, false, _) => (2, true, false),
-                    (2, true, _) if classic => (1, false, false),
-                    _ => (2, false, false),
+                (app.players, app.cpu) = match (app.players, app.cpu) {
+                    (2, false) => (2, true),
+                    (2, true) if classic => (1, false),
+                    _ => (2, false),
                 };
                 app.save_mode();
             }
+            // la scelta dell'avversario non si salva
+            Item::Opponent => app.opponent = step_opponent(app.opponent, step),
             Item::Difficulty => app.next_difficulty(),
             Item::MusicVolume => {
                 // la musica che suona cambia subito (`App::set_music`)
@@ -1026,9 +1082,13 @@ impl Menu {
                 play.paused = true;
                 Scene::Game(play)
             }),
-            // NEXT: prima la racchetta, poi i bonus
+            // NEXT: la scalata, o l'allenamento contro l'avversario di OPPONENT; prima la
+            // racchetta, poi i bonus
             Item::Play if app.next => {
-                app.run = app.challenge.then(Run::new);
+                app.run = Some(match app.opponent.filter(|_| app.cfg.game.training) {
+                    Some(level) => Run::training(level),
+                    None => Run::new(),
+                });
                 Some(Scene::Paddles(PaddlePick::new(app)))
             }
             Item::Play => Some(Scene::Game(Box::new(Play::new(app)))),
@@ -1192,6 +1252,87 @@ mod menu_tests {
     }
 
     #[test]
+    fn old_configurations_load_into_the_new_modes() {
+        // (game_type, players) -> (evo, next, giocatori, VS CPU)
+        for ((game_type, players), want) in [
+            // la CHALLENGE di prima è NEXT, con qualsiasi GAME TYPE; per CLASSIC ed EVO vale VS CPU
+            (("next", "challenge"), (false, true, 2, true)),
+            (("classic", "challenge"), (false, true, 2, true)),
+            (("evo", "challenge"), (false, true, 2, true)),
+            // NEXT con i PLAYERS di prima (la NEXT a due, VS CPU) è la scalata, PLAYERS resta
+            (("next", "cpu"), (false, true, 2, true)),
+            (("next", "two"), (false, true, 2, false)),
+            (("next", "one"), (false, true, 1, false)),
+            (("classic", "one"), (false, false, 1, false)),
+            (("classic", "cpu"), (false, false, 2, true)),
+            (("evo", "cpu"), (true, false, 2, true)),
+            // in EVO non si gioca da soli; valori sconosciuti: CLASSIC a due
+            (("evo", "one"), (true, false, 2, false)),
+            (("pong", "many"), (false, false, 2, false)),
+        ] {
+            assert_eq!(mode_of(game_type, players), want, "{game_type} {players}");
+        }
+        // la prima accensione parte in NEXT
+        let g = config::Game::default();
+        assert!(mode_of(&g.game_type, &g.players).1);
+        // si salva com'è, e "challenge" sparisce al primo salvataggio
+        let (evo, next, players, cpu) = mode_of("classic", "challenge");
+        assert_eq!(mode_names(evo, next, players, cpu), ("next", "cpu"));
+        for (t, p) in [("classic", "one"), ("evo", "two"), ("next", "cpu"), ("classic", "cpu")] {
+            let (evo, next, players, cpu) = mode_of(t, p);
+            assert_eq!(mode_names(evo, next, players, cpu), (t, p));
+        }
+    }
+
+    #[test]
+    fn players_and_opponent_follow_the_game_type() {
+        // CLASSIC -> EVO -> NEXT -> CLASSIC
+        let mut mode = (false, false);
+        let mut seen = Vec::new();
+        for _ in 0..3 {
+            mode = next_game_type(mode.0, mode.1);
+            seen.push(mode);
+        }
+        assert_eq!(seen, [(true, false), (false, true), (false, false)]);
+        for training in [false, true] {
+            assert_eq!(mode_items(false, training), [Item::GameType, Item::Players]);
+        }
+        assert_eq!(mode_items(true, false), [Item::GameType]);
+        assert_eq!(mode_items(true, true), [Item::GameType, Item::Opponent]);
+        // la ruota resta su GAME TYPE mentre le voci dopo cambiano
+        let tail = [Item::Difficulty, Item::Play];
+        let with = |head: Vec<Item>| [head, tail.to_vec()].concat();
+        let classic = with(mode_items(false, true));
+        let next = with(mode_items(true, false));
+        let opponent = with(mode_items(true, true));
+        assert_eq!(keep_selection(&classic, 0, &next), 0);
+        assert_eq!(keep_selection(&next, 0, &opponent), 0);
+        // le voci dopo restano le stesse anche se si spostano
+        assert_eq!(keep_selection(&classic, 3, &next), 2);
+        assert_eq!(keep_selection(&next, 2, &opponent), 3);
+        // una voce sparita lascia la ruota su quella che ha preso il suo posto, mai oltre l'ultima
+        assert_eq!(keep_selection(&classic, 1, &next), 1);
+        assert_eq!(next[1], Item::Difficulty);
+        assert_eq!(keep_selection(&classic, 1, &[Item::GameType]), 0);
+    }
+
+    #[test]
+    fn the_opponent_cycles_through_the_ladder_both_ways() {
+        let mut o = None;
+        let mut names = Vec::new();
+        for _ in 0..=RUNGS.len() {
+            o = step_opponent(o, 1);
+            names.push(o.map_or("LADDER", |l| RUNGS[l].kind.name()));
+        }
+        assert_eq!(names, ["ARCADE", "TWIST", "HAMMER", "TITAN", "BLASTER", "RUSH", "GUARDIAN", "LADDER"]);
+        // la conferma va avanti come la destra, la sinistra torna indietro
+        assert_eq!(step_opponent(None, 0), Some(0));
+        assert_eq!(step_opponent(None, -1), Some(RUNGS.len() - 1));
+        assert_eq!(step_opponent(Some(0), -1), None);
+        assert_eq!(step_opponent(Some(3), -1), Some(2));
+    }
+
+    #[test]
     fn volumes_step_by_ten_and_stop_or_wrap() {
         assert_eq!(step_volume(50, 1), 60);
         assert_eq!(step_volume(50, -1), 40);
@@ -1305,6 +1446,9 @@ pub struct Play {
     knob: Option<[Option<i32>; 2]>,
     /// CHALLENGE: livello e punti arcade del giocatore (dal lato di `Score::side`)
     challenge: Option<(usize, Score)>,
+    /// allenamento contro l'avversario del livello di `challenge`: niente punti arcade né
+    /// sfidanti, a fine partita GAME OVER e il menu
+    training: bool,
     /// lato del giocatore contro la CPU: a sinistra, a destra in CHALLENGE dopo che lo sfidante
     /// di destra ha vinto
     solo: Side,
@@ -1369,6 +1513,7 @@ impl Play {
             knobs_ready: false,
             knob: None,
             challenge: None,
+            training: false,
             solo: Side::Left,
             duel: None,
             hammer_net: 1.0,
@@ -1387,7 +1532,7 @@ impl Play {
     /// dal suo lato (`Run::side`), con i bonus e la racchetta di quel lato; la CPU dall'altro.
     pub fn challenge(app: &mut App) -> Self {
         let run = app.run.as_ref().expect("CHALLENGE senza partita");
-        let (level, total, side) = (run.level, run.score, run.side);
+        let (level, total, side, training) = (run.level, run.score, run.side, run.training);
         let rung = RUNGS[level];
         let params = rung_params(app, level);
         let (loadouts, kinds) = rung.sides(side, app.loadout[side as usize], app.paddles[side as usize]);
@@ -1401,6 +1546,7 @@ impl Play {
         let mut score = Score::new(side);
         score.total = total;
         play.challenge = Some((level, score));
+        play.training = training;
         play
     }
 
@@ -1573,7 +1719,7 @@ impl Play {
             return input::NO_KEYS;
         }
         let solo = self.solo as usize;
-        let free = self.challenge.map(|_| 1 - solo);
+        let free = self.challenge.filter(|_| !self.training).map(|_| 1 - solo);
         let paused = self.paused;
         input::pad_keys(|slot, c| match c {
             Control::Start if free.is_some_and(|f| app.pads.side_of(slot, Some(solo)) == f) => {
@@ -1657,8 +1803,8 @@ impl Play {
     /// Lato dello sfidante se in questo momento può entrare (CHALLENGE contro la CPU, non durante
     /// la sfida né nella demo).
     fn join_side(&self) -> Option<Side> {
-        (self.challenge.is_some() && self.duel.is_none() && !self.demo && self.game_over.is_none())
-            .then(|| self.solo.opponent())
+        let ladder = self.challenge.is_some() && !self.training;
+        (ladder && self.duel.is_none() && !self.demo && self.game_over.is_none()).then(|| self.solo.opponent())
     }
 
     /// Zona del touch in cui lo sfidante tiene il dito per entrare: dietro la racchetta della CPU,
@@ -1824,6 +1970,11 @@ impl Play {
             let Some((_, score)) = self.challenge else {
                 return Some(Scene::Attract(Attract::new(&app.attract, false)));
             };
+            if self.training {
+                // allenamento: dopo il GAME OVER si torna al menu, pronti per un'altra
+                app.run = None;
+                return Some(Scene::Menu(Menu::new(app)));
+            }
             let run = app.run.as_mut().expect("CHALLENGE senza partita");
             run.score = score.total;
             let me = score.side as usize;
@@ -1975,7 +2126,7 @@ impl Play {
                 // vittoria contro la CPU: la voce "YOU WIN!" con la scritta (all'ultimo livello
                 // della CHALLENGE la dice il finale, poco dopo); "PERFECT!" se un giocatore vince
                 // senza punti dell'avversario, anche in due
-                let last = self.challenge.is_some_and(|(level, _)| level + 1 == LEVELS);
+                let last = !self.training && self.challenge.is_some_and(|(level, _)| level + 1 == LEVELS);
                 if !last && self.perfect() {
                     sound.shout = Some(Call::Perfect);
                 } else if self.winner() == Some("you_win") && !last {
@@ -2183,7 +2334,7 @@ impl Play {
         if let Some(fx) = &self.fx {
             fx.draw_hud(app, &self.game);
         }
-        if let Some((level, score)) = &self.challenge {
+        if let Some((level, score)) = self.challenge.as_ref().filter(|_| !self.training) {
             // punti arcade in basso dalla parte dell'avversario (mai sotto la racchetta del
             // giocatore, come sul MiSTer), lontano dai punteggi e dalla linea centrale, con il
             // livello e il moltiplicatore dello scambio
@@ -2246,10 +2397,31 @@ impl Play {
             let ball = (vec2(me.0, r.screen_y(me.1)), to_f32(self.game.ball.radius) * 2.0);
             let (winner_color, accent) = (App::color(winner_color), App::color(colors.accent));
             attract::draw_game_over_anim(&app.attract, r, title, winner, winner_color, accent, t, ball);
+            if t >= attract::extras_at(title) {
+                self.draw_duel_wins(app);
+            }
             if field_off.is_some() {
                 attract::draw_crt_close(r, t, app.attract.game_over_seconds() - FLASH_TIME);
             }
         }
+    }
+
+    /// Fine di un duello: i duelli vinti di fila da chi ha vinto (`Run::wins_after`), nella sua metà
+    /// sotto il riquadro di chi ha vinto; con i punteggi rivolti ai giocatori (tavolo) girata verso
+    /// di lui, come il suo punteggio.
+    fn draw_duel_wins(&self, app: &App) {
+        let (Some(_), Some(run)) = (self.duel, &app.run) else { return };
+        let winner = if self.game.score[0] > self.game.score[1] { Side::Left } else { Side::Right };
+        let r = &app.renderer;
+        let (w, h) = (r.world_w, r.world_h);
+        let toward = if winner == Side::Left { -1.0 } else { 1.0 };
+        let x = w / 2.0 + toward * w / 4.0;
+        let (y, rotation) = if app.cfg.game.scores_upright {
+            (h * 0.69, 0.0)
+        } else {
+            (h / 2.0, -toward * FRAC_PI_2)
+        };
+        challenge_ui::draw_wins(app, run.wins_after(winner), x, y, rotation);
     }
 
     /// Rete dell'avversario: solo nella CHALLENGE contro la CPU (non nelle sfide tra due giocatori,
@@ -2370,7 +2542,7 @@ impl Play {
     /// punti dell'avversario, PERFECT al posto di YOU WIN, o di GAME OVER sopra chi ha vinto.
     fn over_texts(&self) -> (Option<&'static str>, Option<&'static str>) {
         let winner = self.winner();
-        let lost_level = self.challenge.is_some() && self.duel.is_none() && winner == Some("cpu_wins");
+        let lost_level = self.challenge.is_some() && !self.training && self.duel.is_none() && winner == Some("cpu_wins");
         match (winner, self.perfect()) {
             (Some("you_win"), true) => (None, Some("perfect")),
             (Some("you_win"), false) => (None, winner),
@@ -2707,11 +2879,11 @@ pub enum DemoMode {
 }
 
 impl DemoMode {
+    /// In NEXT la demo della scalata (a destra l'avversario di un livello); quella di NEXT con
+    /// racchette e bonus a caso resta per il giro delle schermate.
     fn of_app(app: &App) -> Self {
-        if app.challenge {
+        if app.next {
             DemoMode::Challenge
-        } else if app.next {
-            DemoMode::Next
         } else if app.evo {
             DemoMode::Evo
         } else {
@@ -2724,8 +2896,8 @@ impl DemoMode {
         match self {
             DemoMode::Classic => "mode_classic",
             DemoMode::Evo => "mode_evo",
-            DemoMode::Next => "mode_next",
-            DemoMode::Challenge => "mode_challenge",
+            // la scalata è il GAME TYPE NEXT: niente più CHALLENGE nel menu
+            DemoMode::Next | DemoMode::Challenge => "mode_next",
         }
     }
 }

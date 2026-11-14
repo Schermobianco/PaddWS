@@ -12,7 +12,7 @@
 ; Start (fuoco di chi gioca, RETURN, SPAZIO o 1) salta tutto dopo mezzo secondo. Poi ch_finish:
 ; iniziali o classifica. Colori: solo bianco, giallo e rosso sul nero; le scintille non si
 ; scuriscono, si diradano (alive di ending_ui.rs). Il bordo resta nero, come in tutte le
-; schermate fuori dalla partita (BORDER GRAY vale per la partita e la demo). Musica: la canzone
+; schermate fuori dalla partita (BORDER GRAY vale per la partita). Musica: la canzone
 ; ENDING di tools/gen_sid_music.py (SID_SONG_ENDING del player del C64, tracce qui); niente
 ; effetti, perché la terza voce della canzone è la batteria.
 ;

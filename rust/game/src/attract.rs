@@ -683,6 +683,19 @@ const HOP_PRESS: f64 = 3.0;
 /// tempo di `draw_game_over_anim` perché la scritta parta subito, come CPU WINS.
 pub const TYPE_LEAD: f64 = (TYPE_AT - 12.0) * FRAME;
 
+/// Secondi dall'inizio della fine partita (come `t` di `draw_game_over_anim`) da cui altre scritte
+/// (i duelli vinti di fila) non disturbano la scritta `title`: con GAME OVER quando il campo è
+/// spento e la scritta comincia, con PERFECT quando sotto il timbro compare chi ha vinto, senza
+/// titolo subito.
+pub fn extras_at(title: Option<&str>) -> f64 {
+    let frames = match title {
+        Some("perfect") => STAMP_WIN,
+        Some(_) => NET_OFF + PADS_OFF,
+        None => 0.0,
+    };
+    frames * FRAME
+}
+
 /// GAME OVER: quanto della mezzeria è già spento, dall'alto (0..1), a `t` secondi dall'inizio.
 pub fn net_off(t: f64) -> f32 {
     (t / FRAME / NET_OFF).clamp(0.0, 1.0) as f32

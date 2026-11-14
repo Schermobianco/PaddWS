@@ -1,6 +1,7 @@
-// Schermate della modalità CHALLENGE (come rust/game/src/challenge_ui.rs): presentazione
-// dell'avversario, livello superato, continue, iniziali, classifica, nuovo sfidante, e in partita i
-// punti arcade in basso dalla parte dell'avversario. Scritte fisse da tools/gen_challenge_assets.py; numeri e iniziali con un font a
+// Schermate della scalata di NEXT (la modalità CHALLENGE fino alla 4.1, come
+// rust/game/src/challenge_ui.rs): presentazione dell'avversario, livello superato, continue, iniziali,
+// classifica, nuovo sfidante, e in partita i punti arcade in basso dalla parte dell'avversario; sopra
+// a tutte, quando serve, "n WINS" (duelli vinti di fila dal campione). Scritte fisse da tools/gen_challenge_assets.py; numeri e iniziali con un font a
 // celle: per ogni pixel si sceglie al più una cella, poi un solo accesso al font.
 
 `timescale 1ns / 1ps
@@ -13,6 +14,7 @@ module challenge_render (
                                           // 4 iniziali, 5 classifica, 6 punti in partita, 7 nuovo sfidante
     input  wire        side,              // il giocatore è a destra: punti in partita in basso a sinistra
     input  wire        join_prompt,       // presentazione: uno sfidante può entrare dal lato libero
+    input  wire        train,             // allenamento: niente punti arcade, nessun livello battuto
     input  wire [2:0]  level,             // livello in corso (0-6)
     input  wire [2:0]  kind,              // racchetta dell'avversario
     input  wire [8:0]  loadout,           // bonus dell'avversario (3 bit ciascuno)
@@ -33,6 +35,13 @@ module challenge_render (
     input  wire [3:0]  highlight,         // posto appena inserito (15 = nessuno)
     input  wire [3:0]  mult,              // moltiplicatore dello scambio
     input  wire [7:0]  intro_age,         // presentazione: frame dall'inizio (fermi a 255)
+    // "n WINS" in giallo, nella metà sinistra o destra: piccolo in alto al centro della metà
+    // (presentazione) o a scala 2 in basso verso il bordo (fine del duello, lontano dai punteggi
+    // ruotati verso i giocatori); n in BCD, 1-99
+    input  wire        wins_on,
+    input  wire        wins_right,
+    input  wire        wins_big,
+    input  wire [7:0]  wins_bcd,
     output reg  [23:0] rgb,
     output reg         opaque
 );
@@ -120,6 +129,9 @@ integer    i, j;
 reg signed [10:0] n_row, n_x0, n_u, n_v;
 reg [2:0]  n_li;
 reg        n_px, c_lit;
+// "n WINS": pixel dall'inizio della scritta, cella
+reg signed [10:0] w_x, w_y, w_u;
+reg [2:0]  w_k;
 
 // numero di 7 cifre in (x0, y0), scala 1
 task digits7(input [9:0] x0, input [9:0] y0, input [27:0] v, input [3:0] c);
@@ -617,7 +629,7 @@ always @(*) begin
             // la scala dei livelli
             for (j = 0; j < 7; j = j + 1)
                 if (j < i_lad && in_box(LADDER_X + 24 * j, LADDER_Y, 7'd16, 7'd4))
-                    col = (j < level) ? WHITE : (j == level && !intro_age[3]) ? ACCENT : DIM;
+                    col = (j < level && !train) ? WHITE : (j == level && !intro_age[3]) ? ACCENT : DIM;
             // nome: spostato, inclinato per riga (TWIST), a colonne (BLASTER), sotto il pavimento
             // (TITAN), lettera per lettera (GUARDIAN); RUSH ha un'immagine gialla dietro
             n_row = ($signed({2'b0, y}) - (INTRO_KIND_Y + i_ndy)) >>> 1;
@@ -697,10 +709,12 @@ always @(*) begin
                 if (i_wall[j] && in_box(i_wx, i_wy[j], 7'd2, 7'd12) && !in_box(i_wx, i_wy[j] + 3, 7'd2, 7'd1) &&
                     !in_box(i_wx, i_wy[j] + 7, 7'd2, 7'd1) && !in_box(i_wx, i_wy[j] + 11, 7'd2, 7'd1))
                     col = (j == 0 && i_wflash) ? WHITE : ACCENT;
-            if (ch_score_lit(x - 40, y - 216)) col = WHITE;
-            digits7(10'd40 + CH_SCORE_W + 4, 10'd216, score_bcd, WHITE);
-            if (ch_hi_lit(x - 176, y - 216)) col = WHITE;
-            digits7(10'd176 + CH_HI_W + 4, 10'd216, hi_bcd, WHITE);
+            if (!train) begin
+                if (ch_score_lit(x - 40, y - 216)) col = WHITE;
+                digits7(10'd40 + CH_SCORE_W + 4, 10'd216, score_bcd, WHITE);
+                if (ch_hi_lit(x - 176, y - 216)) col = WHITE;
+                digits7(10'd176 + CH_HI_W + 4, 10'd216, hi_bcd, WHITE);
+            end
             // sfidante: invito lampeggiante dal lato libero (P2 con il campione a sinistra)
             if (join_prompt && blink < 6'd30) begin
                 if (coin_prompt) begin
@@ -868,6 +882,30 @@ always @(*) begin
         end
         default: ;
     endcase
+    // "n WINS": sette celle (decine, unità, spazio, W, I, N, S) a scala 1 o 2, una sola sottrazione e
+    // confronti con costanti; con una cifra la cella delle decine è vuota e la scritta si sposta di
+    // mezza cella, così resta centrata (sull'inchiostro: l'ultima colonna della cella è vuota)
+    w_x = $signed({2'b0, x}) - ((wins_big ? (wins_right ? 11'sd256 : 11'sd64) : (wins_right ? 11'sd240 : 11'sd80)) -
+                                ((wins_bcd[7:4] != 4'd0 ? 11'sd24 : 11'sd27) <<< wins_big));
+    w_y = $signed({2'b0, y}) - (wins_big ? 11'sd222 : 11'sd2);
+    w_u = wins_big ? w_x >>> 1 : w_x;
+    w_k = (w_u >= 7) + (w_u >= 14) + (w_u >= 21) + (w_u >= 28) + (w_u >= 35) + (w_u >= 42);
+    if (wins_on && w_x >= 0 && w_u < 49 && w_y >= 0 && w_y < (wins_big ? 11'sd16 : 11'sd8)) begin
+        g_on = 1'b1;
+        g_dx = w_u[9:0] - {4'd0, w_k, 3'b0} + {7'd0, w_k};
+        g_dy = wins_big ? w_y[10:1] : w_y[9:0];
+        g_col = ACCENT;
+        sc_glint = 1'b0;
+        case (w_k)
+            3'd0: g_code = (wins_bcd[7:4] != 4'd0) ? {2'd0, wins_bcd[7:4]} : G_SPACE;
+            3'd1: g_code = {2'd0, wins_bcd[3:0]};
+            3'd2: g_code = G_SPACE;
+            3'd3: g_code = 6'd32;     // W
+            3'd4: g_code = 6'd18;     // I
+            3'd5: g_code = 6'd23;     // N
+            default: g_code = 6'd28;  // S
+        endcase
+    end
     if (g_on && glyph_lit(g_code, g_dx, g_dy)) begin
         on = 1'b1;
         col = sc_glint ? WHITE : g_col;

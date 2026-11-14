@@ -82,6 +82,7 @@ file_start:
     jmp stop                    ; VOICE_STOP
 
 frames:   .byte 0               ; frame della presentazione ($FF: finita o fermata)
+.assert frames = VOICE_FRAMES, error, "VOICE_FRAMES fuori posto"
 name:     .word samples, samples_end
 
 .if FIRST

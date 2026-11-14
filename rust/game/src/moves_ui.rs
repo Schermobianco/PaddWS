@@ -3,7 +3,8 @@
 //! disegnato per il controllo in uso (joystick, spinner del cabinato, mouse, tastiera o touch)
 //! che si accende passo dopo passo, e nel riquadro a destra la palla che parte con l'effetto della
 //! mossa. Sotto, il costo (mezza barra la mossa, la barra piena la MAX) e i comandi dei bonus. In
-//! CHALLENGE compare prima del primo incontro e prima della sfida di un nuovo sfidante.
+//! NEXT compare prima del primo incontro della scalata (e di ogni allenamento) e prima della sfida
+//! di un nuovo sfidante.
 //!
 //! Pixel art pensata a 320x240, il pixel arcade di `unit`, centrata nel campo. Solo disegno: i
 //! gesti sono quelli di `gesture` (e della mezzaluna del MiSTer per il joystick), la logica delle
@@ -854,7 +855,7 @@ impl HowTo {
         r.fill(BLACK);
         let device = self.device.unwrap_or_else(|| Device::of(app));
         // in due sulla tastiera: i tasti di tutti e due
-        let two_players = device == Device::Keyboard && (self.duel || (!app.cpu && app.players == 2));
+        let two_players = device == Device::Keyboard && (self.duel || (!app.vs_cpu() && app.players == 2));
         px.text("HOW TO PLAY", 20.0, W / 2, 12.0, Align::Center, ink.accent);
         px.text(
             &format!("SUPER MOVES - {}", device.name()),

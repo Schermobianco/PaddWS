@@ -371,11 +371,17 @@ impl Ending {
         let score = run.score;
         run.score = run.score.saturating_add(win + perfect);
         run.remember(LEVELS as u8 + 1);
+        let total = run.score;
+        // arrivati al finale l'allenamento (OPPONENT nel menu di NEXT) è sbloccato per sempre
+        if !app.cfg.game.training {
+            app.cfg.game.training = true;
+            crate::config::save_preferences(&app.config_path, &app.cfg);
+        }
         Self {
             t: 0.0,
             score,
             bonus: win + perfect,
-            total: run.score,
+            total,
             fireworks: show(),
             credits: credits_layout(),
             voiced: false,

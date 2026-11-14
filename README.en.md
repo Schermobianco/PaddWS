@@ -29,8 +29,8 @@ keyboard, a gamepad or the mouse.
 |---|---|
 | ![Attract mode title with the CRT filter](docs/screenshots/attract-crt.jpg) | ![NEXT: reserves, capsules and an armed SUPER](docs/screenshots/next-game.png) |
 | Attract mode title, with the CRT filter | NEXT: power-ups in the reserves at the top and capsules in flight |
-| ![NEXT: STRAIGHT SHOT in flight](docs/screenshots/next-supers.png) | ![CHALLENGE: new challenger](docs/screenshots/challenge-challenger.png) |
-| Special moves: MAX STRAIGHT SHOT in flight | CHALLENGE: a second player joins in |
+| ![NEXT: STRAIGHT SHOT in flight](docs/screenshots/next-supers.png) | ![NEXT: new challenger](docs/screenshots/challenge-challenger.png) |
+| Special moves: MAX STRAIGHT SHOT in flight | NEXT: a second player joins in |
 | ![MiSTer core: NEXT demo](docs/screenshots/mister-demo.png) | ![Commodore 64: NEXT match](docs/screenshots/c64-next.png) |
 | MiSTer core at 320×240 | Commodore 64: NEXT |
 
@@ -41,13 +41,14 @@ More screenshots in [How to play](docs/en/how-to-play.md#screenshots).
 - **CLASSIC**: good old Pong, two players up to 11 points, or alone against a wall with 3 balls.
 - **EVO**: hitting the ball with the centre of the paddle powers it up; the forward dash
   intercepts the ball and sends it back.
-- **NEXT**: before the match each player picks 3 power-ups out of 6 (TELEPORT, SMASH, SLOW, CURVE,
-  GHOST, STEER) and one of seven paddle types; power-ups arrive in capsules to be collected. There
-  are also two special moves, performed with a specific sequence of inputs.
-- **VS CPU**: CLASSIC and EVO alone against the computer; alone in NEXT you play the CHALLENGE.
-- **CHALLENGE**: alone against 7 ever stronger CPU opponents, with arcade scoring, continues, a
-  high-score table and an ending. A second player can join in and challenge whoever is playing:
-  *HERE COMES A NEW CHALLENGER!*
+- **NEXT**: the arcade mode, like in a fighting game. Alone you climb the ladder against 7 ever
+  stronger CPU opponents, with arcade scoring, continues, a high-score table and an ending; a
+  second player can join at any time and challenge whoever is playing (*HERE COMES A NEW
+  CHALLENGER!*), and duels won in a row are counted. Before the match each player picks 3
+  power-ups out of 6 (TELEPORT, SMASH, SLOW, CURVE, GHOST, STEER) and one of seven paddle types;
+  power-ups arrive in capsules to be collected, and there are two special moves performed with a
+  sequence of inputs. Finishing the ladder unlocks training against the opponent of your choice.
+- **VS CPU**: CLASSIC and EVO alone against the computer.
 
 Rules, power-ups, paddles, moves and controls: **[How to play](docs/en/how-to-play.md)**.
 
@@ -62,7 +63,7 @@ Rules, power-ups, paddles, moves and controls: **[How to play](docs/en/how-to-pl
 | **Python** (Arcade 3.3), the first version | Windows, Linux, macOS, Raspberry Pi | `paddws-X.Y.Z-python.zip`: `pip install -r python/requirements.txt`, then `python python/main.py` |
 
 Everything is in the [releases](https://github.com/Schermobianco/PaddWS/releases). The Python
-version is frozen: it has CLASSIC and EVO, without the CPU, NEXT or CHALLENGE. What each version
+version is frozen: it has CLASSIC and EVO, without the CPU or NEXT. What each version
 has: [table](docs/en/how-to-play.md#features-by-version).
 
 The reference game logic is the Rust core: deterministic, integers only, in fixed point. The
@@ -102,7 +103,7 @@ switched off by pulling the plug.
 
 ## Documentation
 
-- [How to play](docs/en/how-to-play.md): modes, power-ups, paddles, special moves, CHALLENGE,
+- [How to play](docs/en/how-to-play.md): modes, power-ups, paddles, special moves, the NEXT ladder,
   sound, controls for every version.
 - [Configuration](docs/en/configuration.md): `padd_config.json`, difficulty, NEXT parameters,
   Raspberry Pi cabinet.

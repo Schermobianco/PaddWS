@@ -6,7 +6,7 @@
 - [Modalità](#modalità) e [bonus di NEXT](#bonus-di-next)
 - [Tipi di racchetta](#tipi-di-racchetta-next)
 - [Mosse speciali](#mosse-speciali-next)
-- [CHALLENGE](#challenge)
+- [NEXT: la scalata](#next-la-scalata)
 - [Suono](#suono)
 - [Comandi](#comandi)
 - [Funzioni per versione](#funzioni-per-versione)
@@ -15,18 +15,17 @@
 ## L'attract e la partita
 
 All'accensione parte l'attract: auto-test, strisce, logo e titolo con la pallina che rimbalza su
-tutto ciò che è nero, la classifica di CHALLENGE e una partita dimostrativa, CPU contro CPU, nella
-modalità scelta (nel menu sul PC, nell'OSD sul MiSTer), con il nome della modalità al centro. In
-NEXT bonus e racchette sono a caso; in CHALLENGE si vede l'avversario di un livello a caso.
+tutto ciò che è nero, la classifica e una partita dimostrativa, CPU contro CPU, nella modalità
+scelta (nel menu sul PC, nell'OSD sul MiSTer; sul C64 non c'è), con il nome della modalità al
+centro. In NEXT si vede l'avversario di un livello a caso della scalata.
 
 Con un gettone, o in Free Play, Start apre il menu (sul MiSTer avvia subito la partita con le
 opzioni dell'OSD); ogni partita costa un credito, anche in due. La partita comincia dopo un conto
-alla rovescia di 3 secondi. Dal menu si scelgono modalità (**GAME TYPE**), giocatori
-(**PLAYERS**: in CLASSIC TWO, VS CPU e ONE, in EVO TWO e VS CPU, in NEXT TWO e CHALLENGE), difficoltà, volumi e le
-altre opzioni; le scelte
-restano per la volta dopo. La prima volta il gioco parte in NEXT con PLAYERS: CHALLENGE (sul
-MiSTer *Game type: Challenge*, sul C64 a ogni accensione). Se si torna al menu durante una
-partita, **RESUME** la riprende.
+alla rovescia di 3 secondi. Dal menu si scelgono modalità (**GAME TYPE**: CLASSIC, EVO o NEXT),
+in CLASSIC ed EVO i giocatori (**PLAYERS**: TWO e VS CPU, più ONE in CLASSIC; in NEXT la voce non
+c'è), difficoltà, volumi e le altre opzioni; le scelte restano per la volta dopo. La prima volta il
+gioco parte in NEXT (sul C64 a ogni accensione). Se si torna al menu durante una partita,
+**RESUME** la riprende.
 
 ## Modalità
 
@@ -34,13 +33,13 @@ partita, **RESUME** la riprende.
   si gioca contro un muro con 3 palle, ogni rimbalzo vale un punto e `TOP` è il record.
 - **EVO** (2 giocatori): colpire la palla nell'area grigia al centro della racchetta la potenzia
   (l'area si restringe a ogni boost); lo scatto in avanti intercetta la palla e la rilancia.
-- **NEXT** (2 giocatori; da soli c'è la CHALLENGE): Classic con lo scatto in avanti e i bonus. Prima della
-  partita ognuno sceglie la sua racchetta e 3 bonus su 6; le capsule partono dalla mezzeria e si
-  raccolgono toccandole con la racchetta, poi si scelgono e si attivano dalla riserva in alto.
-- **VS CPU**: da soli contro il computer in CLASSIC ed EVO (menu **PLAYERS: VS CPU**); la
-  bravura della CPU segue la difficoltà. In NEXT da soli si gioca la CHALLENGE (sul MiSTer
-  *Game type: Challenge*).
-- **CHALLENGE**: la scalata contro 7 avversari, vedi [sotto](#challenge).
+- **NEXT**: la modalità arcade, come in un picchiaduro. Da soli si sale la scalata contro 7
+  avversari CPU, e un secondo giocatore può entrare quando vuole a sfidare chi sta giocando (vedi
+  [sotto](#next-la-scalata)). Le partite sono Classic con lo scatto in avanti e i bonus: prima
+  ognuno sceglie la sua racchetta e 3 bonus su 6; le capsule partono dalla mezzeria e si raccolgono
+  toccandole con la racchetta, poi si scelgono e si attivano dalla riserva in alto.
+- **VS CPU**: da soli contro il computer in CLASSIC ed EVO (menu **PLAYERS: VS CPU**); la bravura
+  della CPU segue la difficoltà.
 
 ### Bonus di NEXT
 
@@ -59,8 +58,7 @@ Ogni capsula mostra il simbolo del suo bonus:
 
 ## Tipi di racchetta (NEXT)
 
-Prima dei bonus ognuno sceglie la sua racchetta (la CPU a caso; in CHALLENGE ogni
-avversario ha la sua). Ogni tipo ha un vantaggio, un piccolo prezzo e un segno che lo fa riconoscere in partita (in
+Prima dei bonus ognuno sceglie la sua racchetta (ogni avversario della scalata ha la sua). Ogni tipo ha un vantaggio, un piccolo prezzo e un segno che lo fa riconoscere in partita (in
 giallo nell'immagine, con le racchette in proporzione). I tipi sono bilanciati perché ognuno vinca
 circa metà dei punti contro la racchetta normale.
 
@@ -83,11 +81,12 @@ velocità massima. I valori sono nella sezione `next.paddles` della
 ## Mosse speciali (NEXT)
 
 Mosse da picchiaduro che si fanno con un gesto del controllo. Sono sempre accese nelle partite
-NEXT, nella CHALLENGE e nella demo dell'attract; sono le stesse per tutti i tipi di racchetta. Prima della partita la schermata
+NEXT e nella demo dell'attract; sono le stesse per tutti i tipi di racchetta. Prima della partita la schermata
 **HOW TO PLAY**, in pixel art come nei giochi Neo Geo, le presenta: il comando del controllo in uso
 (tastiera, gamepad o stick arcade, spinner del cabinato, mouse o touch) si accende passo dopo passo,
 la palla parte con l'effetto della mossa, e sotto ci sono il costo e i comandi dei bonus. Start (o
-il clic, o un tocco) la salta; in CHALLENGE compare solo prima del primo livello.
+il clic, o un tocco) la salta; nella scalata compare solo prima del primo livello (e prima di ogni
+allenamento).
 
 La barra accanto alla riserva si riempie giocando: un po' a ogni colpo, il doppio con lo scatto
 che intercetta la palla, di più quando si subisce un punto; non si svuota tra un punto e l'altro.
@@ -122,13 +121,13 @@ quando un RISING STRIKE s'impenna, le serve il suo tempo di reazione per accorge
 persona.
 
 Sul C64 il fuoco che chiude la mezzaluna usa la mossa se può partire, altrimenti il bonus
-selezionato (lo scatto è il joystick verso l'avversario); con i paddle non ci sono gesti, la demo
-dell'attract resta EVO e non c'è la schermata HOW TO PLAY. Barra, icona della mossa armata, scritta
+selezionato (lo scatto è il joystick verso l'avversario); con i paddle non ci sono gesti e non c'è
+la schermata HOW TO PLAY. Barra, icona della mossa armata, scritta
 "P1 MAX STRAIGHT SHOT!" e suoni ci sono, le voci urlate no (vedi [c64/README.md](../../c64/README.md)).
 
-## CHALLENGE
+## NEXT: la scalata
 
-Da soli contro 7 avversari CPU (menu **PLAYERS: CHALLENGE**, sul MiSTer OSD *Game type: Challenge*).
+Chi gioca NEXT da solo sale la scalata contro 7 avversari CPU (sul MiSTer OSD *Game type: NEXT*).
 Si scelgono una volta racchetta e bonus, poi ogni livello presenta il suo avversario: un tipo di
 racchetta diverso per livello, i suoi 3 bonus e una CPU sempre più forte, dall'ARCADE del primo
 livello al GUARDIAN del boss finale. Ogni avversario entra a modo suo, mostrando quello che sa fare
@@ -155,7 +154,10 @@ semplici). Le partite sono NEXT a 5 punti.
   racchetta della CPU, dove c'è la scritta P2 HOLD HERE. Lo sfidante sceglie racchetta e bonus e si
   gioca una sfida a 5 punti: chi vince riprende il livello contro la CPU dal suo lato, con un premio
   pari a quello del livello (il campione lo aggiunge ai suoi punti, lo sfidante parte da lì); chi
-  perde scrive le iniziali se entra in classifica.
+  perde scrive le iniziali se entra in classifica, e può rientrare subito. Per giocare in due fin
+  dall'inizio basta entrare nella presentazione del primo livello. Le sfide vinte di fila dal
+  campione contano: **n WINS** compare a fine sfida dalla parte di chi ha vinto e nelle
+  presentazioni dalla sua parte (chi batte il campione riparte da 1).
 - **Finale**: battuto l'ultimo avversario arrivano CONGRATULATIONS e la voce "YOU WIN!", la
   sfilata dei sette avversari con il timbro DEFEATED (sul MiSTer un K.O. rosso, e la racchetta
   battuta si spegne), il punteggio finale con il premio del
@@ -164,6 +166,12 @@ semplici). Le partite sono NEXT a 5 punti.
   musica tutta sua; poi le iniziali. Start lo salta. La voce "YOU WIN!" si sente anche a ogni
   partita vinta contro la CPU. Se chi vince non ha lasciato neanche un punto all'avversario, al posto
   di YOU WIN (o di GAME OVER, in due) compare PERFECT, urlato dalla voce.
+- **Allenamento**: arrivati al finale almeno una volta, in NEXT il menu ha anche **OPPONENT** (sul
+  MiSTer *Opponent* nell'OSD, sul C64 la riga al posto di PLAYERS). LADDER è la scalata; con uno dei
+  sette avversari si gioca una partita sola contro di lui, con la sua racchetta, i suoi bonus e la
+  sua CPU alla difficoltà del menu, senza punti, classifica, continue né sfidanti. Lo sblocco resta
+  salvato: sul PC nella configurazione (`game.training`), nel browser nel `localStorage`, sul MiSTer
+  nel file della classifica, sul C64 nella flash della cartuccia.
 - **Voce**: nella presentazione una voce digitalizzata "da SID" annuncia il nome dell'avversario
   (su C64 e MiSTer con il trucco del registro del volume del SID; sul C64 dalla cartuccia). Su PC,
   web e MiSTer la stessa voce dice anche il nome della racchetta appena confermata nella scelta,
@@ -201,7 +209,7 @@ tempo reale un SID scritto in Rust con lo stesso player (`rust/sid`), come il co
   menu.
 
 Le musiche sono originali: il titolo, la presentazione dei livelli, il livello superato, il
-continue, il game over, il campione e il finale; in partita solo gli effetti, tranne in CHALLENGE,
+continue, il game over, il campione e il finale; in partita solo gli effetti, tranne nella scalata di NEXT,
 dove ogni avversario ha il suo tema. Il tema accelera al match point (×1,25, stesse note) e nel
 bullet time rallenta di un'ottava, come un nastro a metà velocità. Alcune musiche usano il filtro
 del SID (il basso di HAMMER, il titolo, TITAN, il finale) e sono pensate per l'8580.
@@ -264,7 +272,7 @@ la CPU tutto lo schermo è del giocatore; in due ognuno ha la sua metà.
 - nell'attract un tocco vale come Start;
 - pausa: un tocco sul simbolo ❚❚ in cima alla linea centrale; in pausa si tocca per riprendere o
   su MENU (nel menu RESUME riprende la partita);
-- CHALLENGE: lo sfidante entra tenendo il dito per un secondo dietro la racchetta della CPU (P2
+- NEXT: lo sfidante entra tenendo il dito per un secondo dietro la racchetta della CPU (P2
   HOLD HERE).
 
 Il primo tocco porta a schermo intero (Android, iPad) e lo schermo resta acceso; su iPhone lo
@@ -289,7 +297,7 @@ spinner e la sua velocità) sono nell'OSD. Dettagli in [mister/README.md](../../
 
 Versione in assembly 6502 che gioca la stessa partita del core Rust, bit per bit: un tick per
 frame a 50 Hz, campo di 320×200 pixel, musiche ed effetti sul SID vero. La cartuccia EasyFlash `paddws.crt` (C64 Ultimate, EasyFlash vera scritta con EasyProg, VICE):
-tutto in un file, avvio immediato e voce della CHALLENGE senza caricamenti; la classifica si salva
+tutto in un file, avvio immediato e voce delle presentazioni della scalata senza caricamenti; la classifica si salva
 nella flash della cartuccia e resta anche da spenti (in VICE con `-easyflashcrtwrite`).
 
 Joystick nella porta 2 (sinistra) e 1 (destra), oppure una coppia di paddle nella porta 1. Su e giù
@@ -308,8 +316,8 @@ menu. Solo PAL; finora provata in VICE. Dettagli in [c64/README.md](../../c64/RE
 | NEXT, bonus e tipi di racchetta | ✓ | ✓ | ✓ | — |
 | mosse speciali | ✓ | ✓ | ✓ (joystick) | — |
 | HOW TO PLAY | ✓ | ✓ | ✓ (joystick) | — |
-| CHALLENGE, classifica e nuovo sfidante | ✓ | ✓ | ✓ | — |
-| demo nell'attract | modalità scelta | modalità scelta | EVO | — |
+| NEXT: scalata, classifica, nuovo sfidante, WINS e allenamento | ✓ | ✓ | ✓ | — |
+| demo nell'attract | modalità scelta | modalità scelta | — | — |
 | musiche del SID | SID in Rust | SID del core C64 | SID vero | — |
 | voci "da SID" | ✓ | ✓ | nome dell'avversario, READY?, GO!, YOU WIN! e PERFECT! | — |
 | filtro CRT | ✓ | uscita a 15 kHz | — | ✓ |
@@ -326,14 +334,14 @@ menu. Solo PAL; finora provata in VICE. Dettagli in [c64/README.md](../../c64/RE
 | NEXT: ognuno sceglie 3 bonus su 6 | NEXT: riserve in alto, capsule in volo, racchetta che ruota con il SUPER |
 | ![NEXT: presentazione delle mosse speciali](../screenshots/next-howto.png) | ![NEXT: STRAIGHT SHOT in volo](../screenshots/next-supers.png) |
 | NEXT: HOW TO PLAY, le mosse speciali prima della partita | NEXT: barre delle mosse accanto alle riserve, STRAIGHT SHOT in volo |
-| ![CHALLENGE: presentazione dell'avversario](../screenshots/challenge-intro.png) | ![CHALLENGE: nuovo sfidante](../screenshots/challenge-challenger.png) |
-| CHALLENGE: presentazione del sesto avversario, RUSH | CHALLENGE: entra un secondo giocatore |
+| ![NEXT: presentazione dell'avversario](../screenshots/challenge-intro.png) | ![NEXT: nuovo sfidante](../screenshots/challenge-challenger.png) |
+| NEXT: presentazione del sesto avversario, RUSH | NEXT: entra un secondo giocatore |
 | ![Core MiSTer: titolo](../screenshots/mister-title.png) | ![Core MiSTer: demo NEXT](../screenshots/mister-demo.png) |
 | Core MiSTer a 320×240: titolo dopo il gettone | Core MiSTer: demo CPU contro CPU della modalità scelta (qui NEXT) |
 | ![Commodore 64: titolo](../screenshots/c64-title.png) | ![Commodore 64: partita NEXT](../screenshots/c64-next.png) |
 | Commodore 64: titolo in Free Play | Commodore 64: NEXT, con la capsula di CURVE |
-| ![Commodore 64: scelta dei bonus](../screenshots/c64-pick.png) | ![Commodore 64: CHALLENGE](../screenshots/c64-challenge.png) |
-| Commodore 64: scelta dei bonus (la CPU ha già scelto) | Commodore 64: presentazione del primo avversario di CHALLENGE |
+| ![Commodore 64: scelta dei bonus](../screenshots/c64-pick.png) | ![Commodore 64: scalata di NEXT](../screenshots/c64-challenge.png) |
+| Commodore 64: scelta dei bonus (la CPU ha già scelto) | Commodore 64: presentazione del primo avversario della scalata |
 
 Le schermate PC vengono da `paddws --screenshot-tour DIR` (versione Rust), quelle MiSTer dalla
 simulazione del core con Verilator (`mister/sim/frames`), quelle C64 da VICE (`c64/shot.ps1`).

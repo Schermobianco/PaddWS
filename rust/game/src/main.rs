@@ -230,7 +230,7 @@ async fn run(args: Args, mut cfg: Config, config_path: PathBuf) {
             paddws_core::Bonus::Slow,
         ]; 2],
         paddles: [None; 2],
-        challenge: false,
+        opponent: None,
         run: None,
         scores,
         seed: platform::clock_seed(),
@@ -432,12 +432,12 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         app.paddles = [None; 2];
         Scene::Game(Box::new(play))
     }
-    // CHALLENGE al livello `level` (da 0), con una partita a metà
+    // scalata di NEXT al livello `level` (da 0), con una partita a metà
     fn challenge(app: &mut App, level: usize) {
         app.players = 2;
         app.cpu = true;
         app.next = true;
-        app.challenge = true;
+        app.opponent = None;
         app.paddles = [Some(paddws_core::PaddleKind::Arcade), None];
         let mut run = challenge_ui::Run::new();
         run.level = level;
@@ -447,6 +447,7 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
     // HOW TO PLAY delle mosse speciali con il controllo `device` (None: quello in uso), all'istante
     // `at` dell'animazione dopo i 30 frame del ciclo qui sotto
     fn howto(app: &mut App, device: Option<Device>, at: f64) -> Scene {
+        app.run = None;
         app.players = 2;
         app.cpu = false;
         app.next = true;
@@ -478,7 +479,7 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
     // contro la CPU)
     fn over_at(app: &mut App, score: [u16; 2], cpu: bool, at: f64) -> Scene {
         app.run = None;
-        (app.players, app.cpu, app.evo, app.next, app.challenge) = (2, cpu, false, false, false);
+        (app.players, app.cpu, app.evo, app.next) = (2, cpu, false, false);
         let mut play = Play::new(app);
         play.skip_countdown();
         play.set_scores(score, 0);
@@ -497,10 +498,33 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
     // classifica a `t` secondi dall'inizio, con il terzo posto appena inserito
     fn scores_at(app: &mut App, t: f64) -> Scene {
         app.run = None;
-        app.challenge = false;
         app.cpu = false;
         app.next = false;
         Scene::Scores(challenge_ui::Scores::at(Some(2), t))
+    }
+    // menu con GAME TYPE `(evo, next)`, l'allenamento sbloccato o no e la ruota sulla voce `at`
+    fn menu_at(app: &mut App, (evo, next, training): (bool, bool, bool), opponent: Option<usize>, at: usize) -> Scene {
+        app.run = None;
+        (app.evo, app.next, app.players, app.cpu) = (evo, next, 2, true);
+        app.cfg.game.training = training;
+        app.opponent = opponent;
+        let mut menu = Menu::new(app);
+        menu.show(at);
+        Scene::Menu(menu)
+    }
+    // fine di un duello della scalata al livello 3 con questi punti, a `at` secondi dall'inizio (dopo
+    // i 30 frame del ciclo); il campione, a sinistra, ne aveva già vinti due di fila
+    fn duel_over_at(app: &mut App, score: [u16; 2], at: f64) -> Scene {
+        challenge(app, 2);
+        app.paddles = [Some(paddws_core::PaddleKind::Arcade), Some(paddws_core::PaddleKind::Rush)];
+        if let Some(run) = &mut app.run {
+            run.wins = 2;
+        }
+        let mut play = Play::duel(app);
+        play.skip_countdown();
+        play.set_scores(score, 0);
+        play.show_game_over_at(app, at - 0.5);
+        Scene::Game(Box::new(play))
     }
     use ending_ui::Part as E;
     use paddws_core::PaddleKind as K;
@@ -509,7 +533,7 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         app.set_egg(true);
         scene
     }
-    let shots: [(&str, MakeScene); 94] = [
+    let shots: [(&str, MakeScene); 103] = [
         ("1_demo_classic", |app| demo_at(app, DemoMode::Classic)),
         ("1_demo_evo", |app| demo_at(app, DemoMode::Evo)),
         ("1_demo_next", |app| demo_at(app, DemoMode::Next)),
@@ -546,6 +570,51 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
             if let Some(run) = &mut app.run {
                 run.side = paddws_core::Side::Right;
             }
+            let mut play = Play::challenge(app);
+            play.skip_countdown();
+            play.fill_challenge_demo();
+            Scene::Game(Box::new(play))
+        }),
+        // duello vinto dal campione (il terzo di fila), poi la presentazione del livello che riprende
+        ("8_duel_wins", |app| duel_over_at(app, [5, 3], 2.0)),
+        ("8_duel_wins_perfect", |app| duel_over_at(app, [5, 0], 1.0)),
+        ("8_duel_wins_facing", |app| {
+            // punteggi rivolti ai giocatori: l'opzione resta accesa per il disegno, la schermata
+            // dopo la rimette com'era
+            app.cfg.game.scores_upright = false;
+            duel_over_at(app, [2, 5], 2.0)
+        }),
+        ("8_intro_wins", |app| {
+            app.cfg.game.scores_upright = true;
+            challenge(app, 3);
+            if let Some(run) = &mut app.run {
+                run.wins = 3;
+            }
+            let mut intro = challenge_ui::Intro::new(app);
+            intro.skip_to(3.0);
+            Scene::Intro(intro)
+        }),
+        ("8_intro_wins_right", |app| {
+            challenge(app, 3);
+            app.paddles = [None, Some(paddws_core::PaddleKind::Arcade)];
+            if let Some(run) = &mut app.run {
+                (run.wins, run.side) = (1, paddws_core::Side::Right);
+            }
+            let mut intro = challenge_ui::Intro::new(app);
+            intro.skip_to(3.0);
+            Scene::Intro(intro)
+        }),
+        // allenamento contro il TITAN: presentazione e partita
+        ("8_training_intro", |app| {
+            challenge(app, 0);
+            app.run = Some(challenge_ui::Run::training(3));
+            let mut intro = challenge_ui::Intro::new(app);
+            intro.skip_to(3.0);
+            Scene::Intro(intro)
+        }),
+        ("8_training_game", |app| {
+            challenge(app, 0);
+            app.run = Some(challenge_ui::Run::training(3));
             let mut play = Play::challenge(app);
             play.skip_countdown();
             play.fill_challenge_demo();
@@ -588,7 +657,6 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         ("9_ending_6_the_end", |app| ending(app, E::TheEnd, 0.2)),
         ("8_challenge_scores", |app| {
             app.run = None;
-            app.challenge = false;
             app.cpu = false;
             app.next = false;
             Scene::Scores(challenge_ui::Scores::at(Some(2), 6.0))
@@ -647,22 +715,12 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
             play.set_scores([3, 5], 0);
             Scene::Game(Box::new(play))
         }),
-        ("2_menu_challenge", |app| {
-            app.players = 2;
-            app.cpu = true;
-            app.challenge = true;
-            app.evo = false;
-            app.next = true;
-            Scene::Menu(Menu::new(app))
-        }),
-        ("2_menu_next", |app| {
-            app.players = 2;
-            app.cpu = false;
-            app.challenge = false;
-            app.evo = false;
-            app.next = true;
-            Scene::Menu(Menu::new(app))
-        }),
+        ("2_menu_classic", |app| menu_at(app, (false, false, true), None, 1)),
+        // NEXT: la scalata, senza PLAYERS
+        ("2_menu_next", |app| menu_at(app, (false, true, false), None, 0)),
+        // NEXT con l'allenamento sbloccato: OPPONENT al posto di PLAYERS
+        ("2_menu_opponent", |app| menu_at(app, (false, true, true), Some(3), 1)),
+        ("2_menu_opponent_ladder", |app| menu_at(app, (false, true, true), None, 1)),
         // presentazione delle mosse speciali, una per controllo, in punti diversi dell'animazione
         // (il ciclo qui sotto aggiunge mezzo secondo)
         ("6_next_howto", |app| howto(app, None, 0.55)),
@@ -794,7 +852,6 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         }),
         ("a_egg_scores", |app| {
             app.run = None;
-            app.challenge = false;
             app.cpu = false;
             app.next = false;
             egg(app, Scene::Scores(challenge_ui::Scores::new(Some(0))))

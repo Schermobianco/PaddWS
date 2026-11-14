@@ -14,6 +14,28 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+### Aggiunto
+- **NEXT diventa la modalità arcade, come in un picchiaduro** (PC, web, Deck, MiSTer e C64): da
+  soli si sale la scalata contro i 7 avversari (quella che era la CHALLENGE), e un secondo
+  giocatore entra quando vuole a sfidare chi gioca; per giocare in due fin dall'inizio basta entrare
+  nella presentazione del primo livello. Non c'è più la partita NEXT a due "libera".
+- **WINS**: le sfide vinte di fila dal campione si contano. "n WINS" compare a fine sfida dalla
+  parte di chi ha vinto e nelle presentazioni dalla sua parte; chi batte il campione riparte da 1.
+- **Allenamento**: arrivati al finale della scalata, in NEXT si sblocca la voce OPPONENT (sul
+  MiSTer *Opponent* nell'OSD): una partita sola contro l'avversario scelto, con la sua racchetta, i
+  suoi bonus e la sua CPU, senza punti, classifica, continue né sfidanti. Lo sblocco si salva (PC e
+  web nella configurazione, MiSTer nel file della classifica, C64 nella flash) e le classifiche già
+  salvate restano valide.
+
+### Modificato
+- Menu: GAME TYPE è CLASSIC, EVO o NEXT; PLAYERS c'è solo in CLASSIC (TWO, VS CPU, ONE) ed EVO
+  (TWO, VS CPU). Una configurazione salvata con CHALLENGE parte in NEXT. Sul MiSTer *Game type* è
+  NEXT, EVO o Classic, su bit nuovi dell'OSD (un CFG vecchio parte in NEXT), e *Players* si nasconde
+  in NEXT.
+- La classifica si chiama HIGH SCORES, e la demo dell'attract della scalata NEXT.
+- C64: niente più demo CPU contro CPU nell'attract (titolo, classifica, strisce); lo spazio è
+  servito per WINS e allenamento.
+
 ## [4.1.1] - 2026-11-14
 
 ### Modificato

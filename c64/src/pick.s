@@ -141,12 +141,16 @@ col_base:   .byte 0, 20             ; prima colonna della metà di ciascun gioca
     lda opt_players
     cmp #OPT_CHALLENGE
     bne :+
-    ; CHALLENGE: a destra i bonus del primo avversario
-    lda rung_loadout
+    ; CHALLENGE: a destra i bonus dell'avversario del livello (il primo, o quello dell'allenamento)
+    lda ch_level
+    asl a
+    adc ch_level
+    tax
+    lda rung_loadout,x
     sta pk_chosen+3
-    lda rung_loadout+1
+    lda rung_loadout+1,x
     sta pk_chosen+4
-    lda rung_loadout+2
+    lda rung_loadout+2,x
     sta pk_chosen+5
     lda #3
     sta pk_count+1
@@ -213,7 +217,8 @@ draw:
     sta pk_ok,x
     rts
 first:
-    lda rung_kind               ; CHALLENGE: la racchetta del primo avversario
+    ldx ch_level                ; CHALLENGE: la racchetta dell'avversario (start_game)
+    lda rung_kind,x
     sta pk_cursor+1
     lda #1
     sta pk_ok+1

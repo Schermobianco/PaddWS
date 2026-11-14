@@ -5,8 +5,9 @@
 PADD WS per C64 PAL, su cartuccia EasyFlash. Gioca la stessa partita del core Rust
 ([`rust/core`](../rust/core)) bit per bit: campo 320×200, un tick per frame a 50 Hz, aritmetica
 Q16.16 a 32 bit in 6502 identica a `fixed.rs` e gli stessi parametri delle altre versioni
-(`Tuning::c64()`). Ci sono Classic, EVO, NEXT con le mosse speciali, il singolo, la CPU,
-CHALLENGE con la classifica salvata nella flash, l'attract e le musiche del SID.
+(`Tuning::c64()`). Ci sono Classic, EVO, NEXT con le mosse speciali e la scalata (sfidanti, WINS,
+allenamento, classifica e sblocco salvati nella flash), il singolo, la CPU, l'attract (senza demo)
+e le musiche del SID.
 
 Solo PAL (NTSC per ora no). Finora è stata provata in VICE, non ancora su un C64 vero.
 
@@ -33,8 +34,8 @@ x64sc -easyflashcrtwrite -cartcrt paddws.crt
 - Tastiera: **5** gettone, fuoco, **RETURN**, **SPAZIO** o **1** Start, **RUN/STOP** pausa (dal
   menu torna all'attract), **Q** torna al menu.
 
-Il menu (joystick o cursori) ha GAME, PLAYERS, DIFFICULTY, CONTROL, FREE PLAY, ATTRACT SOUND,
-VOLUME e BORDER. Le regole sono in [docs/it/come-si-gioca.md](../docs/it/come-si-gioca.md).
+Il menu (joystick o cursori) ha GAME, PLAYERS (solo in CLASSIC ed EVO; in NEXT, dopo lo sblocco,
+OPPONENT per l'allenamento), DIFFICULTY, CONTROL, FREE PLAY, ATTRACT SOUND, VOLUME e BORDER. Le regole sono in [docs/it/come-si-gioca.md](../docs/it/come-si-gioca.md).
 
 ## Compilare
 
@@ -50,7 +51,7 @@ Servono cc65 (ca65 e ld65) in `C:\DEV\@Compiler\cc65` e Python (quello di `.venv
 Su Linux: `sh c64/build.sh` (ca65, ld65 e python3 nel PATH).
 
 Oltre alla cartuccia, in `c64\build` restano `paddws.prg` con le etichette (`paddws.lbl`) e la
-mappa (`paddws.map`), il finale di CHALLENGE (`paddws.prg.end`) e i file voce `voice0-6.prg`.
+mappa (`paddws.map`), il finale della scalata (`paddws.prg.end`) e i file voce `voice0-6.prg`.
 Servono al banco di prova: il `.prg` da solo non parte, gira solo dalla cartuccia.
 
 I file di `c64/gen/` sono generati e stanno nel repository: `tools/gen_c64_assets.py` per grafica,
@@ -59,8 +60,9 @@ musica e voci, `paddws-c64 params` per `params.inc`. Non si modificano a mano.
 Per le schermate ci sono build che partono subito con una partita:
 
 ```powershell
-.\c64\build.ps1 -Name autostart -Define AUTOSTART     # EVO contro la CPU; con AUTONEXT NEXT, con AUTOCHALLENGE CHALLENGE
-.\c64\build.ps1 -Name autoend -Define ENDTEST         # il finale di CHALLENGE
+.\c64\build.ps1 -Name autostart -Define AUTOSTART     # EVO contro la CPU; con AUTONEXT NEXT, con AUTOCHALLENGE la scalata (TRAINTEST=n l'allenamento)
+.\c64\build.ps1 -Name autoend -Define ENDTEST         # il finale della scalata
+.\c64\build.ps1 -Name menu3 -Define MENUTEST=3        # il menu con OPPONENT a 3 (UNLOCKTEST: allenamento sbloccato)
 .\c64\build.ps1 -Name intro3 -Define INTROTEST=3      # la presentazione del livello 3 (anche CONTTEST: il continue)
 .\c64\build.ps1 -Name ft -Define AUTOSTART,FRAMETEST  # frame oltre il tempo, cifra rossa in basso a destra (FRAMESTOP: si ferma al primo)
 .\c64\shot.ps1 out.png -Prg autostart                # schermata dopo -Cycles cicli (15 milioni di default)
@@ -83,12 +85,12 @@ cargo run --release -p paddws-c64 -- params --check   # c64\gen\params.inc in pa
 cargo run --release -p paddws-c64 -- math             # aritmetica e generatore contro fixed.rs e rng.rs
 cargo run --release -p paddws-c64 -- game             # partite intere, stato confrontato con il core a ogni tick
 cargo run --release -p paddws-c64 -- sid              # player del SID contro quello Verilog e quello Rust
-cargo run --release -p paddws-c64 -- ui               # scene e menu, voci di CHALLENGE, classifica nella flash
-cargo run --release -p paddws-c64 -- frames           # cicli di ogni frame (attract, demo, partite, finale)
+cargo run --release -p paddws-c64 -- ui               # scene e menu, voci della scalata, WINS, allenamento, classifica e sblocco nella flash
+cargo run --release -p paddws-c64 -- frames           # cicli di ogni frame (attract, partite, finale)
 ```
 
-Sono gli stessi passi della GitHub Action `C64`. In più: `ending` gioca solo il finale di
-CHALLENGE, `profile` dà i cicli per routine, `--build DIR` usa un'altra cartella di build e
+Sono gli stessi passi della GitHub Action `C64`. In più: `ending` gioca solo il finale della
+scalata, `profile` dà i cicli per routine, `--build DIR` usa un'altra cartella di build e
 `game --ticks N` cambia la durata delle partite (5 minuti di default).
 
 ## Sorgenti
@@ -104,7 +106,7 @@ CHALLENGE, `profile` dà i cicli per routine, `--build DIR` usa un'altra cartell
 - `src/play.s` — ciclo dei frame, scene, menu, gettoni.
 - `src/attract.s`, `src/video.s`, `src/input.s` — attract, grafica, comandi.
 - `src/sid.s` — il player del SID, tradotto da `mister/rtl/pong_sid.v`.
-- `src/voice.s`, `src/voice.inc` — i file voce di CHALLENGE (si assemblano a parte, uno per
+- `src/voice.s`, `src/voice.inc` — i file voce della scalata (si assemblano a parte, uno per
   avversario).
 - `src/crt.s`, `src/unpack.s`, `src/ef.s`, `src/ef.inc` — avvio della cartuccia e accesso alla
   flash.

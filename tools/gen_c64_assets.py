@@ -193,12 +193,11 @@ def perfect_text(cs: Charset, lines: list[str], stable: set[int], free: list[int
     """PERFECT (assets/attract/perfect.png) del GAME OVER, che nel set di caratteri pieno non c'è.
 
     I caratteri uguali a uno di `stable` (quelli che nel GAME OVER sono sempre gli originali)
-    restano quelli; gli altri prendono, nell'ordine, i codici `free`, che fuori dalla demo non si
-    vedono. Contigui e in una pagina sola del set: il GAME OVER (play.s, ov_enter) ci copia dalla
-    cartuccia la pagina restituita qui (perfect_chars.bin), con PERFECT, i caratteri della demo
-    che in NEXT diventano altro (`in_next`: lì si vedono solo in NEXT) già come in NEXT e gli altri
-    originali; la demo rimette la pagina originale (demo_enter) prima di INSERT COIN e PRESS START.
-    Nella pagina non ci devono essere altri caratteri che cambiano (`changing`)."""
+    restano quelli; gli altri prendono, nell'ordine, i codici `free`, che non si vedono più (erano
+    della demo, tolta). Contigui e in una pagina sola del set: il GAME OVER (play.s, ov_stamp) ci
+    copia dalla cartuccia la pagina restituita qui (perfect_chars.bin), con PERFECT, i caratteri
+    della demo che in NEXT diventano altro (`in_next`: lì si vedono solo in NEXT) già come in NEXT
+    e gli altri originali; poi la pagina resta così. Nella pagina non ci devono essere altri caratteri che cambiano (`changing`)."""
     w, tiles = big_tiles("perfect")
     reuse = {cs.tiles[c]: c for c in sorted(stable, reverse=True)}
     new: list[Tile] = []
@@ -224,7 +223,7 @@ def perfect_text(cs: Charset, lines: list[str], stable: set[int], free: list[int
         page += bytes(t)
     assert all(bytes(page[8 * (c - first) : 8 * (c - first) + 8]) == bytes(cs.tiles[c]) for c in codes if c not in used and c in page_codes)
     lines.append("; PERFECT del GAME OVER: i caratteri PERFECT_C0... (di INSERT COIN e PRESS START) con PERFECT")
-    lines.append("; solo nel GAME OVER (ov_enter, gen/perfect_chars.bin), la demo rimette gli originali (demo_enter)")
+    lines.append("; dal primo PERFECT del GAME OVER (ov_stamp, gen/perfect_chars.bin): gli originali non si vedono più")
     lines.append(f"BIG_PERFECT_W = {w}")
     lines.append(".define BIG_PERFECT " + ", ".join(str(c) for c in codes))
     lines.append(f"PERFECT_C0 = {used[0]}")
@@ -527,9 +526,9 @@ def supers_assets(lines: list[str], charset: bytes, demo_only: set[int], pick_ra
     """Barra, icone e tracce degli effetti delle mosse speciali (definizioni in assets.inc).
 
     Il set di caratteri è pieno: la barra prende in NEXT il posto di BAR_CHARS caratteri di PRESS
-    START, che si vede solo nella demo (EVO), contigui e fuori dalle pagine della scelta dei bonus;
-    supers.s li scrive a inizio partita, bullet_chars rimette gli originali (restituiti qui, per la
-    pagina $FF00) nelle altre partite. Le tracce MOVE e SPECIAL sono quelle della ROM della musica
+    START grande, che si vedeva solo nella demo (tolta), contigui e fuori dalle pagine della scelta
+    dei bonus; supers.s li scrive a inizio partita e restano (gli originali, restituiti qui per la
+    pagina $FF00, non si rimettono più). Le tracce MOVE e SPECIAL sono quelle della ROM della musica
     (tools/gen_sid_music.py le mette in fondo, dopo i temi, fuori da sid_music.bin): qui si
     prendono da sid_music.hex, con gli indirizzi di sid_music.vh (SID_GEN). Restituisce anche i
     codici della barra."""
@@ -704,7 +703,6 @@ def attract_assets(lines: list[str]) -> dict[str, bytes]:
         "AT_STRIPES_FRAMES": f50(fr["stripes"]),
         "AT_LOGO_FRAMES": f50(fr["logo"]),
         "AT_TITLE_FRAMES": f50(fr["title"]),
-        "AT_DEMO_FRAMES": f50(fr["demo"]),
         "AT_GAME_OVER_FRAMES": f50(fr["game_over"]),
         "AT_GAME_OVER_BLACK": f50(SPEC["game_over"]["black_frames"]),
         "AT_BOOT_LINE_FRAMES": f50(b["line_frames"]),
@@ -1290,7 +1288,9 @@ def main() -> None:
     assert font_last - font_first + 1 == len(set(font) - {0}), "font non contiguo"
     lines.append(f"FONT_FIRST = {font_first}")
     lines.append(f"FONT_CHARS = {font_last - font_first + 1}")
-    demo_only: set[int] = set()     # caratteri di INSERT COIN e PRESS START, solo nella demo (EVO)
+    # caratteri di INSERT COIN e PRESS START grandi: si vedevano solo nella demo, tolta; restano nel
+    # set (le loro mappe non sono più nel programma) per dare il posto a BULLET, barra e PERFECT
+    demo_only: set[int] = set()
     assert BIG_TEXTS[-2:] == ["insert_coin", "press_start"]
     big_from = 0
     big_given = len(cs.given)

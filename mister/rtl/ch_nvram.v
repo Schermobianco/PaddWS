@@ -1,4 +1,5 @@
-// Classifica di CHALLENGE sulla SD: la NVRAM dei core arcade del MiSTer.
+// Classifica di NEXT (la scalata, CHALLENGE fino alla 4.1) e sblocco dell'allenamento sulla SD: la
+// NVRAM dei core arcade del MiSTer.
 //
 // Il file PaddWS.mra ha <nvram index="4" size="192"/>: all'avvio il MiSTer manda al core il file
 // /media/fat/config/nvram/PaddWS.nvm, se c'è, come un download di hps_io con indice 4; per salvarlo
@@ -8,7 +9,8 @@
 //
 // Immagine (192 byte):
 //   0-3      "PWS" e la versione del formato (1)
-//   4-15     zero
+//   4        segni: bit 0 allenamento sbloccato (dalla 4.2.0; prima zero), gli altri bit a zero
+//   5-15     zero
 //   16+16*i  posto i (0 = il primo): tre codici del font delle iniziali (la prima lettera per prima),
 //            livello raggiunto (0-7, 8 = scala finita), punti (24 bit, dal byte basso), punti in BCD
 //            (7 cifre, 4 byte dal basso), cinque byte a zero
@@ -17,7 +19,10 @@
 //
 // Un file letto vale solo se arriva intero, con l'intestazione giusta, la somma giusta, i campi
 // nei limiti (codici fino a 36 o 40, il "!", livello fino a 8, cifre BCD fino a 9) e i punti in
-// ordine non crescente: solo allora passa alla classifica (`ld_go`, un posto alla volta). Altrimenti, e se il
+// ordine non crescente: solo allora passa alla classifica (`ld_go`, un posto alla volta) e il bit 0
+// del byte 4 sblocca l'allenamento (`ld_unlock`). Il formato resta alla versione 1: un file di prima ha
+// il byte 4 a zero (allenamento bloccato), e i core di prima, che i byte 4-15 non li guardano, leggono i
+// file nuovi. Gli altri bit del byte 4 non si controllano, per i segni futuri. Altrimenti, e se il
 // file manca, resta la classifica iniziale. Il download va prima in una piccola RAM, così un
 // file guasto non tocca la classifica.
 //
@@ -42,6 +47,7 @@ module ch_nvram (
     input  wire [239:0] scores,
     input  wire [279:0] bcds,
     input  wire [39:0]  levels,
+    input  wire        unlocked,         // allenamento sbloccato (byte 4)
     input  wire        changed,          // la classifica è cambiata (un posto inserito in partita)
     input  wire        autosave,
     // posto letto dal file, da scrivere nella classifica (senza spostare gli altri)
@@ -51,7 +57,8 @@ module ch_nvram (
     output reg  [17:0] ld_name = 18'd0,
     output reg  [23:0] ld_score = 24'd0,
     output reg  [27:0] ld_bcd = 28'd0,
-    output reg  [3:0]  ld_level = 4'd0
+    output reg  [3:0]  ld_level = 4'd0,
+    output reg         ld_unlock = 1'b0  // impulso: il file letto ha l'allenamento sbloccato
 );
 
 localparam [7:0] INDEX = 8'd4, SIZE = 8'd192, SUM = 8'h5A, VERSION = 8'd1;
@@ -80,6 +87,7 @@ always @(*) begin
             4'd1: rd_byte = "W";
             4'd2: rd_byte = "S";
             4'd3: rd_byte = VERSION;
+            4'd4: rd_byte = {7'd0, unlocked};
             default: rd_byte = 8'd0;
         endcase
     else
@@ -129,6 +137,7 @@ reg       dl_q = 1'b0, ok = 1'b0;
 reg [7:0] sum = 8'd0, last = 8'd0;
 reg [23:0] prev = 24'd0;                // punti del posto prima
 reg [15:0] lo = 16'd0;                  // byte bassi dei punti del posto in arrivo
+reg        dl_unlock = 1'b0;            // bit 0 del byte 4 in arrivo
 wire [7:0] wa = ioctl_addr[7:0];
 wire [7:0] wd = ioctl_dout;
 wire       in_entry = wa >= 8'd16 && wa < 8'd176;
@@ -163,6 +172,7 @@ end
 always @(posedge clk) begin
     dl_q <= ioctl_download && mine;
     ld_go <= 1'b0;
+    ld_unlock <= 1'b0;
     if (ioctl_download && mine && !dl_q) begin
         ok <= 1'b1;
         sum <= 8'd0;
@@ -179,10 +189,12 @@ always @(posedge clk) begin
         if (in_entry && wa[3:0] == 4'd4) lo[7:0] <= wd;
         if (in_entry && wa[3:0] == 4'd5) lo[15:8] <= wd;
         if (in_entry && wa[3:0] == 4'd6) prev <= {wd, lo};
+        if (wa == 8'd4 && ioctl_addr[26:8] == 19'd0) dl_unlock <= wd[0];
     end
     // fine del download: se l'immagine è buona la si copia nella classifica
     if (!(ioctl_download && mine) && dl_q && ok && sum == SUM && last == SIZE - 8'd1) begin
         ld_run <= 1'b1;
+        ld_unlock <= dl_unlock;
         ld_e <= 4'd0;
         ld_b <= 4'd0;
         ld_val <= 1'b0;

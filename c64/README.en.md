@@ -5,8 +5,9 @@
 PADD WS for the PAL C64, on an EasyFlash cartridge. It plays the same match as the Rust core
 ([`rust/core`](../rust/core)) bit for bit: a 320×200 field, one tick per frame at 50 Hz, 32-bit
 Q16.16 arithmetic in 6502 identical to `fixed.rs`, and the same parameters as the other versions
-(`Tuning::c64()`). It has Classic, EVO, NEXT with the special moves, single player, the CPU,
-CHALLENGE with the high score table saved in flash, the attract mode and the SID music.
+(`Tuning::c64()`). It has Classic, EVO, NEXT with the special moves and the ladder (challengers,
+WINS, training, high scores and unlock saved in flash), single player, the CPU, the attract mode
+(without a demo) and the SID music.
 
 PAL only (no NTSC for now). So far it has been tested in VICE, not yet on a real C64.
 
@@ -33,8 +34,8 @@ x64sc -easyflashcrtwrite -cartcrt paddws.crt
 - Keyboard: **5** coin, fire, **RETURN**, **SPACE** or **1** Start, **RUN/STOP** pause (back to the
   attract mode from the menu), **Q** back to the menu.
 
-The menu (joystick or cursor keys) has GAME, PLAYERS, DIFFICULTY, CONTROL, FREE PLAY, ATTRACT
-SOUND, VOLUME and BORDER. The rules are in [docs/en/how-to-play.md](../docs/en/how-to-play.md).
+The menu (joystick or cursor keys) has GAME, PLAYERS (only in CLASSIC and EVO; in NEXT, once
+unlocked, OPPONENT for training), DIFFICULTY, CONTROL, FREE PLAY, ATTRACT SOUND, VOLUME and BORDER. The rules are in [docs/en/how-to-play.md](../docs/en/how-to-play.md).
 
 ## Building
 
@@ -50,7 +51,7 @@ present) for `tools/make_crt.py`. VICE, in `C:\DEV\@Compiler\vice`, is only need
 On Linux: `sh c64/build.sh` (ca65, ld65 and python3 on the PATH).
 
 Besides the cartridge, `c64\build` holds `paddws.prg` with its labels (`paddws.lbl`) and memory
-map (`paddws.map`), the CHALLENGE ending (`paddws.prg.end`) and the voice files `voice0-6.prg`.
+map (`paddws.map`), the ladder ending (`paddws.prg.end`) and the voice files `voice0-6.prg`.
 The test bench needs them: the `.prg` does not start on its own, it only runs from the cartridge.
 
 The files in `c64/gen/` are generated and committed: `tools/gen_c64_assets.py` makes the graphics,
@@ -59,8 +60,9 @@ music and voices, `paddws-c64 params` makes `params.inc`. Do not edit them by ha
 For screenshots there are builds that go straight into a match:
 
 ```powershell
-.\c64\build.ps1 -Name autostart -Define AUTOSTART     # EVO against the CPU; with AUTONEXT NEXT, with AUTOCHALLENGE CHALLENGE
-.\c64\build.ps1 -Name autoend -Define ENDTEST         # the CHALLENGE ending
+.\c64\build.ps1 -Name autostart -Define AUTOSTART     # EVO against the CPU; with AUTONEXT NEXT, with AUTOCHALLENGE the ladder (TRAINTEST=n training)
+.\c64\build.ps1 -Name autoend -Define ENDTEST         # the ladder ending
+.\c64\build.ps1 -Name menu3 -Define MENUTEST=3        # the menu with OPPONENT at 3 (UNLOCKTEST: training unlocked)
 .\c64\build.ps1 -Name intro3 -Define INTROTEST=3      # the level 3 introduction (also CONTTEST: the continue)
 .\c64\build.ps1 -Name ft -Define AUTOSTART,FRAMETEST  # frames over time, red digit bottom right (FRAMESTOP: stops at the first)
 .\c64\shot.ps1 out.png -Prg autostart                # screenshot after -Cycles cycles (15 million by default)
@@ -82,11 +84,11 @@ cargo run --release -p paddws-c64 -- params --check   # c64\gen\params.inc match
 cargo run --release -p paddws-c64 -- math             # arithmetic and random generator against fixed.rs and rng.rs
 cargo run --release -p paddws-c64 -- game             # whole matches, state compared with the core on every tick
 cargo run --release -p paddws-c64 -- sid              # SID player against the Verilog one and the Rust one
-cargo run --release -p paddws-c64 -- ui               # scenes and menu, CHALLENGE voices, high scores in flash
-cargo run --release -p paddws-c64 -- frames           # cycles of every frame (attract, demo, matches, ending)
+cargo run --release -p paddws-c64 -- ui               # scenes and menu, ladder voices, WINS, training, high scores and unlock in flash
+cargo run --release -p paddws-c64 -- frames           # cycles of every frame (attract, matches, ending)
 ```
 
-These are the same steps as the `C64` GitHub Action. Also: `ending` plays only the CHALLENGE
+These are the same steps as the `C64` GitHub Action. Also: `ending` plays only the ladder
 ending, `profile` gives cycles per routine, `--build DIR` uses another build folder, and
 `game --ticks N` changes the length of the matches (5 minutes by default).
 
@@ -103,7 +105,7 @@ ending, `profile` gives cycles per routine, `--build DIR` uses another build fol
 - `src/play.s` — frame loop, scenes, menu, coins.
 - `src/attract.s`, `src/video.s`, `src/input.s` — attract mode, graphics, controls.
 - `src/sid.s` — the SID player, translated from `mister/rtl/pong_sid.v`.
-- `src/voice.s`, `src/voice.inc` — the CHALLENGE voice files (assembled separately, one per
+- `src/voice.s`, `src/voice.inc` — the ladder voice files (assembled separately, one per
   opponent).
 - `src/crt.s`, `src/unpack.s`, `src/ef.s`, `src/ef.inc` — cartridge boot and flash access.
 - `paddws.cfg` — the ld65 memory map, with a comment on what uses what.

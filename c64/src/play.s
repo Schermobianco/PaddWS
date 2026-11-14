@@ -1,4 +1,4 @@
-; Ciclo dei frame e scene: attract (auto-test all'accensione, strisce, logo, titolo, demo), menu,
+; Ciclo dei frame e scene: attract (auto-test all'accensione, strisce, logo, titolo, classifica), menu,
 ; conto alla rovescia, partita, GAME OVER; gettoni e crediti.
 ;
 ; Un interrupt di raster alla riga 250 segna l'inizio del vblank: lì si copiano i registri ombra
@@ -11,14 +11,13 @@ FLASH_FRAMES = 3                ; lampo bianco del punto (0,05 s sul PC)
 POINTS_TO_WIN = 11
 LIVES = 3
 MAX_CREDITS = 9
-DEMO_LEVEL = 1                  ; la demo è EVO a due, difficoltà e CPU Normal (come sul MiSTer)
 
-; scene (indice nella tabella `scenes`); le prime cinque sono l'attract
+; scene (indice nella tabella `scenes`); le prime quattro sono l'attract (poi la classifica,
+; ST_SCORES); il 4 era la demo e resta libero, così gli altri numeri non cambiano
 ST_BOOT    = 0
 ST_STRIPES = 1
 ST_LOGO    = 2
 ST_TITLE   = 3
-ST_DEMO    = 4
 ST_MENU    = 5
 ST_COUNT   = 6
 ST_PLAY    = 7
@@ -44,8 +43,9 @@ state:       .res 1
 opt_mode:    .res 1             ; 0 CLASSIC, 1 EVO, 2 NEXT
 .segment "BSS"
 .segment "ZEROPAGE"
-opt_players: .res 1             ; 1 singolo, 2 in due, 3 contro la CPU
+opt_players: .res 1             ; 1 singolo, 2 in due, 3 contro la CPU, OPT_CHALLENGE (NEXT)
 .segment "BSS"
+opt_opp:     .res 1             ; NEXT, voce OPPONENT: 0 la scala (LADDER), n allenamento al livello n
 opt_level:   .res 1
 .segment "ZEROPAGE"
 opt_free:    .res 1             ; Free Play
@@ -62,9 +62,6 @@ flash:       .res 1
 paused:      .res 1
 menu_sel:    .res 1             ; voce selezionata del menu
 menu_i:      .res 1             ; voce in disegno (print_str usa v_n)
-demo_label:  .res 1             ; demo: scritta a schermo (0 nessuna, 1 INSERT COIN, 2 PRESS START)
-demo_credit: .res 1             ; demo: riga dei crediti a schermo (variante + 1)
-demo_prep:   .res 1             ; titolo finito: 1 = pulire il testo, 2 = entrare nella demo
 screen_clear: .res 1            ; begin_match: schermo di testo già pulito nel frame prima
 over_next: .res 1               ; partita finita: GAME OVER al prossimo frame
 fx_pend:   .res 1               ; effetti sonori rimandati dal frame prima (già avanti)
@@ -129,16 +126,22 @@ win_pg:    .res 1               ; YOU WIN o PERFECT nel GAME OVER: 0 no, 1-16 pr
 .if .defined(ENDTEST)
 ; Build per le schermate del finale di CHALLENGE (-Define ENDTEST): l'ultimo livello appena vinto
 ; 5 a 0, con il player delle voci del file del primo livello in memoria come dopo una scala (la
-; copia e i primi tre frame della presentazione). Tra le routine dell'avvio, che play_main trova
-; ancora al loro posto, così non occupa il programma.
-.segment "BOOTCODE"
-.proc endtest_setup
+; copia e i primi tre frame della presentazione). Le variabili tra le routine dell'avvio, che
+; play_main trova ancora al loro posto; il file voce da endtest_voice, nel programma: il primo
+; frame del file copia il tema a THEME_BASE ($F800), cioè proprio sulle routine dell'avvio (prima
+; endtest_setup stava tutta lì e al ritorno da VOICE_TICK eseguiva il tema).
+.proc endtest_voice
+    jsr endtest_setup
     lda rung_kind
     jsr ef_voice
     jsr VOICE_TICK
     jsr VOICE_TICK
     jsr VOICE_TICK
     jsr VOICE_STOP
+    jmp ch_after
+.endproc
+.segment "BOOTCODE"
+.proc endtest_setup
     lda #CG_LADDER
     sta cg_active
     lda #CH_LEVELS - 1
@@ -156,24 +159,26 @@ win_pg:    .res 1               ; YOU WIN o PERFECT nel GAME OVER: 0 no, 1-16 pr
     sta ch_score+1
     lda #^123456
     sta ch_score+2
-    jmp ch_after
+    rts
 .endproc
 .segment "CODE"
 .elseif .defined(OVERTEST)
 ; Build per le schermate del GAME OVER (-Define OVERTEST=n): una partita EVO che finisce subito,
 ; al primo frame. n = 1 contro la CPU vinta 11 a 0 (PERFECT), 2 in due 0 a 11 (PERFECT e P2 WINS),
-; 3 contro la CPU vinta 11 a 3 (YOU WIN), 4 contro la CPU persa 0 a 11; senza FREE PLAY, così la demo
-; dopo mostra INSERT COIN. Tra le routine dell'avvio.
+; 3 contro la CPU vinta 11 a 3 (YOU WIN), 4 contro la CPU persa 0 a 11, 5 sfida di CHALLENGE al
+; livello 3 vinta 11 a 3 dal campione (a sinistra) con 2 duelli già vinti: 3 WINS nel GAME OVER e
+; nella presentazione dopo; senza FREE PLAY, così il titolo dopo mostra INSERT COIN. Tra le
+; routine dell'avvio.
 .segment "BOOTCODE"
 .proc overtest_setup
     lda #3
-    .if ::OVERTEST = 2
+    .if ::OVERTEST = 2 .or ::OVERTEST = 5
     lda #2
     .endif
     sta opt_players
     lda #1
     sta opt_mode
-    lda #0                      ; nella demo dopo, INSERT COIN
+    lda #0                      ; nel titolo dopo, INSERT COIN
     sta opt_free
     jsr start_game
     .if ::OVERTEST = 1
@@ -182,11 +187,20 @@ win_pg:    .res 1               ; YOU WIN o PERFECT nel GAME OVER: 0 no, 1-16 pr
     .elseif ::OVERTEST = 2
     lda #11
     sta score+4
-    .elseif ::OVERTEST = 3
+    .elseif ::OVERTEST = 3 .or ::OVERTEST = 5
     lda #11
     sta score
     lda #3
     sta score+4
+    .if ::OVERTEST = 5
+    lda #CG_DUEL
+    sta cg_active
+    lda #2
+    sta ch_wins
+    sta ch_level
+    lda #0
+    sta ch_side
+    .endif
     .else
     lda #11
     sta score+4
@@ -216,6 +230,43 @@ win_pg:    .res 1               ; YOU WIN o PERFECT nel GAME OVER: 0 no, 1-16 pr
     lda #2
     sta ch_level
     jmp enter_cont
+.endproc
+.segment "CODE"
+.elseif .defined(MENUTEST)
+; Build per le schermate del menu (-Define MENUTEST=n): subito il menu, con OPPONENT a n (con
+; UNLOCKTEST si vede). Tra le routine dell'avvio.
+.segment "BOOTCODE"
+.proc menutest_setup
+    lda #::MENUTEST
+    sta opt_opp
+    jmp enter_menu
+.endproc
+.segment "CODE"
+.elseif .defined(AUTOSTART)
+; Build per le schermate (-Define AUTOSTART): subito una partita EVO contro la CPU; con AUTONEXT in
+; NEXT, dalle scelte (con SMTEST due CPU, SMFULL: barre piene); con AUTOCHALLENGE in CHALLENGE,
+; dalle scelte, e con anche TRAINTEST=n l'allenamento contro l'avversario del livello n. Tra le
+; routine dell'avvio.
+.segment "BOOTCODE"
+.proc autostart_setup
+    lda #3
+    sta opt_players
+    lda #1
+.ifdef AUTONEXT
+    lda #2
+.endif
+    sta opt_mode
+.ifdef AUTOCHALLENGE
+    lda #2
+    sta opt_mode
+    lda #OPT_CHALLENGE
+    sta opt_players
+.ifdef TRAINTEST
+    lda #::TRAINTEST
+    sta opt_opp
+.endif
+.endif
+    jmp start_game
 .endproc
 .segment "CODE"
 .elseif .defined(INTROTEST)
@@ -254,28 +305,17 @@ win_pg:    .res 1               ; YOU WIN o PERFECT nel GAME OVER: 0 no, 1-16 pr
     sta credits
     sta screen_clear
 .if .defined(ENDTEST)
-    jsr endtest_setup           ; build per le schermate del finale (sotto, tra le routine dell'avvio)
+    jsr endtest_voice           ; build per le schermate del finale (sopra)
 .elseif .defined(OVERTEST)
     jsr overtest_setup          ; build per le schermate del GAME OVER (sopra)
 .elseif .defined(CONTTEST)
     jsr conttest_setup          ; build per le schermate del continue (sopra)
+.elseif .defined(MENUTEST)
+    jsr menutest_setup          ; build per le schermate del menu (sopra)
 .elseif .defined(INTROTEST)
     jsr introtest_setup         ; build per le schermate delle presentazioni (sopra)
 .elseif .defined(AUTOSTART)
-    lda #3                      ; build per le schermate: subito una partita EVO contro la CPU
-    sta opt_players
-    lda #1
-.ifdef AUTONEXT
-    lda #2                      ; (con AUTONEXT in NEXT, dalle scelte; con SMTEST due CPU, SMFULL:
-.endif                          ; barre piene)
-    sta opt_mode
-.ifdef AUTOCHALLENGE
-    lda #2                      ; (con AUTOCHALLENGE in CHALLENGE, dalle scelte)
-    sta opt_mode
-    lda #OPT_CHALLENGE
-    sta opt_players
-.endif
-    jsr start_game
+    jsr autostart_setup         ; build per le schermate: subito una partita (sopra)
 .else
     jsr boot_enter
     lda #ST_BOOT
@@ -299,11 +339,21 @@ loop:
 :   lda frame_flag
     beq :+
     lda state                   ; (l'entrata nella presentazione carica il file voce, a schermo
-    cmp #ST_INTRO               ; fermo: è un caricamento, non conta, né i due giri dopo, che
-    bne ft_real                 ; partono a metà frame)
+    cmp #ST_PICK                ; fermo: è un caricamento, non conta, né i due giri dopo, che
+    bne ft_intro                ; partono a metà frame; il file del primo livello prima
+    lda cg_active               ; dell'allenamento, ch_start, viene due frame prima di quella
+    cmp #CG_TRAIN               ; copia: i quattro giri dopo)
+    bne ft_intro
+    lda #1
+    bne ft_skip
+ft_intro:
+    lda state
+    cmp #ST_INTRO
+    bne ft_real
     cmp ft_prev
     beq ft_real
     lda #3
+ft_skip:
     sta ft_n
     bne :+
 ft_real:
@@ -391,7 +441,7 @@ ft_state: .byte 0, 0, 0, 0, 0
 .endproc
 
 scenes:
-    .word boot_scene - 1, stripes_scene - 1, logo_scene - 1, title_scene - 1, demo_scene - 1
+    .word boot_scene - 1, stripes_scene - 1, logo_scene - 1, title_scene - 1, go_stripes - 1
     .word menu_scene - 1, count_scene - 1, play_scene - 1, ov_scene - 1, pick_scene - 1
     .word intro_scene - 1, clear_scene - 1, cont_scene - 1, initials_scene - 1, scores_scene - 1
     .word challenger_scene - 1, end_scene - 1
@@ -422,7 +472,7 @@ skip:
     jsr run_scene
 .endproc                        ; (prosegue in scene_done)
 
-; Dopo ogni scena: sprite e riserve di NEXT dallo stato della partita (demo e partita) e musica.
+; Dopo ogni scena: sprite e riserve di NEXT dallo stato della partita e musica.
 ; Segue frame senza salto.
 SID_TICK_MAX  = 2500            ; sid_tick (o sid_more) più pesante in partita, anche con il tempo
                                 ; che cambia nel bullet time e con il filtro (paddws-c64 sid: i temi
@@ -434,13 +484,10 @@ KEEP_SPRITES_LINE = 14500 / 58  ; righe oltre le quali restano gli sprite del fr
 .assert SID_LATE_LINE >= 56 && SID_LATE_LINE < RASTER_LINE, error, "SID_LATE_LINE fuori dalle righe 56-249"
 .proc scene_done
     lda state
-    cmp #ST_DEMO
-    beq game
     cmp #ST_COUNT
     bcc other
     cmp #ST_OVER + 1
     bcs other
-game:
     cmp #ST_OVER                ; GAME OVER: sprite e riserve li tiene il suo codice (ov_scene),
     beq music                   ; che sta dove ci sono le mosse speciali (sm_hud)
     ; dopo un tick pesantissimo (frame già oltre circa 14.500 cicli: colpo con previsioni, capsula e
@@ -458,11 +505,8 @@ music:
     ; stesse scritture un frame dopo. Righe SID_LATE_LINE-249: il frame è oltre SID_LATE cicli
     jsr sid_time
     bcc late
-    lda state                   ; in partita (non nella demo) il tempo della musica
-    cmp #ST_DEMO
-    beq :+
-    jsr match_tempo
-:   jsr sid_tick
+    jsr match_tempo             ; in partita il tempo della musica
+    jsr sid_tick
     jsr border_game             ; (anche lui solo se il frame ha tempo)
     ; match point: il passo della canzone in più (uno ogni 4 frame), se c'è ancora tempo
     lda sid_extra
@@ -656,7 +700,7 @@ done:
     rts
 .endproc
 
-; Strisce: anche dopo il titolo, la demo, il GAME OVER e il menu.
+; Strisce: anche dopo la classifica, il GAME OVER e il menu.
 .proc go_stripes
     jsr stripes_enter
     lda #ST_STRIPES
@@ -688,192 +732,17 @@ done:
     rts
 .endproc
 
-; Alla fine del titolo la demo entra in tre frame, perché il lavoro non sta in uno: il titolo
-; finisce, poi si pulisce lo schermo di testo (non si vede, a schermo c'è la bitmap), poi la demo.
 .proc title_scene
     jsr coin_and_start
     bcs done
-    lda demo_prep
-    beq title
-    cmp #1
-    beq clear
-    lda #0
-    sta demo_prep
-    jmp demo_enter
-clear:
-    lda #COL_WHITE
-    jsr clear_text
-    inc demo_prep
-    rts
-title:
     jsr title_frame
     bcc done
-    ; dopo il titolo la classifica di CHALLENGE (poi la demo), come sul MiSTer
+    ; dopo il titolo la classifica di CHALLENGE (poi di nuovo le strisce), come sul MiSTer
     lda #$ff
     sta ch_hl
-    lda #1
-    sta ch_attract
     jmp enter_scores
 done:
     rts
-.endproc
-
-; ------------------------------------------------------------------------------------ demo
-
-; Partita dimostrativa: due CPU, EVO, difficoltà Normal. Prima i caratteri di INSERT COIN e
-; PRESS START che il GAME OVER può aver usato per PERFECT (ov_enter): la loro pagina del set di
-; caratteri, dalla cartuccia (circa 3.800 cicli).
-.proc demo_enter
-    lda #$80 + PERFECT_PAGE
-    sta ef_src+2
-    lda #CHARSET_BANK
-    ldx #1
-    ldy #>CHARSET + PERFECT_PAGE
-    jsr ef_copy
-    jsr math_ensure
-    lda #0
-    sta cfg_next
-    lda #2
-    sta cfg_players
-    lda #1
-    sta cfg_evo
-    lda #DEMO_LEVEL
-    sta cfg_diff
-    jsr seed_from_time
-    jsr match_new
-    lda #DEMO_LEVEL
-    ldx #0
-    jsr cpu_init
-    lda #DEMO_LEVEL
-    ldx #4
-    jsr cpu_init
-    jsr game_screen_draw        ; testo già pulito da title_scene
-    lda #0
-    sta at_f
-    sta at_f+1
-    sta demo_label
-    sta demo_credit
-    lda #ST_DEMO
-    sta state
-    rts
-.endproc
-
-.proc demo_scene
-    jsr coin_and_start
-    bcc :+
-    rts
-:   jsr flash_frame
-    ldx #0
-    jsr cpu_input
-    ldx #4
-    jsr cpu_input
-    jsr dash_before
-    jsr match_step
-    jsr dash_after
-    lda events
-    and #EV_WALL | EV_HIT | EV_BOOST | EV_SCORE
-    jsr at_sound
-    lda events
-    and #EV_SCORE
-    beq :+
-    lda #FLASH_FRAMES
-    sta flash
-    jsr draw_scores
-:   jsr demo_overlay
-    jsr at_tick
-    lda at_f+1
-    cmp #>AT_DEMO_FRAMES
-    bcc done
-    bne :+
-    lda at_f
-    cmp #<AT_DEMO_FRAMES
-    bcc done
-:   jsr go_stripes
-done:
-    rts
-.endproc
-
-DEMO_LABEL_W = BIG_PRESS_START_W
-DEMO_BOX_C0 = (40 - DEMO_LABEL_W) / 2 - 1
-DEMO_BOX_W = DEMO_LABEL_W + 2
-
-; Scritte della demo: INSERT COIN / PRESS START che lampeggia al centro, crediti in alto a sinistra.
-.proc demo_overlay
-    ldx #0
-    jsr blink_on
-    bcc :+
-    ldx #2
-    jsr credit_variant
-    bne :+
-    ldx #1
-:   cpx demo_label
-    beq credit
-    stx demo_label
-    ; riquadro vuoto sopra il campo, poi la scritta; senza scritta torna la mezzeria
-    lda #4
-    sta v_n
-    lda #DEMO_BOX_W
-    ldx #DEMO_BOX_C0
-    ldy #10
-    jsr blank_box
-    lda demo_label
-    bne label
-    lda #10
-    sta v_row
-:   jsr center_line_row
-    inc v_row
-    lda v_row
-    cmp #14
-    bne :-
-    jmp credit
-label:
-    cmp #1
-    bne press
-    lda #<big_insert_coin
-    sta ptr2
-    lda #>big_insert_coin
-    sta ptr2+1
-    lda #BIG_INSERT_COIN_W
-    ldx #(40 - BIG_INSERT_COIN_W) / 2
-    jmp big
-press:
-    lda #<big_press_start
-    sta ptr2
-    lda #>big_press_start
-    sta ptr2+1
-    lda #BIG_PRESS_START_W
-    ldx #(40 - BIG_PRESS_START_W) / 2
-big:
-    ldy #11
-    jsr draw_big
-credit:
-    jsr credit_variant
-    clc
-    adc #1
-    cmp demo_credit
-    beq done
-    sta demo_credit
-    jmp print_credits
-done:
-    rts
-.endproc
-
-; "CREDIT n" o "FREE PLAY" in alto a sinistra (testo).
-.proc print_credits
-    lda opt_free
-    beq :+
-    jsr print_at
-    .byte 1, 0, "FREE PLAY", 0
-    rts
-:   jsr print_at
-    .byte 1, 0, "CREDIT   ", 0
-    lda credits
-    clc
-    adc #'0'
-    ldx #8
-    ldy #0
-    sty v_row
-    jmp put_ascii
 .endproc
 
 ; ------------------------------------------------------------------------------------ menu
@@ -967,12 +836,7 @@ item:
     bpl :-
     ; nome della voce
     lda menu_i
-    asl a
-    tax
-    lda item_names,x
-    sta ptr2
-    lda item_names+1,x
-    sta ptr2+1
+    jsr item_name               ; ptr2
     ldx #MENU_COL
     ldy v_row
     jsr print_str
@@ -990,18 +854,6 @@ item:
     bne item
     rts
 .endproc
-
-item_names: .word s_game, s_players, s_level, s_control, s_free, s_asound, s_volume, s_border
-            .word s_play
-s_game:     .byte "GAME", 0
-s_players:  .byte "PLAYERS", 0
-s_level:    .byte "DIFFICULTY", 0
-s_control:  .byte "CONTROL", 0
-s_free:     .byte "FREE PLAY", 0
-s_asound:   .byte "ATTRACT SOUND", 0
-s_volume:   .byte "VOLUME", 0
-s_border:   .byte "BORDER", 0
-s_play:     .byte "PLAY", 0
 
 ; ptr2 = valore della voce A (0 = nessuno)
 .proc item_value
@@ -1021,21 +873,6 @@ value_fn: .word v_game - 1, v_players - 1, v_level - 1, v_control - 1, v_free - 
     lda opt_mode
     ldx #<game_names
     ldy #>game_names
-    jmp pick_name
-.endproc
-.segment "RODATA"
-; giocatori validi per gioco, indice opt_mode * 5 + opt_players (1 ONE, 2 TWO, 3 VS CPU, 4 CHALLENGE)
-players_ok:
-    .byte 0, 1, 1, 1, 0                 ; CLASSIC
-    .byte 0, 0, 1, 1, 0                 ; EVO
-    .byte 0, 0, 1, 0, 1                 ; NEXT: da soli c'è solo la CHALLENGE
-.segment "MENUCODE"
-.proc v_players
-    lda opt_players
-    sec
-    sbc #1
-    ldx #<player_names
-    ldy #>player_names
     jmp pick_name
 .endproc
 .proc v_level
@@ -1128,7 +965,6 @@ done:
 .endproc
 
 game_names:    .word s_classic, s_evo, s_next
-player_names:  .word s_one, s_two, s_cpu, s_challenge
 control_names: .word s_joystick, s_paddle
 level_names:   .word s_easy, s_normal, s_hard, s_expert
 on_off_names:  .word s_off, s_on
@@ -1137,10 +973,6 @@ border_names:  .word s_black, s_gray
 s_classic:  .byte "CLASSIC ", 0
 s_evo:      .byte "EVO     ", 0
 s_next:     .byte "NEXT    ", 0
-s_one:      .byte "ONE      ", 0
-s_two:      .byte "TWO      ", 0
-s_cpu:      .byte "VS CPU   ", 0
-s_challenge: .byte "CHALLENGE", 0
 s_joystick: .byte "JOYSTICK", 0
 s_paddle:   .byte "PADDLE  ", 0
 s_easy:     .byte "EASY    ", 0
@@ -1189,26 +1021,33 @@ vol_text:   .byte "100%", 0     ; il valore di VOLUME, scritto da v_volume
     lda at_tmp
     ora #JOY_FIRE
     sta at_tmp
-:   ; su e giù
+:   ; su e giù, in giro; la riga di PLAYERS vuota (NEXT senza allenamento) si salta
+    ldy #$ff
     lda at_tmp
     and #JOY_UP
-    beq :+
-    dec menu_sel
-    bpl redraw
-    lda #MENU_ITEMS - 1
-    sta menu_sel
-    jmp redraw
-:   lda at_tmp
+    bne move
+    ldy #1
+    lda at_tmp
     and #JOY_DOWN
-    beq :+
-    inc menu_sel
-    lda menu_sel
-    cmp #MENU_ITEMS
-    bcc redraw
+    beq fire
+move:
+    tya
+    clc
+    adc menu_sel
+    bpl :+
+    lda #MENU_ITEMS - 1
+:   cmp #MENU_ITEMS
+    bcc :+
     lda #0
-    sta menu_sel
-    jmp redraw
-:   ; fuoco: PLAY parte, le altre voci cambiano valore
+:   sta menu_sel
+    cmp #MI_PLAYERS
+    bne redraw
+    jsr pl_row                  ; (Y resta)
+    cmp #PL_BLANK
+    beq move
+    bne redraw
+fire:
+    ; fuoco: PLAY parte, le altre voci cambiano valore
     lda at_tmp
     and #JOY_FIRE
     beq :+
@@ -1236,13 +1075,125 @@ done:
     rts
 .endproc
 
+.segment "RODATA"
+; Nomi delle voci del menu (nel programma, il menu è quasi pieno); la riga di PLAYERS ha tre
+; nomi (pl_row).
+item_names: .word s_game, 0, s_level, s_control, s_free, s_asound, s_volume, s_border
+            .word s_play
+            .word s_players, s_opponent, s_blank   ; riga di PLAYERS: PL_PLAYERS, PL_OPPONENT, PL_BLANK
+s_game:     .byte "GAME", 0
+s_players:  .byte "PLAYERS ", 0
+s_opponent: .byte "OPPONENT", 0
+s_level:    .byte "DIFFICULTY", 0
+s_control:  .byte "CONTROL", 0
+s_free:     .byte "FREE PLAY", 0
+s_asound:   .byte "ATTRACT SOUND", 0
+s_volume:   .byte "VOLUME", 0
+s_border:   .byte "BORDER", 0
+s_play:     .byte "PLAY", 0
+
+; stessa lunghezza (8), così il valore nuovo copre il vecchio, anche dei nomi delle racchette
+s_ladder:   .byte "LADDER  ", 0
+s_blank:    .byte "        ", 0
+
+.segment "MENUCODE"
+player_names:  .word s_one, s_two, s_cpu
+s_one:      .byte "ONE     ", 0
+s_two:      .byte "TWO     ", 0
+s_cpu:      .byte "VS CPU  ", 0
+; giocatori validi per gioco, indice opt_mode * 5 + opt_players (1 ONE, 2 TWO, 3 VS CPU, 4 CHALLENGE)
+players_ok:
+    .byte 0, 1, 1, 1, 0                 ; CLASSIC
+    .byte 0, 0, 1, 1, 0                 ; EVO
+    .byte 0, 0, 0, 0, 1                 ; NEXT: solo la scala (OPT_CHALLENGE) o l'allenamento
+
+; Riga di PLAYERS del menu: PL_PLAYERS in CLASSIC ed EVO, in NEXT PL_OPPONENT con l'allenamento
+; sbloccato (hi_open), se no PL_BLANK (riga vuota, il cursore la salta). Y resta.
+PL_PLAYERS  = 0
+PL_OPPONENT = 1
+PL_BLANK    = 2
+.proc pl_row
+    lda #PL_PLAYERS
+    ldx opt_mode
+    cpx #2
+    bne done
+    lda #PL_OPPONENT
+    ldx hi_open
+    beq done
+    lda #PL_BLANK
+done:
+    rts
+.endproc
+
+; ptr2 = nome della voce A del menu.
+.proc item_name
+    cmp #MI_PLAYERS
+    bne :+
+    jsr pl_row
+    clc
+    adc #MENU_ITEMS
+:   asl a
+    tax
+    lda item_names,x
+    sta ptr2
+    lda item_names+1,x
+    sta ptr2+1
+    rts
+.endproc
+
+; ptr2 = valore della riga di PLAYERS: i giocatori, l'avversario (LADDER o il nome della racchetta
+; del livello), o niente.
+.proc v_players
+    jsr pl_row
+    cmp #PL_PLAYERS             ; (pl_row non lascia Z da A)
+    beq players
+    lsr a
+    bcc blank                   ; (PL_BLANK)
+    lda opt_opp
+    beq ladder
+    tax
+    lda rung_kind - 1,x
+    ldx #<kind_names
+    ldy #>kind_names
+    jmp pick_name
+ladder:
+    lda #<s_ladder
+    ldx #>s_ladder
+    bne set
+blank:
+    lda #<s_blank
+    ldx #>s_blank
+set:
+    sta ptr2
+    stx ptr2+1
+    rts
+players:
+    lda opt_players
+    sec
+    sbc #1
+    ldx #<player_names
+    ldy #>player_names
+    jmp pick_name
+.endproc
+
+; OPPONENT di A (+1 o -1): LADDER, poi gli avversari nell'ordine della scala, in giro.
+.proc opp_step
+    lda opt_opp
+    clc
+    adc at_tmp
+    and #7
+    sta opt_opp
+    rts
+.endproc
+.assert CH_LEVELS = 7, error, "OPPONENT: LADDER e gli avversari non sono 8"
+
 ; Cambia il valore della voce selezionata di A (+1 o -1), in giro.
 .proc change_value
     sta at_tmp
     ldx menu_sel
     cpx #MI_GAME
     bne not_game
-    ; CLASSIC, EVO, NEXT in giro; EVO e NEXT sono a due (come sul PC)
+    ; CLASSIC, EVO, NEXT in giro; EVO è a due, NEXT solo la scala (o l'allenamento), come sul PC
     lda opt_mode
     clc
     adc at_tmp
@@ -1259,6 +1210,10 @@ mode_ok:
 not_game:
     cpx #MI_PLAYERS
     bne not_players
+    lda opt_mode                ; NEXT: l'avversario (la riga c'è solo con l'allenamento sbloccato)
+    cmp #2
+    bne players_step
+    jmp opp_step
 players_step:
     lda opt_players
     clc
@@ -1273,8 +1228,8 @@ wrap_hi:
 store_p:
     sta opt_players
 players_fix:
-    ; solo i giocatori del gioco scelto (players_ok, come sul PC): ONE in CLASSIC, CHALLENGE in
-    ; NEXT, VS CPU in CLASSIC ed EVO; gli altri si saltano
+    ; solo i giocatori del gioco scelto (players_ok, come sul PC): ONE in CLASSIC, VS CPU in
+    ; CLASSIC ed EVO, in NEXT solo OPT_CHALLENGE (la riga non si vede); gli altri si saltano
     lda opt_mode
     asl a
     asl a
@@ -1382,6 +1337,10 @@ not_volume:
     sta cg_active
     lda #$60                    ; RTS: READY e GO solo dal file voce del primo livello di CHALLENGE
     sta VOICE_COUNT
+    ldx opt_opp                 ; NEXT: il livello della scala (il primo) o dell'allenamento
+    beq :+
+    dex
+:   stx ch_level
     lda opt_mode
     cmp #2
     bne :+
@@ -1690,7 +1649,9 @@ PERFECT_PAGE = PERFECT_C0 * 8 / 256
     lda #ST_OVER
     sta state
     lda #SID_SONG_GAME_OVER
-    ldx cg_active               ; in CHALLENGE silenzio (poi la sua musica)
+    ldx cg_active               ; in CHALLENGE silenzio (poi la sua musica), non nell'allenamento
+    beq :+
+    cpx #CG_TRAIN
     beq :+
     lda #0
 :   jsr sid_song
@@ -1832,6 +1793,24 @@ WIN_SAID = WIN_PAGES + 3        ; win_pg: voce finita, tabelle dei quadrati da r
 .assert WIN_PAGES .mod 2 = 0, error, "YOU WIN: pagine a coppie"
 .assert WIN_PERFECT .mod WIN_PAGES = 0 .and WIN_PAGES <= 16, error, "PERFECT: pagine dell'immagine con ora"
 
+; Alla fine di una sfida di CHALLENGE (GAME OVER sopra P1 o P2 WINS, o PERFECT), al frame OA_TYPE,
+; i duelli vinti di fila da chi ha vinto, in basso dal suo lato (wins_after: duel_over poi li
+; conta allo stesso modo). In OVA e OVC.
+.macro ov_duel_wins
+    .local skip
+    lda ov_f
+    cmp #OA_TYPE
+    bne skip
+    lda cg_active
+    cmp #CG_DUEL
+    bne skip
+    ldx ov_side
+    jsr wins_after
+    ldy #24
+    jsr print_wins
+skip:
+.endmacro
+
 ; Il riquadro e i colori, in ogni versione.
 .macro ov_box_code
 ; variabili delle versioni (con i valori di partenza: si ricopiano a ogni GAME OVER)
@@ -1962,9 +1941,10 @@ right:
 :   sta bottom
     bne draw
 you_win:
-    ; la voce, come sul PC (non all'ultimo livello di CHALLENGE: la dice il finale)
-    lda cg_active
-    beq :+
+    ; la voce, come sul PC (non all'ultimo livello della scala di CHALLENGE: la dice il finale)
+    ldx cg_active
+    dex                         ; (CG_LADDER)
+    bne :+
     lda ch_level
     cmp #CH_LEVELS - 1
     beq :++
@@ -2039,6 +2019,7 @@ run:
 .scope ova
 ; GAME OVER e CPU WINS (senza voce): l'animazione, poi il tempo.
 .proc scene
+    ov_duel_wins
     lda #OA_TYPE1
     ldx top
     bne type                    ; CPU WINS da sola: subito
@@ -2661,6 +2642,7 @@ ov_box_code
 .scope ovc
 ; PERFECT: l'animazione, poi la voce e il tempo.
 .proc scene
+    ov_duel_wins
     jsr ov_stamp
     inc ov_f
     bne :+
@@ -2676,8 +2658,8 @@ ov_win_tick
 .proc ov_stamp
     lda ov_f
     bne :+
-    ; i caratteri di PERFECT al posto di alcuni di INSERT COIN e PRESS START, che si vedono solo
-    ; nella demo (demo_enter rimette gli originali): la loro pagina dalla cartuccia
+    ; i caratteri di PERFECT al posto di alcuni di INSERT COIN e PRESS START grandi, che erano
+    ; della demo e non si vedono più: la loro pagina dalla cartuccia (poi restano così)
     lda #OVCH_SRC
     sta ef_src+2
     lda #OV_BANK

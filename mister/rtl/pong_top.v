@@ -4,15 +4,20 @@
 // Con una moneta (o in Free Play) Start avvia una partita (in NEXT prima la scelta dei bonus
 // e poi quella della racchetta);
 // a fine partita (11 punti in due, 3 vite in singolo) GAME OVER e ritorno all'attract.
-// CHALLENGE (Players: Challenge): scelta di bonus e racchetta, poi 7 livelli contro avversari CPU
+// NEXT (Game type: NEXT dalla 4.2.0; fino alla 4.1 era CHALLENGE, e nel codice la scalata si chiama
+// ancora così): la modalità arcade, scelta di bonus e racchetta, poi 7 livelli contro avversari CPU
 // (presentazione, partita a 7, livello superato o continue a gettoni), iniziali per la
 // classifica dei 10 migliori, che compare anche nell'attract tra il titolo e la demo. Battuto l'ultimo
 // avversario, il finale (M_ENDING, ending_render: circa 57 s, Start lo salta) prima delle iniziali.
+// Il finale sblocca per sempre l'allenamento (salvato nella NVRAM con la classifica): con Opponent
+// dell'OSD su un avversario, scelta, presentazione e una sola partita contro di lui (`train`), senza
+// punti arcade, classifica, continue né sfidanti, poi GAME OVER e attract.
 // Durante la scalata (presentazione, partita, livello superato) un secondo giocatore può entrare con
 // un credito premendo Start dal lato libero (joystick 2 o tasto 2 con il campione a sinistra):
 // HERE COMES A NEW CHALLENGER!, la sua scelta di bonus e racchetta, poi una partita NEXT tra i due a
 // rung_points punti. Il vincitore continua la scalata dal suo lato (la CPU anche a sinistra), il
-// perdente inserisce le iniziali se il suo miglior punteggio entra in classifica.
+// perdente inserisce le iniziali se il suo miglior punteggio entra in classifica. "n WINS" conta i
+// duelli vinti di fila dal campione in carica (`ch_wins`): a fine duello e nelle presentazioni.
 // A ogni frame, all'inizio del vblank, la logica esegue 4 tick (240 Hz) nella demo e in
 // partita. La logica è il core Rust eseguito dal processore RISC-V di pong_logic_rv, che a ogni tick
 // calcola anche i comandi delle CPU (demo e avversario).
@@ -49,9 +54,13 @@ module pong_top #(
     input  wire        reset,          // torna all'attract (reset dall'OSD, cambio di opzioni)
     input  wire        egg_clear,      // reset vero (caricamento del core, Reset dell'OSD), non il
                                        // cambio di Game type: spegne l'easter egg delle iniziali
-    input  wire [1:0]  game_type,      // 0 Classic, 1 EVO, 2 NEXT, 3 CHALLENGE (sempre in NEXT)
-    input  wire [1:0]  players_mode,   // 0 due giocatori, 1 uno (in NEXT: contro la CPU), 2 contro la CPU
+    input  wire [1:0]  game_type,      // 0 Classic, 1 EVO, 3 NEXT (la scalata arcade); 2 NEXT libera
+                                       // contro la CPU, che l'OSD non ha: per il simulatore dei frame
+    input  wire [1:0]  players_mode,   // solo Classic ed EVO: 0 due giocatori, 1 uno, 2 contro la CPU
                                        // (3, da un CFG di prima, quando CHALLENGE era qui: contro la CPU)
+    input  wire [2:0]  train_level,    // NEXT, Opponent dell'OSD: 0 la scalata, 1-7 allenamento contro
+                                       // l'avversario di quel livello (solo dopo lo sblocco)
+    output wire        train_unlocked, // allenamento sbloccato (finale della scalata, anche dalla NVRAM)
     input  wire        free_play,
     input  wire [1:0]  difficulty,     // 0 facile .. 3 esperto, dalla partita successiva
     input  wire        super_moves,    // mosse speciali in NEXT e CHALLENGE (anche nella loro demo)
@@ -133,13 +142,18 @@ localparam [10:0]  READY_FRAMES = 11'd72;       // "READY!" prima della partita
 
 // opzioni dell'OSD
 wire [1:0] players = (players_mode == 2'd3) ? 2'd2 : players_mode;          // 3 di un CFG vecchio = contro la CPU
-wire want_challenge = game_type == 2'd3;                                         // sempre in NEXT
-wire want_next = game_type == 2'd2 || want_challenge;
+wire want_challenge = game_type == 2'd3;                                         // NEXT: la scalata
+wire want_next = game_type[1];
 wire want_evo = game_type == 2'd1;
-// NEXT è sempre a due umani: da soli in NEXT c'è solo Challenge (Players: One o Vs CPU non contano).
-// Resta NEXT contro la CPU con Players a 3, che l'OSD non ha più: serve al simulatore dei frame
-wire want_cpu = (players == 2'd2 && (!want_next || players_mode == 2'd3)) || want_challenge;
+// NEXT è sempre contro la CPU (Players non conta): la scalata, o con il tipo 2, che l'OSD non ha, una
+// partita libera per il simulatore dei frame. In due si gioca solo la sfida dentro la scalata
+wire want_cpu = (players == 2'd2 && !want_next) || want_next;
 wire want_two = players != 2'd1 || want_next;
+// allenamento: l'avversario scelto con Opponent, solo dopo lo sblocco; livello da cui si parte
+reg  train_unlock_r = 1'b0;
+assign train_unlocked = train_unlock_r;
+wire want_train = want_challenge && train_unlock_r && train_level != 3'd0;
+wire [2:0] start_level = want_train ? train_level - 3'd1 : 3'd0;
 
 // eventi sonori (bit come quelli della logica): 0 ping, 1 pong, 2 boost, 3 punto, 4 gettone
 localparam [7:0] SND_PING = 8'h01, SND_PONG = 8'h02, SND_BOOST = 8'h04, SND_COIN = 8'h10;
@@ -439,7 +453,11 @@ reg [3:0]  next_mode;
 
 // -------------------------------------------------------------- CHALLENGE
 
-reg        ch_active = 1'b0;          // partita CHALLENGE in corso
+reg        ch_active = 1'b0;          // partita CHALLENGE in corso (anche l'allenamento)
+reg        train = 1'b0;              // allenamento: un solo avversario, senza punti arcade né sfidanti
+// duelli vinti di fila dal campione in carica, in BCD (al massimo 99): +1 se il duello lo vince il
+// campione, 1 se lo vince lo sfidante; da zero a ogni partita nuova
+reg [7:0]  ch_wins = 8'd0;
 reg        ch_scores_attract = 1'b0;  // classifica mostrata dall'attract: poi la demo
 reg [2:0]  ch_level = 3'd0;
 reg [8:0]  ch_lo = 9'd0;              // bonus e racchetta scelti dal giocatore (il campione)
@@ -454,7 +472,7 @@ reg        duel_champ = 1'b0;         // ...che è il campione (altrimenti lo sf
 wire       duel_w = score1 > score0;  // lato del vincitore della sfida (punteggi fermi fino alla partita dopo)
 // lo sfidante entra dal lato libero, con un credito, mentre la scalata è in corso (non nelle
 // iniziali, nella classifica, nel continue e dopo l'ultimo livello); uno solo per volta
-wire       ch_join = side_start[!ch_side] && ch_active && !duel && !reset && (free_play || credits != 4'd0) &&
+wire       ch_join = side_start[!ch_side] && ch_active && !duel && !train && !reset && (free_play || credits != 4'd0) &&
                      (mode == M_INTRO || mode == M_GAME || (mode == M_CLEAR && ch_level != CH_LEVELS - 1));
 // la CPU di CHALLENGE gioca a sinistra (il campione è a destra)
 assign     ch_cpu_left = ch_active && ch_side;
@@ -571,7 +589,9 @@ always @(posedge clk) begin
         mframe <= 11'd0;
         match_cpu <= want_cpu;
         ch_active <= want_challenge;
-        ch_level <= 3'd0;
+        train <= want_train;
+        ch_wins <= 8'd0;
+        ch_level <= start_level;
         ch_side <= 1'b0;                                 // in CHALLENGE si comincia a sinistra
         duel <= 1'b0;
         howto_seen <= 2'b00;
@@ -749,6 +769,10 @@ always @(posedge clk) begin
     end else if (game_over_now && mode == M_GAME) begin
         mode <= M_GAME_OVER;
         mframe <= 11'd0;
+        // fine della sfida: il contatore dei duelli vinti vale già nella schermata del GAME OVER
+        if (duel)
+            ch_wins <= (duel_w != ch_side) ? 8'h01 : (ch_wins == 8'h99) ? ch_wins :
+                       (ch_wins[3:0] == 4'd9) ? {ch_wins[7:4] + 4'd1, 4'd0} : ch_wins + 8'd1;
     end else if (duel && mode == M_GAME_OVER && frame_start && mframe + 11'd1 >= AT_GAME_OVER_FRAMES +
                  (over_closes ? AT_GAME_OVER_BLACK : 0)) begin
         // fine della sfida: se perde il campione e il suo miglior punteggio entra in classifica, prima
@@ -787,13 +811,18 @@ always @(posedge clk) begin
                 M_SCORES: next_mode = ch_scores_attract ? M_DEMO : M_STRIPES;
                 // CHALLENGE: livello vinto (l'ultimo: il finale) o continue; demo e GAME OVER tornano
                 // alle strisce (la fine della sfida tra due giocatori è qui sopra)
-                M_GAME_OVER: next_mode = !ch_active ? M_STRIPES : ((score0 > score1) == ch_side) ? M_CONT :
+                M_GAME_OVER: next_mode = (!ch_active || train) ? M_STRIPES : ((score0 > score1) == ch_side) ? M_CONT :
                                          (ch_level == CH_LEVELS - 1) ? M_ENDING : M_CLEAR;
                 default: next_mode = M_STRIPES;
             endcase
             if (next_mode == M_SCORES) begin
                 ch_scores_attract <= 1'b1;
                 ch_highlight <= 4'd15;
+            end
+            // fine dell'allenamento: si torna all'attract
+            if (mode == M_GAME_OVER && next_mode == M_STRIPES) begin
+                ch_active <= 1'b0;
+                train <= 1'b0;
             end
         end
         if (next_mode != mode) blink <= 6'd0;
@@ -886,7 +915,7 @@ always @(posedge clk) begin
         pick_cur[0] <= 3'd0;
         pick_cur[1] <= 3'd0;
         pick_mask[0] <= 6'd0;
-        pick_mask[1] <= want_challenge ? rung_pick(3'd0) :
+        pick_mask[1] <= want_challenge ? rung_pick(start_level) :
                         want_cpu ? cpu_pick(seed_counter[4:0] >= 5'd20 ? seed_counter[4:0] - 5'd20 : seed_counter[4:0]) : 6'd0;
         pick_cpu <= want_cpu;
         pick_lock <= {want_cpu, 1'b0};
@@ -894,7 +923,7 @@ always @(posedge clk) begin
         pick_paddle <= 1'b1;
         kind_cur[0] <= 3'd0;
         // tipo a caso per la CPU, da bit del contatore diversi da quelli dei bonus
-        kind_cur[1] <= want_challenge ? rung_kind(3'd0) : !want_cpu ? 3'd0 : (seed_counter[12:10] != 3'd7) ? seed_counter[12:10] :
+        kind_cur[1] <= want_challenge ? rung_kind(start_level) : !want_cpu ? 3'd0 : (seed_counter[12:10] != 3'd7) ? seed_counter[12:10] :
                        (seed_counter[15:13] != 3'd7) ? seed_counter[15:13] : 3'd0;
         kind_chosen <= {want_cpu, 1'b0};
     end else if (ch_join) begin
@@ -1760,7 +1789,8 @@ wire [2:0]  over_base = !two ? 3'd0 : match_cpu ? (((score0 >= score1) != ch_cpu
 wire        over_zero = (score0 == 16'd0) != (score1 == 16'd0);
 wire        over_perfect = over_zero && over_base != 3'd0 && over_base != 3'd4;
 wire [2:0]  over_winner = (over_perfect && over_base == 3'd3) ? 3'd5 : over_base;
-wire        over_solo = over_winner == 3'd3 || over_winner == 3'd5 || (ch_active && !duel && over_winner == 3'd4);
+// (CPU WINS da solo a un livello perso della scalata, con il continue dopo; nell'allenamento no)
+wire        over_solo = over_winner == 3'd3 || over_winner == 3'd5 || (ch_active && !duel && !train && over_winner == 3'd4);
 // GAME OVER animato (pong_render, OV_*): frame dall'inizio; con GAME OVER il campo si spegne, e dal
 // frame 48 anche le aggiunte di NEXT se ne vanno con palla e racchette
 wire [7:0]  over_age = (mframe > 11'd255) ? 8'd255 : mframe[7:0];
@@ -1921,6 +1951,8 @@ endgenerate
 // classifica sulla SD (NVRAM del MiSTer): legge il file all'avvio e lo riscrive quando il MiSTer lo
 // chiede; i posti letti arrivano qui uno alla volta (nv_go), ciascuno al suo posto
 wire        nv_go;
+wire        nv_unlock;                // file con l'allenamento sbloccato
+reg         unlock_new = 1'b0;        // sbloccato adesso: la NVRAM è da salvare
 wire [3:0]  nv_at, nv_level;
 wire [17:0] nv_name;
 wire [23:0] nv_score;
@@ -1931,10 +1963,21 @@ ch_nvram nvram (
     .ioctl_wr(ioctl_wr), .ioctl_addr(ioctl_addr), .ioctl_dout(ioctl_dout), .ioctl_din(ioctl_din),
     .upload_req(ioctl_upload_req),
     .names(tb_names_bus), .scores(tb_scores_bus), .bcds(tb_bcd_bus), .levels(tb_levels_bus),
-    .changed(ins_go), .autosave(nv_autosave),
+    .unlocked(train_unlock_r), .changed(ins_go || unlock_new), .autosave(nv_autosave),
     .ld_go(nv_go), .ld_busy(ins_go), .ld_at(nv_at), .ld_name(nv_name), .ld_score(nv_score),
-    .ld_bcd(nv_bcd), .ld_level(nv_level)
+    .ld_bcd(nv_bcd), .ld_level(nv_level), .ld_unlock(nv_unlock)
 );
+
+// sblocco dell'allenamento: il finale della scalata (da salvare: `unlock_new`) o un file della NVRAM
+// che lo ha già; non si toglie più
+always @(posedge clk) begin
+    unlock_new <= 1'b0;
+    if (mode == M_ENDING && !train_unlock_r) begin
+        train_unlock_r <= 1'b1;
+        unlock_new <= 1'b1;
+    end else if (nv_unlock)
+        train_unlock_r <= 1'b1;
+end
 
 // scrittura della classifica: il posto inserito a fine CHALLENGE (quelli sotto scendono di uno) o un
 // posto letto dalla SD (solo lui); nello stesso ciclo vince l'inserimento e il posto letto si scrive
@@ -1959,18 +2002,25 @@ always @(posedge clk) begin
     end
 end
 
+// "n WINS": nella presentazione dal lato del campione, a fine duello dal lato del vincitore (spento il
+// campo, fino alla chiusura dello schermo)
+wire        wins_intro = mode == M_INTRO && ch_wins != 8'd0 && !train;
+wire        wins_over = mode == M_GAME_OVER && duel && over_age >= 8'd60 && (over_age < 8'd158 || !over_closes);
+
 challenge_render challenge_draw (
     .clk(clk), .hc(mode == M_INTRO ? intro_hc : {1'b0, hc}), .vc(mode == M_INTRO ? intro_vc : {1'b0, vc}),
     .screen(mode == M_INTRO ? 3'd1 : mode == M_CLEAR ? 3'd2 : mode == M_CONT ? 3'd3 :
             mode == M_INITIALS ? 3'd4 : mode == M_SCORES ? 3'd5 : mode == M_CHALLENGER ? 3'd7 :
-            (ch_active && !duel && (mode == M_GAME || mode == M_GAME_OVER)) ? 3'd6 : 3'd0),
-    .side(ch_side), .join_prompt(ch_active && !duel), .level(ch_level), .kind(rung_kind(ch_level)), .loadout(rung_loadout(ch_level)),
+            (ch_active && !duel && !train && (mode == M_GAME || mode == M_GAME_OVER)) ? 3'd6 : 3'd0),
+    .side(ch_side), .join_prompt(ch_active && !duel && !train), .train(train), .level(ch_level), .kind(rung_kind(ch_level)), .loadout(rung_loadout(ch_level)),
     .score_bcd(mode == M_INITIALS ? ch_best_bcd : ch_score_bcd), .hi_bcd(tb_bcd[0]),
     .perfect(ch_perfect), .coin_prompt(!free_play && credits == 4'd0), .blink(blink),
     .cont_digit(ch_cont_digit), .cont_sub(ch_cont_sub), .cont_over(cont_over),
     .name(ch_name), .name_pos(ch_pos), .letter(letter_code(ch_letter)),
     .table_names(tb_names_bus), .table_bcd(tb_bcd_bus), .table_levels(tb_levels_bus),
     .highlight(ch_highlight), .mult(ch_mult), .intro_age(intro_age),
+    .wins_on(wins_intro || wins_over), .wins_right(wins_over ? duel_w : ch_side), .wins_big(wins_over),
+    .wins_bcd(ch_wins),
     .rgb(ch_rgb), .opaque(ch_opaque)
 );
 
@@ -2040,7 +2090,7 @@ always @(posedge clk) music_fast <= mode == M_GAME && two &&
                                     (score0 + 16'd1 >= points_to_win || score1 + 16'd1 >= points_to_win);
 wire [3:0] sid_song = ch_join || music_off ? 4'd0 :
                       mode == M_GAME ? (ch_active ? theme_song : 4'd0) :
-                      mode == M_GAME_OVER ? (ch_active ? 4'd0 : SID_SONG_GAME_OVER) :
+                      mode == M_GAME_OVER ? (ch_active && !train ? 4'd0 : SID_SONG_GAME_OVER) :
                       mode == M_INTRO || mode == M_CHALLENGER ? SID_SONG_INTRO :
                       mode == M_CLEAR ? (ch_level == CH_LEVELS - 1 ? SID_SONG_CHAMPION : SID_SONG_CLEAR) :
                       mode == M_CONT ? (cont_over ? SID_SONG_GAME_OVER : SID_SONG_CONTINUE) :
@@ -2082,7 +2132,7 @@ reg  [3:0] call_id = VOICE_READY;
 wire [3:0] call_level;
 wire [6:0] fx_gain;                    // volume degli effetti (pong_sid), 64 = 1: anche per le voci di partita
 wire       human_win = game_over_now && mode == M_GAME && two && (!match_cpu || ((score0 >= score1) != ch_cpu_left)) &&
-                       !(ch_active && !duel && ch_level == CH_LEVELS - 1);
+                       !(ch_active && !duel && !train && ch_level == CH_LEVELS - 1);
 wire       you_win = human_win && match_cpu && !over_zero;
 wire       perfect_win = human_win && over_zero;
 always @(posedge clk) begin

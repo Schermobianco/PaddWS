@@ -58,9 +58,11 @@ in_t:    .byte 0
 in_hi:   .byte 0
 in_tagn: .byte 0                ; lettere del motto a schermo
 in_inval: .byte 0               ; 1: tabelle dei quadrati già da rifare (in_tick, o il via)
+in_mode: .byte 0                ; IM_* (intro_hud)
 
-; Disegno (ch_draw), sullo schermo pulito: punteggio e record, l'immagine della racchetta
-; dell'avversario (prima della voce: dopo l'I/O resta acceso), poi l'entrata.
+; Disegno (ch_draw), sullo schermo pulito: punteggio, record e duelli vinti (intro_hud, non
+; nell'allenamento), l'immagine della racchetta dell'avversario (prima della voce: dopo l'I/O
+; resta acceso), poi l'entrata.
 .proc in_draw
     ldx ch_level
     lda rung_kind,x
@@ -70,20 +72,8 @@ in_inval: .byte 0               ; 1: tabelle dei quadrati già da rifare (in_tic
     lsr a
     lsr a
     sta in_opp
-    jsr print_at
-    .byte 7, IN_SCORE, "SCORE           HI", 0
-    ldx #13
-    ldy #IN_SCORE
-    jsr print_score
-    ldx #0
-:   lda ch_table+3,x
-    sta ch_tmp,x
-    inx
-    cpx #4
-    bne :-
-    ldx #26
-    ldy #IN_SCORE
-    jsr print_tmp
+    jsr intro_hud
+    sta in_mode
     ; l'immagine della racchetta, dritta (BLASTER con il caricatore pieno)
     ldx in_k
     stx pi_kind
@@ -141,11 +131,15 @@ level:
     cmp #12
     bcc go
     bne final
-    ldx ch_level                ; LEVEL n OF 7, o FINAL LEVEL
-    cpx #CH_LEVELS - 1
-    bne :+
+    lda in_mode                 ; LEVEL n OF 7, FINAL LEVEL o TRAINING
+    beq :++
+    lsr a
+    bcc :+
     jsr print_at
     .byte 14, IN_LEVEL, "FINAL LEVEL", 0
+    jmp yellow
+:   jsr print_at
+    .byte 16, IN_LEVEL, "TRAINING", 0
     jmp yellow
 :   jsr print_at
     .byte 14, IN_LEVEL, "LEVEL   OF 7", 0
@@ -160,8 +154,8 @@ yellow:
     lda #COL_YELLOW
     bne color
 final:
-    ldx ch_level                ; FINAL LEVEL lampeggia
-    cpx #CH_LEVELS - 1
+    ldx in_mode                 ; FINAL LEVEL lampeggia
+    dex                         ; (IM_FINAL)
     bne go
     lda in_f
     and #7
@@ -203,6 +197,9 @@ rung:
     lda egg_yel
     bne set
 beaten:
+    lda in_mode                 ; (nell'allenamento nessuno battuto)
+    cmp #IM_TRAIN
+    beq gray
     lda #COL_WHITE
     bne set
 gray:

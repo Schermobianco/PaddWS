@@ -37,7 +37,8 @@ module pong_render (
     input  wire [1:0]  lives,           // palle rimaste in singolo
     input  wire        show_lives,
     input  wire [1:0]  overlay,         // 0 nessuna, 1 demo (crediti e scritta), 2 GAME OVER
-    input  wire [1:0]  demo_mode,       // modalità della demo: 0 CLASSIC, 1 EVO, 2 NEXT, 3 CHALLENGE
+    input  wire [1:0]  demo_mode,       // modalità della demo: 0 CLASSIC, 1 EVO, 2 NEXT (libera, solo nel
+                                        // simulatore), 3 NEXT (la scalata, CHALLENGE fino alla 4.1)
     input  wire [2:0]  winner,          // sotto GAME OVER: 0 nessuno, 1 P1 WINS, 2 P2 WINS, 3 YOU WIN, 4 CPU WINS,
                                         // 5 PERFECT (da solo, al posto di YOU WIN)
     input  wire        win_solo,        // chi ha vinto da solo, al posto di GAME OVER (YOU WIN, livello perso)
@@ -547,21 +548,20 @@ function winner_lit(input [2:0] w, input [9:0] dx, input [9:0] dy);
     endcase
 endfunction
 
-// nome della modalità della demo (scala 1)
+// nome della modalità della demo (scala 1): le due demo di NEXT si chiamano NEXT (la scritta
+// CHALLENGE di pong_attract.vh non si usa più)
 function [7:0] mode_w(input [1:0] m);
     case (m)
         2'd0: mode_w = MODE_CLASSIC_W;
         2'd1: mode_w = MODE_EVO_W;
-        2'd2: mode_w = MODE_NEXT_W;
-        default: mode_w = MODE_CHALLENGE_W;
+        default: mode_w = MODE_NEXT_W;
     endcase
 endfunction
 function mode_lit(input [1:0] m, input [9:0] dx, input [9:0] dy);
     case (m)
         2'd0: mode_lit = mode_classic_lit(dx, dy);
         2'd1: mode_lit = mode_evo_lit(dx, dy);
-        2'd2: mode_lit = mode_next_lit(dx, dy);
-        default: mode_lit = mode_challenge_lit(dx, dy);
+        default: mode_lit = mode_next_lit(dx, dy);
     endcase
 endfunction
 

@@ -29,8 +29,8 @@ gamepad o mouse.
 |---|---|
 | ![Titolo dell'attract con il filtro CRT](docs/screenshots/attract-crt.jpg) | ![NEXT: riserve, capsule e SUPER armato](docs/screenshots/next-game.png) |
 | Titolo dell'attract, con il filtro CRT | NEXT: bonus nelle riserve in alto e capsule in volo |
-| ![NEXT: STRAIGHT SHOT in volo](docs/screenshots/next-supers.png) | ![CHALLENGE: nuovo sfidante](docs/screenshots/challenge-challenger.png) |
-| Mosse speciali: MAX STRAIGHT SHOT in volo | CHALLENGE: entra un secondo giocatore |
+| ![NEXT: STRAIGHT SHOT in volo](docs/screenshots/next-supers.png) | ![NEXT: nuovo sfidante](docs/screenshots/challenge-challenger.png) |
+| Mosse speciali: MAX STRAIGHT SHOT in volo | NEXT: entra un secondo giocatore |
 | ![Core MiSTer: demo NEXT](docs/screenshots/mister-demo.png) | ![Commodore 64: partita NEXT](docs/screenshots/c64-next.png) |
 | Core MiSTer a 320×240 | Commodore 64: NEXT |
 
@@ -41,13 +41,14 @@ Altre schermate in [Come si gioca](docs/it/come-si-gioca.md#schermate).
 - **CLASSIC**: il Pong di sempre, in due fino a 11 punti, oppure da soli contro un muro con 3 palle.
 - **EVO**: colpendo la palla al centro della racchetta la si potenzia; lo scatto in avanti la
   intercetta e la rilancia.
-- **NEXT**: prima della partita ognuno sceglie 3 bonus su 6 (TELEPORT, SMASH, SLOW, CURVE, GHOST,
-  STEER) e uno di sette tipi di racchetta; i bonus arrivano in capsule da raccogliere. Ci sono
-  anche due mosse speciali da fare con una serie di comandi specifici.
-- **VS CPU**: CLASSIC ed EVO da soli contro il computer; da soli in NEXT c'è la CHALLENGE.
-- **CHALLENGE**: da soli contro 7 avversari CPU sempre più forti, con punti arcade, continue,
-  classifica e il finale. Un secondo giocatore può entrare e sfidare chi sta giocando: *HERE COMES
-  A NEW CHALLENGER!*
+- **NEXT**: la modalità arcade, come in un picchiaduro. Da soli si sale la scalata contro 7
+  avversari CPU sempre più forti, con punti arcade, continue, classifica e il finale; un secondo
+  giocatore può entrare quando vuole e sfidare chi sta giocando (*HERE COMES A NEW CHALLENGER!*), e
+  le sfide vinte di fila si contano. Prima della partita ognuno sceglie 3 bonus su 6 (TELEPORT,
+  SMASH, SLOW, CURVE, GHOST, STEER) e uno di sette tipi di racchetta; i bonus arrivano in capsule da
+  raccogliere, e ci sono due mosse speciali da fare con una serie di comandi. Finita la scalata si
+  sblocca l'allenamento contro l'avversario che si vuole.
+- **VS CPU**: CLASSIC ed EVO da soli contro il computer.
 
 Regole, bonus, racchette, mosse e comandi: **[Come si gioca](docs/it/come-si-gioca.md)**.
 
@@ -62,7 +63,7 @@ Regole, bonus, racchette, mosse e comandi: **[Come si gioca](docs/it/come-si-gio
 | **Python** (Arcade 3.3), la prima versione | Windows, Linux, macOS, Raspberry Pi | `paddws-X.Y.Z-python.zip`: `pip install -r python/requirements.txt`, poi `python python/main.py` |
 
 Tutto è nelle [release](https://github.com/Schermobianco/PaddWS/releases). La versione Python è
-congelata: ha CLASSIC ed EVO, senza CPU, NEXT né CHALLENGE. Cosa c'è su ogni versione:
+congelata: ha CLASSIC ed EVO, senza CPU né NEXT. Cosa c'è su ogni versione:
 [tabella](docs/it/come-si-gioca.md#funzioni-per-versione).
 
 La logica di gioco di riferimento è il core Rust: deterministico, solo interi in virgola fissa.
@@ -101,7 +102,7 @@ nelle release): parte nel gioco in circa 8 secondi e si spegne togliendo la corr
 
 ## Documentazione
 
-- [Come si gioca](docs/it/come-si-gioca.md): modalità, bonus, racchette, mosse speciali, CHALLENGE,
+- [Come si gioca](docs/it/come-si-gioca.md): modalità, bonus, racchette, mosse speciali, la scalata di NEXT,
   suono, comandi di ogni versione.
 - [Configurazione](docs/it/configurazione.md): `padd_config.json`, difficoltà, parametri di NEXT,
   cabinato Raspberry Pi.

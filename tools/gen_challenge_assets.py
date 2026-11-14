@@ -39,7 +39,7 @@ STRINGS = {
     "ch_record": "NEW RECORD!",
     "ch_enter": "ENTER YOUR INITIALS",
     "ch_hint": "UP DOWN TO CHOOSE, A TO CONFIRM",
-    "ch_table": "CHALLENGE HIGH SCORES",
+    "ch_table": "HIGH SCORES",
     # un secondo giocatore entra durante la scalata (schermata a scala 4)
     "ch_here": "HERE COMES",
     "ch_newch": "A NEW CHALLENGER!",

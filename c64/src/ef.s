@@ -21,9 +21,15 @@
 
 HI_SLOTS = 32                   ; posti da 128 byte nei primi 4 KB del banco: uno per salvataggio,
 HI_SLOT  = 128                  ; poi si cancella il settore e si ricomincia
-HI_REC   = CH_TABLE * CH_ENTRY + 3  ; la classifica, HI_MAGIC (2 byte) e il controllo
+HI_TAIL  = CH_TABLE * CH_ENTRY  ; dopo la classifica: HI_MAGIC (2 byte), il controllo e lo sblocco
+HI_CHECK = HI_TAIL + 2          ; il controllo: l'EOR dei byte da 0 a qui vale HI_SEED
+HI_OPEN  = HI_TAIL + 3          ; allenamento sbloccato (voce OPPONENT del menu): $00 sì, altro no
+HI_REC   = HI_TAIL + 4          ; byte scritti per posto
 HI_MAGIC = $5048                ; "HP": un posto scritto dal programma
-HI_SEED  = $A5                  ; l'EOR di tutti i byte del posto, controllo compreso
+HI_SEED  = $A5                  ; l'EOR della classifica, di HI_MAGIC e del controllo
+; Lo sblocco sta dopo il controllo e non ci entra: nei posti scritti prima che ci fosse è $FF (la
+; flash cancellata), cioè bloccato, e il posto resta valido. Si scrive per ultimo: $00 vuole tutti i
+; bit programmati, quindi un byte scritto a metà non vale come sblocco.
 HI_SCAN  = VOICE_BASE           ; all'avvio i posti si leggono qui (ef_voice, VOICE_PAGES pagine)
 .assert HI_SLOTS * HI_SLOT = VOICE_PAGES * 256, error, "i posti della classifica non sono una voce"
 .assert HI_REC <= HI_SLOT, error, "classifica più lunga di un posto"

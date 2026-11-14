@@ -88,6 +88,12 @@ pub struct Run {
     pub side: Side,
     /// presentazione delle mosse speciali già vista dal giocatore di ciascun lato
     pub howto: [bool; 2],
+    /// duelli vinti di fila dal campione in carica (chi tiene il posto contro la CPU): 0 finché
+    /// non c'è stato un duello, 1 per chi ha appena preso il posto (`duel_won_by`)
+    pub wins: u16,
+    /// allenamento (voce OPPONENT del menu): una sola partita contro l'avversario del livello,
+    /// senza punti arcade, classifica, continue né sfidanti; poi si torna al menu
+    pub training: bool,
 }
 
 impl Run {
@@ -98,6 +104,17 @@ impl Run {
             best: (0, 1),
             side: Side::Left,
             howto: [false; 2],
+            wins: 0,
+            training: false,
+        }
+    }
+
+    /// Allenamento contro l'avversario del livello `level` (da 0).
+    pub fn training(level: usize) -> Self {
+        Self {
+            level: level.min(LEVELS - 1),
+            training: true,
+            ..Self::new()
         }
     }
 
@@ -106,7 +123,43 @@ impl Run {
             self.best = (self.score, level);
         }
     }
+
+    /// Duelli vinti di fila dopo un duello vinto dal lato `winner`: il campione ne aggiunge uno,
+    /// lo sfidante che vince diventa il campione con il primo (vedi `wins`).
+    pub(crate) fn wins_after(&self, winner: Side) -> u16 {
+        if winner == self.side { self.wins.saturating_add(1) } else { 1 }
+    }
+
+    /// Fine di un duello vinto dal lato `winner`: conta i duelli vinti di fila e, se ha vinto lo
+    /// sfidante, gli passa il posto. True se ha vinto il campione.
+    pub(crate) fn duel_won_by(&mut self, winner: Side) -> bool {
+        self.wins = self.wins_after(winner);
+        let champion_won = winner == self.side;
+        self.side = winner;
+        champion_won
+    }
 }
+
+/// Duelli vinti di fila, "n WINS", centrata in (x, y) di disegno e ruotata di `rotation`: nel
+/// colore di accento, come chi ha vinto in NEXT, su un fondo nero (la partita può essere ancora a
+/// schermo). Niente scritta senza duelli vinti.
+pub(crate) fn draw_wins(app: &App, wins: u16, x: f32, y: f32, rotation: f32) {
+    if wins == 0 {
+        return;
+    }
+    let r = &app.renderer;
+    let sc = scale(app);
+    let font = &app.assets.font_text;
+    let size = WINS_SIZE * sc;
+    let label = format!("{wins} WINS");
+    let (half_w, half_h) = (r.text_width(&label, font, size) / 2.0 + 4.0 * sc, size * 0.45);
+    let (bw, bh) = if rotation == 0.0 { (half_w, half_h) } else { (half_h, half_w) };
+    draw_rectangle(x - bw, y - bh, 2.0 * bw, 2.0 * bh, BLACK);
+    r.text_centered(&label, font, size, x, y, rotation, App::color(app.cfg.colors.accent));
+}
+
+/// Altezza della scritta dei duelli vinti (unità a 480 righe, `scale`).
+const WINS_SIZE: f32 = 30.0;
 
 /// Start in questo frame: tasti, tocco o click di un encoder.
 fn start_pressed(app: &App) -> bool {
@@ -133,9 +186,9 @@ pub fn pad_keys(app: &App) -> PadKeys {
     })
 }
 
-/// Lato libero per uno sfidante, se c'è una CHALLENGE in corso.
+/// Lato libero per uno sfidante, se c'è una scalata in corso (nell'allenamento non entra nessuno).
 fn free_side(app: &App) -> Option<Side> {
-    app.run.as_ref().map(|r| r.side.opponent())
+    app.run.as_ref().filter(|r| !r.training).map(|r| r.side.opponent())
 }
 
 /// Gettone (tasto 5) nelle schermate in cui può entrare uno sfidante.
@@ -317,11 +370,10 @@ impl Challenger {
 /// migliore della sessione entra in classifica (lo sfidante entra con 0 punti: non succede).
 pub fn duel_over(app: &mut App, winner: Side) -> Scene {
     let run = app.run.as_mut().expect("sfida senza CHALLENGE");
-    let champion_won = winner == run.side;
-    let loser_best = (!champion_won).then_some(run.best);
+    let loser_best = (winner != run.side).then_some(run.best);
+    let champion_won = run.duel_won_by(winner);
     run.score = Score::after_duel(run.score, champion_won, run.level);
     if !champion_won {
-        run.side = winner;
         run.best = (0, 1);
     }
     let level = run.level as u8 + 1;
@@ -339,7 +391,7 @@ fn pad(n: u32) -> String {
 /// Scala delle schermate della CHALLENGE, disegnate su 480 righe: quella del campo, ma non oltre
 /// l'altezza. Con il campo largo (nel browser fino a 2,2:1) la scala del campo, media tra larghezza
 /// e altezza, porterebbe le ultime righe sotto il bordo e sopra il punteggio.
-fn scale(app: &App) -> f32 {
+pub(crate) fn scale(app: &App) -> f32 {
     app.scale().min(app.renderer.world_h / 480.0)
 }
 
@@ -408,11 +460,16 @@ impl Intro {
             app.run = None;
             return Some(Scene::Menu(Menu::new(app)));
         }
-        insert_coin(app);
-        let free = free_side(app).expect("CHALLENGE senza partita");
-        let (tap, held) = self.hold.update(app, free, dt);
-        if challenger(app, free, held) {
-            return Some(Scene::Challenger(Challenger::new(app)));
+        // nell'allenamento non c'è un lato libero: lo Start (o un tocco) salta e basta
+        let free = free_side(app);
+        let mut tap = false;
+        if let Some(free) = free {
+            insert_coin(app);
+            let held;
+            (tap, held) = self.hold.update(app, free, dt);
+            if challenger(app, free, held) {
+                return Some(Scene::Challenger(Challenger::new(app)));
+            }
         }
         self.left -= dt;
         // la voce dice il nome dell'avversario poco dopo l'inizio del jingle
@@ -421,7 +478,11 @@ impl Intro {
             let run = app.run.as_ref().expect("CHALLENGE senza partita");
             app.announce(RUNGS[run.level].kind);
         }
-        let skip = self.left < INTRO_SECONDS - SKIP_AFTER && champion_start(app, free, tap);
+        let start = match free {
+            Some(free) => champion_start(app, free, tap),
+            None => start_pressed(app),
+        };
+        let skip = self.left < INTRO_SECONDS - SKIP_AFTER && start;
         (self.left <= 0.0 || skip).then(|| Scene::Game(Box::new(Play::challenge(app))))
     }
 
@@ -443,6 +504,9 @@ impl Intro {
             PaddleKind::Rush => st.rush(),
             PaddleKind::Guardian => st.guardian(),
         }
+        if run.training {
+            return; // l'allenamento non ha punti arcade né sfidanti
+        }
         text(
             app,
             &format!("SCORE {}    HI {}", pad(run.score), pad(app.scores.entries[0].score)),
@@ -451,6 +515,11 @@ impl Intro {
             App::color(app.cfg.colors.white),
         );
         draw_join_hint(app, run.side.opponent());
+        // dopo un duello: quanti ne ha vinti di fila il campione, dal suo lato (di fronte
+        // all'invito per lo sfidante)
+        let sc = scale(app);
+        let x = if run.side == Side::Left { r.world_w * 0.15 } else { r.world_w * 0.85 };
+        draw_wins(app, run.wins, x, 22.0 * sc, 0.0);
     }
 }
 
@@ -487,6 +556,8 @@ struct Stage<'a> {
     app: &'a App,
     rung: &'static Rung,
     level: usize,
+    /// allenamento: TRAINING al posto del livello
+    training: bool,
     f: f32,
     /// +1 se l'avversario sta a destra (il giocatore a sinistra), -1 altrimenti
     away: f32,
@@ -506,6 +577,7 @@ impl<'a> Stage<'a> {
             app,
             rung,
             level: run.level,
+            training: run.training,
             f,
             away: if run.side == Side::Left { 1.0 } else { -1.0 },
             sc: scale(app),
@@ -594,17 +666,20 @@ impl<'a> Stage<'a> {
             if f < 2.0 * i as f32 {
                 break;
             }
+            // nell'allenamento nessun livello è stato battuto: si vede solo dove sta l'avversario
             let color = match i.cmp(&self.level) {
-                std::cmp::Ordering::Less => self.white,
+                std::cmp::Ordering::Less if !self.training => self.white,
                 std::cmp::Ordering::Equal if (f / 8.0) as i64 % 2 == 0 => self.accent,
                 _ => dim,
             };
             let x = w / 2.0 + (i as f32 * 48.0 - 160.0) * self.sc + self.shake.0;
             draw_rectangle(x, self.y(LADDER_Y), 32.0 * self.sc, 10.0 * self.sc, color);
         }
-        let last = self.level + 1 == LEVELS;
+        let last = self.level + 1 == LEVELS && !self.training;
         if f >= 14.0 && (!last || (f / 10.0) as i64 % 2 == 0) {
-            let title = if last {
+            let title = if self.training {
+                "TRAINING".to_string()
+            } else if last {
                 "FINAL LEVEL".to_string()
             } else {
                 format!("LEVEL {} OF {LEVELS}", self.level + 1)
@@ -1539,7 +1614,7 @@ impl Scores {
         );
         let dim = Color::from_rgba(0x3A, 0x3A, 0x3A, 255);
         app.renderer.fill(BLACK);
-        text(app, "CHALLENGE HIGH SCORES", 40.0, 55.0, accent);
+        text(app, "HIGH SCORES", 40.0, 55.0, accent);
         let t = SCORES_SECONDS - self.left;
         let sc = scale(app);
         let r = &app.renderer;
@@ -1713,6 +1788,35 @@ mod tests {
             on = egg_after(on, name);
             assert_eq!(on, want, "{}", String::from_utf8_lossy(name));
         }
+    }
+
+    #[test]
+    fn the_champion_counts_the_duels_won_in_a_row() {
+        let mut run = Run::new();
+        assert_eq!(run.wins, 0); // senza duelli niente WINS
+        // il campione (a sinistra) vince due duelli
+        assert_eq!(run.wins_after(Side::Left), 1);
+        assert!(run.duel_won_by(Side::Left));
+        assert!(run.duel_won_by(Side::Left));
+        assert_eq!((run.wins, run.side), (2, Side::Left));
+        // vince lo sfidante: è il nuovo campione, con il primo duello vinto
+        assert_eq!(run.wins_after(Side::Right), 1);
+        assert!(!run.duel_won_by(Side::Right));
+        assert_eq!((run.wins, run.side), (1, Side::Right));
+        assert!(run.duel_won_by(Side::Right));
+        assert_eq!(run.wins, 2);
+        // lo sfidante da sinistra lo batte
+        assert!(!run.duel_won_by(Side::Left));
+        assert_eq!((run.wins, run.side), (1, Side::Left));
+    }
+
+    #[test]
+    fn training_is_one_opponent_without_challengers() {
+        let run = Run::training(3);
+        assert!(run.training);
+        assert_eq!((run.level, run.score, run.wins, run.side), (3, 0, 0, Side::Left));
+        assert_eq!(Run::training(99).level, LEVELS - 1);
+        assert!(!Run::new().training);
     }
 
     #[test]

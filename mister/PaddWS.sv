@@ -56,8 +56,9 @@ assign VIDEO_ARY = (!ar) ? 12'd3 : 12'd0;
 localparam CONF_STR = {
 	"PaddWS;;",
 	"-;",
-	"O[13:12],Game type,Challenge,NEXT,EVO,Classic;",
-	"O[15:14],Players,Two,One,Vs CPU;",
+	"O[37:36],Game type,NEXT,EVO,Classic;",
+	"H1O[40:38],Opponent,Ladder,Arcade,Twist,Hammer,Titan,Blaster,Rush,Guardian;",
+	"H0O[15:14],Players,Two,One,Vs CPU;",
 	"O[7],Free play,Off,On;",
 	"O[9:8],Difficulty,Normal,Hard,Expert,Easy;",
 	"O[10],Scores,Upright,Facing players;",
@@ -89,11 +90,12 @@ wire [7:0]  paddle0, paddle1;
 wire [8:0]  spinner0, spinner1;
 wire [10:0] ps2_key;
 wire [21:0] gamma_bus;
-// file della NVRAM (classifica di CHALLENGE, indice 4 nel PaddWS.mra)
+// file della NVRAM (classifica di NEXT e sblocco dell'allenamento, indice 4 nel PaddWS.mra)
 wire        ioctl_download, ioctl_upload, ioctl_wr, ioctl_upload_req;
 wire [15:0] ioctl_index;
 wire [26:0] ioctl_addr;
 wire [7:0]  ioctl_dout, ioctl_din;
+wire [15:0] menumask;                      // voci nascoste dell'OSD (assegnato sotto)
 
 hps_io #(.CONF_STR(CONF_STR)) hps_io
 (
@@ -106,7 +108,7 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 
 	.buttons(buttons),
 	.status(status),
-	.status_menumask(16'd0),
+	.status_menumask(menumask),
 
 	.joystick_0(joy0),
 	.joystick_1(joy1),
@@ -143,8 +145,23 @@ pll pll
 
 ///////////////////////   PARTITA   //////////////////////////////
 
-wire [1:0] game_type = ~status[13:12];     // 0 Classic, 1 EVO, 2 NEXT, 3 CHALLENGE (l'OSD parte da Challenge)
-wire [1:0] players_mode = status[15:14];   // 0 due, 1 uno, 2 contro la CPU (3 da un CFG vecchio: pong_top)
+// Game type è sui bit 37:36, nuovi dalla 4.2.0: 0 NEXT (la scalata arcade, prima CHALLENGE), 1 EVO,
+// 2 Classic. Un CFG vecchio li ha a zero e parte in NEXT. I bit 13:12 (Game type fino alla 4.1.x:
+// Challenge, NEXT, EVO, Classic) restano liberi, ma nei CFG vecchi possono valere 1: non vanno riusati.
+// Per pong_top: 0 Classic, 1 EVO, 3 NEXT (il 2, NEXT libera contro la CPU, è solo del simulatore)
+wire [1:0] osd_type = status[37:36];
+wire [1:0] game_type = (osd_type == 2'd1) ? 2'd1 : (osd_type == 2'd2) ? 2'd0 : 2'd3;
+// Players vale solo in Classic ed EVO (in NEXT l'OSD lo nasconde): 0 due, 1 uno, 2 contro la CPU (3
+// da un CFG vecchio: pong_top)
+wire [1:0] players_mode = status[15:14];
+// Opponent (bit 40:38), solo in NEXT e solo dopo lo sblocco dell'allenamento (finale della scalata,
+// salvato nella NVRAM): 0 la scalata, 1-7 allenamento contro l'avversario di quel livello
+wire [2:0] train_level = status[40:38];
+wire train_unlocked;
+// voci nascoste dell'OSD (H0, H1 in CONF_STR): 0 Players in NEXT, 1 Opponent fuori da NEXT o prima
+// dello sblocco
+wire is_next = game_type == 2'd3;
+assign menumask = {14'd0, !(is_next && train_unlocked), is_next};
 wire free_play = status[7];
 wire [1:0] difficulty = status[9:8] + 2'd1;   // l'OSD parte da Normal (0): 0 facile .. 3 esperto
 wire upright = !status[10];       // di default dritti: non si presume un tavolo
@@ -160,12 +177,12 @@ wire sid_6581 = status[23];
 // 4.0.0-beta.19) resta libero, ma nei CFG vecchi può valere 1
 wire super_moves = 1'b1;
 
-// cambiare modalità o numero di giocatori riporta all'attract
-reg [3:0] mode_q = 4'b0000;
+// cambiare modalità, avversario o numero di giocatori riporta all'attract
+reg [6:0] mode_q = 7'd0;
 reg       mode_changed = 1'b0;
 always @(posedge clk_sys) begin
-	mode_q <= status[15:12];
-	mode_changed <= mode_q != status[15:12];
+	mode_q <= {status[40:36], status[15:14]};
+	mode_changed <= mode_q != {status[40:36], status[15:14]};
 end
 
 wire reset = RESET | status[0] | buttons[1] | mode_changed;
@@ -183,6 +200,8 @@ pong_top pong
 	.egg_clear(RESET | status[0] | buttons[1]),   // il cambio di Game type non spegne l'easter egg
 	.game_type(game_type),
 	.players_mode(players_mode),
+	.train_level(train_level),
+	.train_unlocked(train_unlocked),
 	.free_play(free_play),
 	.difficulty(difficulty),
 	.super_moves(super_moves),

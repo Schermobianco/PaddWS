@@ -7,6 +7,14 @@
 ; Punti arcade come `Score::on_tick`: colpi, scatti riusciti e SUPER di chi gioca, punti segnati,
 ; con il moltiplicatore che sale di uno ogni CH_RALLY_STEP colpi dello scambio.
 ;
+; Allenamento (voce OPPONENT del menu, sbloccata dal finale: hi_open): una sola partita contro
+; l'avversario di un livello (cg_active = CG_TRAIN), con le sue racchetta, bonus, CPU, velocità e
+; punti, dopo la scelta e la presentazione; niente punti arcade, classifica, continue né sfidanti.
+; Poi il GAME OVER (con la sua musica) e l'attract.
+;
+; Duelli vinti di fila dal campione (ch_wins, come Run::wins del PC): "n WINS" dal lato del
+; vincitore nel GAME OVER della sfida e dal lato del campione nelle presentazioni dopo.
+;
 ; Nuovo sfidante (challenge_ui.rs): nella presentazione, nella partita
 ; contro la CPU e nel livello superato (non l'ultimo) entra il giocatore del lato libero con il
 ; fuoco del suo joystick (porta 2 a sinistra, porta 1 a destra; con i paddle il pulsante del suo
@@ -25,6 +33,7 @@ CONT_SKIP_FRAMES = 13           ; continue: Start vale dopo un quarto di secondo
 CH_CHAL_FRAMES   = 150          ; HERE COMES A NEW CHALLENGER!: 3 s
 CG_LADDER        = 1            ; cg_active: la scala contro la CPU
 CG_DUEL          = 2            ; sfida tra il campione e un nuovo sfidante (da quando entra)
+CG_TRAIN         = 3            ; allenamento contro un avversario (voce OPPONENT del menu)
 JOIN_ROW         = 0            ; invito per lo sfidante
 CH_ENTRY         = 8            ; riga della classifica: iniziali (3), punti (4), livello
 OPT_CHALLENGE    = 4            ; opt_players
@@ -46,6 +55,7 @@ ch_side:   .res 1               ; lato di chi gioca contro la CPU * 4 (dopo una 
 ch_load:   .res 6               ; bonus di ciascun lato (come pk_chosen): il campione tiene i suoi
 ch_kinds:  .res 2               ; racchetta di ciascun lato
 ch_loser:  .res 1               ; iniziali del perdente di una sfida, poi riprende il vincitore
+ch_wins:   .res 1               ; duelli vinti di fila dal campione (0: nessuno ancora), fino a 99
 .segment "ZEROPAGE"
 ch_level:  .res 1
 .segment "BSS"
@@ -62,7 +72,6 @@ ch_pos:    .res 1
 ch_letter: .res 1
 ch_name:   .res 3
 ch_hl:     .res 1               ; riga della classifica in evidenza ($ff nessuna)
-ch_attract: .res 1              ; classifica dell'attract (poi la demo)
 ch_timer:  .res 2
 ch_phase:  .res 1               ; 1: schermo da pulire, 2: da disegnare
 ch_elapsed: .res 1              ; frame dall'inizio della schermata (fino a 255)
@@ -78,6 +87,7 @@ ch_txt:    .res 8
 .segment "LOWBSS"               ; (si vede anche nel modo Ultimax: src/ef.s la scrive da qui)
 ch_table:  .res CH_TABLE * CH_ENTRY
 hi_tail:   .res 3               ; HI_MAGIC e il controllo, per il salvataggio
+hi_open:   .res 1               ; allenamento sbloccato: $00 sì, altro no (HI_OPEN, src/ef.s)
 hi_next:   .res 1               ; posto della flash del prossimo salvataggio ($80: niente)
 .segment "BSS"
 win_points: .res 1              ; punti per vincere la partita
@@ -88,15 +98,28 @@ bm_diff:   .res 1
 
 ; ------------------------------------------------------------------------------------ scala
 
-; Dalle scelte di NEXT: la scala dal primo livello, chi gioca a sinistra.
+; Dalle scelte di NEXT (pick.s, PH_MATCH): la scala dal livello ch_level (il primo: start_game),
+; chi gioca a sinistra. L'allenamento (opt_opp) prima carica il file voce del primo livello, che
+; lascia player, READY e GO come all'inizio di una scala (il nome dell'avversario, il conto
+; alla rovescia): in tre frame, perché la copia e GO non stanno in uno (pk_phase di nuovo
+; PH_MATCH; cg_active da 0 a CG_TRAIN, poi i frame del file, VOICE_FRAMES); poi la presentazione.
 .proc ch_start
-    lda #CG_LADDER
-    sta cg_active
+    ldx #CG_LADDER
+    lda opt_opp
+    beq start
+    lda cg_active
+    beq load
+    lda VOICE_FRAMES
+    cmp #2
+    beq go_page
+    ldx #CG_TRAIN
+start:
+    stx cg_active
     jsr ch_keep
     lda #0
-    sta ch_level
     sta ch_side
     sta ch_loser
+    sta ch_wins
     jsr zero_score
     ldx #3
 :   sta ch_best,x
@@ -105,6 +128,17 @@ bm_diff:   .res 1
     lda #1
     sta ch_best_lv
     jmp enter_intro
+load:
+    lda #CG_TRAIN
+    sta cg_active
+    lda rung_kind               ; il file del primo livello (la copia è un caricamento)
+    jsr ef_voice
+    jsr VOICE_TICK              ; il tema (circa 4.500 cicli)
+go_page:
+    jsr VOICE_TICK              ; (al secondo frame: GO e gli NMI del player, circa 14.000)
+    lda #PH_MATCH
+    sta pk_phase
+    rts
 .endproc
 
 .proc zero_score
@@ -403,9 +437,15 @@ done:
     bmi ch_finish
     lda cg_active
     cmp #CG_DUEL
-    bne :+
+    bcc ladder
+    bne train
     jmp duel_over
-:   ldx ch_side
+train:
+    lda #0                      ; allenamento finito: l'attract
+    sta cg_active
+    jmp go_stripes
+ladder:
+    ldx ch_side
     txa
     eor #4
     tay
@@ -430,8 +470,6 @@ won:
     jmp enter_initials
 :   lda #$ff
     sta ch_hl
-    lda #0
-    sta ch_attract
     jmp enter_scores
 .endproc
 
@@ -801,8 +839,15 @@ done:
 .endproc
 
 ; Il finale di CHALLENGE (ending.s): la sua prima pagina dalla cartuccia, poi lei copia il resto.
+; Arrivarci sblocca per sempre l'allenamento: la prima volta lo si salva subito nella flash, con la
+; classifica (hi_save: circa 1 ms, o 1 s se il settore va cancellato, a schermo fermo).
 .proc end_enter
-    lda #$80
+    lda hi_open
+    beq :+
+    lda #0
+    sta hi_open
+    jsr hi_save
+:    lda #$80
     sta ef_src+2
     lda #END_BANK
     ldx #1
@@ -928,6 +973,9 @@ done:
 ; Gettone (tasto 5) e Start dello sfidante, il fuoco del lato libero (con i paddle il pulsante del
 ; suo paddle): C = 1 se entra, con un credito che si consuma o in Free Play.
 .proc ch_join
+    lda cg_active               ; nell'allenamento non entra nessuno
+    cmp #CG_TRAIN
+    beq no
     lda #KEY_5
     jsr key_pressed
     bcc start
@@ -989,7 +1037,11 @@ no:
 ; Invito per lo sfidante, a tratti, in alto sul lato libero: P2 PRESS START (o P1), INSERT COIN
 ; senza crediti (draw_join_hint del PC).
 .proc join_hint
-    ldx #25                     ; colonna: il lato libero è a destra
+    lda cg_active               ; (nell'allenamento niente)
+    cmp #CG_TRAIN
+    bne :+
+    rts
+:   ldx #25                     ; colonna: il lato libero è a destra
     lda ch_side
     beq :+
     ldx #1
@@ -1168,7 +1220,9 @@ done:
     cmp score
     bcs :+
     ldx #0
-:   cpx ch_side
+:   jsr wins_after              ; duelli vinti di fila
+    sta ch_wins
+    cpx ch_side
     bne challenger
     jsr add_duel_bonus
     jmp duel_resume
@@ -1222,6 +1276,113 @@ challenger:
     dex
     bne :-
     jmp add_tmp
+.endproc
+
+; A = duelli vinti di fila dopo una sfida vinta dal lato X * 4 (Run::wins_after del PC): il
+; campione ne aggiunge uno (fino a 99), lo sfidante che vince comincia da 1. X resta.
+.proc wins_after
+    lda #1
+    cpx ch_side
+    bne done
+    lda ch_wins
+    cmp #99
+    bcs done
+    adc #1                      ; (C = 0)
+done:
+    rts
+.endproc
+
+; "n WINS" (n = A, da 1 a 99) alla riga Y, dal lato X * 4: a sinistra dalla colonna 1, a destra
+; fino alla 38; nel colore di chi ha vinto in NEXT (giallo, scambiato dall'easter egg).
+.proc print_wins
+    sty v_row
+    stx ch_tmp+3
+    ldy #0
+    cmp #10
+    bcc one
+:   iny                         ; decine
+    sbc #10
+    cmp #10
+    bcs :-
+    pha
+    tya
+    ora #'0'
+    sta ch_txt
+    pla
+    ldy #1
+one:
+    ora #'0'
+    sta ch_txt,y
+    ldx #0
+:   iny
+    lda s_wins,x
+    sta ch_txt,y
+    inx
+    cmp #0
+    bne :-
+    sty ch_tmp+1                ; lunghezza (Y sullo 0 finale)
+    lda #1
+    ldx ch_tmp+3
+    beq :+
+    lda #39
+    sec
+    sbc ch_tmp+1
+:   sta ch_tmp+2                ; colonna
+    lda #<ch_txt
+    sta ptr2
+    lda #>ch_txt
+    sta ptr2+1
+    ldx ch_tmp+2
+    ldy v_row
+    jsr print_str               ; (usa v_n)
+    lda ch_tmp+1
+    sta v_n
+    ldy ch_tmp+2
+    ldx v_row
+    lda #COL_YELLOW
+    jmp color_span
+.endproc
+s_wins: .byte " WINS", 0
+
+; Presentazione (in_draw, intro.s): punteggio e record in basso, i duelli vinti di fila dal
+; campione in alto dal suo lato (dall'altro c'è l'invito per lo sfidante; niente prima del primo
+; duello); nell'allenamento niente. A = IM_TRAIN nell'allenamento, IM_FINAL all'ultimo livello
+; della scala, se no IM_LEVEL.
+IM_LEVEL = 0
+IM_FINAL = 1
+IM_TRAIN = 2
+.proc intro_hud
+    lda cg_active
+    cmp #CG_TRAIN
+    beq train
+    jsr print_at
+    .byte 7, IN_SCORE, "SCORE           HI", 0
+    ldx #13
+    ldy #IN_SCORE
+    jsr print_score
+    ldx #0
+:   lda ch_table+3,x
+    sta ch_tmp,x
+    inx
+    cpx #4
+    bne :-
+    ldx #26
+    ldy #IN_SCORE
+    jsr print_tmp
+    lda ch_wins
+    beq :+
+    ldx ch_side
+    ldy #JOIN_ROW
+    jsr print_wins
+:   lda #IM_LEVEL
+    ldx ch_level
+    cpx #CH_LEVELS - 1
+    bne :+
+    lda #IM_FINAL
+:   rts
+train:
+    lda #IM_TRAIN
+    rts
 .endproc
 
 ; --- continue
@@ -1655,8 +1816,6 @@ done:
     jmp duel_resume
 :   lda ch_rank
     sta ch_hl
-    lda #0
-    sta ch_attract
     jmp enter_scores
 .endproc
 
@@ -1680,7 +1839,7 @@ HS_PAGES = >(__HSCODE_SIZE__ + 255)
 .assert ((HS_IMG - $0800) .mod $4000) + $0600 <= $2000, error, "classifica oltre la ROML del banco"
 HS_FIRST = 3                   ; pagine copiate nel primo frame (hs_load), le altre nel secondo
 
-; Classifica (ch_hl in evidenza); ch_attract = 1 dall'attract (poi la demo).
+; Classifica (ch_hl in evidenza), dall'attract e dopo una partita; poi le strisce.
 .proc enter_scores
     lda #0
     sta pk_i                    ; prima riga da disegnare
@@ -2109,7 +2268,7 @@ hs_hy:  .byte 10, 10, 10, 10
     lda pk_i
     bne :+
     jsr print_at
-    .byte 9, 1, "CHALLENGE HIGH SCORES", 0
+    .byte 14, 1, "HIGH SCORES", 0
     lda #COL_YELLOW
     ldy #1
     jsr color_row
@@ -2243,16 +2402,7 @@ off:
 time:
     jsr ch_timeout
     bcc done
-    ; dall'attract la demo (testo pulito qui, demo al prossimo frame), dopo una partita le strisce
-    lda ch_attract
-    beq :+
-    lda #ST_TITLE
-    sta state
-    lda #2
-    sta demo_prep
-    lda #COL_WHITE
-    jmp clear_text
-:   jmp go_stripes
+    jmp go_stripes              ; dall'attract e dopo una partita, le strisce
 done:
     rts
 .endproc
@@ -2353,6 +2503,7 @@ put_ascii39:
 ; I posti del banco HI_BANK si leggono a HI_SCAN; quelli scritti si susseguono dal primo, il primo
 ; libero (primo byte $FF: le iniziali non lo sono mai) è dove andrà il prossimo salvataggio. Vale
 ; l'ultimo posto completo (HI_MAGIC e l'EOR giusto): uno scritto a metà, per uno spegnimento, no.
+; Con la classifica viene lo sblocco dell'allenamento (hi_open, HI_OPEN): senza posti, bloccato.
 .segment "INIT"
 .proc hi_load
     ldx #CH_TABLE * CH_ENTRY - 1    ; la classifica iniziale
@@ -2360,6 +2511,12 @@ put_ascii39:
     sta ch_table,x
     dex
     bpl :-
+.ifdef UNLOCKTEST
+    lda #0                      ; (prova per VICE: allenamento già sbloccato, se nessun posto)
+.else
+    lda #$ff
+.endif
+    sta hi_open
     lda #HI_BANK - VOICE_BANK0
     jsr ef_voice
     lda #<HI_SCAN
@@ -2372,7 +2529,7 @@ slot:
     lda (ptr),y
     cmp #$ff
     beq done
-    ldy #HI_REC - 3
+    ldy #HI_TAIL
     lda (ptr),y
     cmp #<HI_MAGIC
     bne next
@@ -2380,14 +2537,14 @@ slot:
     lda (ptr),y
     cmp #>HI_MAGIC
     bne next
-    ldy #HI_REC - 1
+    ldy #HI_CHECK
     lda #0
 :   eor (ptr),y
     dey
     bpl :-
     cmp #HI_SEED
     bne next
-    ldy #CH_TABLE * CH_ENTRY - 1
+    ldy #HI_OPEN                ; la classifica e lo sblocco (che nei posti di prima è $FF)
 :   lda (ptr),y
     sta ch_table,y
     dey
@@ -2420,7 +2577,7 @@ table_init: .byte T_TABLE
     sta hi_tail
     lda #>HI_MAGIC
     sta hi_tail+1
-    ldx #HI_REC - 2
+    ldx #HI_CHECK - 1
     lda #HI_SEED
 :   eor ch_table,x
     dex
@@ -2463,7 +2620,7 @@ write:
     inc hi_next
 :   rts
 .endproc
-.assert hi_tail = ch_table + CH_TABLE * CH_ENTRY, error, "il posto della classifica non è di seguito"
+.assert hi_tail = ch_table + HI_TAIL .and hi_open = ch_table + HI_OPEN, error, "il posto della classifica non è di seguito"
 
 .segment "ZEROPAGE"
 ch_draw: .res 2                 ; routine di disegno della schermata

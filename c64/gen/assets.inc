@@ -62,7 +62,6 @@ AT_BOOT_FRAMES = 240
 AT_STRIPES_FRAMES = 120
 AT_LOGO_FRAMES = 110
 AT_TITLE_FRAMES = 400
-AT_DEMO_FRAMES = 1000
 AT_GAME_OVER_FRAMES = 150
 AT_GAME_OVER_BLACK = 100
 AT_BOOT_LINE_FRAMES = 25
@@ -125,7 +124,7 @@ BAR_CHARS = 5
 .define SID_TRACK_MOVE $71, $93, $80, $28, $2B, $08, $80, $3C, $32, $0A, $FF
 .define SID_TRACK_SPECIAL $75, $54, $03, $76, $54, $02, $4F, $02, $4C, $02, $48, $02, $43, $02, $40, $02, $3C, $03, $37, $03, $30, $08, $FF
 ; PERFECT del GAME OVER: i caratteri PERFECT_C0... (di INSERT COIN e PRESS START) con PERFECT
-; solo nel GAME OVER (ov_enter, gen/perfect_chars.bin), la demo rimette gli originali (demo_enter)
+; dal primo PERFECT del GAME OVER (ov_stamp, gen/perfect_chars.bin): gli originali non si vedono più
 BIG_PERFECT_W = 8
 .define BIG_PERFECT 124, 140, 141, 142, 143, 144, 145, 146, 131, 147, 148, 149, 150, 151, 152, 94
 PERFECT_C0 = 140

@@ -839,8 +839,6 @@ done:
 ; ------------------------------------------------------------------------------------ titolo
 
 .proc title_enter
-    lda #0
-    sta demo_prep
     ; copyright in basso (dal titolo), in due metà da 20 colonne
     lda #0
     ldx #20

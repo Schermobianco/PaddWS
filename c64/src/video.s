@@ -85,8 +85,6 @@ big_p1_wins:  .byte BIG_P1_WINS
 big_p2_wins:  .byte BIG_P2_WINS
 big_you_win:  .byte BIG_YOU_WIN
 big_cpu_wins: .byte BIG_CPU_WINS
-big_insert_coin: .byte BIG_INSERT_COIN
-big_press_start: .byte BIG_PRESS_START
 row_lo:
     .repeat 25, i
     .byte <(SCREEN + 40 * i)
@@ -560,27 +558,19 @@ done:
 
 ; Il set di caratteri è pieno: in NEXT la capsula del BULLET della riserva (8 caratteri, normale e
 ; in negativo) prende il posto di caratteri che in NEXT non servono, cioè cursore e reticolo
-; dell'auto-test (solo all'accensione) e tre di INSERT COIN e PRESS START della demo (EVO); non
-; CH_GRID_T né il muro del singolo, che le scritte animate e la CHALLENGE usano anche in NEXT e
-; dopo (restano scambiati fino alla partita seguente). Nelle altre partite tornano quelli
-; originali (tools/gen_c64_assets.py, BULLET_C0-7), anche quelli di PRESS START che in NEXT fanno
-; la barra delle mosse speciali (sm_init).
+; dell'auto-test (solo all'accensione) e tre di INSERT COIN e PRESS START grandi (erano della
+; demo, che non c'è più); non CH_GRID_T né il muro del singolo, che le scritte animate e la
+; CHALLENGE usano anche in NEXT e dopo. Senza la demo restano così anche nelle altre partite (prima
+; lì tornavano gli originali, bullet_orig e bar_orig, che ci sono ancora: tools/gen_c64_assets.py,
+; BULLET_C0-7), come quelli di PRESS START che in NEXT fanno la barra delle mosse speciali (sm_init).
 .proc bullet_chars
     ldx m_next
-    bne :++
-    ldx #8 * BAR_CHARS - 1
-:   lda bar_orig,x
-    sta CHARSET + 8 * BAR_C0,x
-    dex
-    bpl :-
-:   lda #<bullet_orig
-    ldy #>bullet_orig
-    ldx m_next
-    beq :+
-    lda #<bullet_tiles
-    ldy #>bullet_tiles
-:   sta ptr2
-    sty ptr2+1
+    bne :+
+    rts
+:   lda #<bullet_tiles
+    sta ptr2
+    lda #>bullet_tiles
+    sta ptr2+1
     ldx #0
 tile:
     lda bullet_dst_lo,x

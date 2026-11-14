@@ -6,7 +6,7 @@
 - [Modes](#modes) and [NEXT power-ups](#next-power-ups)
 - [Paddle types](#paddle-types-next)
 - [Special moves](#special-moves-next)
-- [CHALLENGE](#challenge)
+- [NEXT: the ladder](#next-the-ladder)
 - [Sound](#sound)
 - [Controls](#controls)
 - [Features by version](#features-by-version)
@@ -15,18 +15,17 @@
 ## Attract mode and matches
 
 At power-on the attract mode starts: self-test, stripes, logo and title with the ball bouncing off
-everything that is black, the CHALLENGE high-score table and a demo match, CPU against CPU, in the
-chosen mode (in the menu on PC, in the OSD on the MiSTer), with the mode name in the middle. In
-NEXT power-ups and paddles are random; in CHALLENGE you see the opponent of a random level.
+everything that is black, the high-score table and a demo match, CPU against CPU, in the chosen
+mode (in the menu on PC, in the OSD on the MiSTer; not on the C64), with the mode name in the
+middle. In NEXT you see the opponent of a random level of the ladder.
 
 With a coin, or in Free Play, Start opens the menu (on the MiSTer it starts the match right away
 with the OSD options); each match costs one credit, even with two players. The match begins after a
-3-second countdown. The menu sets the mode (**GAME TYPE**), the players (**PLAYERS**: TWO, VS CPU
-and ONE in CLASSIC, TWO and VS CPU in EVO, TWO and CHALLENGE in NEXT), difficulty, volumes and the other options; the
-choices are kept for next time. The
-first time, the game starts in NEXT with PLAYERS: CHALLENGE (on the MiSTer *Game type: Challenge*,
-on the C64 at every power-on). If you go back to the menu during a match, **RESUME** picks it up
-again.
+3-second countdown. The menu sets the mode (**GAME TYPE**: CLASSIC, EVO or NEXT), in CLASSIC and
+EVO the players (**PLAYERS**: TWO and VS CPU, plus ONE in CLASSIC; NEXT has no such entry),
+difficulty, volumes and the other options; the choices are kept for next time. The first time, the
+game starts in NEXT (on the C64 at every power-on). If you go back to the menu during a match,
+**RESUME** picks it up again.
 
 ## Modes
 
@@ -35,14 +34,14 @@ again.
   record.
 - **EVO** (2 players): hitting the ball with the grey area in the middle of the paddle powers it up
   (the area shrinks with each boost); the forward dash intercepts the ball and sends it back.
-- **NEXT** (2 players; alone, you play the CHALLENGE): Classic with the forward dash and power-ups. Before the
-  match each player picks a paddle and 3 power-ups out of 6; capsules start from the centre line
-  and are collected by touching them with the paddle, then the power-ups are selected and activated
-  from the reserve at the top.
+- **NEXT**: the arcade mode, like in a fighting game. Alone you climb the ladder against 7 CPU
+  opponents, and a second player can join at any time to challenge whoever is playing (see
+  [below](#next-the-ladder)). Matches are Classic with the forward dash and power-ups: first each
+  player picks a paddle and 3 power-ups out of 6; capsules start from the centre line and are
+  collected by touching them with the paddle, then the power-ups are selected and activated from
+  the reserve at the top.
 - **VS CPU**: alone against the computer in CLASSIC and EVO (menu **PLAYERS: VS CPU**); the CPU's
-  skill follows the difficulty. Alone in NEXT you play the CHALLENGE (on the MiSTer *Game type:
-  Challenge*).
-- **CHALLENGE**: the ladder against 7 opponents, see [below](#challenge).
+  skill follows the difficulty.
 
 ### NEXT power-ups
 
@@ -61,8 +60,7 @@ Each capsule shows the symbol of its power-up:
 
 ## Paddle types (NEXT)
 
-Before the power-ups each player picks a paddle (the CPU picks at random; in
-CHALLENGE each opponent has its own). Each type has an advantage, a small price and a mark that makes it recognisable in
+Before the power-ups each player picks a paddle (each opponent of the ladder has its own). Each type has an advantage, a small price and a mark that makes it recognisable in
 play (in yellow in the picture, with the paddles to scale). The types are balanced so that each
 wins about half of the points against the normal paddle.
 
@@ -84,13 +82,13 @@ with a top speed. The values are in the `next.paddles` section of the
 
 ## Special moves (NEXT)
 
-Fighting-game moves performed with a gesture on the controller. They are always on in NEXT matches,
-in CHALLENGE and in the attract mode demo; they are the same for every paddle type. Before the
+Fighting-game moves performed with a gesture on the controller. They are always on in NEXT matches
+and in the attract mode demo; they are the same for every paddle type. Before the
 match, the **HOW TO PLAY** screen, in pixel art like the Neo Geo games, introduces them: the command
 for the controller in use (keyboard, gamepad or arcade stick, cabinet spinner, mouse or touch)
 lights up step by step, the ball leaves with the effect of the move, and below are the cost and the
-power-up controls. Start (or a click, or a tap) skips it; in CHALLENGE it only appears before the
-first level.
+power-up controls. Start (or a click, or a tap) skips it; in the ladder it only appears before the
+first level (and before each training match).
 
 The meter next to the reserve fills up as you play: a little with each hit, twice as much with a
 dash that intercepts the ball, more when you concede a point; it isn't emptied between points. The
@@ -125,14 +123,14 @@ MAX; when a RISING STRIKE rises, the CPU needs its reaction time to notice, just
 
 On the C64 the fire that ends the quarter-circle uses the move if it can start, otherwise the
 selected power-up (the dash is the joystick towards the opponent); with paddles there are no
-gestures, the attract mode demo stays EVO and there is no HOW TO PLAY screen. The meter, the icon of
+gestures and there is no HOW TO PLAY screen. The meter, the icon of
 the armed move, the "P1 MAX STRAIGHT SHOT!" caption and the sounds are there, the shouted voices are
 not (see [c64/README.en.md](../../c64/README.en.md)).
 
-## CHALLENGE
+## NEXT: the ladder
 
-Alone against 7 CPU opponents (menu **PLAYERS: CHALLENGE**, on the MiSTer OSD *Game type:
-Challenge*). You pick paddle and power-ups once, then each level introduces its opponent: a
+Playing NEXT alone you climb the ladder against 7 CPU opponents (on the MiSTer OSD *Game type:
+NEXT*). You pick paddle and power-ups once, then each level introduces its opponent: a
 different paddle type for each level, its 3 power-ups and an ever stronger CPU, from the ARCADE of
 the first level to the GUARDIAN of the final boss. Each opponent makes its own entrance, showing off
 what it can do (the ARCADE catches a volley of capsules, the TITAN grows out of the floor, the
@@ -158,7 +156,10 @@ entrances in characters, simpler). Matches are NEXT, to 5 points.
   behind the CPU's paddle, where it says P2 HOLD HERE. The challenger picks paddle and power-ups and
   they play a duel to 5 points: the winner resumes the level against the CPU from their side, with a
   prize equal to the level's (the champion adds it to their score, the challenger starts from it);
-  the loser enters their initials if they make the table.
+  the loser enters their initials if they make the table, and can join again straight away. To play
+  two from the start, just join during the introduction of the first level. The champion's duels
+  won in a row count: **n WINS** appears at the end of the duel on the winner's side and in the
+  introductions on their side (whoever beats the champion starts again from 1).
 - **Ending**: after beating the last opponent come CONGRATULATIONS and the voice "YOU WIN!", the
   parade of the seven opponents with the DEFEATED stamp (on the MiSTer a red K.O., and the beaten
   paddle goes dark), the final score with the champion's prize
@@ -167,6 +168,12 @@ entrances in characters, simpler). Matches are NEXT, to 5 points.
   Start skips it. The voice "YOU WIN!" is also heard at every match won against the CPU. If the
   winner didn't let the opponent score a single point, PERFECT replaces YOU WIN (or GAME OVER, with
   two players), shouted by the voice.
+- **Training**: once you have reached the ending, the NEXT menu also has **OPPONENT** (on the
+  MiSTer *Opponent* in the OSD, on the C64 the line in place of PLAYERS). LADDER is the ladder;
+  with one of the seven opponents you play a single match against it, with its paddle, its
+  power-ups and its CPU at the menu difficulty, with no score, high-score table, continues or
+  challengers. The unlock is saved: on PC in the configuration (`game.training`), in the browser in
+  `localStorage`, on the MiSTer in the high-score file, on the C64 in the cartridge flash.
 - **Voice**: in the introduction a digitised "SID-style" voice announces the opponent's name (on the
   C64 and MiSTer with the trick of the SID volume register; on the C64 from the cartridge). On PC,
   web and MiSTer the same voice also says the name of the paddle just confirmed in the pick, over
@@ -204,7 +211,7 @@ MiSTer core.
   from the menu.
 
 The music is original: title, level introduction, level cleared, continue, game over, champion and
-ending; during matches only effects, except in CHALLENGE, where each opponent has its own theme. The
+ending; during matches only effects, except in the NEXT ladder, where each opponent has its own theme. The
 theme speeds up at match point (×1.25, same notes) and in bullet time slows down by an octave, like
 a tape at half speed. Some songs use the SID filter (the HAMMER bass, the title, TITAN, the ending)
 and are meant for the 8580.
@@ -267,7 +274,7 @@ CPU the whole screen belongs to the player; with two players each has their own 
 - in the attract mode a tap counts as Start;
 - pause: a tap on the ❚❚ symbol at the top of the centre line; in pause tap to resume or tap MENU
   (in the menu RESUME picks up the match);
-- CHALLENGE: the challenger joins by holding a finger for a second behind the CPU's paddle (P2 HOLD
+- NEXT: the challenger joins by holding a finger for a second behind the CPU's paddle (P2 HOLD
   HERE).
 
 The first tap goes full screen (Android, iPad) and the screen stays on; on iPhone, full screen is
@@ -293,7 +300,7 @@ in [mister/README.en.md](../../mister/README.en.md).
 A version in 6502 assembly that plays the same match as the Rust core, bit for bit: one tick per
 frame at 50 Hz, a 320×200 pixel playfield, music and effects on the real SID. The EasyFlash
 cartridge `paddws.crt` (C64 Ultimate, a real EasyFlash written with EasyProg, VICE): everything in
-one file, instant start and the CHALLENGE voice without loading; the high-score table is saved in
+one file, instant start and the ladder introduction voices without loading; the high-score table is saved in
 the cartridge flash and survives power-off (in VICE with `-easyflashcrtwrite`).
 
 Joysticks in port 2 (left) and 1 (right), or a pair of paddles in port 1. Up and down move the
@@ -313,8 +320,8 @@ used with `F` / `C` (left) and `.` / `-` (right). Key **5** coin, fire or **RETU
 | NEXT, power-ups and paddle types | ✓ | ✓ | ✓ | — |
 | special moves | ✓ | ✓ | ✓ (joystick) | — |
 | HOW TO PLAY | ✓ | ✓ | ✓ (joystick) | — |
-| CHALLENGE, high scores and new challenger | ✓ | ✓ | ✓ | — |
-| attract mode demo | chosen mode | chosen mode | EVO | — |
+| NEXT: ladder, high scores, new challenger, WINS and training | ✓ | ✓ | ✓ | — |
+| attract mode demo | chosen mode | chosen mode | — | — |
 | SID music | SID in Rust | SID of the C64 core | real SID | — |
 | "SID-style" voices | ✓ | ✓ | opponent's name, READY?, GO!, YOU WIN! and PERFECT! | — |
 | CRT filter | ✓ | 15 kHz output | — | ✓ |
@@ -331,14 +338,14 @@ used with `F` / `C` (left) and `.` / `-` (right). Key **5** coin, fire or **RETU
 | NEXT: each player picks 3 power-ups out of 6 | NEXT: reserves at the top, capsules in flight, paddle spinning with the SUPER |
 | ![NEXT: special moves introduction](../screenshots/next-howto.png) | ![NEXT: STRAIGHT SHOT in flight](../screenshots/next-supers.png) |
 | NEXT: HOW TO PLAY, the special moves before the match | NEXT: move meters next to the reserves, STRAIGHT SHOT in flight |
-| ![CHALLENGE: opponent introduction](../screenshots/challenge-intro.png) | ![CHALLENGE: new challenger](../screenshots/challenge-challenger.png) |
-| CHALLENGE: introduction of the sixth opponent, RUSH | CHALLENGE: a second player joins in |
+| ![NEXT: opponent introduction](../screenshots/challenge-intro.png) | ![NEXT: new challenger](../screenshots/challenge-challenger.png) |
+| NEXT: introduction of the sixth opponent, RUSH | NEXT: a second player joins in |
 | ![MiSTer core: title](../screenshots/mister-title.png) | ![MiSTer core: NEXT demo](../screenshots/mister-demo.png) |
 | MiSTer core at 320×240: title after the coin | MiSTer core: CPU against CPU demo of the chosen mode (here NEXT) |
 | ![Commodore 64: title](../screenshots/c64-title.png) | ![Commodore 64: NEXT match](../screenshots/c64-next.png) |
 | Commodore 64: title in Free Play | Commodore 64: NEXT, with the CURVE capsule |
-| ![Commodore 64: power-up pick](../screenshots/c64-pick.png) | ![Commodore 64: CHALLENGE](../screenshots/c64-challenge.png) |
-| Commodore 64: power-up pick (the CPU has already picked) | Commodore 64: introduction of the first CHALLENGE opponent |
+| ![Commodore 64: power-up pick](../screenshots/c64-pick.png) | ![Commodore 64: NEXT ladder](../screenshots/c64-challenge.png) |
+| Commodore 64: power-up pick (the CPU has already picked) | Commodore 64: introduction of the first opponent of the ladder |
 
 The PC screenshots come from `paddws --screenshot-tour DIR` (Rust version), the MiSTer ones from the
 simulation of the core with Verilator (`mister/sim/frames`), the C64 ones from VICE
