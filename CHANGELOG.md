@@ -14,6 +14,8 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+## [4.1.1] - 2026-11-14
+
 ### Modificato
 - **Classifica animata** della CHALLENGE (PC, web e MiSTer): una palla scende rimbalzando fra i
   bordi e accende le righe che tocca; i punti di ogni riga contano da zero mentre si accende (sul
@@ -1154,7 +1156,8 @@ Ricostruite dalle cartelle di backup in `archive/` (date indicative).
 - **1.5** (2020-08) – versione per Raspberry Pi con encoder rotativi.
 - **1.1 – 1.4** (2020-08) – prime versioni pygame: menu, modalità CLASSIC ed EVO, suoni, splash.
 
-[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.1.0...HEAD
+[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.1.1...HEAD
+[4.1.1]: https://github.com/Schermobianco/PaddWS/compare/v4.1.1-beta.5...v4.1.1
 [4.1.0]: https://github.com/Schermobianco/PaddWS/compare/v4.1.0-beta.2...v4.1.0
 [4.0.1]: https://github.com/Schermobianco/PaddWS/compare/v4.0.0...v4.0.1
 [4.0.0]: https://github.com/Schermobianco/PaddWS/compare/v4.0.0-beta.22...v4.0.0
