@@ -71,6 +71,22 @@ crea il commit e il tag `vX.Y.Z`.
 
 ### Corretto
 - MiSTer: il timbro di PERFECT non si vedeva (durava due frame, sotto il lampo del punto).
+- C64 (4.1.1-beta.4): nella CHALLENGE, se la presentazione arrivava in fondo, il livello si giocava
+  con le tabelle delle moltiplicazioni ancora coperte dall'entrata dell'avversario. Rimbalzi
+  sbagliati, la CPU che mancava molti colpi, salti del TELEPORT strani.
+- C64 (4.1.1-beta.4): dopo una partita NEXT o CHALLENGE la chiusura del GAME OVER, il pavimento della
+  pallina del continue e le righe delle scritte animate mostravano pezzi della capsula del BULLET,
+  che prendeva in prestito proprio quei caratteri; dopo la CHALLENGE il puntino finale della
+  chiusura era un pezzo della rete dell'avversario.
+- C64 (4.1.1-beta.4): alla prima scelta della racchetta dopo l'accensione a volte mancava
+  l'anteprima della racchetta di P1.
+- C64: nella HOW TO PLAY le palline dei joystick non erano tonde e le frecce si mangiavano un pezzo
+  del joystick dopo (troppi colori nella stessa cella 8x8 della bitmap). Joystick, frecce e
+  pulsante sono ridisegnati sulla griglia delle celle, e il generatore controlla che nessuna
+  cella perda pixel.
+- Rust, con il campo largo (nel browser fino a 2,2:1): nella presentazione dell'avversario
+  "FIRST TO" finiva sopra il punteggio, e nelle altre schermate della CHALLENGE le ultime righe
+  scendevano verso il bordo. Ora queste schermate restano dentro l'altezza del campo.
 
 ## [4.1.0] - 2026-11-10
 

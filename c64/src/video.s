@@ -560,9 +560,11 @@ done:
 
 ; Il set di caratteri è pieno: in NEXT la capsula del BULLET della riserva (8 caratteri, normale e
 ; in negativo) prende il posto di caratteri che in NEXT non servono, cioè cursore e reticolo
-; dell'auto-test (solo all'accensione), il muro del singolo e uno di INSERT COIN della demo (EVO);
-; nelle altre partite tornano quelli originali (tools/gen_c64_assets.py, BULLET_C0-7). Lì tornano
-; anche quelli di PRESS START che in NEXT fanno la barra delle mosse speciali (sm_init).
+; dell'auto-test (solo all'accensione) e tre di INSERT COIN e PRESS START della demo (EVO); non
+; CH_GRID_T né il muro del singolo, che le scritte animate e la CHALLENGE usano anche in NEXT e
+; dopo (restano scambiati fino alla partita seguente). Nelle altre partite tornano quelli
+; originali (tools/gen_c64_assets.py, BULLET_C0-7), anche quelli di PRESS START che in NEXT fanno
+; la barra delle mosse speciali (sm_init).
 .proc bullet_chars
     ldx m_next
     bne :++
@@ -677,7 +679,9 @@ NET_CH = CHARSET + 8 * CH_LINE_L
     bne :+
     ldx ch_level
     lda rung_kind,x
-:   sta net_kind
+:
+set:
+    sta net_kind
     tax
     lda net_skips,x
     sta net_skip
@@ -700,6 +704,13 @@ NET_CH = CHARSET + 8 * CH_LINE_L
     cpy #8
     bne :-
     rts
+.endproc
+
+; La mezzeria di sempre nei caratteri della rete (la rete dell'avversario resta nel set dopo la
+; partita: il puntino della chiusura del GAME OVER li usa).
+.proc net_plain
+    lda #K_NONE
+    jmp net_setup::set
 .endproc
 
 .proc net_tick

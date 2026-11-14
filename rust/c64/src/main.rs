@@ -1298,6 +1298,11 @@ fn challenger(m: &mut Machine) -> Result<(), String> {
 
 /// Cicli utili di un frame PAL: 312 righe da 63 cicli meno le righe dei caratteri e gli sprite.
 const FRAME_BUDGET: u64 = 18_000;
+/// Set di caratteri del programma (CHARSET di video.s) e due suoi caratteri (gen/assets.inc,
+/// controllati in `frames`)
+const CHARSET: usize = 0xC800;
+const CH_GRID_T: usize = 176;
+const CH_WALL: usize = 3;
 
 /// Racchette in partita NEXT: le immagini preparate a inizio partita diventano pronte per tutti e
 /// due i lati e la racchetta sinistra (sprite 3) ha sempre un'immagine non vuota, letta nella RAM
@@ -1706,6 +1711,11 @@ fn frames(m: &mut Machine) -> bool {
         "CHALLENGE",
         "finale",
     ];
+    let inc = std::fs::read_to_string(c64_dir().join("gen/assets.inc")).unwrap_or_default();
+    if inc_const(&inc, "CH_GRID_T") != Some(CH_GRID_T) || inc_const(&inc, "CH_WALL") != Some(CH_WALL) {
+        println!("FAIL: CH_GRID_T o CH_WALL diversi da gen/assets.inc");
+        return false;
+    }
     let mut stats = [(0u64, 0u64, 0u32, 0u32); 12]; // massimo, somma, frame, oltre il budget
     // presentazioni di CHALLENGE con la voce: file caricati, frame con gli NMI, il più pesante;
     // poi i frame di partita con il tema dell'avversario e il più pesante
@@ -1721,6 +1731,9 @@ fn frames(m: &mut Machine) -> bool {
     // 0-3 e i blocchi), passo del frame prima, scritte arrivate al testo con tutti i passi, scritte
     // arrivate al testo, frame dall'attivazione, i più per arrivare al testo
     let bonus_labels = std::cell::Cell::new((0u8, 0xFFu8, 0u32, 0u32, 0u32, 0u32));
+    // tabelle dei quadrati dopo math_init: in partita devono essere quelle (presentazioni, YOU WIN,
+    // HOW TO PLAY e finale ci scrivono sopra e le fanno rifare prima)
+    let squares: std::cell::RefCell<Vec<u8>> = std::cell::RefCell::new(Vec::new());
     // tempo della musica: frame al match point, frame nel bullet time, credito massimo di passi
     // in più ancora da fare (non deve crescere)
     let tempo = std::cell::Cell::new((0u32, 0u32, 0u8));
@@ -1756,6 +1769,27 @@ fn frames(m: &mut Machine) -> bool {
         // tiene il suo codice (play.s, ov_scene)
         m.write_u8("pd_made", 0, 0xAA);
         let c = m.cpu.call(addr, 1_000_000)?;
+        // CH_GRID_T e il muro (righe e trattini delle scritte animate, pavimento del continue,
+        // entrate di TITAN e GUARDIAN) devono restare i loro: la capsula del BULLET prende altri
+        // caratteri (bullet_chars), che dopo una partita NEXT restano scambiati
+        if m.read_u8("state", 0) == 7 && m.cpu.mem[0xF000..0xF800] != squares.borrow()[..] {
+            let sq = squares.borrow();
+            let wrong: Vec<usize> = (0..0x800).filter(|&i| m.cpu.mem[0xF000 + i] != sq[i]).collect();
+            return Err(format!(
+                "partita con le tabelle dei quadrati non pronte (math_ready {}, {} byte diversi da ${:04X} a ${:04X}, dal stato {state}, livello {})",
+                m.read_u8("math_ready", 0),
+                wrong.len(),
+                0xF000 + wrong[0],
+                0xF000 + wrong[wrong.len() - 1],
+                m.read_u8("ch_level", 0)
+            ));
+        }
+        if matches!(m.read_u8("state", 0), 7 | 8 | 10 | 12) {
+            let glyph = |c: usize| &m.cpu.mem[CHARSET + 8 * c..CHARSET + 8 * c + 8];
+            if glyph(CH_GRID_T) != [0xFF, 0, 0, 0, 0, 0, 0, 0] || glyph(CH_WALL) != [0x3C; 8] {
+                return Err(format!("caratteri della riga o del muro cambiati (stato {})", m.read_u8("state", 0)));
+            }
+        }
         if m.read_u8("state", 0) == 7 && m.read_u8("m_next", 0) != 0 {
             let (mut seen, prev, mut full, mut shown, mut open, mut slowest) = bonus_labels.get();
             let key = m.read_u8("lb_key", 0);
@@ -1829,7 +1863,11 @@ fn frames(m: &mut Machine) -> bool {
         s.3 += (c > FRAME_BUDGET) as u32;
         let now = m.read_u8("state", 0);
         if c > FRAME_BUDGET {
-            println!("  frame oltre il budget: stato {state} -> {now}, {c} cicli");
+            println!(
+                "  frame oltre il budget: stato {state} -> {now}, {c} cicli ({} NMI, tabelle {})",
+                m.cpu.nmis - nmis,
+                if m.read_u8("math_ready", 0) != 0 { "pronte" } else { "da rifare" }
+            );
         }
         let mut b = border.get();
         let brd = m.read_u8("sh_brd", 0);
@@ -1889,6 +1927,7 @@ fn frames(m: &mut Machine) -> bool {
     for r in ["title_unpack", "clear_vars", "math_init", "video_init", "input_init", "sid_init"] {
         m.call(r);
     }
+    *squares.borrow_mut() = m.cpu.mem[0xF000..0xF800].to_vec();
     // vettore dell'NMI del programma (irq_init)
     m.cpu.write(0xFFFA, nmi as u8);
     m.cpu.write(0xFFFB, (nmi >> 8) as u8);
@@ -2648,10 +2687,11 @@ fn vh_song_starts(vh: &str) -> Vec<[usize; 3]> {
     songs
 }
 
-/// Costante `NOME = $hex` o `NOME = n` di c64/gen/sid_music.inc.
+/// Costante `NOME = $hex` o `NOME = n` di un .inc generato (c64/gen), con il commento dopo `;`.
 fn inc_const(inc: &str, name: &str) -> Option<usize> {
     inc.lines().find_map(|l| {
-        let v = l.trim().strip_prefix(name)?.trim_start().strip_prefix('=')?.trim();
+        let v = l.trim().strip_prefix(name)?.trim_start().strip_prefix('=')?;
+        let v = v.split(';').next()?.trim();
         match v.strip_prefix('$') {
             Some(h) => usize::from_str_radix(h, 16).ok(),
             None => v.parse().ok(),

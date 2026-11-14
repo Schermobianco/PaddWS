@@ -403,16 +403,21 @@ scenes:
     jsr read_input
     ; tabelle dei quadrati da rifare, fuori dalle scene in bitmap
     lda math_ready
-    bne :+
+    bne skip
     lda ch_phase                ; non mentre una schermata si prepara
-    bne :+
+    bne skip
     lda state
     beq step
-    cmp #ST_TITLE + 1
-    bcc :+
+    cmp #ST_INTRO               ; nella presentazione solo dopo il via (prima l'entrata, e lo
+    bne :+                      ; sfidante che arriva costa già quasi tutto il frame)
+    lda ch_go
+    bne step
+    beq skip
+:   cmp #ST_TITLE + 1
+    bcc skip
 step:
     jsr math_step
-:
+skip:
     jsr next_shots              ; NEXT: colpi del BLASTER (caratteri), anche loro nel vblank
     jsr run_scene
 .endproc                        ; (prosegue in scene_done)
@@ -2210,6 +2215,7 @@ dot:
     lda #CH_BLANK
     ldy #12
     jsr ov_fill
+    jsr net_plain               ; (dopo la CHALLENGE i caratteri sono della rete dell'avversario)
     lda #CH_LINE_L              ; un trattino di 2 pixel al centro
     sta SCREEN + 12 * 40 + 19
     lda #CH_LINE_R

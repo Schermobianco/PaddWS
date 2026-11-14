@@ -57,6 +57,7 @@ in_y:    .byte 0
 in_t:    .byte 0
 in_hi:   .byte 0
 in_tagn: .byte 0                ; lettere del motto a schermo
+in_inval: .byte 0               ; 1: tabelle dei quadrati già da rifare (in_tick, o il via)
 
 ; Disegno (ch_draw), sullo schermo pulito: punteggio e record, l'immagine della racchetta
 ; dell'avversario (prima della voce: dopo l'I/O resta acceso), poi l'entrata.
@@ -112,12 +113,16 @@ in_tagn: .byte 0                ; lettere del motto a schermo
 
 ; Un frame (intro_scene, dopo il disegno): la scala, il livello, l'entrata.
 .proc in_tick
-    ldx ch_elapsed              ; (il primo frame dopo il disegno no: il file voce del primo
-    dex                         ; livello ci copia GO, circa 14.000 cicli)
+    ldx ch_elapsed              ; (fino a 255)
+    cpx #IN_DONE + 2
+    jcs tables
+    cpx #2                      ; il primo frame dopo il disegno no: il file voce del primo livello
+    jcc out                     ; ci copia GO, circa 14.000 cicli
+    cpx #128 + 2                ; l'entrata si ferma al frame 127 (in_f con il segno giusto)
+    jcs out
     dex
-    bpl :+
-    rts
-:   stx in_f
+    dex
+    stx in_f
     txa
     lsr a                       ; il trattino f / 2, ai frame pari
     bcs blink
@@ -169,13 +174,14 @@ color:
     ldy #IN_LEVEL
     jsr color_row
 go:
-    lda in_f                    ; l'entrata finita: le tabelle dei quadrati di nuovo da fare
-    cmp #IN_DONE
-    bcc :+
-    bne :++
+    jmp inv_tick
+tables:
+    lda in_inval                ; l'entrata finita: le tabelle dei quadrati di nuovo da fare, una
+    bne out                     ; volta (math_step le rifà sopra l'entrata, che non gira più)
+    inc in_inval
     jmp math_invalidate
-:   jmp inv_tick
-:   rts
+out:
+    rts
 ; trattino X della scala: due celle piene ogni cinque colonne
 rung:
     stx in_t

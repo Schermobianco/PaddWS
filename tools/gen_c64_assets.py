@@ -1107,6 +1107,32 @@ HT_SKIP_Y = 193
 HT_SHOT_X = 214                  # riquadro del tiro, fino a x = 300
 
 
+def c64_stick(img: Image.Image, cx: int, cy: int, way: str) -> None:
+    """Joystick come howto.stick, ma sulla griglia delle celle 8x8 della bitmap hires (due colori
+    per cella): pallina nelle due righe di celle sopra quella di cy, base nella riga sotto, asta
+    dalla base alla pallina (howto_image la colora come la cella in cui passa). Niente riflesso
+    bianco sulla pallina: sarebbe il terzo colore della cella."""
+    d = ImageDraw.Draw(img)
+    row = cy // 8 * 8                  # prima riga di pixel della cella di cy
+    base_top = row + 8
+    d.rounded_rectangle((cx - 11, base_top, cx + 11, base_top + 6), 2, fill=howto.S_DARK)
+    d.ellipse((cx - 5, base_top, cx + 5, base_top + 3), fill=howto.S_HOLE)
+    dx, dy = howto.DIRS[way]
+    bx, by = cx + dx * 7, row + 2 - (1 - dy) * 5
+    d.line((cx, base_top + 1, bx, by), fill=howto.S_SHAFT, width=2)
+    d.ellipse((bx - 5, by - 5, bx + 5, by + 5), fill=howto.S_BALL)
+
+
+def c64_button(img: Image.Image, cx: int, cy: int) -> None:
+    """Pulsante sulla griglia delle celle, come i joystick (c64_stick): un rettangolo rosso nelle
+    righe di celle fino a quella di cy, la base grigia nella riga sotto."""
+    d = ImageDraw.Draw(img)
+    row = cy // 8 * 8
+    base_top = row + 8
+    d.rounded_rectangle((cx - 11, base_top, cx + 11, base_top + 4), 2, fill=howto.S_DARK)
+    d.rectangle((cx - 8, row + 2, cx + 8, row + 7), fill=howto.S_RED)
+
+
 def howto_image() -> list[list[int]]:
     """La schermata a 320x200 in colori del C64 (un indice per pixel), prima della conversione."""
     w, h = 320, 200
@@ -1121,14 +1147,18 @@ def howto_image() -> list[list[int]]:
         cy = y0 + 42
         dl.rectangle((8, y0 - 4, 311, y0 + 58), outline=C_GRAY + 1)
         howto.paint_text(text, (16, y0), move, howto.f20, howto.T_ACCENT)
-        howto.paint_text(text, (16, y0 + 18), effect, howto.f10, howto.T_WHITE)
+        # (4 pixel più giù del MiSTer: nella riga di celle dopo l'ultima del titolo, che è giallo)
+        howto.paint_text(text, (16, y0 + 22), effect, howto.f10, howto.T_WHITE)
         for k, (x, way) in enumerate(zip(steps, howto.JOY_STEPS[i])):
-            howto.stick(figs, x, cy, way)
+            c64_stick(figs, x, cy, way)
             if k < len(steps) - 1:
-                ax = x + howto.PITCH // 2 - 2
-                dl.polygon([(ax, cy - 3), (ax + 4, cy), (ax, cy + 3)], fill=C_YELLOW + 1)
+                # freccia nella prima cella dopo la pallina più a destra (x + 12), nella riga di
+                # celle di cy: mai nella stessa cella di una pallina o di una base
+                ax = ((x + 12) // 8 + 1) * 8
+                ay = cy // 8 * 8 + 4
+                dl.polygon([(ax, ay - 3), (ax + 4, ay), (ax, ay + 3)], fill=C_YELLOW + 1)
         howto.paint_text(text, (plus_x, cy), "+", howto.f20, howto.T_WHITE, "mm")
-        howto.button(figs, fire_x, cy, "", False)
+        c64_button(figs, fire_x, cy)
         howto.paint_text(text, (label_x, cy + 1), "FIRE", howto.f10, howto.T_GRAY, "lm")
         # il tiro: racchetta, palla gialla e la sua strada (dritta e veloce, o che poi s'impenna)
         x0, x1 = HT_SHOT_X, 300
@@ -1158,7 +1188,9 @@ def howto_image() -> list[list[int]]:
                      howto.T_GRAY, "mm")
     howto.paint_text(text, (w // 2, HT_SKIP_Y), "PRESS FIRE TO SKIP", howto.f10, howto.T_GRAY, "mm")
     tcol = {howto.T_WHITE: C_WHITE, howto.T_GRAY: C_GRAY, howto.T_ACCENT: C_YELLOW}
-    scol = {howto.S_DARK: C_DGRAY, howto.S_HOLE: C_BLACK, howto.S_SHAFT: C_LGRAY, howto.S_BALL: C_RED,
+    # joystick: base e asta in un grigio solo (con il nero, due colori per cella); l'asta rossa
+    # nelle celle della pallina
+    scol = {howto.S_DARK: C_GRAY, howto.S_HOLE: C_BLACK, howto.S_SHAFT: C_GRAY, howto.S_BALL: C_RED,
             howto.S_BASE_EDGE: C_GRAY, howto.S_WHITE: C_WHITE, howto.S_RED: C_RED, howto.S_RED_DARK: C_BROWN,
             howto.S_RED_LIGHT: C_LRED}
     out = [[0] * w for _ in range(h)]
@@ -1170,6 +1202,13 @@ def howto_image() -> list[list[int]]:
                 out[yy][xx] = scol[v]
             elif v := lines.getpixel((xx, yy)):
                 out[yy][xx] = v - 1
+    for cy in range(h // 8):
+        for cx in range(w // 8):
+            cell = [(cx * 8 + x, cy * 8 + y) for y in range(8) for x in range(8)]
+            if any(figs.getpixel(p) == howto.S_BALL for p in cell):
+                for x, y in cell:
+                    if figs.getpixel((x, y)) == howto.S_SHAFT:
+                        out[y][x] = C_RED
     return out
 
 
@@ -1204,6 +1243,10 @@ def howto_bitmap() -> tuple[bytes, bytes, list[list[int]]]:
                     byte |= on << (7 - x)
                     shown[cy * 8 + y][cx * 8 + x] = fg if on else bg
                 bitmap[(cy * 40 + cx) * 8 + y] = byte
+    # ogni cella al più con due colori (il nero compreso): sul C64 si vede il disegno esatto
+    bad = [(cy, cx) for cy in range(25) for cx in range(40)
+           if any(shown[cy * 8 + y][cx * 8 + x] != img[cy * 8 + y][cx * 8 + x] for y in range(8) for x in range(8))]
+    assert not bad, f"HOW TO PLAY: celle (riga, colonna) con più di due colori {bad}"
     return bytes(bitmap), bytes(colors), shown
 
 
@@ -1277,21 +1320,32 @@ def main() -> None:
     spare = [cursor]
     for name, tile in grid.items():
         code = cs.add(tile)
-        spare.append(code)
+        if name == "GRID_T":
+            grid_t = code
+        else:
+            spare.append(code)
         lines.append(f"CH_{name} = {code}")
     # caratteri per la capsula del BULLET in NEXT: cursore e reticolo (solo l'auto-test
-    # dell'accensione), il muro del singolo e uno di INSERT COIN / PRESS START della demo
-    spare.append(wall)
+    # dell'accensione) e tre di INSERT COIN / PRESS START della demo: due dopo la scelta e la barra
+    # delle mosse (supers_assets), poi il primo, nelle pagine della scelta. Non CH_GRID_T e il muro
+    # del singolo: le scritte animate (riga del televisore, trattini, pavimento) e le entrate della
+    # CHALLENGE li usano anche in partita NEXT e dopo
+    pick_range = range(PICK_FIRST, PICK_FIRST + PICK_PAGES * 32)
+    after_pick = sorted(c for c in demo_only if c >= pick_range.stop)
+    spare += after_pick[BAR_CHARS : BAR_CHARS + 2]
     spare.append(min(demo_only))
+    self_test = spare[:5]
     bullet_bytes = next_chars(cs, lines, spare)
     # CHALLENGE: bande della schermata del nuovo sfidante (HERE COMES A NEW CHALLENGER!)
     lines.append(f"CH_SOLID = {cs.add((0xFF,) * 8, unique=True)}")
     files = attract_assets(lines)
-    # i caratteri presi dal BULLET non servono ad altro: quelli dell'auto-test e il muro dati una
-    # volta sola, quello della demo solo a INSERT COIN e PRESS START
-    for c in spare[:-1]:
+    # i caratteri presi dal BULLET non servono ad altro: quelli dell'auto-test dati una volta sola,
+    # quelli della demo solo a INSERT COIN e PRESS START
+    for c in self_test:
         assert cs.given.count(c) == 1, c
-    assert spare[-1] not in cs.given[:big_from] + cs.given[after_big:], spare[-1]
+    for c in spare[5:]:
+        assert c in demo_only and c not in cs.given[:big_from] + cs.given[after_big:], c
+    assert grid_t not in spare and wall not in spare
     lines.append(f"CHARSET_USED = {len(cs.tiles)}")
     OUT.mkdir(parents=True, exist_ok=True)
     charset = bytearray(2048)
@@ -1304,7 +1358,7 @@ def main() -> None:
     # scelta dei bonus: le metà delle lettere del font (codice + PICK_TOP la alta, abbassata di 4
     # pixel; + PICK_BOTTOM la bassa, in cima al carattere) al posto delle scritte grandi, che nella
     # scelta non ci sono (né altri usi di quei caratteri: il BULLET ne prende uno solo in partita)
-    pick_range = range(PICK_FIRST, PICK_FIRST + PICK_PAGES * 32)
+    assert not set(spare[5:-1]) & set(pick_range)
     assert big_tiles <= pick_range.start and pick_range.stop <= big_end, (big_tiles, big_end)
     assert not any(c in pick_range for c in cs.given[:big_given] + cs.given[after_big:] if c != spare[-1])
     n = font_last - font_first + 1

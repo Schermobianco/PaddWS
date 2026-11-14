@@ -676,13 +676,21 @@ next:
     jmp sm_page
 begin:
     lda math_ready
-    beq :+
-    jmp ch_begin
-:   rts
+    beq wait
+    lda ch_go                   ; un frame dopo: l'ultimo pezzo di math_step (circa 12.000 cicli)
+    cmp #SM_PAGES + 2           ; e begin_match non stanno nello stesso frame
+    bcs :+
+    inc ch_go
+wait:
+    rts
+:   jmp ch_begin
 intro:
     jsr VOICE_TICK              ; la voce, 0,5 s dopo il primo frame
     jsr ch_phases
     bcs done
+    lda ch_elapsed              ; né sfidante né salto nel frame in cui il file voce del primo
+    cmp #2                      ; livello copia GO (circa 14.000 cicli): il disegno ora finisce
+    bcc done                    ; prima di quel frame
     jsr ch_join                 ; nuovo sfidante
     bcc :+
     jsr VOICE_STOP
@@ -699,9 +707,8 @@ go:
     ; prendono il posto del file voce, non della parte che resta); con il file voce la musica è il
     ; tema dell'avversario, che il file ha già copiato a THEME_BASE (senza file VOICE_STOP è un
     ; RTS: resta A = 0, silenzio)
-    lda ch_elapsed              ; saltata prima che le tabelle dei quadrati si rifacessero
-    cmp #IN_DONE + 2
-    bcs :+
+    lda in_inval                ; saltata prima che le tabelle dei quadrati si rifacessero
+    bne :+                      ; (intro.s, in_tick)
     jsr math_invalidate
 :   lda #0
     sta sh_enable               ; (gli sprite della presentazione)

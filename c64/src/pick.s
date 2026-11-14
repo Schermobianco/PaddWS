@@ -193,6 +193,9 @@ draw:
 .proc kind_enter
     lda #1
     sta pk_kind
+    lda #$ff                    ; nessuna anteprima ancora (NEXTBSS non si azzera all'avvio, e la
+    sta pv_kind                 ; scelta della racchetta ora viene prima di quella dei bonus)
+    sta pv_kind+1
     lda #0
     sta pk_ok
     sta pk_ok+1
