@@ -625,7 +625,10 @@ always @(*) begin
     case (screen)
         3'd1: begin   // ------------------------------------------------ presentazione
             on = 1'b1;
-            if (i_title && ch_intro_lit(level, (x - (W - 2 * ch_intro_w(level)) / 2) >> 1, (y - 14) >> 1)) col = ACCENT;
+            // titolo: LEVEL n OF 7 (FINAL LEVEL), nell'allenamento TRAINING come su PC e C64
+            if (i_title && (train ? ch_train_lit((x - (W - 2 * CH_TRAIN_W) / 2) >> 1, (y - 14) >> 1)
+                                  : ch_intro_lit(level, (x - (W - 2 * ch_intro_w(level)) / 2) >> 1, (y - 14) >> 1)))
+                col = ACCENT;
             // la scala dei livelli
             for (j = 0; j < 7; j = j + 1)
                 if (j < i_lad && in_box(LADDER_X + 24 * j, LADDER_Y, 7'd16, 7'd4))

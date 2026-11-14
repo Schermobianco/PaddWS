@@ -308,6 +308,28 @@ function ch_clear6_lit(input [9:0] dx, input [9:0] dy);
     end
 endfunction
 
+localparam CH_TRAIN_W = 33;
+localparam CH_TRAIN_H = 8;
+function [32:0] ch_train_row(input [2:0] row);
+    case (row)
+        3'd0: ch_train_row = 33'b111011100011001010010101001001100;
+        3'd1: ch_train_row = 33'b010010010100101010010101001010000;
+        3'd2: ch_train_row = 33'b010010010100101011010101101010000;
+        3'd3: ch_train_row = 33'b010011100111101010110101011010110;
+        3'd4: ch_train_row = 33'b010010010100101010010101001010010;
+        3'd5: ch_train_row = 33'b010010010100101010010101001010010;
+        3'd6: ch_train_row = 33'b010010010100101010010101001001100;
+        default: ch_train_row = 33'd0;
+    endcase
+endfunction
+function ch_train_lit(input [9:0] dx, input [9:0] dy);
+    reg [32:0] r;
+    begin
+        r = ch_train_row(dy[2:0]);
+        ch_train_lit = (dx < 33 && dy < 8) ? r[32 - dx] : 1'b0;
+    end
+endfunction
+
 localparam CH_FIRST_W = 31;
 localparam CH_FIRST_H = 8;
 function [30:0] ch_first_row(input [2:0] row);

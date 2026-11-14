@@ -26,6 +26,7 @@ STRINGS = {
     f"ch_intro{LEVELS - 1}": "FINAL LEVEL",
     **{f"ch_clear{i}": f"LEVEL {i + 1} CLEAR" for i in range(LEVELS - 1)},
     f"ch_clear{LEVELS - 1}": "CHAMPION!",
+    "ch_train": "TRAINING",   # titolo della presentazione nell'allenamento, al posto di LEVEL n OF 7
     "ch_first": "FIRST TO",   # il numero dei punti viene da rung_points
     "ch_score": "SCORE",
     "ch_hi": "HI",
