@@ -343,6 +343,12 @@ impl App {
         self.sid_music.say(kind as u8);
     }
 
+    /// Scelta della racchetta: il nome della racchetta sommato all'uscita come le voci di partita,
+    /// così la musica non si ferma; interrompe quello di prima.
+    pub fn announce_paddle(&self, kind: PaddleKind) {
+        self.sid_music.call_name(kind as u8);
+    }
+
     /// Fine della presentazione: il nome dell'avversario si ferma, se c'è ancora.
     pub fn stop_announce(&self) {
         self.sid_music.stop_voice();

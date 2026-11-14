@@ -163,7 +163,8 @@ semplici). Le partite sono NEXT a 5 punti.
   di YOU WIN (o di GAME OVER, in due) compare PERFECT, urlato dalla voce.
 - **Voce**: nella presentazione una voce digitalizzata "da SID" annuncia il nome dell'avversario
   (su C64 e MiSTer con il trucco del registro del volume del SID; sul C64 dalla cartuccia). Su PC,
-  web e MiSTer la stessa voce dice anche il nome della racchetta appena confermata nella scelta.
+  web e MiSTer la stessa voce dice anche il nome della racchetta appena confermata nella scelta,
+  sopra la musica, che non si ferma.
 - **Musiche degli avversari**: in partita contro la CPU ogni avversario ha il suo tema, sulle prime
   due voci del SID (la terza resta agli effetti); la sfida tra due giocatori suona il tema di un
   avversario a caso. Si spengono con **MUSIC VOLUME: 0%** nel menu

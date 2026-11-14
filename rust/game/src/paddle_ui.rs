@@ -283,14 +283,13 @@ impl PaddlePick {
         (165.0 * s + (i as f32 + 0.5) * row_h, row_h)
     }
 
-    /// Conferma o annulla la racchetta sotto il cursore di `side`; confermata, il SID ne dice il
-    /// nome (come quello degli avversari della CHALLENGE), interrompendo quello di prima.
+    /// Conferma o annulla la racchetta sotto il cursore di `side`; confermata, se ne sente il nome
+    /// sopra la musica (come READY e GO), interrompendo quello di prima.
     fn toggle(&mut self, app: &App, side: usize) {
         self.chosen[side] = !self.chosen[side];
         app.play(if self.chosen[side] { Event::Hit } else { Event::Wall });
         if self.chosen[side] {
-            app.stop_announce();
-            app.announce(PaddleKind::ALL[self.cursor[side]]);
+            app.announce_paddle(PaddleKind::ALL[self.cursor[side]]);
         }
     }
 

@@ -21,7 +21,8 @@ crea il commit e il tag `vX.Y.Z`.
   appena inserito e un riflesso lo attraversa. Sul C64 come sul MiSTer, con le cifre che girano.
 - GAME OVER: dopo la chiusura da televisore lo schermo resta nero per due secondi, prima di passare
   oltre (PC, web, MiSTer e C64).
-- Scelta della racchetta: confermata, il SID ne dice il nome (PC, web e MiSTer; non sul C64).
+- Scelta della racchetta: confermata, se ne sente il nome sopra la musica, che non si ferma (PC,
+  web e MiSTer; non sul C64).
 - CHALLENGE: la sfida tra due giocatori suona il tema di un avversario a caso (PC, web, MiSTer e
   C64).
 - Scelta della racchetta al tocco (web e Deck): un tocco sulla riga la mostra e la conferma è un

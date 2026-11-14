@@ -179,6 +179,12 @@ impl Music {
         self.call.start(&self.voices, id);
     }
 
+    /// Il nome della racchetta `id` (`PaddleKind`) sommato all'uscita come le voci di partita, senza
+    /// il trucco di $D418: la musica continua. Interrompe la voce di partita in corso.
+    pub fn call_name(&mut self, id: u8) {
+        self.call.start(&self.voices, id);
+    }
+
     pub fn voices(&self) -> &VoiceRom {
         &self.voices
     }

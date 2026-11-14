@@ -2048,12 +2048,32 @@ wire [3:0] sid_song = ch_join || music_off ? 4'd0 :
                       (mode == M_SCORES && !ch_scores_attract)
                           ? (egg ? SID_SONG_ENDING : SID_SONG_TITLE) : 4'd0;   // easter egg: il finale
 
+// Scelta della racchetta: quando un giocatore conferma la sua (non allo scadere del tempo, né la
+// CPU o il campione già scelti) se ne sente il nome come voce di partita (le voci 0-6 della ROM
+// sono i nomi), sopra la musica; interrompe quello di prima. Se confermano tutti e due nello stesso
+// ciclo vale P2.
+reg  [1:0] kc_q = 2'b00;
+reg        say_go = 1'b0;
+reg  [2:0] say_kind = 3'd0;
+integer    spk;
+always @(posedge clk) begin
+    kc_q <= kind_chosen;
+    say_go <= 1'b0;
+    if (mode == M_PICK && pick_paddle && !pick_ready)
+        for (spk = 0; spk < 2; spk = spk + 1)
+            if (kind_chosen[spk] && !kc_q[spk] && !pick_lock[spk]) begin
+                say_go <= 1'b1;
+                say_kind <= kind_cur[spk];
+            end
+end
+
 // Voci di partita, come su PC: l'urlo della mossa speciale attivata (anche nella demo, come gli
 // effetti) e in CHALLENGE (contro la CPU e nella sfida) "READY?" all'inizio del conto alla rovescia
 // e "GO!" al via, al posto del suo effetto. "YOU WIN!" quando un giocatore batte la CPU (Classic, EVO,
 // NEXT e i livelli della CHALLENGE), con la scritta del GAME OVER; dopo l'ultimo livello la dice invece
 // il finale, un secondo dopo CONGRATULATIONS!. "PERFECT!" al suo posto quando un giocatore vince
-// senza punti dell'avversario, anche in due. Non passano per il SID: musica ed effetti continuano.
+// senza punti dell'avversario, anche in due; nella scelta della racchetta il suo nome. Non passano
+// per il SID: musica ed effetti continuano.
 reg        call_go = 1'b0;
 reg  [3:0] call_id = VOICE_READY;
 wire [3:0] call_level;
@@ -2079,27 +2099,10 @@ always @(posedge clk) begin
                  (mframe == 11'd0 || mframe == COUNTDOWN_FRAMES - 11'd1)) begin
         call_go <= 1'b1;
         call_id <= mframe == 11'd0 ? VOICE_READY : VOICE_GO;
+    end else if (say_go) begin
+        call_go <= 1'b1;
+        call_id <= {1'b0, say_kind};
     end
-end
-
-// Scelta della racchetta: quando un giocatore conferma la sua (non allo scadere del tempo, né la
-// CPU o il campione già scelti), il SID ne dice il nome, come quello dell'avversario; se sta già
-// parlando la voce di prima si ferma (voice_stop) e la nuova parte appena il SID è libero.
-reg  [1:0] kc_q = 2'b00;
-reg        say_pend = 1'b0;
-reg  [2:0] say_kind = 3'd0;
-wire       voice_busy;
-integer    spk;
-always @(posedge clk) begin
-    kc_q <= kind_chosen;
-    if (mode != M_PICK) say_pend <= 1'b0;
-    else if (say_pend && !voice_busy) say_pend <= 1'b0;   // voice_go in questo ciclo
-    if (mode == M_PICK && pick_paddle && !pick_ready)
-        for (spk = 0; spk < 2; spk = spk + 1)
-            if (kind_chosen[spk] && !kc_q[spk] && !pick_lock[spk]) begin
-                say_pend <= 1'b1;
-                say_kind <= kind_cur[spk];
-            end
 end
 
 // CHALLENGE: la voce del SID dice il nome dell'avversario nella presentazione; si ferma se la
@@ -2114,10 +2117,10 @@ pong_sid #(.ROM_FILE(SID_ROM), .VOICE_FILE(VOICE_ROM)) sid (
     .slow(sfx_slow),
     .music_fast(music_fast),
     .music_slow(bul_on),
-    .voice_go((frame_start && mode == M_INTRO && mframe == CH_VOICE_FRAME) || (say_pend && !voice_busy)),
-    .voice_id(mode == M_PICK ? say_kind : rung_kind(ch_level)),
-    .voice_stop((mode != M_INTRO && mode != M_PICK) || (say_pend && voice_busy)),
-    .voice_on(voice_busy),
+    .voice_go(frame_start && mode == M_INTRO && mframe == CH_VOICE_FRAME),
+    .voice_id(rung_kind(ch_level)),
+    .voice_stop(mode != M_INTRO),
+    .voice_on(),
     .call_go(call_go),
     .call_id(call_id),
     .call_level(call_level),

@@ -166,7 +166,8 @@ entrances in characters, simpler). Matches are NEXT, to 5 points.
   two players), shouted by the voice.
 - **Voice**: in the introduction a digitised "SID-style" voice announces the opponent's name (on the
   C64 and MiSTer with the trick of the SID volume register; on the C64 from the cartridge). On PC,
-  web and MiSTer the same voice also says the name of the paddle just confirmed in the pick.
+  web and MiSTer the same voice also says the name of the paddle just confirmed in the pick, over
+  the music, which keeps playing.
 - **Opponent themes**: in the match against the CPU each opponent has its own theme, on the first
   two SID voices (the third is left for the effects); the challenge between two players plays the
   theme of a random opponent. They are turned off with **MUSIC VOLUME: 0%**

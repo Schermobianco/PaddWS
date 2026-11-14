@@ -35,6 +35,8 @@ enum Cmd {
     StopVoice,
     /// voce di partita
     Call(Call),
+    /// nome della racchetta (`PaddleKind`) come voce di partita, sopra la musica
+    CallName(u8),
     /// effetto per i bit degli eventi del frame, rallentato o no
     Effect(u8, bool),
 }
@@ -49,6 +51,7 @@ fn apply(m: &mut Music, cmd: Cmd) {
         Cmd::Say(id) => m.say(id),
         Cmd::StopVoice => m.stop_voice(),
         Cmd::Call(c) => m.call(c),
+        Cmd::CallName(id) => m.call_name(id),
         Cmd::Effect(events, slow) => m.effect(events, slow),
     }
 }
@@ -130,6 +133,12 @@ impl SidMusic {
     /// Voce di partita (urli delle mosse, READY, GO, YOU WIN, PERFECT): interrompe quella in corso.
     pub fn call(&self, call: Call) {
         self.send(Cmd::Call(call));
+    }
+
+    /// Nome della racchetta (`PaddleKind`) sommato all'uscita come le voci di partita: la musica
+    /// non si ferma; interrompe la voce in corso.
+    pub fn call_name(&self, kind: u8) {
+        self.send(Cmd::CallName(kind));
     }
 
     fn send(&self, cmd: Cmd) {
