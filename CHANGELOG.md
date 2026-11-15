@@ -14,6 +14,8 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+## [4.3.0] - 2026-11-15
+
 ### Modificato
 - **Font arcade per tutte le scritte** (PC, web, Deck e MiSTer): Press Start 2P al posto di Munro,
   in pixel interi e senza sfumature. Il font del punteggio non cambia. Tutto è a grandezza normale
@@ -1224,7 +1226,8 @@ Ricostruite dalle cartelle di backup in `archive/` (date indicative).
 - **1.5** (2020-08) – versione per Raspberry Pi con encoder rotativi.
 - **1.1 – 1.4** (2020-08) – prime versioni pygame: menu, modalità CLASSIC ed EVO, suoni, splash.
 
-[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.2.0...HEAD
+[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.3.0...HEAD
+[4.3.0]: https://github.com/Schermobianco/PaddWS/compare/v4.2.0...v4.3.0
 [4.2.0]: https://github.com/Schermobianco/PaddWS/compare/v4.1.1...v4.2.0
 [4.1.1]: https://github.com/Schermobianco/PaddWS/compare/v4.1.1-beta.5...v4.1.1
 [4.1.0]: https://github.com/Schermobianco/PaddWS/compare/v4.1.0-beta.2...v4.1.0
