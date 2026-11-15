@@ -23,6 +23,15 @@ The release zip, `PaddWS_MiSTer_YYYYMMDD.zip`, is unpacked into the root of the 
 with the license texts in `_Arcade/cores/PaddWS_licenses/`. The game shows up among the arcade
 titles and needs no ROMs.
 
+With update_all (or downloader) the core installs and updates itself: add these two lines at the end
+of `/media/fat/downloader.ini`, then run update_all as usual. Each new version replaces the old
+`.rbf`.
+
+```ini
+[Schermobianco/PaddWS]
+db_url = https://raw.githubusercontent.com/Schermobianco/PaddWS/db/db.json.zip
+```
+
 ## High scores on the SD card
 
 The high-score table of the NEXT ladder, together with the training unlock, is saved in NVRAM, like

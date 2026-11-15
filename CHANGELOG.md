@@ -16,6 +16,10 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [4.3.0] - 2026-11-15
 
+### Aggiunto
+- **MiSTer con update_all**: il core si installa e si aggiorna da solo con update_all (o downloader),
+  aggiungendo due righe a `downloader.ini` (vedi il README del MiSTer).
+
 ### Modificato
 - **Font arcade per tutte le scritte** (PC, web, Deck e MiSTer): Press Start 2P al posto di Munro,
   in pixel interi e senza sfumature. Il font del punteggio non cambia. Tutto è a grandezza normale

@@ -7,7 +7,8 @@
 #                         [-WorkingTree [-Synth]]
 #   -Publish     dopo la build pubblica la release vX.Y.Z su GitHub con gh (anteprima se la versione
 #                ha un "-"): serve il tag vX.Y.Z sul commit attuale, già inviato (tools/release.py e
-#                git push); poi la versione web su GitHub Pages (tools\publish-pages.ps1)
+#                git push); poi la versione web su GitHub Pages (tools\publish-pages.ps1) e il core
+#                MiSTer nel ramo db, per update_all (tools\publish_mister_db.py)
 #   -PublishOnly pubblica come -Publish i pacchetti già in dist\ (di una build senza -Publish, provati
 #                prima), senza accendere forge né ricostruire: la release in due tempi è
 #                tools/release.py, build_onforge.bat, le prove, git push --follow-tags, -PublishOnly
@@ -188,4 +189,8 @@ if ($Publish) {
     Step "versione web su GitHub Pages"
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "publish-pages.ps1")
     if ($LASTEXITCODE -ne 0) { Fail "pubblicazione su GitHub Pages" }
+    # il core MiSTer anche come database di Downloader, per update_all (tools\publish_mister_db.py)
+    Step "core MiSTer per update_all (ramo db)"
+    & $python (Join-Path $PSScriptRoot "publish_mister_db.py")
+    if ($LASTEXITCODE -ne 0) { Fail "pubblicazione del database di Downloader" }
 }

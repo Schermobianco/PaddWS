@@ -24,6 +24,15 @@ Lo zip della release, `PaddWS_MiSTer_AAAAMMGG.zip`, si scompatta nella radice de
 testi delle licenze in `_Arcade/cores/PaddWS_licenses/`. Il gioco compare tra i titoli arcade e non
 servono ROM.
 
+Con update_all (o downloader) il core si installa e si aggiorna da solo: basta aggiungere in fondo a
+`/media/fat/downloader.ini` queste due righe, poi lanciare update_all come al solito. A ogni nuova
+versione il `.rbf` vecchio viene sostituito.
+
+```ini
+[Schermobianco/PaddWS]
+db_url = https://raw.githubusercontent.com/Schermobianco/PaddWS/db/db.json.zip
+```
+
 ## Classifica sulla SD
 
 La classifica della scalata di NEXT, insieme allo sblocco dell'allenamento, si salva nella NVRAM,
