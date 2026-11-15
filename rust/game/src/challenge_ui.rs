@@ -25,8 +25,9 @@ use crate::input::{self, PadKeys};
 use crate::next_ui::{draw_capsule, unit};
 use crate::paddle_ui::{Look, PaddlePick, Shape, TWIST_MAX_TILT, draw_paddle, tagline};
 use crate::platform;
-use crate::render::TEXT_1X;
+use crate::render::{ArtPaint, ArtPart, PixelArt, TEXT_1X};
 use crate::scenes::{App, Menu, Play, START_KEYS, Scene};
+use crate::titles;
 use crate::touch;
 
 /// Durata delle schermate, in secondi.
@@ -60,6 +61,12 @@ const SCORES_COLS: [f32; 4] = [-165.0, -90.0, 20.0, 145.0];
 /// Dal centro dello schermo al lato esterno delle racchette del posto nuovo, in unità.
 const SCORES_REACH: f32 = 215.0;
 const CHALLENGER_SECONDS: f64 = 3.0;
+/// Nuovo sfidante (unità a 480 righe dal centro): bande lampeggianti (alte `CHALLENGER_BAND_H`), centro
+/// della targa disegnata, riga dello sfidante sotto.
+const CHALLENGER_BAND: f32 = 80.0;
+const CHALLENGER_BAND_H: f32 = 8.0;
+const CHALLENGER_PLATE: f32 = -22.0;
+const CHALLENGER_LINE: f32 = 38.0;
 /// touch: tocco prolungato nella metà libera con cui entra uno sfidante
 pub(crate) const HOLD_SECONDS: f64 = 1.0;
 /// le schermate si possono saltare solo dopo questo tempo (non si salta per sbaglio); il continue si
@@ -363,20 +370,22 @@ impl Challenger {
             App::color(colors.accent),
         );
         r.fill(BLACK);
-        // lampeggio: le scritte si scambiano accento e bianco, le bande accento e grigio
+        // lampeggio: la scritta scambia bianco e giallo, le bande accento e grigio
         let on = (get_time() * 4.0) as i64 % 2 == 0;
-        let (main, other) = if on { (accent, white) } else { (white, accent) };
-        let band = 8.0 * sc;
-        for (i, y) in [h / 2.0 - 80.0 * sc, h / 2.0 + 80.0 * sc - band].into_iter().enumerate() {
+        let band = CHALLENGER_BAND_H * sc;
+        for (i, y) in [h / 2.0 - CHALLENGER_BAND * sc, h / 2.0 + CHALLENGER_BAND * sc - band].into_iter().enumerate() {
             draw_rectangle(0.0, y, w, band, if on == (i == 0) { accent } else { gray });
         }
         let mid = h / sc / 2.0;
-        text(app, "HERE COMES", T1, mid - 34.0, other);
-        text(app, "A NEW CHALLENGER!", T1, mid - 6.0, main);
+        // HERE COMES A NEW CHALLENGER! è la targa disegnata (`titles`), a 1x: nel lampeggio il
+        // bianco e il giallo si scambiano, come facevano le due righe di testo
+        let paint = titles::paint(colors);
+        let paint = if on { paint } else { titles::swap_white_yellow(&paint) };
+        r.art_centered(&app.assets.titles.challenger, 1.0, w / 2.0, (mid + CHALLENGER_PLATE) * sc, 0.0, ArtPart::Whole, &paint);
         if let Some(run) = &app.run {
             let who = if run.side == Side::Left { "P2" } else { "P1" };
             let line = format!("{who} VS CHAMPION   FIRST TO {}", RUNGS[run.level].points);
-            text(app, &line, T1, mid + 38.0, white);
+            text(app, &line, T1, mid + CHALLENGER_LINE, white);
         }
     }
 }
@@ -544,12 +553,12 @@ impl Intro {
 }
 
 // Presentazione: righe (unità a 480 righe) della scala, del livello, del centro della racchetta,
-// del nome, del motto, delle capsule e dei loro nomi, dei punti da fare. La riga in cima resta
+// del motto (da qui 4 pixel arcade più in basso, `Stage::tag_row`; il nome sta subito sopra,
+// `Stage::name_row`), delle capsule e dei loro nomi, dei punti da fare. La riga in cima resta
 // all'invito per lo sfidante e ai duelli vinti (a 1x "P2 PRESS START" toccava la scala).
 const LADDER_Y: f32 = 38.0;
 const LEVEL_Y: f32 = 68.0;
 const PAD_Y: f32 = 163.0;
-const NAME_Y: f32 = 258.0;
 const TAG_Y: f32 = 286.0;
 const CAP_Y: f32 = 338.0;
 const CAP_NAME_Y: f32 = 366.0;
@@ -571,6 +580,19 @@ const ARCADE_DY: [f32; 10] = [-28.0, 20.0, -8.0, 32.0, -36.0, 4.0, 24.0, -20.0, 
 /// GUARDIAN: frame in cui la palla arriva sul muro.
 const GUARDIAN_HIT: f32 = 82.0;
 
+/// Presentazione: riga del motto (unità a 480 righe, scala `sc`, `u` unità per pixel arcade), 4
+/// pixel arcade sotto `TAG_Y` per fare posto al nome disegnato.
+fn tag_row(sc: f32, u: f32) -> f32 {
+    TAG_Y + 4.0 * u / sc
+}
+
+/// Presentazione: riga del centro del nome (unità a 480 righe) con il motto alto `tag_h` e il nome
+/// alto `name_h` (unità di disegno): la grafica finisce 4 pixel arcade sopra l'inchiostro del
+/// motto, alta quanto è (TITAN è alto più del triplo di una scritta).
+fn name_row(sc: f32, u: f32, tag_h: f32, name_h: f32) -> f32 {
+    tag_row(sc, u) - (tag_h / 2.0 + 4.0 * u + name_h / 2.0) / sc
+}
+
 /// Una presentazione al frame `f` (60 al secondo, dall'inizio). Le x si danno come distanza dal
 /// centro verso la metà campo dell'avversario (`x`), da dove entra; le y come righe a 480 (`y`).
 struct Stage<'a> {
@@ -588,6 +610,8 @@ struct Stage<'a> {
     white: Color,
     gray: Color,
     accent: Color,
+    /// colori dei ruoli delle grafiche (`titles::paint`)
+    paint: ArtPaint,
 }
 
 impl<'a> Stage<'a> {
@@ -607,6 +631,7 @@ impl<'a> Stage<'a> {
             white: App::color(colors.white),
             gray: App::color(colors.lgray),
             accent: App::color(colors.accent),
+            paint: titles::paint(colors),
         };
         let (dx, dy) = st.shake_at();
         st.shake = (dx * st.sc, dy * st.sc);
@@ -709,26 +734,40 @@ impl<'a> Stage<'a> {
         }
     }
 
-    fn name(&self, x: f32, y: f32, color: Color) {
-        self.text_at(self.rung.kind.name(), T1, x, y, color);
+    /// Il nome dell'avversario: la sua grafica (`titles`), alla grandezza delle scritte a 1x.
+    fn name_art(&self) -> &PixelArt {
+        self.app.assets.titles.name(self.rung.kind)
     }
 
-    /// Lettere del nome: centro x di disegno di ciascuna (il nome centrato nello schermo).
+    /// Grandezza del nome in unità di disegno.
+    fn name_size(&self) -> Vec2 {
+        self.app.renderer.art_size(self.name_art(), 1.0)
+    }
+
+    fn tag_row(&self) -> f32 {
+        tag_row(self.sc, self.u)
+    }
+
+    fn name_row(&self) -> f32 {
+        let tag = self.app.renderer.text_height(tagline(self.rung.kind), self.font(), T1 * self.sc);
+        name_row(self.sc, self.u, tag, self.name_size().y)
+    }
+
+    /// Il nome centrato in (x, y) di disegno, ruotato di `rotation`, nei colori `paint`; `part`
+    /// ne disegna solo un pezzo (una lettera), al suo posto.
+    fn name(&self, x: f32, y: f32, rotation: f32, part: ArtPart, paint: &ArtPaint) {
+        self.app.renderer.art_centered(self.name_art(), 1.0, x, y, rotation, part, paint);
+    }
+
+    /// Lettere del nome (`PixelArt::letters`): centro x di disegno di ciascuna, con il nome
+    /// centrato nello schermo.
     fn name_letters(&self) -> Vec<f32> {
-        let r = &self.app.renderer;
-        let cx = r.world_w / 2.0 + self.shake.0;
-        r.ink_boxes(self.rung.kind.name(), self.font(), T1 * self.sc)
-            .into_iter()
-            .flatten()
-            .map(|(x0, x1)| cx + (x0 + x1) / 2.0)
+        let size = self.name_size();
+        let (art, cx) = (self.name_art(), self.app.renderer.world_w / 2.0 + self.shake.0);
+        art.letters()
+            .iter()
+            .map(|l| cx + (l.x + l.w / 2.0 - art.w / 2.0) * size.x / art.w)
             .collect()
-    }
-
-    /// Una lettera del nome, centrata in (x, y) di disegno.
-    fn letter(&self, i: usize, x: f32, y: f32, color: Color) {
-        if let Some(ch) = self.rung.kind.name().chars().nth(i) {
-            self.text_at(&ch.to_string(), T1, x, y, color);
-        }
     }
 
     /// Motto scritto una lettera ogni `per` frame da `t0`.
@@ -744,7 +783,7 @@ impl<'a> Stage<'a> {
         let full = r.text_width(tag, self.font(), size);
         let part = r.text_width(&tag[..n], self.font(), size);
         let cx = r.world_w / 2.0 + self.shake.0 - full / 2.0 + part / 2.0;
-        self.text_at(&tag[..n], T1, cx, self.y(TAG_Y), self.gray);
+        self.text_at(&tag[..n], T1, cx, self.y(self.tag_row()), self.gray);
     }
 
     fn cap_x(&self, i: usize) -> f32 {
@@ -836,7 +875,7 @@ impl<'a> Stage<'a> {
             self.text_at(&format!("+{caught}"), T1, self.x(30.0), self.y(PAD_Y + dy - 10.0), self.accent);
         }
         if f >= 84.0 && (f >= 108.0 || ((f - 84.0) / 4.0) as i64 % 2 == 0) {
-            self.name(self.x(0.0), self.y(NAME_Y), self.white);
+            self.name(self.x(0.0), self.y(self.name_row()), 0.0, ArtPart::Whole, &self.paint);
         }
         self.tag_typed(100.0, 1.0);
         for i in 0..3 {
@@ -882,8 +921,7 @@ impl<'a> Stage<'a> {
         if f >= 66.0 {
             let t = f - 66.0;
             let rot = if t < 24.0 { 0.25 * (t * 0.6).cos() * (1.0 - t / 24.0) } else { 0.0 };
-            let r = &self.app.renderer;
-            r.text_centered(self.rung.kind.name(), self.font(), T1 * self.sc, self.x(0.0), self.y(NAME_Y), rot, self.white);
+            self.name(self.x(0.0), self.y(self.name_row()), rot, ArtPart::Whole, &self.paint);
         }
         self.tag_typed(92.0, 1.0);
         self.caps_slide(112.0, 12.0, 60.0);
@@ -915,18 +953,19 @@ impl<'a> Stage<'a> {
             }
             draw_rectangle(self.x(bx) - d / 2.0, by, d, d, self.white);
         }
+        let row = self.name_row();
         if f >= 62.0 {
-            let y = if f < 72.0 { NAME_Y - (72.0 - f).powi(2) * 2.6 } else { NAME_Y };
-            self.name(self.x(0.0), self.y(y), self.white);
+            let y = if f < 72.0 { row - (72.0 - f).powi(2) * 2.6 } else { row };
+            self.name(self.x(0.0), self.y(y), 0.0, ArtPart::Whole, &self.paint);
         }
-        // polvere ai due lati del nome
+        // polvere ai due lati del nome, dal suo fondo
         if (72.0..82.0).contains(&f) {
             let t = f - 72.0;
-            let r = &self.app.renderer;
-            let half = r.text_width(self.rung.kind.name(), self.font(), T1 * self.sc) / 2.0;
-            let cx = r.world_w / 2.0 + self.shake.0;
+            let size = self.name_size();
+            let half = size.x / 2.0;
+            let cx = self.app.renderer.world_w / 2.0 + self.shake.0;
             for (sp, up) in [(6.0, 5.0), (10.0, 3.0)] {
-                let dy = self.y(NAME_Y + 20.0 - up * t + 0.8 * t * t);
+                let dy = self.y(row) + size.y / 2.0 + (12.0 - up * t + 0.8 * t * t) * self.sc;
                 let off = half + (6.0 + sp * t) * self.sc;
                 let s = 4.0 * self.sc;
                 draw_rectangle(cx - off - s, dy, s, s, self.gray);
@@ -963,16 +1002,18 @@ impl<'a> Stage<'a> {
             self.paddle(self.x(0.0), bottom - h / 2.0, h, 0.0, None, body, false);
         }
         if f >= 84.0 {
-            // sale da sotto il pavimento: quello che è ancora sotto resta coperto
-            let r = &self.app.renderer;
-            let th = r.text_height(self.rung.kind.name(), self.font(), T1 * self.sc);
-            let ground = self.y(NAME_Y) + th / 2.0 + self.u;
-            let y = (NAME_Y + 50.0 - (f - 84.0) * 2.0).max(NAME_Y);
-            self.name(self.x(0.0), self.y(y), self.white);
-            let w = r.world_w;
-            draw_rectangle(0.0, ground, w, 60.0 * self.sc, BLACK);
+            // sale da sotto il pavimento in 25 frame, partendo tutto sotto: quello che è ancora
+            // sotto resta coperto
+            let size = self.name_size();
+            let center = self.y(self.name_row());
+            let ground = center + size.y / 2.0 + self.u;
+            let depth = size.y + 2.0 * self.u;
+            let below = depth * (1.0 - (f - 84.0) / 25.0).max(0.0);
+            self.name(self.x(0.0), center + below, 0.0, ArtPart::Whole, &self.paint);
+            let w = self.app.renderer.world_w;
+            draw_rectangle(0.0, ground, w, depth + size.y, BLACK);
             if f < 112.0 {
-                let half = r.text_width(self.rung.kind.name(), self.font(), T1 * self.sc) / 2.0 + 16.0 * self.sc;
+                let half = size.x / 2.0 + 16.0 * self.sc;
                 draw_rectangle(w / 2.0 - half + self.shake.0, ground, 2.0 * half, 2.0 * self.sc, self.gray);
             }
         }
@@ -985,7 +1026,8 @@ impl<'a> Stage<'a> {
     /// poi scende e colpisce al volo le tre capsule, che si fermano al loro posto.
     fn blaster(&self) {
         let (f, sc) = (self.f, self.sc);
-        let py = if f < 64.0 { NAME_Y } else { (NAME_Y + (f - 64.0) * 8.0).min(CAP_Y) };
+        let row = self.name_row();
+        let py = if f < 64.0 { row } else { (row + (f - 64.0) * 8.0).min(CAP_Y) };
         let muzzle = self.x(224.0);
         let shot = |x: f32, y: f32| {
             for dy in [-8.0, 6.0] {
@@ -1004,14 +1046,15 @@ impl<'a> Stage<'a> {
             let target = letters[j];
             let reach = fired + ((muzzle - target).abs() / (40.0 * sc)).ceil();
             if (fired..reach).contains(&f) {
-                shot(muzzle - self.away * (f - fired) * 40.0 * sc, NAME_Y);
+                shot(muzzle - self.away * (f - fired) * 40.0 * sc, row);
             }
             if f == fired {
-                draw_rectangle(muzzle - 3.0 * sc, self.y(NAME_Y - 10.0), 6.0 * sc, 20.0 * sc, self.accent);
+                draw_rectangle(muzzle - 3.0 * sc, self.y(row - 10.0), 6.0 * sc, 20.0 * sc, self.accent);
             }
             if f >= reach {
-                let color = if f < reach + 2.0 { self.accent } else { self.white };
-                self.letter(j, target, self.y(NAME_Y), color);
+                // la lettera colpita si accende tutta nell'accento, poi prende i suoi colori
+                let paint = if f < reach + 2.0 { titles::solid(self.accent) } else { self.paint };
+                self.name(self.x(0.0), self.y(row), 0.0, ArtPart::Letter(j), &paint);
             }
         }
         self.tag_typed(56.0, 1.0);
@@ -1060,20 +1103,20 @@ impl<'a> Stage<'a> {
             let trail = (fade > 0.0).then_some((self.x(280.0), fade));
             self.paddle(x, self.y(PAD_Y), h, 0.0, trail, self.white, false);
         }
-        let name = self.rung.kind.name();
+        let (row, tag_row) = (self.name_row(), self.tag_row());
         if let Some((x, fade)) = dash(30.0, self.x(340.0), self.x(0.0), 4.0) {
             for (gx, a) in ghosts(self.x(340.0), x, fade) {
-                self.name(gx, self.y(NAME_Y), Color { a, ..self.accent });
+                self.name(gx, self.y(row), 0.0, ArtPart::Whole, &titles::solid(Color { a, ..self.accent }));
             }
-            let color = if (34.0..36.0).contains(&f) { self.accent } else { self.white };
-            self.text_at(name, T1, x, self.y(NAME_Y), color);
+            let paint = if (34.0..36.0).contains(&f) { titles::solid(self.accent) } else { self.paint };
+            self.name(x, self.y(row), 0.0, ArtPart::Whole, &paint);
         }
         let tag = tagline(self.rung.kind);
         if let Some((x, fade)) = dash(44.0, self.x(340.0), self.x(0.0), 3.0) {
             for (gx, a) in ghosts(self.x(340.0), x, fade) {
-                self.text_at(tag, T1, gx, self.y(TAG_Y), Color { a, ..self.accent });
+                self.text_at(tag, T1, gx, self.y(tag_row), Color { a, ..self.accent });
             }
-            self.text_at(tag, T1, x, self.y(TAG_Y), self.gray);
+            self.text_at(tag, T1, x, self.y(tag_row), self.gray);
         }
         for i in 0..3 {
             let t0 = 58.0 + 6.0 * i as f32;
@@ -1134,13 +1177,14 @@ impl<'a> Stage<'a> {
             }
         }
         // il nome: una lettera ogni tre frame cade al suo posto
-        for (i, &x) in self.name_letters().iter().enumerate() {
+        let row = self.name_row();
+        for i in 0..self.name_art().letters().len() {
             let t = f - (96.0 + 3.0 * i as f32);
             if t < 0.0 {
                 continue;
             }
-            let y = if t < 5.0 { NAME_Y - (NAME_Y + 60.0) * (1.0 - ((t + 1.0) / 5.0).powi(2)) } else { NAME_Y };
-            self.letter(i, x, self.y(y), self.white);
+            let y = if t < 5.0 { row - (row + 60.0) * (1.0 - ((t + 1.0) / 5.0).powi(2)) } else { row };
+            self.name(self.x(0.0), self.y(y), 0.0, ArtPart::Letter(i), &self.paint);
         }
         self.tag_typed(130.0, 1.0);
         self.caps_pop(152.0, 10.0);
@@ -1333,7 +1377,8 @@ impl Continue {
             let t = total - left;
             let r = &app.renderer;
             let none = (Vec2::ZERO, 0.0);
-            crate::attract::draw_game_over_anim(&app.attract, r, Some("game_over"), None, white, accent,
+            let perfect = (&app.assets.titles.perfect, &titles::paint(&app.cfg.colors));
+            crate::attract::draw_game_over_anim(&app.attract, perfect, r, Some("game_over"), None, white, accent,
                                                 t + crate::attract::TYPE_LEAD, none);
             crate::attract::draw_crt_close(r, t, total);
             return;
@@ -1865,5 +1910,77 @@ mod tests {
         assert_eq!(&table.entries[0].name, b"WS!");
         // i caratteri che non sono tra le lettere restano spazi
         assert_eq!(&table.entries[1].name, b"A B");
+    }
+
+    /// Altezze dei titoli disegnati (pixel arcade) da `assets/titles/titles.json`.
+    fn title_heights() -> Vec<(String, f32, f32)> {
+        let spec: serde_json::Value = serde_json::from_str(include_str!("../../../assets/titles/titles.json")).unwrap();
+        spec["titles"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(n, t)| (n.clone(), t["size"][0].as_f64().unwrap() as f32, t["size"][1].as_f64().unwrap() as f32))
+            .collect()
+    }
+
+    /// Campi 4:3, 16:9 e larghi a 480 righe, come nel gioco: (larghezza, scala della CHALLENGE `sc`,
+    /// parametri del core).
+    fn fields() -> Vec<(f32, f32, paddws_core::Params)> {
+        [640u32, 852, 1056]
+            .into_iter()
+            .map(|width| {
+                let mut cfg = crate::config::Config::default();
+                (cfg.resolution.width, cfg.resolution.height) = (width, 480);
+                let params = paddws_core::Params::new(&cfg.tuning());
+                (width as f32, to_f32(params.scale).min(1.0), params)
+            })
+            .collect()
+    }
+
+    /// Presentazioni: ogni nome disegnato sta fra la racchetta più alta (TITAN) e il motto, con
+    /// almeno un pixel arcade di spazio sopra e i 4 di progetto sotto; GUARDIAN resta sotto il
+    /// muro; il motto resta sopra le capsule; i nomi stanno nel campo con un margine.
+    #[test]
+    fn the_drawn_names_fit_between_the_paddle_and_the_tagline() {
+        let u = 2.0; // unità per pixel arcade a 480 righe
+        let tag_h = 7.0 * u; // maiuscole di Press Start 2P a 1x
+        for (w, sc, params) in fields() {
+            let tag_top = tag_row(sc, u) * sc - tag_h / 2.0;
+            let titan = to_f32(params.kinds[PaddleKind::Titan as usize].height);
+            let paddle_bottom = PAD_Y * sc + titan / 2.0;
+            let wall_bottom = (PAD_Y + (5.0 * 24.0 + 4.0 * 4.0) / 2.0) * sc;
+            for (name, nw, nh) in title_heights().into_iter().filter(|t| t.0.starts_with("name_")) {
+                let (h, half_w) = (nh * u, nw * u / 2.0);
+                let center = name_row(sc, u, tag_h, h) * sc;
+                let (top, bottom) = (center - h / 2.0, center + h / 2.0);
+                assert!(top >= paddle_bottom + u, "{w}: {name} a {top}, racchetta fino a {paddle_bottom}");
+                assert!((tag_top - bottom - 4.0 * u).abs() < 0.01, "{w}: {name}");
+                assert!(half_w <= w / 2.0 - 16.0 * u, "{w}: {name} largo {}", 2.0 * half_w);
+                if name == "name_guardian" {
+                    assert!(top >= wall_bottom + u, "{w}: GUARDIAN a {top}, muro fino a {wall_bottom}");
+                }
+            }
+            // il motto (sceso di 4 pixel arcade) e le capsule, larghe 13 pixel arcade
+            let cap_top = CAP_Y * sc - 6.5 * u;
+            assert!(tag_top + tag_h + u <= cap_top, "{w}: motto fino a {}, capsule da {cap_top}", tag_top + tag_h);
+        }
+    }
+
+    /// Nuovo sfidante: la targa disegnata sta fra la banda in alto e la riga dello sfidante, con
+    /// almeno un pixel arcade di spazio, e nel campo.
+    #[test]
+    fn the_challenger_plate_fits_between_the_band_and_the_line() {
+        let (u, h) = (2.0, 480.0);
+        let (_, pw, ph) = title_heights().into_iter().find(|t| t.0 == "challenger").unwrap();
+        for (w, sc, _) in fields() {
+            let mid = h / sc / 2.0;
+            let center = (mid + CHALLENGER_PLATE) * sc;
+            let (top, bottom) = (center - ph * u / 2.0, center + ph * u / 2.0);
+            let band_bottom = h / 2.0 - (CHALLENGER_BAND - CHALLENGER_BAND_H) * sc;
+            let line_top = (mid + CHALLENGER_LINE) * sc - 3.5 * u;
+            assert!(top >= band_bottom + u, "{w}: targa a {top}, banda fino a {band_bottom}");
+            assert!(bottom + u <= line_top, "{w}: targa fino a {bottom}, riga da {line_top}");
+            assert!(pw * u <= w - 16.0 * u, "{w}");
+        }
     }
 }

@@ -13,16 +13,16 @@ FONT_FIRST = 19
 FONT_CHARS = 45
 ; font: codice nella ROM dei caratteri (set maiuscolo) dei caratteri da FONT_FIRST
 .define FONT_ROM 33, 43, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 61, 62, 63, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26
-; lettere 2x (GAME OVER, YOU WIN, PERFECT): quattro caratteri per lettera da BIG2_FIRST (alto
+; lettere 2x (GAME OVER, YOU WIN): quattro caratteri per lettera da BIG2_FIRST (alto
 ; sinistra, alto destra, basso sinistra, basso destra), ogni pixel 2x2 del carattere del
 ; font BIG2_SRC; il resto delle pagine della scelta resta vuoto
 BIG2_FIRST = 64
-BIG2_N = 16    ; ACEFGIMNOPRTUVWY
-.define BIG2_SRC 38, 40, 42, 43, 44, 46, 50, 51, 52, 53, 55, 57, 58, 59, 60, 62
+BIG2_N = 12    ; AEGIMNORUVWY
+.define BIG2_SRC 38, 42, 44, 46, 50, 51, 52, 55, 58, 59, 60, 62
 ; scritte del GAME OVER: larghezza (celle), celle per lettera (BIG_*_K), codici delle due righe
 BIG_GAME_OVER_W = 18
 BIG_GAME_OVER_K = 2
-.define BIG_GAME_OVER 80, 81, 64, 65, 88, 89, 72, 73, 0, 0, 96, 97, 116, 117, 72, 73, 104, 105, 82, 83, 66, 67, 90, 91, 74, 75, 0, 0, 98, 99, 118, 119, 74, 75, 106, 107
+.define BIG_GAME_OVER 72, 73, 64, 65, 80, 81, 68, 69, 0, 0, 88, 89, 100, 101, 68, 69, 92, 93, 74, 75, 66, 67, 82, 83, 70, 71, 0, 0, 90, 91, 102, 103, 70, 71, 94, 95
 BIG_P1_WINS_W = 7
 BIG_P1_WINS_K = 1
 .define BIG_P1_WINS 53, 25, 0, 60, 46, 51, 56, 0, 0, 0, 0, 0, 0, 0
@@ -31,13 +31,10 @@ BIG_P2_WINS_K = 1
 .define BIG_P2_WINS 53, 26, 0, 60, 46, 51, 56, 0, 0, 0, 0, 0, 0, 0
 BIG_YOU_WIN_W = 14
 BIG_YOU_WIN_K = 2
-.define BIG_YOU_WIN 124, 125, 96, 97, 112, 113, 0, 0, 120, 121, 84, 85, 92, 93, 126, 127, 98, 99, 114, 115, 0, 0, 122, 123, 86, 87, 94, 95
+.define BIG_YOU_WIN 108, 109, 88, 89, 96, 97, 0, 0, 104, 105, 76, 77, 84, 85, 110, 111, 90, 91, 98, 99, 0, 0, 106, 107, 78, 79, 86, 87
 BIG_CPU_WINS_W = 8
 BIG_CPU_WINS_K = 1
 .define BIG_CPU_WINS 40, 53, 58, 0, 60, 46, 51, 56, 0, 0, 0, 0, 0, 0, 0, 0
-BIG_PERFECT_W = 14
-BIG_PERFECT_K = 2
-.define BIG_PERFECT 100, 101, 72, 73, 104, 105, 76, 77, 72, 73, 68, 69, 108, 109, 102, 103, 74, 75, 106, 107, 78, 79, 74, 75, 70, 71, 110, 111
 CH_CURSOR = 160
 CH_GRID_TL = 161
 CH_GRID_T = 162
@@ -167,3 +164,82 @@ TRAIL_SPAN = 48    ; coda: coordinate dei quadrati nello sprite + 16, da 0 a 47
 ; alla fine di ogni frame di disegno, $FF alla fine (i colori sono già in howto.bin)
 HT_GROUPS = 7
 .define HT_TEXTS 14, 0, "HOW TO PLAY", 0, 9, 2, "SUPER MOVES - JOYSTICK", 0, $FE, 2, 4, "STRAIGHT SHOT", 0, 2, 6, "NEXT SHOT FLAT AND FAST", 0, $FE, 20, 9, "FIRE", 0, 2, 12, "RISING STRIKE", 0, 20, 17, "FIRE", 0, $FE, 2, 14, "FLAT SHOT WITH A LATE BREAK", 0, $FE, 2, 20, "HALF", 0, 13, 20, "= MOVE", 0, 20, 20, "FULL", 0, 30, 20, "= MAX", 0, $FE, 1, 22, "FIRE: USE THE BONUS     FORWARD: DASH", 0, $FE, 11, 24, "PRESS FIRE TO SKIP", 0, $FF
+
+; titoli disegnati (assets/titles): caratteri hires, un colore per cella. Nomi e PERFECT
+; da TN_FIRST (una pagina di titles.bin ciascuno), la targa da TC_FIRST (due pagine)
+TN_FIRST = 128
+TC_FIRST = 64
+; nomi: celle (larghezza, altezza), prima riga e colonna, y del centro (pixel), codici e
+; colori riga per riga (0: cella vuota)
+TN_0_W = 8    ; ARCADE, 16 caratteri
+TN_0_H = 2
+TN_0_ROW = 12
+TN_0_COL = 16
+TN_0_CY = 103
+.define TN_0_MAP 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143
+.define TN_0_CLR 1, 1, 1, 1, 1, 1, 1, 1, 7, 7, 7, 7, 7, 7, 7, 7
+TN_1_W = 6    ; TITAN, 24 caratteri
+TN_1_H = 5
+TN_1_ROW = 10
+TN_1_COL = 17
+TN_1_CY = 99
+.define TN_1_MAP 128, 129, 129, 129, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 150, 150, 150, 151
+.define TN_1_CLR 7, 7, 7, 7, 7, 7, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 7, 7, 7, 7, 7, 7
+TN_2_W = 11    ; HAMMER, 22 caratteri
+TN_2_H = 2
+TN_2_ROW = 12
+TN_2_COL = 14
+TN_2_CY = 103
+.define TN_2_MAP 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149
+.define TN_2_CLR 7, 1, 1, 1, 1, 1, 1, 1, 1, 1, 7, 7, 1, 1, 1, 1, 1, 1, 1, 1, 1, 7
+TN_3_W = 5    ; TWIST, 13 caratteri
+TN_3_H = 3
+TN_3_ROW = 11
+TN_3_COL = 17
+TN_3_CY = 102
+.define TN_3_MAP 128, 0, 0, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140
+.define TN_3_CLR 1, 0, 0, 7, 1, 1, 7, 1, 7, 1, 1, 7, 1, 7, 1
+TN_4_W = 12    ; BLASTER, 31 caratteri
+TN_4_H = 3
+TN_4_ROW = 12
+TN_4_COL = 14
+TN_4_CY = 107
+.define TN_4_MAP 0, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 0, 0, 0, 151, 152, 153, 154, 155, 156, 157, 158, 0
+.define TN_4_CLR 0, 12, 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 0, 0, 0, 7, 7, 7, 7, 7, 7, 7, 7, 0
+TN_5_W = 7    ; RUSH, 13 caratteri
+TN_5_H = 2
+TN_5_ROW = 12
+TN_5_COL = 16
+TN_5_CY = 103
+.define TN_5_MAP 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 0
+.define TN_5_CLR 12, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0
+TN_6_W = 10    ; GUARDIAN, 18 caratteri
+TN_6_H = 2
+TN_6_ROW = 12
+TN_6_COL = 15
+TN_6_CY = 103
+.define TN_6_MAP 128, 129, 130, 131, 132, 133, 134, 135, 131, 136, 137, 138, 139, 140, 141, 142, 143, 144, 140, 145
+.define TN_6_CLR 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7
+; PERFECT: celle, codici riga per riga, colore di ogni riga
+TP_W = 15    ; 24 caratteri
+TP_H = 4
+.define TP_MAP 128, 129, 130, 131, 132, 129, 130, 131, 132, 131, 133, 134, 135, 136, 137, 128, 138, 139, 140, 128, 141, 139, 140, 128, 140, 128, 0, 0, 142, 0, 128, 0, 128, 143, 144, 145, 144, 0, 128, 143, 146, 147, 148, 142, 0, 149, 150, 150, 150, 150, 150, 150, 150, 150, 150, 150, 150, 150, 150, 151
+.define TP_ROWC 1, 7, 8, 7
+; targa di HERE COMES A NEW CHALLENGER!: celle, codici riga per riga (da TC_YEL0 gialli,
+; prima bianchi), sprite del rosso (immagine a TC_SPRITE, righe espanse, x dal bordo
+; sinistro della targa, y dal bordo alto)
+TC_W = 24    ; 53 caratteri
+TC_H = 5
+TC_YEL0 = 92
+TC_SPRITE = 120
+TC_SPR_Y = 6
+TC_SPR_X0 = 3
+TC_SPR_X1 = 51
+TC_SPR_X2 = 99
+TC_SPR_X3 = 141
+.define TC_MAP 92, 93, 93, 93, 93, 93, 93, 93, 93, 93, 93, 93, 93, 93, 93, 93, 93, 93, 93, 93, 93, 93, 93, 94, 95, 0, 0, 0, 0, 0, 64, 65, 66, 67, 68, 0, 69, 70, 71, 72, 73, 74, 0, 0, 0, 0, 0, 96, 95, 0, 75, 76, 0, 77, 78, 79, 80, 81, 82, 83, 76, 84, 85, 78, 86, 87, 88, 89, 90, 91, 0, 96, 95, 0, 97, 98, 0, 99, 100, 101, 102, 103, 104, 105, 98, 106, 107, 100, 108, 109, 110, 111, 112, 113, 0, 96, 114, 115, 115, 115, 115, 115, 115, 115, 115, 115, 115, 115, 115, 115, 115, 115, 115, 115, 115, 115, 115, 115, 115, 116
+; titles.bin: pagina del nome k (TTL_NAMES + k), di PERFECT, della targa (due)
+TTL_NAMES = 0
+TTL_PERFECT = 7
+TTL_PLATE = 8
+TTL_PAGES = 10

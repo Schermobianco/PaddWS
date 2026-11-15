@@ -271,7 +271,9 @@ win_pg:    .res 1               ; YOU WIN o PERFECT nel GAME OVER: 0 no, 1-16 pr
 .segment "CODE"
 .elseif .defined(INTROTEST)
 ; Build per le schermate delle presentazioni (-Define INTROTEST=n): CHALLENGE, subito la
-; presentazione del livello n (1-7). Tra le routine dell'avvio.
+; presentazione del livello n (1-7); con anche CHALTEST la schermata del nuovo sfidante (solo per
+; vederla: quello che segue non è il flusso vero, che parte da una presentazione). Tra le routine
+; dell'avvio.
 .segment "BOOTCODE"
 .proc introtest_setup
     lda #OPT_CHALLENGE
@@ -284,7 +286,11 @@ win_pg:    .res 1               ; YOU WIN o PERFECT nel GAME OVER: 0 no, 1-16 pr
     sta cg_active
     lda #::INTROTEST - 1
     sta ch_level
+.ifdef CHALTEST
+    jmp enter_challenger        ; (con CHALTEST: subito HERE COMES A NEW CHALLENGER!)
+.else
     jmp enter_intro
+.endif
 .endproc
 .segment "CODE"
 .endif
@@ -1672,13 +1678,14 @@ OV_PAGES = >(__OVCODE_SIZE__ + 255)
     pla
     jmp draw_big
 .endproc
-over_lo:  .lobytes big_game_over, big_you_win, big_p1_wins, big_p2_wins, big_cpu_wins, ov_big_perfect
-over_hi:  .hibytes big_game_over, big_you_win, big_p1_wins, big_p2_wins, big_cpu_wins, ov_big_perfect
-over_w:   .byte BIG_GAME_OVER_W, BIG_YOU_WIN_W, BIG_P1_WINS_W, BIG_P2_WINS_W, BIG_CPU_WINS_W, BIG_PERFECT_W
-; celle per lettera: 2 le scritte a 2x (GAME OVER, YOU WIN, PERFECT), 1 le altre (la riga sotto vuota)
-over_k:   .byte BIG_GAME_OVER_K, BIG_YOU_WIN_K, BIG_P1_WINS_K, BIG_P2_WINS_K, BIG_CPU_WINS_K, BIG_PERFECT_K
+; (PERFECT, OV_PERFECT, non è una scritta: è la grafica di ovc, tp_draw)
+over_lo:  .lobytes big_game_over, big_you_win, big_p1_wins, big_p2_wins, big_cpu_wins
+over_hi:  .hibytes big_game_over, big_you_win, big_p1_wins, big_p2_wins, big_cpu_wins
+over_w:   .byte BIG_GAME_OVER_W, BIG_YOU_WIN_W, BIG_P1_WINS_W, BIG_P2_WINS_W, BIG_CPU_WINS_W
+; celle per lettera: 2 le scritte a 2x (GAME OVER, YOU WIN), 1 le altre (la riga sotto vuota)
+over_k:   .byte BIG_GAME_OVER_K, BIG_YOU_WIN_K, BIG_P1_WINS_K, BIG_P2_WINS_K, BIG_CPU_WINS_K
 over_col: .byte (40 - BIG_GAME_OVER_W) / 2, (40 - BIG_YOU_WIN_W) / 2, (40 - BIG_P1_WINS_W) / 2
-          .byte (40 - BIG_P2_WINS_W) / 2, (40 - BIG_CPU_WINS_W) / 2, (40 - BIG_PERFECT_W) / 2
+          .byte (40 - BIG_P2_WINS_W) / 2, (40 - BIG_CPU_WINS_W) / 2
 
 ; Tempi delle animazioni (attract.rs, a 50 Hz), in frame da quando il codice è tutto copiato.
 OA_NET     = 40                 ; mezzeria spenta dall'alto (NET_OFF)
@@ -1707,11 +1714,16 @@ OV_ROW   = 10                   ; righe delle scritte: in alto e sotto
 OV_ROW2  = 13
 OV_BOX_W  = BIG_GAME_OVER_W + 2 ; riquadro nero delle scritte, attorno alla più larga
 OV_BOX_C0 = (40 - OV_BOX_W) / 2
-.assert BIG_GAME_OVER_W >= BIG_CPU_WINS_W .and BIG_GAME_OVER_W >= BIG_YOU_WIN_W .and BIG_GAME_OVER_W >= BIG_PERFECT_W, error, "GAME OVER: il riquadro attorno alla scritta più larga"
+.assert BIG_GAME_OVER_W >= BIG_CPU_WINS_W .and BIG_GAME_OVER_W >= BIG_YOU_WIN_W .and BIG_GAME_OVER_W + 2 >= TP_W, error, "GAME OVER: il riquadro attorno alla scritta più larga"
+; PERFECT (gen/assets.inc, TP_*): le sue righe di celle dalla riga sopra quella delle scritte, le
+; tre fasce e la riga sotto, fino a quella di chi ha vinto (OV_ROW2), dentro il riquadro
+TP_ROW   = OV_ROW - 1
+TP_COL   = (40 - TP_W) / 2
+TP_COLOR = $d800 + TP_ROW * 40 + TP_COL
+.assert TP_ROW + TP_H = OV_ROW2 .and TP_ROW = 9, error, "PERFECT: righe fra il riquadro e chi ha vinto"
 HOP_COL  = (40 - BIG_YOU_WIN_W) / 2
 HOP_X    = SPR_X0 + HOP_COL * 8 + 6         ; palla (4x4) sulla prima lettera di YOU WIN
 HOP_Y    = SPR_Y0 + OV_ROW * 8 - 5
-GLINT_COL = $d800 + OV_ROW * 40 + (40 - BIG_PERFECT_W) / 2
 HOP_COLOR = $d800 + OV_ROW * 40 + HOP_COL
 .assert HOP_X + 8 * BIG_YOU_WIN_W < 256, error, "YOU WIN: la palla sulle lettere senza il bit 8"
 ; Le pagine 1-3 (da OV_MODE) in tre versioni, una per animazione, nel .prg da OVA_IMG, OVB_IMG e
@@ -2659,8 +2671,15 @@ ov_box_code
 
 .segment "OVC"
 .scope ovc
-; PERFECT: l'animazione, poi la voce e il tempo.
+; PERFECT: i caratteri della grafica dalla cartuccia (al primo frame, prima della voce), poi
+; l'animazione, la voce e il tempo.
 .proc scene
+    lda copied
+    bne :+
+    inc copied
+    lda #TTL_PERFECT
+    jmp title_copy
+:
     ov_duel_wins
     jsr ov_stamp
     inc ov_f
@@ -2670,9 +2689,10 @@ ov_box_code
     jmp win_tick
 .endproc
 .assert scene = OV_MODE, lderror, "PERFECT: la scena non all'inizio della versione"
+copied: .byte 0
 ov_win_tick
 
-; PERFECT: il timbro (blocchi pieni che si stringono, OA_HOLD frame per grandezza), poi la scritta
+; PERFECT: il timbro (blocchi pieni che si stringono, OA_HOLD frame per grandezza), poi la grafica
 ; con la scossa, chi ha vinto sotto da OA_WIN, il riflesso da OA_GLINT.
 .proc ov_stamp
     lda ov_f
@@ -2695,7 +2715,7 @@ ov_win_tick
     jmp ov_rect
 stamped:
     bne shake
-    ; la scritta: via l'ultimo timbro, di nuovo la mezzeria che copriva, il riquadro
+    ; la grafica: via l'ultimo timbro, di nuovo la mezzeria che copriva, il riquadro, PERFECT
     ldx #2
     lda #CH_BLANK
     jsr ov_rect
@@ -2707,9 +2727,7 @@ stamped:
     cmp #14
     bne :-
     jsr ov_box
-    ldx top
-    ldy #OV_ROW
-    jsr over_big
+    jsr tp_draw
     lda ov_f
 shake:
     sec
@@ -2742,53 +2760,97 @@ shake:
     bcc :+
     sbc #OA_GLINT_P
     bcs :-
-:   cmp #21
+:   cmp #TP_W + TP_H + 2
     bcs done
-    ; riflesso: le celle con colonna + riga nella diagonale d o d + 1 (d = k * 5 / 8 - 2)
-    sta ov_n
-    asl a
-    asl a
-    adc ov_n
-    lsr a
-    lsr a
-    lsr a
-    sec
-    sbc #2
-    sta ov_n
-    ldy #BIG_PERFECT_W - 1
-:   tya
-    sec
-    sbc ov_n
-    jsr shade
-    sta GLINT_COL,y
-    tya
-    clc
-    adc #1                      ; la riga sotto: un passo più avanti nella diagonale
-    sec
-    sbc ov_n
-    jsr shade
-    sta GLINT_COL + 40,y
-    dey
-    bpl :-
+    ; riflesso: le celle con colonna + riga nella diagonale k - 2 o k - 1, una al frame
+    sbc #1                      ; (C = 0)
+    jmp tp_colors
 done:
     rts
-shade:
-    cmp #2
-    lda ov_tcol
-    bcs :+
-    lda #COL_WHITE              ; riflesso: giallo sul bianco, bianco sul giallo
-    cmp ov_tcol
-    bne :+
-    lda egg_yel
-:   rts
 .endproc
 ov_shx: .byte 6, 0, 6, 1, 5, 2, 4, 3           ; STAMP_SHAKE + 3 (lo scroll non va sotto 0)
 ov_shy: .byte 3, 5, 1, 4, 2, 3, 3, 3
-; grandezze del timbro (6, 4,5 e 3 volte le lettere): colonna, larghezza, riga, altezza
-ov_stcol: .byte 1, 6, 11
-ov_stw:   .byte 38, 28, 18
-ov_strow: .byte 8, 9, 9
-ov_sth:   .byte 6, 4, 3
+; grandezze del timbro (6 e 4 righe, poi le fasce della grafica): colonna, larghezza, riga, altezza
+ov_stcol: .byte 1, 6, TP_COL
+ov_stw:   .byte 38, 28, TP_W
+ov_strow: .byte 8, 9, TP_ROW
+ov_sth:   .byte 6, 4, TP_H - 1
+
+; La grafica di PERFECT (gen/assets.inc, TP_*) dalla riga TP_ROW, con i colori delle fasce.
+.proc tp_draw
+    lda #TP_ROW
+    sta ov_row
+    ldx #0
+line:
+    ldy ov_row
+    lda row_lo,y
+    clc
+    adc #TP_COL
+    sta ptr
+    lda row_hi,y
+    adc #0
+    sta ptr+1
+    ldy #0
+:   lda tp_map,x
+    sta (ptr),y
+    inx
+    iny
+    cpy #TP_W
+    bne :-
+    inc ov_row
+    cpx #TP_W * TP_H
+    bne line
+    lda #$80                    ; (nessuna cella nella diagonale)
+.endproc
+; (prosegue)
+; I colori di PERFECT: quello della sua fascia, in riflesso (bianco, giallo sulla fascia bianca) le
+; celle con colonna + riga uguale ad A o ad A + 1.
+.proc tp_colors
+    sta ov_n
+    lda #<TP_COLOR
+    sta ptr
+    lda #>TP_COLOR
+    sta ptr+1
+    ldx #0
+line:
+    lda tp_rowc,x
+    cmp #COL_YELLOW
+    bne :+
+    lda egg_yel
+:   sta ov_cx                   ; la fascia
+    eor #COL_WHITE
+    beq :+
+    lda #COL_WHITE
+    bne :++
+:   lda egg_yel
+:   sta ov_c0                   ; il riflesso
+    stx ov_t
+    ldy #TP_W - 1
+:   tya
+    clc
+    adc ov_t
+    sec
+    sbc ov_n
+    cmp #2
+    lda ov_cx
+    bcs :+
+    lda ov_c0
+:   sta (ptr),y
+    dey
+    bpl :--
+    lda ptr
+    clc
+    adc #40
+    sta ptr
+    bcc :+
+    inc ptr+1
+:   inx
+    cpx #TP_H
+    bne line
+    rts
+.endproc
+tp_map:  .byte TP_MAP
+tp_rowc: .byte TP_ROWC
 
 ; Rettangolo X del timbro pieno del carattere A, del colore della scritta.
 .proc ov_rect
@@ -2831,9 +2893,6 @@ row:
 .endproc
 
 ov_box_code
-big_perfect: .byte BIG_PERFECT
 .endscope
-; (per over_lo e over_hi, che stanno prima: il ca65 di Debian non accetta ovc::big_perfect in avanti)
-ov_big_perfect = ovc::big_perfect
 
 .segment "CODE"

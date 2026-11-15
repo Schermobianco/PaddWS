@@ -9,7 +9,7 @@ Banchi e indirizzi in c64/src/ef.inc:
 - PROGRAMMA.prg: il programma, da $0801 a $CFFF, poi a $D000-$D0FF l'immagine delle routine della
   RAM della cartuccia (c64/src/ef.s), da $D100 quelle dell'avvio (c64/src/unpack.s), da $D500 il
   codice delle mosse speciali di NEXT (c64/src/supers.s), da $D900 quello della classifica
-  (c64/src/challenge.s), da $DF00 i caratteri di PERFECT e da $E000 il codice del GAME OVER
+  (c64/src/challenge.s), da $DF00 una pagina vuota e da $E000 il codice del GAME OVER
   (c64/src/play.s); da PRG_BANK (16 KB per banco, ROML e poi ROMH) da $0800, con uno zero
   davanti, così il caricatore copia pagine intere;
 - PICK.bin: il set di caratteri della scelta dei bonus, la pagina $FF00 e il titolo dell'attract
@@ -52,7 +52,7 @@ CHIP_FLASH = 2
 HALF = 0x2000
 PRG_START = 0x0800
 PRG_END = 0xD100   # poi le routine dell'avvio (fino a $D7FF), le mosse speciali (fino a $DBFF),
-BOOT_END = 0x10000 # la classifica, i caratteri di PERFECT e il GAME OVER (nel banco 4, anche nella
+BOOT_END = 0x10000 # la classifica, una pagina vuota e il GAME OVER (nel banco 4, anche nella
                    # ROMH), che restano nella flash
 SRC = Path(__file__).resolve().parent.parent / "c64" / "src"
 

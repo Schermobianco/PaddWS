@@ -42,6 +42,9 @@ Uscite in c64/gen/ (vanno nel repository, così l'assemblaggio non richiede Pyth
                 vuota, poi i colori (1.000 byte, 4 pagine) e gli stessi con giallo e rosso
                 scambiati per l'easter egg; disegnata con le figure di tools/gen_howto_assets.py,
                 con le celle delle scritte vuote (le scrive il programma, HT_TEXTS)
+  titles.bin    i titoli disegnati (assets/titles) in caratteri: una pagina per nome degli avversari,
+                una per PERFECT, due per la targa di HERE COMES A NEW CHALLENGER! (con lo sprite
+                del rosso); nel file del finale della cartuccia, mappe e colori in assets.inc
 
 Le cifre del punteggio vengono da assets/fonts/pong-score.ttf a 22 px come sul MiSTer. Delle
 bitmap dell'attract (assets/attract) servono solo la grafica (logo e WS) e i tempi.
@@ -75,13 +78,14 @@ FONT_DRAWN = "!+-./0123456789:=>?ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 PICK_FIRST = 64
 PICK_PAGES = 3
 
-# scritte a 2x del programma (fuori dal finale, che ha il suo set): solo le grandi del GAME OVER.
-# Le loro lettere hanno quattro caratteri ciascuna da PICK_FIRST; tutto il resto è a 1x
-BIG2_TEXTS = ["GAME OVER", "YOU WIN", "PERFECT"]
+# scritte a 2x del programma (fuori dal finale, che ha il suo set): solo le grandi del GAME OVER
+# (PERFECT è una grafica: title_perfect). Le loro lettere hanno quattro caratteri ciascuna da
+# PICK_FIRST; tutto il resto è a 1x
+BIG2_TEXTS = ["GAME OVER", "YOU WIN"]
 # le scritte del GAME OVER come elenchi di codici su due righe (nome per assets.inc: testo, 2x);
 # quelle a 1x hanno la riga sotto vuota
 BIG2_LISTS = {"GAME_OVER": ("GAME OVER", True), "P1_WINS": ("P1 WINS", False), "P2_WINS": ("P2 WINS", False),
-              "YOU_WIN": ("YOU WIN", True), "CPU_WINS": ("CPU WINS", False), "PERFECT": ("PERFECT", True)}
+              "YOU_WIN": ("YOU WIN", True), "CPU_WINS": ("CPU WINS", False)}
 BLANK: tuple[int, ...] = (0,) * 8   # segnaposto di un glifo della ROM
 
 Tile = tuple[int, ...]   # 8 byte, bit 7 = pixel a sinistra
@@ -1264,6 +1268,273 @@ def howto_file() -> bytes:
     return bitmap[:0x1F00] + bytes(256) + bytes(colors) + pad + egg + pad
 
 
+# ------------------------------------------------------------------ titoli disegnati
+#
+# Le scritte disegnate a pixel delle altre versioni (assets/titles, tools/gen_title_assets.py): i
+# nomi dei sette avversari nelle presentazioni di CHALLENGE, la targa di HERE COMES A NEW
+# CHALLENGER! e PERFECT del GAME OVER. Qui diventano caratteri hires, un colore per cella 8x8 sul
+# nero: ombre, scie e contorni si tolgono, le parti di colore diverso vanno in celle diverse (le
+# fasce di PERFECT e di A NEW CHALLENGER! allineate alle righe di celle, le lettere di TWIST una per
+# colonna, le travi di TITAN nelle loro righe), il rosso della targa è fatto da quattro sprite
+# dietro i caratteri. Il set è pieno: i caratteri li copia dalla cartuccia (titles.bin, nel file del
+# finale: challenge.s) solo chi li mostra, su uno schermo appena pulito, al posto di caratteri che
+# lì non si vedono:
+#   - un nome o PERFECT: una pagina, i caratteri da TN_FIRST (128-159), che fuori dalla scelta dei
+#     bonus restano vuoti (il nome lo copia in_draw di intro.s, PERFECT il GAME OVER in play.s);
+#   - la targa: due pagine da TC_FIRST (64-127), sopra le lettere 2x, che le scelte dello sfidante
+#     (subito dopo) rifanno; negli ultimi otto caratteri l'immagine dello sprite (TC_SPRITE).
+TITLES = ROOT / "assets" / "titles"
+TITLE_SPEC = json.loads((TITLES / "titles.json").read_text(encoding="utf-8"))
+ROLE = {name: i for i, name in enumerate(TITLE_SPEC["palette"])}
+R_WHITE, R_YELLOW, R_DYELLOW = ROLE["white"], ROLE["yellow"], ROLE["dark_yellow"]
+R_GRAY, R_DGRAY, R_RED, R_DRED = ROLE["gray"], ROLE["dark_gray"], ROLE["red"], ROLE["dark_red"]
+C_ORANGE = 8
+TN_FIRST = 128           # nomi e PERFECT: caratteri 128-159, una pagina
+TN_CHARS = 32
+TC_FIRST = 64            # targa: caratteri 64-127, due pagine
+TC_SPRITE = 120          # i suoi ultimi 8: l'immagine dello sprite (64 byte)
+TC_W, TC_H = 24, 5       # targa in celle
+TC_RED_X0, TC_RED_X1 = 3, 188    # il rosso dentro il bordo: pixel della targa (gli sprite)
+TC_RED_Y0, TC_RED_Y1 = 6, 33
+
+Point = tuple[int, int, int]     # x, y (pixel nelle celle della grafica), colore del C64
+
+
+def title_roles(name: str) -> list[list[int]]:
+    """Ruoli (indici della palette di titles.json) dei pixel della grafica `name`."""
+    info = TITLE_SPEC["titles"][name]
+    im = Image.open(TITLES / info["file"])
+    assert im.mode == "P" and list(im.size) == info["size"], name
+    w, h = im.size
+    return [[im.getpixel((x, y)) for x in range(w)] for y in range(h)]
+
+
+def title_points(px: list[list[int]], colors: dict[int, int], ox: int = 0, oy: int = 0, rows=None, cols=None) -> list[Point]:
+    """I pixel di `px` dei ruoli in `colors` (ruolo -> colore del C64; gli altri ruoli si tolgono),
+    spostati di (ox, oy); rows e cols danno le righe e la colonna d'arrivo di ogni riga e colonna
+    (per togliere o raddoppiare righe, spostare lettere)."""
+    out = []
+    for y, row in enumerate(px):
+        for yy in (rows(y) if rows else [y]):
+            for x, r in enumerate(row):
+                if r in colors:
+                    out.append(((cols(x) if cols else x) + ox, yy + oy, colors[r]))
+    return out
+
+
+def title_cells(points: list[Point], w: int, h: int, prio: list[int]) -> dict[tuple[int, int], tuple[Tile, int]]:
+    """Celle (colonna, riga) -> (carattere, colore) dei punti in w x h celle. In una cella con più
+    colori resta il primo di `prio` (gli altri pixel si perdono: le scie di BLASTER e RUSH); senza
+    nessuno di `prio` la cella non va."""
+    by: dict[tuple[int, int], list[Point]] = {}
+    for x, y, c in points:
+        assert 0 <= x < 8 * w and 0 <= y < 8 * h, (x, y, w, h)
+        by.setdefault((x // 8, y // 8), []).append((x % 8, y % 8, c))
+    cells = {}
+    for cell, pts in by.items():
+        used = {c for _, _, c in pts}
+        keep = used.pop() if len(used) == 1 else next((c for c in prio if c in used), None)
+        assert keep is not None, f"cella {cell} con i colori {used}"
+        tile = [0] * 8
+        for x, y, c in pts:
+            if c == keep:
+                tile[y] |= 0x80 >> x
+        cells[cell] = (tuple(tile), keep)
+    return cells
+
+
+def title_name(kind: str) -> tuple[list[Point], int, int, int, list[int]]:
+    """Il nome di un avversario: punti, celle (larghezza, altezza), prima riga dello schermo,
+    priorità dei colori. Le grafiche stanno fra le righe 10 e 14, con la parte bassa 6-10 pixel
+    sopra il motto (riga 15 di intro.s); le righe dipendono dalla forma."""
+    px = title_roles(f"name_{kind.lower()}")
+    wy = {R_WHITE: C_WHITE, R_YELLOW: C_YELLOW}
+    if kind == "ARCADE":
+        # bianco in alto e giallo in basso, la metà proprio a una riga di celle; senza l'ombra
+        return title_points(px, wy, ox=3), 8, 2, 12, [C_WHITE]
+    if kind == "TITAN":
+        # le lettere fra le travi gialle, ognuna nella sua riga di celle (le travi di due righe)
+        def rows(y: int) -> list[int]:
+            return [y + 5] if y < 2 else [] if y == 2 else [y + 6] if y < 24 else [y + 8]
+        return title_points(px, wy | {R_DYELLOW: C_YELLOW}, ox=2, rows=rows), 6, 5, 10, [C_WHITE]
+    if kind == "HAMMER":
+        # senza l'ombra; i colpi gialli ai lati in colonne di celle loro
+        return title_points(px, wy, ox=4), 11, 2, 12, [C_WHITE]
+    if kind == "TWIST":
+        # le lettere (bianche e gialle a turno) una per colonna di celle, più strette
+        spans = [(0, 5, 1), (9, 15, 8), (20, 25, 17), (29, 35, 24), (40, 45, 33)]
+
+        def cols(x: int) -> int:
+            return next(d + x - a for a, b, d in spans if a <= x <= b)
+        return title_points(px, wy, oy=4, cols=cols), 5, 3, 11, [C_WHITE]
+    if kind == "BLASTER":
+        # il bianco delle prime quattro righe in una riga di celle sua; le scie che finiscono in
+        # celle gialle diventano gialle
+        return title_points(px, wy | {R_GRAY: C_GRAY}, ox=4, oy=4), 12, 3, 12, [C_YELLOW, C_WHITE, C_GRAY]
+    if kind == "RUSH":
+        # le scie grigie solo dove non ci sono lettere
+        return title_points(px, wy | {R_GRAY: C_GRAY, R_DGRAY: C_DGRAY}, ox=2), 7, 2, 12, [C_WHITE, C_GRAY, C_DGRAY]
+    assert kind == "GUARDIAN", kind
+    # la malta nera nelle righe dei corsi di mattoni, piena (gialla) nei giunti: le lettere si
+    # leggono meglio
+    mortar = {y for y, row in enumerate(px) if row.count(R_DYELLOW) > row.count(R_YELLOW)}
+    pts = [p for p in title_points(px, {R_YELLOW: C_YELLOW, R_DYELLOW: C_YELLOW}, ox=2)
+           if p[1] not in mortar or px[p[1]][p[0] - 2] == R_YELLOW]
+    return pts, 10, 2, 12, [C_YELLOW]
+
+
+def title_perfect() -> tuple[list[Point], int, int]:
+    """PERFECT: senza il contorno, le tre fasce (bianca, gialla, giallo scuro arancio) una per riga
+    di celle (la gialla con una riga ripetuta, la scura con due), la riga gialla sotto nella quarta."""
+    px = title_roles("perfect")
+
+    def rows(y: int) -> list[int]:
+        if 1 <= y <= 14:
+            return [y - 1]
+        if y == 15:
+            return [14, 15]
+        if y in (16, 17):
+            return [2 * y - 16, 2 * y - 15]
+        if 18 <= y <= 21:
+            return [y + 2]
+        return [25] if y == 24 else []
+    # (la riga sotto è gialla come la fascia di mezzo)
+    pts = title_points(px, {R_WHITE: C_WHITE, R_YELLOW: C_YELLOW, R_DYELLOW: C_ORANGE}, ox=2, rows=rows)
+    return pts, 15, 4
+
+
+def title_plate() -> list[Point]:
+    """La targa in 24 x 5 celle: il bordo (giallo, la riga scura in mezzo tolta), HERE COMES bianca
+    e A NEW CHALLENGER! bianca sopra e gialla sotto, la metà a una riga di celle; ombre e sfumature
+    tolte (dove erano c'è il rosso degli sprite). Il bordo alto e HERE COMES in righe di celle
+    diverse: le distanze fra le righe un po' più strette."""
+    px = title_roles("challenger")
+    w = len(px[0])
+    ring = (R_YELLOW, R_DYELLOW)
+    pts = []
+    for y0, dy in ((0, 3), (34, -1)):       # angoli e bordo in alto e in basso
+        for y in range(y0, y0 + 4):
+            pts += [(x, y + dy, C_YELLOW) for x in range(w) if px[y][x] in ring]
+    for y in range(7, 33):                  # i lati, come nella riga 10 della grafica
+        pts += [(x, y, C_YELLOW) for x in list(range(3)) + list(range(w - 3, w)) if px[10][x] in ring]
+    pts += [(x, y + 3, C_WHITE) for y in range(5, 12) for x in range(w) if px[y][x] == R_WHITE]
+    pts += [(x, y + 1, C_WHITE if px[y][x] == R_WHITE else C_YELLOW)
+            for y in range(17, 31) for x in range(3, w - 3) if px[y][x] in (R_WHITE, R_YELLOW)]
+    assert {y + 1 for y in range(17, 31) for x in range(3, w - 3) if px[y][x] == R_YELLOW} == set(range(24, 32)), \
+        "targa: la parte gialla di A NEW CHALLENGER! non è una riga di celle"
+    return pts
+
+
+def title_codes(cells: dict[tuple[int, int], tuple[Tile, int]], w: int, h: int, first: int,
+                order=None) -> tuple[list[Tile], list[int], list[int]]:
+    """Caratteri (diversi, nell'ordine `order` dei colori se c'è), codici da `first` e colori delle
+    celle riga per riga (vuote: 0 e 0)."""
+    keys = sorted(cells, key=lambda k: (k[1], k[0]))
+    if order:
+        keys.sort(key=lambda k: order.index(cells[k][1]))
+    tiles: list[Tile] = []
+    for k in keys:
+        tile = cells[k][0]
+        if any(tile) and tile not in tiles:
+            tiles.append(tile)
+    codes, colors = [], []
+    for cy in range(h):
+        for cx in range(w):
+            tile, color = cells.get((cx, cy), ((0,) * 8, 0))
+            codes.append(first + tiles.index(tile) if any(tile) else 0)
+            colors.append(color if any(tile) else 0)
+    return tiles, codes, colors
+
+
+def title_assets(lines: list[str]) -> tuple[bytes, list[tuple[str, list[list[int]]]]]:
+    """titles.bin (una pagina per nome nell'ordine di PaddleKind, una per PERFECT, due per la targa)
+    e le costanti in assets.inc. Anche le immagini risultanti (colori del C64 per pixel), per
+    vederle."""
+    pages = bytearray()
+    shown = []
+
+    def image(cells: dict, w: int, h: int, back: set[tuple[int, int]] = frozenset()) -> list[list[int]]:
+        img = [[C_RED if (x, y) in back else C_BLACK for x in range(8 * w)] for y in range(8 * h)]
+        for (cx, cy), (tile, color) in cells.items():
+            for y in range(8):
+                for x in range(8):
+                    if tile[y] & 0x80 >> x:
+                        img[8 * cy + y][8 * cx + x] = color
+        return img
+
+    lines.append("")
+    lines.append("; titoli disegnati (assets/titles): caratteri hires, un colore per cella. Nomi e PERFECT")
+    lines.append("; da TN_FIRST (una pagina di titles.bin ciascuno), la targa da TC_FIRST (due pagine)")
+    lines.append(f"TN_FIRST = {TN_FIRST}")
+    lines.append(f"TC_FIRST = {TC_FIRST}")
+    lines.append("; nomi: celle (larghezza, altezza), prima riga e colonna, y del centro (pixel), codici e")
+    lines.append("; colori riga per riga (0: cella vuota)")
+    for k, kind in enumerate(VOICE_NAMES):
+        pts, w, h, row, prio = title_name(kind)
+        cells = title_cells(pts, w, h, prio)
+        tiles, codes, colors = title_codes(cells, w, h, TN_FIRST)
+        assert len(tiles) <= TN_CHARS, f"{kind}: {len(tiles)} caratteri"
+        assert 10 <= row and row + h <= 15, kind
+        ys = [y for _, y, _ in pts]
+        cy = 8 * row + (min(ys) + max(ys) + 1) // 2
+        lines += [f"TN_{k}_W = {w}    ; {kind}, {len(tiles)} caratteri", f"TN_{k}_H = {h}", f"TN_{k}_ROW = {row}",
+                  f"TN_{k}_COL = {(40 - w) // 2}", f"TN_{k}_CY = {cy}",
+                  f".define TN_{k}_MAP " + ", ".join(map(str, codes)),
+                  f".define TN_{k}_CLR " + ", ".join(map(str, colors))]
+        pages += bytes(v for t in tiles for v in t).ljust(256, b"\0")
+        shown.append((f"name_{kind.lower()}", image(cells, w, h)))
+    # PERFECT: un colore per riga di celle (il riflesso del GAME OVER li cambia per riga)
+    pts, w, h = title_perfect()
+    cells = title_cells(pts, w, h, [C_WHITE])
+    tiles, codes, colors = title_codes(cells, w, h, TN_FIRST)
+    assert len(tiles) <= TN_CHARS, f"PERFECT: {len(tiles)} caratteri"
+    row_colors = []
+    for cy in range(h):
+        used = {colors[cy * w + cx] for cx in range(w)} - {0}
+        assert len(used) == 1, f"PERFECT: riga di celle {cy} con i colori {used}"
+        row_colors.append(used.pop())
+    lines += ["; PERFECT: celle, codici riga per riga, colore di ogni riga",
+              f"TP_W = {w}    ; {len(tiles)} caratteri", f"TP_H = {h}",
+              ".define TP_MAP " + ", ".join(map(str, codes)),
+              ".define TP_ROWC " + ", ".join(map(str, row_colors))]
+    pages += bytes(v for t in tiles for v in t).ljust(256, b"\0")
+    shown.append(("perfect", image(cells, w, h)))
+    # la targa: prima i caratteri bianchi, poi i gialli (il colore viene dal codice)
+    cells = title_cells(title_plate(), TC_W, TC_H, [C_WHITE])
+    tiles, codes, colors = title_codes(cells, TC_W, TC_H, TC_FIRST, order=[C_WHITE, C_YELLOW])
+    assert TC_FIRST + len(tiles) <= TC_SPRITE, f"targa: {len(tiles)} caratteri"
+    yellow0 = min(c for c, col in zip(codes, colors) if col == C_YELLOW)
+    assert all((c >= yellow0) == (col == C_YELLOW) for c, col in zip(codes, colors) if c)
+    # il rosso: quattro sprite hires espansi (48 x 2 pixel per pixel dell'immagine), il quarto
+    # sovrapposto al terzo, dietro i caratteri; dove il rettangolo non è rosso c'è un carattere
+    rows = (TC_RED_Y1 - TC_RED_Y0 + 1) // 2
+    assert (TC_RED_Y1 - TC_RED_Y0 + 1) % 2 == 0 and rows <= 21
+    sprite = bytes([0xFF] * 3 * rows).ljust(64, b"\0")
+    width = TC_RED_X1 - TC_RED_X0 + 1
+    sx = [TC_RED_X0 + 48 * i for i in range(3)] + [TC_RED_X1 + 1 - 48]
+    assert 4 * 48 >= width and sx[3] > sx[2]
+    red = {(x, y) for x in range(TC_RED_X0, TC_RED_X1 + 1) for y in range(TC_RED_Y0, TC_RED_Y1 + 1)}
+    plate = image(cells, TC_W, TC_H, red)
+    for y in (TC_RED_Y0, TC_RED_Y1):
+        for x in (TC_RED_X0, TC_RED_X1):
+            assert plate[y][x] == C_YELLOW, f"targa: angolo ({x}, {y}) del rosso fuori dal bordo"
+    lines += ["; targa di HERE COMES A NEW CHALLENGER!: celle, codici riga per riga (da TC_YEL0 gialli,",
+              "; prima bianchi), sprite del rosso (immagine a TC_SPRITE, righe espanse, x dal bordo",
+              "; sinistro della targa, y dal bordo alto)",
+              f"TC_W = {TC_W}    ; {len(tiles)} caratteri", f"TC_H = {TC_H}", f"TC_YEL0 = {yellow0}",
+              f"TC_SPRITE = {TC_SPRITE}", f"TC_SPR_Y = {TC_RED_Y0}",
+              *[f"TC_SPR_X{i} = {x}" for i, x in enumerate(sx)],
+              ".define TC_MAP " + ", ".join(map(str, codes))]
+    chars = bytearray(bytes(v for t in tiles for v in t).ljust(8 * (TC_SPRITE - TC_FIRST), b"\0")) + sprite
+    assert len(chars) == 512
+    pages += chars
+    shown.append(("challenger", plate))
+    lines += ["; titles.bin: pagina del nome k (TTL_NAMES + k), di PERFECT, della targa (due)",
+              "TTL_NAMES = 0", f"TTL_PERFECT = {len(VOICE_NAMES)}", f"TTL_PLATE = {len(VOICE_NAMES) + 1}",
+              f"TTL_PAGES = {len(pages) // 256}"]
+    return bytes(pages), shown
+
+
 def main() -> None:
     cs = Charset()
     lines: list[str] = ["; Generato da tools/gen_c64_assets.py: non modificare a mano.", ""]
@@ -1304,7 +1575,7 @@ def main() -> None:
     for _ in pick_range:
         cs.add(BLANK, unique=True)
     font_of = {ch: font[i] for i, ch in enumerate(FONT_CHARS)}
-    lines.append("; lettere 2x (GAME OVER, YOU WIN, PERFECT): quattro caratteri per lettera da BIG2_FIRST (alto")
+    lines.append("; lettere 2x (GAME OVER, YOU WIN): quattro caratteri per lettera da BIG2_FIRST (alto")
     lines.append("; sinistra, alto destra, basso sinistra, basso destra), ogni pixel 2x2 del carattere del")
     lines.append("; font BIG2_SRC; il resto delle pagine della scelta resta vuoto")
     lines.append(f"BIG2_FIRST = {PICK_FIRST}")
@@ -1403,6 +1674,7 @@ def main() -> None:
     lines += howto_texts()
     files |= voice_files()
     files["howto.bin"] = howto_file()
+    files["titles.bin"], _ = title_assets(lines)
     for name, data in files.items():
         (OUT / name).write_bytes(data)
     # file che non si usano più

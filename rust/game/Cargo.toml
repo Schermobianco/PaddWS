@@ -13,6 +13,8 @@ paddws-sid = { path = "../sid" }
 macroquad = { version = "0.4.16", default-features = false, features = ["audio"] }
 # stessa versione usata da macroquad: serve solo per le metriche dei glifi
 fontdue = "0.9.5"
+# stessa versione usata da macroquad (tramite image): gli indici delle grafiche a palette (assets/titles)
+png = "0.17.16"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 

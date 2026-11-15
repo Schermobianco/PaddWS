@@ -23,6 +23,12 @@ crea il commit e il tag `vX.Y.Z`.
   dell'avversario, HERE COMES / A NEW CHALLENGER!, HIGH SCORES, P1/P2 WINS e CPU WINS sono più
   piccoli di prima. Le disposizioni sono state rifatte perché nessuna scritta sia tagliata, si
   sovrapponga o esca dal campo, anche nel campo largo, nella modalità da tavolo e nei titoli di coda.
+- **Titoli disegnati** (PC, web, Deck, MiSTer e C64): i nomi dei 7 avversari nelle presentazioni,
+  HERE COMES A NEW CHALLENGER! e PERFECT sono grafiche a pixel invece del font, ognuna con il suo
+  stile: ARCADE a due toni, TITAN fra due travi, HAMMER pesante, TWIST sull'onda, BLASTER e RUSH in
+  corsivo con le scie, GUARDIAN fatto di mattoni, la targa rossa del nuovo sfidante, PERFECT
+  cromato. Le entrate degli avversari e il timbro di PERFECT restano; sul C64 le grafiche sono
+  semplificate (un colore per cella) e si caricano dalla cartuccia solo quando servono.
 - **C64**: le scritte usano il font della ROM dei caratteri della macchina, letto all'avvio (la
   cartuccia non ne contiene una copia); anche le lettere grandi si costruiscono da lì.
 - **Classifica a 8 righe** con colonne più distanziate e "LV7" al posto di "L7"; si salvano sempre
@@ -31,8 +37,9 @@ crea il commit e il tag `vX.Y.Z`.
   è tolta). Munro resta solo nella versione Python.
 - Pacchetti: accanto al gioco c'è `OFL-PressStart2P.txt` al posto di `OFL-Munro.txt`; quello del
   C64 non ha più testi di font.
-- MiSTer: un po' meno logica occupata (30.885 ALM, 74%, prima 31.532) e tempi con più margine.
-  Il timbro di PERFECT è più piccolo, e nella modalità da tavolo non c'è più: copriva il punteggio.
+- MiSTer: un po' meno logica occupata (30.905 ALM, 74%, prima 31.532); le grafiche dei titoli
+  stanno in 12 blocchi di memoria. Nella modalità da tavolo PERFECT non ha più il timbro: copriva
+  il punteggio.
   Le scritte ruotate sono più vicine a chi legge.
 - Le presentazioni degli avversari sul C64 mostrano per intero motto, bonus e FIRST TO prima di
   finire (prima alcune si interrompevano).

@@ -18,6 +18,7 @@ mod paddle_ui;
 mod platform;
 mod render;
 mod scenes;
+mod titles;
 mod touch;
 
 use std::path::PathBuf;
@@ -174,6 +175,8 @@ fn load_assets() -> Assets {
         // Press Start 2P, disegnato su una griglia di 8x8 pixel: vedi `render::PixelFont`
         font_text: GameFont::pixel_from_bytes(include_bytes!("../../../assets/fonts/PressStart2P-Regular.ttf"), 8),
         font_score: GameFont::from_bytes(include_bytes!("../../../assets/fonts/pong-score.ttf")),
+        // titoli disegnati a pixel: vedi `titles`
+        titles: titles::Titles::load(),
     }
 }
 
@@ -534,7 +537,7 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         app.set_egg(true);
         scene
     }
-    let shots: [(&str, MakeScene); 103] = [
+    let shots: [(&str, MakeScene); 107] = [
         ("1_demo_classic", |app| demo_at(app, DemoMode::Classic)),
         ("1_demo_evo", |app| demo_at(app, DemoMode::Evo)),
         ("1_demo_next", |app| demo_at(app, DemoMode::Next)),
@@ -905,11 +908,16 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         ("8_intro_6_rush_end", |app| intro_at(app, 5, 1.2)),
         ("8_intro_7_guardian", |app| intro_at(app, 6, 1.4)),
         ("8_intro_7_guardian_end", |app| intro_at(app, 6, 3.4)),
+        // nomi disegnati: TWIST raddrizzato, TITAN salito del tutto, GUARDIAN a metà delle lettere
+        ("8_intro_2_twist_end", |app| intro_at(app, 1, 2.9)),
+        ("8_intro_4_titan_end", |app| intro_at(app, 3, 3.9)),
+        ("8_intro_7_guardian_letters", |app| intro_at(app, 6, 1.75)),
         // fine partita animata: campo che si spegne, scritta, chiusura; PERFECT; YOU WIN
         ("5_over_field_off", |app| over_at(app, [11, 6], false, 0.6)),
         ("5_over_typing", |app| over_at(app, [11, 6], false, 1.3)),
         ("5_over_close", |app| over_at(app, [11, 6], false, 2.7)),
         ("5_over_perfect_stamp", |app| over_at(app, [11, 0], false, 0.03)),
+        ("5_over_perfect_stamp_2x", |app| over_at(app, [11, 0], false, 0.15)),
         ("5_over_perfect_glint", |app| over_at(app, [11, 0], false, 0.88)),
         ("5_over_you_win_hop", |app| over_at(app, [11, 6], true, 0.5)),
         // scritte di NEXT: mossa armata (trattini) e scritta del bonus che si accende

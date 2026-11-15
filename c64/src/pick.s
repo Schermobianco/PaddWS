@@ -98,9 +98,6 @@ s_twist:    .byte "TWIST   ", 0
 s_blaster:  .byte "BLASTER ", 0
 s_rush:     .byte "RUSH    ", 0
 s_guardian: .byte "GUARDIAN", 0
-; colonna del nome centrato (senza gli spazi in fondo): (40 - lunghezza) / 2
-kind_col:   .byte (40 - 6) / 2, (40 - 5) / 2, (40 - 6) / 2, (40 - 5) / 2, (40 - 7) / 2, (40 - 4) / 2
-            .byte (40 - 8) / 2
 ; frase del tipo (paddle_ui::tagline), centrata sotto la colonna
 kind_tags:  .word t_arcade, t_titan, t_hammer, t_twist, t_blaster, t_rush, t_guardian
 t_arcade:   .byte "  MORE BONUSES  ", 0
@@ -1257,14 +1254,20 @@ done:
     rts
 .endproc
 
-; Colore A per v_n celle dalla colonna Y della riga X. Con l'easter egg (egg_check) giallo e rosso
-; si scambiano qui, per tutte le scritte.
-color_span:
+; Il colore A, con giallo e rosso scambiati se c'è l'easter egg (egg_check). Cambia solo A.
+.proc egg_color
     cmp #COL_RED
     beq :+
     cmp #COL_YELLOW
-    bne color_span_raw
+    bne :++
 :   eor egg_x
+:   rts
+.endproc
+
+; Colore A per v_n celle dalla colonna Y della riga X. Con l'easter egg (egg_check) giallo e rosso
+; si scambiano qui, per tutte le scritte.
+color_span:
+    jsr egg_color
 ; Lo stesso con il colore già scambiato (egg_yel, egg_red): i titoli di coda del finale, che
 ; scrivono i colori davanti al raster.
 .proc color_span_raw

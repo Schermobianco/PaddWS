@@ -12,7 +12,8 @@ use macroquad::prelude::*;
 use paddws_core::Event;
 use serde::Deserialize;
 
-use crate::render::{Renderer, TEXT_1X, TEXT_2X};
+use crate::render::{ArtPaint, ArtPart, PixelArt, Renderer, TEXT_1X, TEXT_2X};
+use crate::titles;
 
 const FRAME: f64 = 1.0 / 60.0;
 const VW: f32 = 320.0;
@@ -290,6 +291,11 @@ impl View {
                 ..Default::default()
             },
         );
+    }
+
+    /// Punto dello schermo virtuale in coordinate di disegno.
+    fn to_world(&self, x: f32, y: f32) -> Vec2 {
+        vec2(self.cx + (x - VW / 2.0) * self.k, y * self.k)
     }
 
     /// Punto del campo (coordinate di disegno) nello schermo virtuale.
@@ -608,6 +614,7 @@ impl Attract {
 /// Scala delle bitmap delle scritte (alte 8 pixel, come Press Start 2P a 1x): a 2x solo GAME
 /// OVER, YOU WIN e PERFECT, le altre (CPU WINS, P1 WINS e P2 WINS anche sotto GAME OVER o PERFECT,
 /// INSERT COIN, PRESS START e le modalità della demo) a 1x, come tutte le scritte del gioco.
+/// PERFECT della fine partita però è la grafica di `titles`, a 1x (`Over::art`).
 fn text_scale(name: &str) -> f32 {
     match name {
         "game_over" | "you_win" | "perfect" => TEXT_2X / TEXT_1X,
@@ -619,6 +626,10 @@ fn text_scale(name: &str) -> f32 {
 struct Over<'a> {
     label: &'a Bitmap,
     label_color: Color,
+    /// PERFECT: la grafica di `titles` al posto della bitmap, a 1x
+    art: Option<&'a PixelArt>,
+    /// riga in alto della prima scritta
+    label_y: f32,
     /// scala della scritta e di chi ha vinto (`text_scale`)
     ls: f32,
     ws: f32,
@@ -627,8 +638,12 @@ struct Over<'a> {
     back: Rect,
 }
 
+/// PERFECT disegnato: con chi ha vinto sotto finisce `PERFECT_GAP` righe sopra la sua riga; da solo
+/// sta al centro della riga di GAME OVER a 2x.
+const PERFECT_GAP: f32 = 6.0;
+
 impl<'a> Over<'a> {
-    fn of(art: &'a AttractArt, title: Option<&str>, winner: Option<&str>, winner_color: Color) -> Self {
+    fn of(art: &'a AttractArt, perfect: &'a PixelArt, title: Option<&str>, winner: Option<&str>, winner_color: Color) -> Self {
         let s = &art.spec;
         let (name, label_color, win) = match (title, winner) {
             (None, Some(name)) => (name, winner_color, None),
@@ -639,19 +654,33 @@ impl<'a> Over<'a> {
         let win = win.map(|name| art.bm(name));
         // con chi ha vinto sotto, il riquadro è largo almeno come GAME OVER (come sul MiSTer)
         let wide = art.bm("game_over").width() * text_scale("game_over");
-        let text_w = win.map_or(label.width() * ls, |b| (b.width() * ws).max(wide).max(label.width() * ls));
-        let bottom = match win {
-            Some(b) => s.game_over.winner_y + b.height() * ws,
-            None => s.game_over.label_y + label.height() * ls,
+        let drawn = (name == "perfect").then_some(perfect);
+        let (label_w, label_y) = match drawn {
+            Some(a) => {
+                let y = match win {
+                    Some(_) => s.game_over.winner_y - PERFECT_GAP - a.h,
+                    None => (s.game_over.label_y + (TEXT_2X - a.h) / 2.0).round(),
+                };
+                (a.w, y)
+            }
+            None => (label.width() * ls, s.game_over.label_y),
         };
-        let (w, h) = (text_w + 12.0, bottom - s.game_over.label_y + 10.0);
+        let text_w = win.map_or(label_w, |b| (b.width() * ws).max(wide).max(label_w));
+        let bottom = match (win, drawn) {
+            (Some(b), _) => s.game_over.winner_y + b.height() * ws,
+            (None, Some(a)) => label_y + a.h,
+            (None, None) => label_y + label.height() * ls,
+        };
+        let (w, h) = (text_w + 12.0, bottom - label_y + 10.0);
         Self {
             label,
             label_color,
+            art: drawn,
+            label_y,
             ls,
             ws,
             win,
-            back: Rect::new(((VW - w) / 2.0).round(), s.game_over.label_y - 5.0, w, h),
+            back: Rect::new(((VW - w) / 2.0).round(), label_y - 5.0, w, h),
         }
     }
 }
@@ -671,11 +700,11 @@ const CLOSE_SQUASH: f64 = 8.0;
 const CLOSE_LINE: f64 = 8.0;
 const CLOSE_DOT: f64 = 6.0;
 const CLOSE_FRAMES: f64 = CLOSE_SQUASH + CLOSE_LINE + CLOSE_DOT;
-/// PERFECT: scala del timbro nei primi frame (`STAMP_HOLD` frame ciascuna), scossa del riquadro,
-/// chi ha vinto da `STAMP_WIN`, riflesso da `GLINT_AT` ogni `GLINT_PERIOD` frame. Scale intere,
-/// come le scritte (i pixel della bitmap restano tutti uguali), e mai più larghe dello schermo.
-const STAMP: [f32; 3] = [6.0, 4.0, 3.0];
-const STAMP_HOLD: f64 = 4.0;
+/// PERFECT: scala del timbro nei primi frame (`STAMP_HOLD` frame ciascuna; poi si posa a 1x), scossa
+/// del riquadro, chi ha vinto da `STAMP_WIN`, riflesso da `GLINT_AT` ogni `GLINT_PERIOD` frame.
+/// Scale intere della grafica (i suoi pixel restano tutti uguali), mai più larghe del campo.
+const STAMP: [f32; 2] = [3.0, 2.0];
+const STAMP_HOLD: f64 = 6.0;
 const STAMP_SHAKE: [(f32, f32); 8] = [
     (3.0, 0.0),
     (-3.0, 2.0),
@@ -759,14 +788,16 @@ pub fn draw_crt_close(r: &Renderer, t: f64, total: f64) {
 /// livello perso della CHALLENGE, dove si può ancora continuare). Le animazioni:
 /// - GAME OVER: dopo lo spegnimento del campo (`net_off`, `pads_left`, li fa la partita) GAME OVER e
 ///   chi ha vinto si scrivono con un cursore; lo schermo poi si chiude (`draw_crt_close`);
-/// - PERFECT si stampa enorme e il riquadro trema; poi ogni secondo un riflesso di colore `accent`
-///   attraversa le lettere (bianco se PERFECT è già di quel colore);
+/// - PERFECT è la grafica `perfect` (con i colori dei ruoli `paint`, `titles`): si stampa a 3x e
+///   2x (a scale intere, mai più larga del campo), si posa a 1x e il riquadro trema; poi ogni
+///   secondo un riflesso bianco attraversa le lettere;
 /// - YOU WIN: la palla, larga `ball`, parte da `from` (la racchetta di chi ha vinto, coordinate di
 ///   disegno) e salta da una lettera all'altra accendendole, poi la scritta lampeggia;
 /// - CPU WINS (livello perso della CHALLENGE) si scrive con il cursore, subito.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_game_over_anim(
     art: &AttractArt,
+    (perfect_art, paint): (&PixelArt, &ArtPaint),
     r: &Renderer,
     title: Option<&str>,
     winner: Option<&str>,
@@ -777,7 +808,7 @@ pub fn draw_game_over_anim(
 ) {
     let s = &art.spec;
     let view = View::of(r);
-    let o = Over::of(art, title, winner, winner_color);
+    let o = Over::of(art, perfect_art, title, winner, winner_color);
     let (white, black) = (rgb(s.colors.white), rgb(s.colors.black));
     let f = t / FRAME;
     let (ly, wy) = (s.game_over.label_y, s.game_over.winner_y);
@@ -785,13 +816,14 @@ pub fn draw_game_over_anim(
     let lx = centered_x(o.label, ls);
     let perfect = title == Some("perfect") || (title.is_none() && winner == Some("perfect"));
     let hop = title.is_none() && winner == Some("you_win");
-    if perfect {
-        // timbro: enorme nei primi frame, poi il riquadro trema e si accende il bordo
-        if let Some(&scale) = STAMP.get((f / STAMP_HOLD) as usize) {
-            let bm = o.label;
-            let scale = scale.min(((view.right - view.left) / bm.width()).floor()).max(ls);
-            let y = ly + bm.height() * (ls - scale) / 2.0;
-            view.bitmap(bm, ((VW - bm.width() * scale) / 2.0).round(), y, scale, o.label_color);
+    if let (true, Some(pa)) = (perfect, o.art) {
+        // timbro: grande nei primi frame, centrato dove si poserà, poi il riquadro trema e si
+        // accende il bordo
+        let cy = o.label_y + pa.h / 2.0;
+        if let Some(&times) = STAMP.get((f / STAMP_HOLD) as usize) {
+            let times = times.min(((view.right - view.left) / pa.w).floor()).max(1.0);
+            let c = view.to_world(VW / 2.0, cy);
+            r.art_centered(pa, times, c.x, c.y, 0.0, ArtPart::Whole, paint);
             return;
         }
         let stamped = STAMP.len() as f64 * STAMP_HOLD;
@@ -803,18 +835,24 @@ pub fn draw_game_over_anim(
                 view.rect(b.x + dx + x, b.y + dy + y, w, h, accent);
             }
         }
-        view.bitmap(o.label, lx + dx, ly + dy, ls, o.label_color);
-        // riflesso: una banda in diagonale, colonna per colonna della bitmap
+        let c = view.to_world(VW / 2.0 + dx, cy + dy);
+        r.art_centered(pa, 1.0, c.x, c.y, 0.0, ArtPart::Whole, paint);
+        // riflesso: una banda in diagonale, colonna per colonna della grafica, sulle lettere e
+        // sul filetto (bianco, giallo e giallo scuro), non sul bordo
         if f >= GLINT_AT {
             let g = ((f - GLINT_AT) % GLINT_PERIOD) as f32 * 4.0 - 20.0;
-            let shine = if o.label_color == accent { white } else { accent };
-            for col in 0..o.label.width() as i32 {
-                // pixel (col, row) nella banda se 0 <= ls col + ls row - g < 12
-                let r0 = ((g - ls * col as f32) / ls).ceil().max(0.0);
-                let r1 = ((g + 12.0 - ls * col as f32) / ls).ceil().min(o.label.height());
+            let shine = paint[titles::WHITE_ROLE].unwrap_or(white);
+            let mut glint = titles::only(paint, &[titles::WHITE_ROLE, titles::YELLOW_ROLE, titles::DARK_YELLOW_ROLE]);
+            for c in glint.iter_mut().flatten() {
+                *c = shine;
+            }
+            for col in 0..pa.w as i32 {
+                // pixel (col, row) nella banda se 0 <= col + row - g < 12
+                let r0 = (g - col as f32).ceil().max(0.0);
+                let r1 = (g + 12.0 - col as f32).ceil().min(pa.h);
                 if r1 > r0 {
                     let src = Rect::new(col as f32, r0, 1.0, r1 - r0);
-                    view.bitmap_part(o.label, lx + dx + ls * col as f32, ly + dy + ls * r0, ls, shine, src);
+                    r.art_centered(pa, 1.0, c.x, c.y, 0.0, ArtPart::Area(src), &glint);
                 }
             }
         }

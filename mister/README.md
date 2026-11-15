@@ -79,6 +79,7 @@ Python. Non si modificano a mano: si cambia il generatore e si rilancia.
 | `pong_challenge.vh` | `tools/gen_challenge_assets.py` |
 | `howto_*.hex`, `pong_howto.vh` | `tools/gen_howto_assets.py` |
 | `ending_*.hex`, `pong_ending.vh` | `tools/gen_ending_assets.py` |
+| `title_*.hex`, `pong_titles.vh` | `tools/gen_mister_titles.py` (da `assets/titles`, `tools/gen_title_assets.py`) |
 | `sid_music.hex`, `sid_music.vh` | `tools/gen_sid_music.py` |
 | `sid_voices.hex`, `sid_voices.vh` | `tools/gen_voices.py --mister` |
 

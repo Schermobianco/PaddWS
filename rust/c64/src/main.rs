@@ -1297,6 +1297,40 @@ fn training_ui(m: &mut Machine) -> Result<String, String> {
     Ok(format!("allenamento contro ogni avversario: {}", lines.join("; ")))
 }
 
+/// Il nome di un avversario nella presentazione (intro.s): la grafica TN_k_* di gen/assets.inc,
+/// con i suoi colori, e la pagina k di titles.bin nei caratteri da TN_FIRST.
+struct IntroName {
+    kind: usize,
+    map: Vec<u8>,
+    colors: Vec<u8>,
+    w: usize,
+    row: usize,
+    col: usize,
+    first: usize,
+}
+
+impl IntroName {
+    fn new(kind: usize) -> Result<Self, String> {
+        let inc = std::fs::read_to_string(c64_dir().join("gen/assets.inc")).map_err(|e| format!("assets.inc: {e}"))?;
+        let get = |n: String| inc_const(&inc, &n).ok_or(format!("assets.inc: manca {n}"));
+        Ok(Self {
+            kind,
+            map: assets_list(&format!("TN_{kind}_MAP")),
+            colors: assets_list(&format!("TN_{kind}_CLR")),
+            w: get(format!("TN_{kind}_W"))?,
+            row: get(format!("TN_{kind}_ROW"))?,
+            col: get(format!("TN_{kind}_COL"))?,
+            first: get("TN_FIRST".into())?,
+        })
+    }
+
+    fn shown(&self, m: &Machine) -> bool {
+        !self.map.is_empty()
+            && title_at(m, &self.map, Some(&self.colors), self.w, self.row, self.col)
+            && title_chars(m, self.kind, 1, self.first, "nome").is_ok()
+    }
+}
+
 /// Un allenamento contro l'avversario del livello `level` (da 0), per `training_ui`.
 fn training_level(m: &mut Machine, level: usize) -> Result<String, String> {
     const CG_TRAIN: u8 = 3;
@@ -1351,14 +1385,24 @@ fn training_level(m: &mut Machine, level: usize) -> Result<String, String> {
     {
         return Err("presentazione: non TRAINING, o con i punti, i duelli vinti o l'invito per lo sfidante".into());
     }
+    // il nome dell'avversario: la sua grafica, con i suoi caratteri dalla cartuccia (in un frame
+    // almeno, a entrata finita)
     let joined = std::cell::Cell::new(false);
+    let name = IntroName::new(rung.kind as usize)?;
+    let named = std::cell::Cell::new(false);
     worst = worst.max(frames_until(
         m,
         1500,
         "verso la partita",
-        |m| joined.set(joined.get() || m.read_u8("state", 0) == ST_CHALLENGER),
+        |m| {
+            joined.set(joined.get() || m.read_u8("state", 0) == ST_CHALLENGER);
+            named.set(named.get() || (m.read_u8("state", 0) == ST_INTRO && name.shown(m)));
+        },
         |m| m.read_u8("state", 0) == ST_PLAY,
     )?);
+    if !named.get() {
+        return Err(format!("presentazione senza la grafica del nome di {}", rung.kind.name()));
+    }
     let kind = m.read_u8("cfg_kinds", 4);
     let lo: Vec<u8> = (4..7).map(|i| m.read_u8("cfg_loadout", i)).collect();
     let (cpu, diff, points) = (m.read_u8("bm_cpu", 0), m.read_u8("bm_diff", 0), m.read_u8("win_points", 0));
@@ -1543,15 +1587,20 @@ fn challenger(m: &mut Machine) -> Result<(), String> {
     fire(m, true);
     expect("con un credito: scena", state(m) as i64, ST_CHALLENGER as i64)?;
     expect("credito speso", m.read_u8("credits", 0) as i64, 0)?;
-    // HERE COMES A NEW CHALLENGER!, poi la scelta del solo sfidante
-    step(m, 3);
+    // HERE COMES A NEW CHALLENGER!: pulizia, due copie dalla cartuccia (caratteri e codice della
+    // targa), il disegno; poi la scelta del solo sfidante
+    step(m, 5);
     let inc = std::fs::read_to_string(c64_dir().join("gen/assets.inc")).unwrap_or_default();
     let solid = inc_const(&inc, "CH_SOLID").unwrap_or(256) as u8;
     let screen = &m.cpu.mem[0xC000..0xC000 + 1000];
     if !screen.contains(&solid) {
         return Err("schermata del nuovo sfidante senza le bande".into());
     }
+    plate_ok(m, &inc)?;
     step(m, 160);
+    if m.read_u8("sh_xexp", 0) & 0x0F != 0 || m.cpu.mem[0xD01B] != 0 {
+        return Err("nelle scelte dopo la targa i suoi sprite espansi o dietro i caratteri".into());
+    }
     expect("dopo HERE COMES A NEW CHALLENGER!", state(m) as i64, ST_PICK as i64)?;
     expect("lato che non sceglie", m.read_u8("pk_fixed", 0) as i64, 0)?;
     expect("bonus del campione", m.read_u8("pk_count", 0) as i64, 3)?;
@@ -5270,6 +5319,10 @@ impl OverWatch {
 /// centrate (colonna (40 - larghezza) / 2); con una sola, nelle righe 13-14 nessuna.
 fn over_labels_at(m: &Machine, labels: &[u8], top: u16) -> Result<(), String> {
     let label_at = |k: u8, row: u16| -> Result<bool, String> {
+        if k == OV_PERFECT {
+            // (la grafica, dalla riga sopra: perfect_at)
+            return Ok(row == 10 && perfect_at(m, false));
+        }
         let w = m.image_u8("over_w", k as u16) as u16;
         let col = (40 - w) / 2;
         if m.image_u8("over_col", k as u16) as u16 != col {
@@ -5457,9 +5510,19 @@ fn ending_ui(m: &mut Machine) -> Result<String, String> {
     ))
 }
 
-/// Scritta PERFECT del GAME OVER (play.s, OV_PERFECT: la mappa sta nel codice del GAME OVER, che
-/// enter_over copia dalla cartuccia).
+/// PERFECT del GAME OVER (play.s, OV_PERFECT): la grafica (TP_MAP di gen/assets.inc, i caratteri
+/// da TN_FIRST), che il codice del GAME OVER copia dalla cartuccia e disegna dalla riga 9.
 const OV_PERFECT: u8 = 5;
+
+/// La grafica di PERFECT a schermo dalla riga 9, centrata; con `colors` anche i colori delle fasce
+/// (fuori dal riflesso).
+fn perfect_at(m: &Machine, colors: bool) -> bool {
+    let inc = std::fs::read_to_string(c64_dir().join("gen/assets.inc")).unwrap_or_default();
+    let (map, rows) = (assets_list("TP_MAP"), assets_list("TP_ROWC"));
+    let w = inc_const(&inc, "TP_W").unwrap_or(1);
+    let k: Vec<u8> = (0..map.len()).map(|i| rows.get(i / w).copied().unwrap_or(0)).collect();
+    !map.is_empty() && title_at(m, &map, colors.then_some(&k[..]), w, 9, (40 - w) / 2)
+}
 const OV_P1_WINS: u8 = 2;
 /// win_pg a voce finita, con le tabelle dei quadrati da rifare (WIN_SAID di play.s).
 const WIN_SAID: u8 = 19;
@@ -5484,12 +5547,56 @@ fn assets_list(name: &str) -> Vec<u8> {
         .unwrap_or_default()
 }
 
-/// La scritta grande `codes` (2 righe di `codes.len() / 2` caratteri) è nel primo schermo dalla
-/// riga `row`, centrata.
-fn big_codes_at(m: &Machine, codes: &[u8], row: u16) -> bool {
-    let w = codes.len() as u16 / 2;
-    let col = (40 - w) / 2;
-    (0..2).all(|r| (0..w).all(|c| m.cpu.mem[(0xC000 + (row + r) * 40 + col + c) as usize] == codes[(r * w + c) as usize]))
+/// Titoli disegnati (tools/gen_c64_assets.py: gen/titles.bin, mappe in gen/assets.inc): le pagine
+/// da `page` di titles.bin nel set di caratteri da `first`, una o due (`pages`).
+fn title_chars(m: &Machine, page: usize, pages: usize, first: usize, what: &str) -> Result<(), String> {
+    let bin = std::fs::read(c64_dir().join("gen/titles.bin")).map_err(|e| format!("titles.bin: {e}"))?;
+    let want = bin.get(256 * page..256 * (page + pages)).ok_or("titles.bin troppo corto")?;
+    let at = CHARSET + 8 * first;
+    if m.cpu.mem[at..at + 256 * pages] != want[..] {
+        return Err(format!("{what}: caratteri da {first} diversi da titles.bin (pagina {page})"));
+    }
+    Ok(())
+}
+
+/// I codici `map` di un titolo (`w` celle per riga; 0 = cella vuota) nel primo schermo dalla riga
+/// `row`, colonna `col`; con `colors` anche i colori delle celle non vuote (giallo e rosso già
+/// scambiati per l'easter egg, se c'è).
+fn title_at(m: &Machine, map: &[u8], colors: Option<&[u8]>, w: usize, row: usize, col: usize) -> bool {
+    let egg = m.read_u8("egg_x", 0);
+    map.iter().enumerate().all(|(i, &c)| {
+        let a = (row + i / w) * 40 + col + i % w;
+        m.cpu.mem[0xC000 + a] == c
+            && colors.is_none_or(|k| {
+                let want = if matches!(k[i], COL_RED | COL_YELLOW) { k[i] ^ egg } else { k[i] };
+                c == 0 || m.cpu.mem[0xD800 + a] & 15 == want
+            })
+    })
+}
+
+/// La targa di HERE COMES A NEW CHALLENGER! (challenge.s, CHCODE): caratteri dalla cartuccia, la
+/// mappa dalla riga 9, bianca e da TC_YEL0 gialla, i quattro sprite del rosso espansi dietro i
+/// caratteri con l'immagine giusta.
+fn plate_ok(m: &Machine, inc: &str) -> Result<(), String> {
+    let get = |n: &str| inc_const(inc, n).ok_or(format!("assets.inc: manca {n}"));
+    let (w, first, yel0, sprite, page) = (get("TC_W")?, get("TC_FIRST")?, get("TC_YEL0")?, get("TC_SPRITE")?, get("TTL_PLATE")?);
+    title_chars(m, page, 2, first, "targa")?;
+    let map = assets_list("TC_MAP");
+    let colors: Vec<u8> = map.iter().map(|&c| if c as usize >= yel0 { COL_YELLOW } else { 1 }).collect();
+    if map.is_empty() || !title_at(m, &map, Some(&colors), w, 9, (40 - w) / 2) {
+        return Err("targa: caratteri o colori fuori posto".into());
+    }
+    let ptr = ((CHARSET + 8 * sprite - 0xC000) / 64) as u8;
+    let red = COL_RED ^ m.read_u8("egg_x", 0);
+    for i in 0..4u16 {
+        if m.read_u8("sh_ptr", i) != ptr || m.read_u8("sh_col", i) & 15 != red {
+            return Err(format!("targa: sprite {i} con l'immagine o il colore sbagliato"));
+        }
+    }
+    if m.read_u8("sh_enable", 0) & 0x0F != 0x0F || m.read_u8("sh_xexp", 0) & 0x0F != 0x0F || m.cpu.mem[0xD01B] & 0x0F != 0x0F {
+        return Err("targa: sprite del rosso spenti, non espansi o davanti ai caratteri".into());
+    }
+    Ok(())
 }
 
 /// Caratteri della scelta dei bonus (pick_chars, C = 0): da PICK_FIRST le metà alte dei glifi del
@@ -5544,10 +5651,9 @@ fn pick_chars_ui(m: &mut Machine) -> Result<String, String> {
 /// INSERT COIN (nella bitmap: i caratteri di PERFECT restano, non si vedono più altrove).
 fn perfect_ui(m: &mut Machine) -> Result<String, String> {
     let inc = std::fs::read_to_string(c64_dir().join("gen/assets.inc")).map_err(|e| format!("assets.inc: {e}"))?;
-    let perfect = assets_list("BIG_PERFECT");
-    if perfect.len() != 2 * inc_const(&inc, "BIG_PERFECT_W").unwrap_or(0) {
-        return Err("assets.inc: BIG_PERFECT della lunghezza sbagliata".into());
-    }
+    let (Some(tn_first), Some(tp_page)) = (inc_const(&inc, "TN_FIRST"), inc_const(&inc, "TTL_PERFECT")) else {
+        return Err("assets.inc: manca TN_FIRST o TTL_PERFECT".into());
+    };
     let glyphs = program_glyphs(m);
     const CHARSET: usize = 0xC800;
     const OV_RUN: usize = 0xC400;
@@ -5609,11 +5715,17 @@ fn perfect_ui(m: &mut Machine) -> Result<String, String> {
             if m.read_u8("timer", 0) == 1 {
                 rebuilt = Some(m.read_u8("math_ready", 0) != 0 && m.cpu.mem[0xF000..0xF800] == squares[..]);
                 // all'ultimo frame: PERFECT a schermo (con GAME OVER in alto lo schermo è già nero),
-                // il set di caratteri com'era, con i glifi della ROM
-                if shown != big_codes_at(m, &perfect, 10) {
-                    return Err(format!("{what}: PERFECT {} nelle righe 10-11", if shown { "non" } else { "di troppo" }));
+                // il set di caratteri com'era, con i glifi della ROM, salvo con PERFECT la sua
+                // pagina (TN_FIRST, caratteri che lì non si vedono)
+                if shown != perfect_at(m, false) {
+                    return Err(format!("{what}: PERFECT {} nelle righe 9-12", if shown { "non" } else { "di troppo" }));
                 }
-                if m.cpu.mem[CHARSET..CHARSET + 0x800] != before[..] {
+                let page = CHARSET + 8 * tn_first;
+                if shown {
+                    title_chars(m, tp_page, 1, tn_first, what)?;
+                }
+                let same = |a: usize, b: usize| m.cpu.mem[a..b] == before[a - CHARSET..b - CHARSET];
+                if !same(CHARSET, page) || !same(page + 256, CHARSET + 0x800) || (!shown && !same(page, page + 256)) {
                     return Err(format!("{what}: set di caratteri cambiato dal GAME OVER"));
                 }
                 check_glyphs(m, &glyphs, what)?;
@@ -5679,10 +5791,10 @@ fn perfect_ui(m: &mut Machine) -> Result<String, String> {
     let mut stamped = false;
     for _ in 0..60 {
         full_frame(m)?;
-        stamped |= big_codes_at(m, &perfect, 10);
+        stamped |= perfect_at(m, true);
     }
     if !stamped {
-        return Err("prima dell'attract: PERFECT non a schermo".into());
+        return Err("prima dell'attract: PERFECT non a schermo con i colori delle fasce".into());
     }
     let mut frames = 0u32;
     let mut coin = false;
@@ -5697,7 +5809,7 @@ fn perfect_ui(m: &mut Machine) -> Result<String, String> {
     m.write_u8("opt_free", 0, free);
     m.call("math_ensure");
     Ok(format!(
-        "PERFECT nel GAME OVER da solo contro la CPU e sopra P1 / P2 WINS in due, con la voce (non all'ultimo livello di CHALLENGE); YOU WIN, CPU WINS, GAME OVER come prima; il set di caratteri non cambia (glifi della ROM); frame dell'ultimo punto al più {worst_enter} cicli, GAME OVER al più {worst}; poi l'attract fino al titolo con INSERT COIN (dopo {frames} frame)"
+        "PERFECT nel GAME OVER da solo contro la CPU e sopra P1 / P2 WINS in due, con la voce (non all'ultimo livello di CHALLENGE); YOU WIN, CPU WINS, GAME OVER come prima; la grafica di PERFECT con i colori delle fasce e i suoi caratteri dalla cartuccia, il resto del set non cambia (glifi della ROM); frame dell'ultimo punto al più {worst_enter} cicli, GAME OVER al più {worst}; poi l'attract fino al titolo con INSERT COIN (dopo {frames} frame)"
     ))
 }
 

@@ -55,6 +55,7 @@ fn slide(cur: f32, target: f32, dt: f64, unit: f32) -> f32 {
 pub struct Assets {
     pub font_text: GameFont,
     pub font_score: GameFont,
+    pub titles: crate::titles::Titles,
 }
 
 /// Effetti del SID: i bit degli eventi di `paddws_sid::player::effect_of` (come `sid_events` di
@@ -2403,7 +2404,8 @@ impl Play {
             let me = pos[self.solo as usize];
             let ball = (vec2(me.0, r.screen_y(me.1)), to_f32(self.game.ball.radius) * 2.0);
             let (winner_color, accent) = (App::color(winner_color), App::color(colors.accent));
-            attract::draw_game_over_anim(&app.attract, r, title, winner, winner_color, accent, t, ball);
+            let perfect = (&app.assets.titles.perfect, &crate::titles::paint(colors));
+            attract::draw_game_over_anim(&app.attract, perfect, r, title, winner, winner_color, accent, t, ball);
             if t >= attract::extras_at(title) {
                 self.draw_duel_wins(app);
             }

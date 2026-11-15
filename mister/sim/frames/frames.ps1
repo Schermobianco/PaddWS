@@ -29,6 +29,7 @@ try {
         '-GHOWTO_SPRITE_ROM=\"../../rtl/gen/howto_sprites.hex\"' `
         '-GENDING_TEXT_ROM=\"../../rtl/gen/ending_text.hex\"' '-GENDING_MAP_ROM=\"../../rtl/gen/ending_map.hex\"' `
         '-GENDING_FW_ROM=\"../../rtl/gen/ending_fw.hex\"' `
+        '-GCH_TITLE_ROM=\"../../rtl/gen/title_challenge.hex\"' '-GPERFECT_ROM=\"../../rtl/gen/title_perfect.hex\"' `
         '-GFW_ROM0=\"../../rtl/gen/pong_fw_b0.hex\"' '-GFW_ROM1=\"../../rtl/gen/pong_fw_b1.hex\"' `
         '-GFW_ROM2=\"../../rtl/gen/pong_fw_b2.hex\"' '-GFW_ROM3=\"../../rtl/gen/pong_fw_b3.hex\"' `
         '-I../../rtl/gen' --top-module pong_top --Mdir obj -o frames.exe public.vlt $rtl frames.cpp 2>&1 |

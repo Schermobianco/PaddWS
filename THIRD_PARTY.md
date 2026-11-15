@@ -30,7 +30,9 @@ CERN-OHL-S v2.
 Press Start 2P (le scritte) e Pong Score (il punteggio) sono usati dalla versione Rust e sono
 anche nelle ROM del core MiSTer, come bitmap generate dai file TTF. Il C64 prende da Pong Score
 solo le cifre del punteggio; le scritte le fa con il font della ROM dei caratteri della macchina,
-letto all'avvio: la cartuccia non ne contiene una copia.
+letto all'avvio: la cartuccia non ne contiene una copia. Le grafiche dei titoli (`assets/titles`,
+nomi degli avversari, nuovo sfidante, PERFECT) sono disegnate partendo dalle lettere di Press Start
+2P, anche nella versione del C64.
 
 ## Dipendenze
 

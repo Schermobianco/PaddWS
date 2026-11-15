@@ -538,6 +538,7 @@ dependencies = [
  "macroquad",
  "paddws-core",
  "paddws-sid",
+ "png",
  "quad-snd",
  "serde",
  "serde_json",

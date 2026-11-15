@@ -443,20 +443,21 @@ PK_BOT  = PK_TOP + 8 * FONT_CHARS
 PK_HALF = FONT_CHARS / 2 * 8            ; byte per passata (i caratteri in due passate)
 .assert PK_HALF <= 256, error, "pick_chars: passata oltre 256 byte"
 PK_REST = 8 * (PICK_FIRST + 2 * FONT_CHARS - BIG2_FIRST - 4 * BIG2_N)    ; dopo le lettere 2x
-.assert PK_REST > 0 .and PK_REST <= 256, error, "pick_chars: caratteri dopo le lettere 2x"
+PK_REST0 = CHARSET + 8 * (BIG2_FIRST + 4 * BIG2_N)
+.assert PK_REST > 256 .and PK_REST <= 512, error, "pick_chars: caratteri dopo le lettere 2x"
 .proc pick_chars
     bcc halves
     ldy #0
     ldx #BIG2_N / 2
     cmp #0
     beq :+
-    ; (con la seconda metà di nuovo vuoti i caratteri dopo le lettere 2x, che non si usano)
-    ldy #PK_REST - 1
-    lda #0
+    ; (con la seconda metà di nuovo vuoti i caratteri dopo le lettere 2x, che non si usano: due
+    ; tratti di 256 byte, il secondo dalla fine, che si sovrappongono)
+    tya
 rest:
-    sta CHARSET + 8 * (BIG2_FIRST + 4 * BIG2_N),y
-    dey
-    cpy #$ff
+    sta PK_REST0,y
+    sta PK_REST0 + PK_REST - 256,y
+    iny
     bne rest
     ldy #BIG2_N / 2
     ldx #BIG2_N - BIG2_N / 2

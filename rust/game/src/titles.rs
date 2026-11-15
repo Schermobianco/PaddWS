@@ -1,0 +1,152 @@
+//! Titoli disegnati a pixel (`assets/titles`, generati da tools/gen_title_assets.py): i nomi dei
+//! sette avversari nelle presentazioni della scalata, HERE COMES A NEW CHALLENGER! e PERFECT.
+//! Si disegnano con `Renderer::art_centered` alla grandezza delle scritte a 1x (un pixel della
+//! grafica per pixel arcade), o a multipli interi nelle animazioni.
+//!
+//! Colori dei ruoli della palette (`paint`): bianco e giallo sono il bianco e l'accento della
+//! configurazione (`colors.white`, `colors.accent`), come le scritte; il giallo scuro è l'accento
+//! scurito (`DARK_YELLOW`), con la stessa tinta, così segue anche un accento diverso; nero, grigi e
+//! rossi restano quelli della palette, che nella configurazione non hanno un corrispondente.
+
+use macroquad::prelude::*;
+use paddws_core::PaddleKind;
+
+use crate::config::Colors;
+use crate::render::{ART_ROLES, ArtPaint, PixelArt};
+
+/// Ruoli della palette (indici dei PNG, come in `assets/titles/titles.json`) e, per `ArtPaint`,
+/// la sagoma.
+pub const SILHOUETTE: usize = 0;
+pub const BLACK_ROLE: usize = 1;
+pub const WHITE_ROLE: usize = 2;
+pub const YELLOW_ROLE: usize = 3;
+pub const DARK_YELLOW_ROLE: usize = 4;
+const GRAY_ROLE: usize = 5;
+const DARK_GRAY_ROLE: usize = 6;
+const RED_ROLE: usize = 7;
+const DARK_RED_ROLE: usize = 8;
+
+/// Nomi dei ruoli nell'ordine della palette, come in `titles.json`.
+#[cfg(test)]
+const ROLE_NAMES: [&str; ART_ROLES] =
+    ["transparent", "black", "white", "yellow", "dark_yellow", "gray", "dark_gray", "red", "dark_red"];
+
+/// Giallo scuro: l'accento moltiplicato per questo fattore (con l'accento di default viene circa
+/// il giallo scuro della palette, 150, 105, 0).
+const DARK_YELLOW: f32 = 0.55;
+
+macro_rules! title_png {
+    ($name:literal) => {
+        include_bytes!(concat!("../../../assets/titles/", $name, ".png"))
+    };
+}
+
+/// PNG del nome dell'avversario `kind`.
+fn name_png(kind: PaddleKind) -> &'static [u8] {
+    match kind {
+        PaddleKind::Arcade => title_png!("name_arcade"),
+        PaddleKind::Titan => title_png!("name_titan"),
+        PaddleKind::Hammer => title_png!("name_hammer"),
+        PaddleKind::Twist => title_png!("name_twist"),
+        PaddleKind::Blaster => title_png!("name_blaster"),
+        PaddleKind::Rush => title_png!("name_rush"),
+        PaddleKind::Guardian => title_png!("name_guardian"),
+    }
+}
+
+pub struct Titles {
+    names: [PixelArt; PaddleKind::COUNT],
+    pub challenger: PixelArt,
+    pub perfect: PixelArt,
+}
+
+impl Titles {
+    pub fn load() -> Self {
+        Self {
+            names: PaddleKind::ALL.map(|k| PixelArt::from_png(name_png(k))),
+            challenger: PixelArt::from_png(title_png!("challenger")),
+            perfect: PixelArt::from_png(title_png!("perfect")),
+        }
+    }
+
+    /// Nome dell'avversario `kind`, come nelle presentazioni.
+    pub fn name(&self, kind: PaddleKind) -> &PixelArt {
+        &self.names[kind as usize]
+    }
+}
+
+fn rgb(r: u8, g: u8, b: u8) -> Color {
+    Color::from_rgba(r, g, b, 255)
+}
+
+/// Colori dei ruoli con i colori della configurazione (vedi l'inizio del modulo).
+pub fn paint(colors: &Colors) -> ArtPaint {
+    let accent = Color::from_rgba(colors.accent[0], colors.accent[1], colors.accent[2], 255);
+    let mut p: ArtPaint = [None; ART_ROLES];
+    p[BLACK_ROLE] = Some(BLACK);
+    p[WHITE_ROLE] = Some(Color::from_rgba(colors.white[0], colors.white[1], colors.white[2], 255));
+    p[YELLOW_ROLE] = Some(accent);
+    p[DARK_YELLOW_ROLE] = Some(Color::new(accent.r * DARK_YELLOW, accent.g * DARK_YELLOW, accent.b * DARK_YELLOW, 1.0));
+    p[GRAY_ROLE] = Some(rgb(110, 110, 110));
+    p[DARK_GRAY_ROLE] = Some(rgb(55, 55, 55));
+    p[RED_ROLE] = Some(rgb(200, 30, 30));
+    p[DARK_RED_ROLE] = Some(rgb(90, 10, 10));
+    p
+}
+
+/// Tutta la grafica in un colore solo (la sagoma).
+pub fn solid(color: Color) -> ArtPaint {
+    let mut p: ArtPaint = [None; ART_ROLES];
+    p[SILHOUETTE] = Some(color);
+    p
+}
+
+/// Solo i ruoli `roles`, nei colori di `paint`.
+pub fn only(paint: &ArtPaint, roles: &[usize]) -> ArtPaint {
+    let mut p: ArtPaint = [None; ART_ROLES];
+    for &r in roles {
+        p[r] = paint[r];
+    }
+    p
+}
+
+/// `paint` con bianco e giallo scambiati (i lampeggi).
+pub fn swap_white_yellow(paint: &ArtPaint) -> ArtPaint {
+    let mut p = *paint;
+    p.swap(WHITE_ROLE, YELLOW_ROLE);
+    p
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_palette_roles_match_titles_json() {
+        let spec: serde_json::Value = serde_json::from_str(include_str!("../../../assets/titles/titles.json")).unwrap();
+        let palette: Vec<&str> = spec["palette"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+        assert_eq!(palette, ROLE_NAMES);
+        assert_eq!(ROLE_NAMES[WHITE_ROLE], "white");
+        assert_eq!(ROLE_NAMES[YELLOW_ROLE], "yellow");
+        assert_eq!(ROLE_NAMES[DARK_YELLOW_ROLE], "dark_yellow");
+        assert_eq!(ROLE_NAMES[BLACK_ROLE], "black");
+        assert_eq!(ROLE_NAMES[DARK_RED_ROLE], "dark_red");
+        // ogni grafica dell'elenco è inclusa con il suo nome
+        let titles = spec["titles"].as_object().unwrap();
+        let names: Vec<String> = PaddleKind::ALL.iter().map(|k| format!("name_{}", k.name().to_lowercase())).collect();
+        for n in names.iter().map(String::as_str).chain(["challenger", "perfect"]) {
+            assert!(titles.contains_key(n), "{n}");
+        }
+        assert_eq!(titles.len(), names.len() + 2);
+    }
+
+    #[test]
+    fn the_dark_yellow_follows_the_accent() {
+        let p = paint(&Colors::default());
+        let (y, d) = (p[YELLOW_ROLE].unwrap(), p[DARK_YELLOW_ROLE].unwrap());
+        assert!((d.r / y.r - DARK_YELLOW).abs() < 1e-6 && (d.g / y.g - DARK_YELLOW).abs() < 1e-6);
+        // con l'accento di default, vicino al giallo scuro della palette
+        assert!((d.r * 255.0 - 150.0).abs() < 15.0 && (d.g * 255.0 - 105.0).abs() < 15.0, "{d:?}");
+        assert!(p[SILHOUETTE].is_none());
+    }
+}

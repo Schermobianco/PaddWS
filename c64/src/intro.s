@@ -13,7 +13,12 @@
 ; file voce (un caricamento). Ogni entrata comincia con un salto alla sua parte di ogni frame (inv_tick) e con
 ; quella del disegno (inv_init).
 ;
-; Semplificazioni rispetto al PC: tutto a celle (nome e motto nel font di sempre), le racchette non
+; Il nome è la grafica dell'avversario (assets/titles) in caratteri hires: i caratteri (TN_FIRST, una
+; pagina di titles.bin) li copia in_draw sullo schermo appena pulito, la mappa e i colori stanno
+; all'inizio dell'entrata (TN_HDR). Le entrate muovono il nome a blocchi di celle: tutto, oppure
+; una colonna di celle alla volta al posto delle lettere (BLASTER, GUARDIAN).
+;
+; Semplificazioni rispetto al PC: tutto a celle (il motto nel font di sempre), le racchette non
 ; si inclinano (le immagini si rifanno solo prima della voce, che tiene acceso l'I/O), la polvere e
 ; le capsule colpite al volo non ci sono, il TITAN esce dal pavimento invece di allungarsi.
 ;
@@ -37,15 +42,27 @@ inv_init = INV_RUN + 3
 IN_LADDER = 1                   ; righe: la scala, il livello
 IN_LEVEL  = 3
 IN_PADY   = SPR_Y0 + 62         ; y degli sprite del centro della racchetta
-IN_NAME   = 11                  ; nome, motto, capsule (2 righe) e i loro nomi, punti da fare,
-IN_TAG    = 13                  ; punteggio
-IN_CAP    = 15
-IN_FIRST  = 20
+IN_TAG    = 15                  ; motto (il nome nelle righe 10-14, TN_*_ROW), capsule (2 righe)
+IN_CAP    = 17                  ; e i loro nomi, punti da fare, punteggio
+IN_FIRST  = 21
 IN_SCORE  = 23
 IN_CX     = SPR_X0 + 160        ; x degli sprite del centro dello schermo
 IN_CAPC   = 9                   ; prima colonna della prima capsula, poi una ogni 10
-IN_NAMEY  = SPR_Y0 + IN_NAME * 8 + 4
 IN_CAPY   = SPR_Y0 + IN_CAP * 8 + 8
+; il nome dell'avversario (gen/assets.inc), all'inizio dell'entrata: larghezza e altezza in celle,
+; prima colonna, celle, poi i codici dei caratteri (0: cella vuota) e i colori, riga per riga
+TN_HDR    = INV_RUN + 6
+tn_w      = TN_HDR
+tn_h      = TN_HDR + 1
+tn_col    = TN_HDR + 2
+tn_n      = TN_HDR + 3
+tn_map    = TN_HDR + 4
+.macro inv_title w, h, col, map, clr
+    .assert * = TN_HDR, error, "entrata: il nome non dove lo cerca in_name"
+    .byte w, h, col, w * h
+    .byte map
+    .byte clr
+.endmacro
 
 .segment "INCODE"
 ; variabili della presentazione (si ricopiano con il codice)
@@ -60,14 +77,19 @@ in_hi:   .byte 0
 in_tagn: .byte 0                ; lettere del motto a schermo
 in_inval: .byte 0               ; 1: tabelle dei quadrati già da rifare (in_tick, o il via)
 in_mode: .byte 0                ; IM_* (intro_hud)
+in_c:    .byte 0                ; nome: colonna di celle, cella, riga (in_col)
+in_i:    .byte 0
+in_r:    .byte 0
 
-; Disegno (ch_draw), sullo schermo pulito: punteggio, record e duelli vinti (intro_hud, non
-; nell'allenamento), l'immagine della racchetta dell'avversario (prima della voce: dopo l'I/O
-; resta acceso), poi l'entrata.
+; Disegno (ch_draw), sullo schermo pulito: i caratteri del nome dalla cartuccia (prima della voce,
+; come le copie), punteggio, record e duelli vinti (intro_hud, non nell'allenamento), l'immagine
+; della racchetta dell'avversario (prima della voce: dopo l'I/O resta acceso), poi l'entrata.
 .proc in_draw
     ldx ch_level
     lda rung_kind,x
     sta in_k
+    .assert TTL_NAMES = 0, error, "in_draw: la pagina del nome è il tipo"
+    jsr title_copy
     lda ch_side                 ; l'avversario dall'altra parte di chi gioca
     eor #4
     lsr a
@@ -212,84 +234,102 @@ set:
     rts
 .endproc
 
-; La riga Y vuota, poi il nome dell'avversario spostato di A colonne (con il segno) e del colore X
-; (X = 0: solo la riga vuota).
+; Le righe del nome da Y vuote, poi il nome come in_name_nc (X = 0: solo le righe vuote).
 .proc in_name
     sta in_dx
     stx in_t
     sty in_y
-    lda #1
+    lda tn_h
     sta v_n
     lda #40
     ldx #0
     jsr blank_box
-    lda in_dx
-    ldx in_t
-    ldy in_y
-.endproc
-; (prosegue)
-; Come in_name, sopra quello che c'è.
-.proc in_name_nc
-    sta in_dx
-    stx in_t
-    sty in_y
-    txa
-    beq done
-    jsr name_ptr
-    txa
-    clc
-    adc in_dx
-    tax
-    ldy in_y
-    jsr print_str
+draw:
     lda in_t
-    ldy in_y
-    jmp color_row
+    beq done
+    ldx #0
+:   stx in_c
+    jsr in_col
+    ldx in_c
+    inx
+    cpx tn_w
+    bne :-
 done:
     rts
 .endproc
 
-; ptr2 al nome dell'avversario, X alla sua prima colonna (centrato); A = lunghezza.
-.proc name_ptr
-    lda in_k
-    asl a
-    tay
-    lda kind_names,y
-    sta ptr2
-    lda kind_names+1,y
-    sta ptr2+1
-    ldy #$ff
-:   iny
-    lda (ptr2),y
-    bne :-
-    ldx in_k
-    lda kind_col,x
-    tax
-    tya
-    rts
+; Il nome dell'avversario dalla riga Y, spostato di A colonne (con il segno), del colore X
+; (COL_WHITE: i suoi colori), sopra quello che c'è: le sue celle vuote lasciano quello che c'era.
+.proc in_name_nc
+    sta in_dx
+    stx in_t
+    sty in_y
+    jmp in_name::draw
 .endproc
 
-; La lettera X del nome al suo posto nella riga Y, del colore A (già con l'easter egg).
+; La colonna di celle X del nome dalla riga Y, al suo posto, del colore A (COL_WHITE: i suoi; altri
+; già con l'easter egg; 0: le celle della colonna vuote).
 .proc in_letter
-    pha
-    sty v_row
-    stx in_dx
-    jsr name_ptr
+    sta in_t
+    sty in_y
+    lda #0
+    sta in_dx
+.endproc
+; (prosegue)
+; La colonna di celle X del nome dalla riga in_y, spostata di in_dx colonne, del colore in_t (come
+; in_letter); le celle vuote del nome restano come sono, salvo con il colore 0.
+.proc in_col
+    stx in_i
     txa
     clc
+    adc tn_col
     adc in_dx
+    sta in_hi                   ; colonna sullo schermo
+    lda in_y
+    sta in_r
+cell:
+    ldy in_r
+    lda row_lo,y
+    sta ptr
+    lda row_hi,y
+    sta ptr+1
+    ldx in_i
+    lda in_t
+    beq put                     ; (A = CH_BLANK)
+    lda tn_map,x
+    beq next
+put:
+    ldy in_hi
+    sta (ptr),y
+    lda in_t
+    beq next
+    cmp #COL_WHITE
+    bne color
+    txa                         ; i suoi colori: dopo i codici
+    clc
+    adc tn_n
     tax
-    ldy in_dx
-    lda (ptr2),y
-    jsr put_ascii               ; (poi Y = colonna, ptr alla riga)
+    lda tn_map,x
+    jsr egg_color
+color:
+    pha
     lda ptr+1
     clc
     adc #>($d800 - SCREEN)
     sta ptr+1
     pla
     sta (ptr),y
+next:
+    inc in_r
+    lda in_i
+    clc
+    adc tn_w
+    sta in_i
+    cmp tn_n
+    bcc cell
     rts
 .endproc
+.assert CH_BLANK = 0, error, "in_col: la cella vuota è il carattere 0"
 
 ; Il motto scritto una lettera ogni X frame dal frame A, grigio.
 .proc in_tag_at
@@ -586,6 +626,8 @@ add:
 .scope inv_arcade
     jmp tick
     rts
+    .res 2
+    inv_title TN_0_W, TN_0_H, TN_0_COL, {TN_0_MAP}, {TN_0_CLR}
 ARC_N = 10
 caught: .byte 0
 flash:  .byte 0
@@ -746,7 +788,7 @@ name:
     ldx #0
 draw:
     lda #0
-    ldy #IN_NAME
+    ldy #TN_0_ROW
     jsr in_name
 tag:
     lda #83
@@ -778,12 +820,13 @@ chase:
 
 ; ------------------------------------------------------------------------------------ TITAN
 ; Alto ma lento: esce dal pavimento a scatti che fanno tremare lo schermo (sprite dietro una
-; fascia di celle piene nere, la priorità del VIC), si accende gialla; il nome con la terra sotto,
+; fascia di celle piene nere, la priorità del VIC), si accende gialla; il nome fra le sue travi,
 ; il motto piano, le capsule per ultime.
 .segment "INV1"
 .scope inv_titan
     jmp tick
     jmp init
+    inv_title TN_1_W, TN_1_H, TN_1_COL, {TN_1_MAP}, {TN_1_CLR}
 step:  .byte 0
 row0:  .byte 0
 t:     .byte 0
@@ -921,34 +964,14 @@ done:
     ldy #IN_PADY
     jsr in_pad
 name:
-    ; il nome sale da sotto terra: la terra sotto per un po'
+    ; il nome, a racchetta ferma (sotto c'era la fascia)
     lda in_f
     cmp #70
-    bne :+
+    bne tag
     lda #0
     ldx #COL_WHITE
-    ldy #IN_NAME
+    ldy #TN_1_ROW
     jsr in_name
-    jsr name_ptr
-    clc
-    adc #4
-    sta v_n
-    dex
-    dex
-    txa
-    tay
-    lda #CH_GRID_T
-    ldx #IN_NAME + 1
-    jsr ground
-:   lda in_f
-    cmp #93
-    bne tag
-    lda #1
-    sta v_n
-    lda #40
-    ldx #0
-    ldy #IN_NAME + 1
-    jsr blank_box
 tag:
     lda #95
     ldx #2
@@ -958,25 +981,6 @@ tag:
     jsr in_caps_at
     lda #IN_LAST
     jmp in_first
-; v_n celle del carattere A dalla colonna Y della riga X, grigie
-ground:
-    sty t
-    pha
-    lda row_lo,x
-    sta ptr
-    lda row_hi,x
-    sta ptr+1
-    pla
-    ldx v_n
-:   sta (ptr),y
-    iny
-    dex
-    bne :-
-    lda v_n
-    ldy t
-    ldx #IN_NAME + 1
-    lda #COL_GRAY
-    jmp color_span
 .endscope
 
 ; ------------------------------------------------------------------------------------ HAMMER
@@ -986,12 +990,15 @@ ground:
 .scope inv_hammer
     jmp tick
     rts
+    .res 2
+    inv_title TN_2_W, TN_2_H, TN_2_COL, {TN_2_MAP}, {TN_2_CLR}
 d:    .byte 0
 prev: .byte 0
 hx:   .byte 5, 1, 5, 1, 5, 2, 4, 3   ; scossa del colpo (scroll fine, 3 al centro)
 hy:   .byte 3, 5, 1, 4, 2, 3, 3, 3
 ly:   .byte 5, 1, 5, 2, 4, 3         ; dell'atterraggio del nome
-fall: .byte 5, 6, 7, 8, 9, 10, 10, 11, 11
+R = TN_2_ROW
+fall: .byte R - 6, R - 5, R - 4, R - 3, R - 2, R - 1, R - 1, R, R
 gh:   .byte 3, 6, 10                ; la scia: unità dietro la palla
 tick:
     ; la racchetta: indietro (33-40), poi il colpo in avanti (41-45)
@@ -1103,7 +1110,7 @@ land:
     lda #0
     jsr in_scroll
 name:
-    ; il nome cade dalla riga 5 alla sua (52-60)
+    ; il nome cade da sei righe più su alla sua (52-60)
     lda in_f
     sec
     sbc #52
@@ -1144,6 +1151,8 @@ tag:
 .scope inv_twist
     jmp tick
     rts
+    .res 2
+    inv_title TN_3_W, TN_3_H, TN_3_COL, {TN_3_MAP}, {TN_3_CLR}
 t:  .byte 0
 osc: .byte 0, 7, 13, 16, 16, 14, 9, 3, <-3, <-9, <-13, <-14, <-13, <-10, <-5, 0, 5, 9, 11, 11
      .byte 9, 6, 2, <-2, <-6, <-8, <-9, <-8, <-6, <-3, 0, 3, 5, 6, 6, 5, 3, 1, <-1, <-2
@@ -1222,7 +1231,7 @@ name:
     tax
     lda nm,x
     ldx #COL_WHITE
-    ldy #IN_NAME
+    ldy #TN_3_ROW
     jsr in_name
 tag:
     lda #77
@@ -1242,6 +1251,9 @@ tag:
 .scope inv_blaster
     jmp tick
     rts
+    .res 2
+    inv_title TN_4_W, TN_4_H, TN_4_COL, {TN_4_MAP}, {TN_4_CLR}
+NAMEY = SPR_Y0 + TN_4_CY        ; y degli sprite del centro del nome
 n:    .byte 0
 k:    .byte 0
 t:    .byte 0
@@ -1252,7 +1264,7 @@ tick:
     lda in_f
     cmp #3
     bcc shots
-    ldy #IN_NAMEY
+    ldy #NAMEY
     sec
     sbc #53
     bcc pad
@@ -1265,7 +1277,7 @@ tick:
     sec
     sbc t
     clc
-    adc #IN_NAMEY
+    adc #NAMEY
     cmp #IN_CAPY
     bcc :+
 low:
@@ -1276,8 +1288,8 @@ pad:
     ldx #COL_WHITE
     jsr in_pad
 shots:
-    ; il colpo k parte al frame 10 + 4k verso la lettera j, 22 unità a frame
-    jsr name_ptr
+    ; il colpo k parte al frame 10 + 4k verso la colonna di celle j del nome, 24 unità a frame
+    lda #TN_4_W
     sta n
     lda in_f
     sec
@@ -1293,10 +1305,10 @@ shots:
     stx k
     cmp #0
     bne :+
-    ldx lit                     ; al colpo dopo la lettera di prima diventa bianca
+    ldx lit                     ; al colpo dopo la colonna di prima torna dei suoi colori
     bmi :+
     lda #COL_WHITE
-    ldy #IN_NAME
+    ldy #TN_4_ROW
     jsr in_letter
     lda #$ff
     sta lit
@@ -1310,9 +1322,8 @@ shots:
     clc
     sbc k
     sta j
-:   ; x della lettera (unità dal centro verso l'avversario)
-    jsr name_ptr
-    txa
+:   ; x della colonna (unità dal centro verso l'avversario)
+    lda #TN_4_COL
     clc
     adc j
     asl a
@@ -1328,7 +1339,7 @@ shots:
 :   sta d
     lda lit
     bpl tag                     ; già presa
-    ldx t                       ; il colpo: 22 unità a frame dalla bocca
+    ldx t                       ; il colpo: 24 unità a frame dalla bocca
     lda sdx,x
     sta t
     sec
@@ -1341,7 +1352,7 @@ shots:
     ldy egg_yel
     ldx #0
     jsr in_small
-    lda #IN_NAMEY - 2
+    lda #NAMEY - 2
     sta sh_y
     lda t
     ldy #2
@@ -1353,7 +1364,7 @@ hit:
     ldx j
     stx lit
     lda egg_yel
-    ldy #IN_NAME
+    ldy #TN_4_ROW
     jsr in_letter
 tag:
     lda #47
@@ -1365,7 +1376,7 @@ tag:
     lda #125
     jmp in_first
 d:  .byte 0
-sdx: .byte 46, 24, 2, <-20
+sdx: .byte 46, 22, <-2, <-26     ; (fino alla prima colonna dall'altra parte)
 .endscope
 
 ; ------------------------------------------------------------------------------------ RUSH
@@ -1375,6 +1386,8 @@ sdx: .byte 46, 24, 2, <-20
 .scope inv_rush
     jmp tick
     rts
+    .res 2
+    inv_title TN_5_W, TN_5_H, TN_5_COL, {TN_5_MAP}, {TN_5_CLR}
 gx: .byte 43, 29, 14            ; le immagini dello scatto
 dash: .byte 43, 28, 13, 0
 tick:
@@ -1466,14 +1479,14 @@ name:
     clc
     adc #1
 :   ldx egg_yel
-    ldy #IN_NAME
+    ldy #TN_5_ROW
     jsr in_name_nc
     jmp tag
 final:
     bne tag
     lda #0
     ldx #COL_WHITE
-    ldy #IN_NAME
+    ldy #TN_5_ROW
     jsr in_name
 tag:
     ldx #1
@@ -1497,6 +1510,8 @@ caps:
 .scope inv_guardian
     jmp tick
     rts
+    .res 2
+    inv_title TN_6_W, TN_6_H, TN_6_COL, {TN_6_MAP}, {TN_6_CLR}
 col: .byte 0
 s:   .byte 0
 s2:  .byte 0
@@ -1616,8 +1631,8 @@ name:
     lda #0
     ldy #3
     jsr in_scroll
-:   ; le lettere del nome, una ogni 2,5 frame dall'80: cadono di due righe
-    jsr name_ptr
+:   ; le colonne di celle del nome, una ogni 2,5 frame dall'80: cadono di due righe
+    lda #TN_6_W
     sta s
     ldx #0
 letter:
@@ -1631,7 +1646,7 @@ letter:
     eor #$ff
     sec
     adc in_f
-    ldy #IN_NAME - 2
+    ldy #TN_6_ROW - 2
     cmp #0
     beq draw
     cmp #2
@@ -1641,16 +1656,12 @@ letter:
 down:
     lsr a                       ; via dalla riga di prima, una sotto
     clc
-    adc #IN_NAME - 3
+    adc #TN_6_ROW - 3
     sta s2
-    jsr name_ptr
-    txa
-    clc
-    adc t
-    tax
-    ldy s2
-    lda #CH_BLANK
-    jsr put_char
+    tay
+    ldx t
+    lda #0
+    jsr in_letter
     ldy s2
     iny
 draw:

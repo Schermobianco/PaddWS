@@ -47,7 +47,10 @@ module pong_top #(
     // finale della CHALLENGE (tools/gen_ending_assets.py): scritte, mappa delle righe, fuochi
     parameter ENDING_TEXT_ROM = "rtl/gen/ending_text.hex",
     parameter ENDING_MAP_ROM = "rtl/gen/ending_map.hex",
-    parameter ENDING_FW_ROM = "rtl/gen/ending_fw.hex"
+    parameter ENDING_FW_ROM = "rtl/gen/ending_fw.hex",
+    // titoli disegnati (tools/gen_mister_titles.py): nomi degli avversari e nuovo sfidante, PERFECT
+    parameter CH_TITLE_ROM = "rtl/gen/title_challenge.hex",
+    parameter PERFECT_ROM = "rtl/gen/title_perfect.hex"
 ) (
     input  wire        clk,            // 20 MHz
     input  wire        clk_cpu,        // 60 MHz dalla stessa PLL: processore di pong_logic_rv
@@ -1854,7 +1857,7 @@ always @(posedge clk) begin
         hammer_net <= 4'd14;
 end
 
-pong_render render (
+pong_render #(.PERFECT_ROM(PERFECT_ROM)) render (
     .clk(clk), .snapshot(snapshot), .hc(game_hc), .vc(vc),
     .two(two), .evo(evo), .flash(flash_count != 2'd0 || hit_flash),
     .ball_x(ball_x), .ball_y(ball_y), .ball_r(ball_r), .ball_visible(ball_visible),
@@ -1931,7 +1934,8 @@ attract_render attract (
     .rgb(attract_rgb), .solid(attract_solid)
 );
 
-// CHALLENGE: schermate a tutto schermo e punti arcade in partita
+// CHALLENGE: schermate a tutto schermo e punti arcade in partita; due cicli di ritardo (i titoli
+// disegnati vengono da una ROM), il pixel ne dura tre
 wire [23:0] ch_rgb;
 wire        ch_opaque;
 wire [179:0] tb_names_bus;
@@ -2007,7 +2011,7 @@ end
 wire        wins_intro = mode == M_INTRO && ch_wins != 8'd0 && !train;
 wire        wins_over = mode == M_GAME_OVER && duel && over_age >= 8'd60 && (over_age < 8'd158 || !over_closes);
 
-challenge_render challenge_draw (
+challenge_render #(.TITLE_ROM(CH_TITLE_ROM)) challenge_draw (
     .clk(clk), .hc(mode == M_INTRO ? intro_hc : {1'b0, hc}), .vc(mode == M_INTRO ? intro_vc : {1'b0, vc}),
     .screen(mode == M_INTRO ? 3'd1 : mode == M_CLEAR ? 3'd2 : mode == M_CONT ? 3'd3 :
             mode == M_INITIALS ? 3'd4 : mode == M_SCORES ? 3'd5 : mode == M_CHALLENGER ? 3'd7 :
@@ -2361,11 +2365,12 @@ endmodule
 // Easter egg delle iniziali "RED": giallo e rosso scambiati sull'uscita video, come lo shader di
 // rust/game/src/render.rs (swap_color), ma sui colori esatti della palette dei renderer. Il giallo
 // d'accento FFD225 diventa il rosso E62828 e il rosso diventa il giallo; le versioni scure del giallo
-// (le code di next_render, accento * n / 13 e * n / 23; le immagini del RUSH al 18, 36 e 54%; la
-// scia di howto_render al 45%) diventano il rosso scurito allo stesso modo; il rosso scuro e quello
-// chiaro delle figurine di howto_render (e della banda del nuovo sfidante) diventano gialli con la
-// stessa luce, la tinta riflessa come su PC. Gli altri colori (bianchi, grigi, neri, il verde
-// dell'auto-test, i grigi azzurri delle racchette) restano come sono. Solo confronti con costanti
+// (le code di next_render, accento * n / 13 e * n / 23; le immagini del RUSH al 18, 36 e 54%, quella
+// al 54% anche giallo scuro dei titoli disegnati; la scia di howto_render al 45%) diventano il rosso
+// scurito allo stesso modo; il rosso scuro e quello chiaro delle figurine di howto_render (e della
+// banda del nuovo sfidante), il rosso scuro dei titoli disegnati diventano gialli con la stessa luce,
+// la tinta riflessa come su PC. Gli altri colori (bianchi, grigi, neri, il verde dell'auto-test, i
+// grigi azzurri delle racchette) restano come sono. Solo confronti con costanti
 // (due livelli di LUT) e un OR per bit, senza registri: il pixel esce nello stesso ciclo di prima.
 module egg_swap (
     input  wire        on,
@@ -2374,7 +2379,7 @@ module egg_swap (
 );
 
 localparam [23:0] YELLOW = 24'hFFD225, RED = 24'hE62828;
-localparam integer PAIRS = 42;
+localparam integer PAIRS = 43;
 
 // colore c * n / d per canale, troncato, come trail_acc e trail_long di next_render
 function [23:0] scale(input [23:0] c, input integer n, input integer d);
@@ -2405,6 +2410,7 @@ function [47:0] pair(input integer i);
                 39: pair = {RED, YELLOW};
                 40: pair = {24'h8C1414, 24'h8C7414};   // rosso scuro (figurine, banda del nuovo sfidante)
                 41: pair = {24'hFF6E6E, 24'hFFE26E};   // rosso chiaro delle figurine
+                42: pair = {24'h5A0A0A, 24'h5A4B0A};   // rosso scuro dei titoli disegnati (ombre, bordi)
                 default: pair = 48'd0;
             endcase
     end

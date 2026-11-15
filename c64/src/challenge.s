@@ -1111,19 +1111,58 @@ JOIN_LEN = 14
 
 CHAL_BAND0 = 5                  ; bande piene in alto e in basso
 CHAL_BAND1 = 19
-CHAL_ROW0  = 9                  ; HERE COMES
-CHAL_ROW1  = 12                 ; A NEW CHALLENGER!
+CHAL_ROW0  = 9                  ; la targa (TC_H righe)
 CHAL_ROW2  = 16                 ; chi sfida e punti
+CHAL_COL   = (40 - TC_W) / 2
+.assert CHAL_ROW0 + TC_H < CHAL_ROW2, error, "targa sopra la riga di chi sfida"
 
+; Titoli disegnati nel file del finale (paddws.cfg, ENDG e ENDH), dopo le iniziali: il codice della
+; targa (CHCODE, due pagine, gira nel secondo schermo), poi gen/titles.bin (tools/gen_c64_assets.py:
+; una pagina per nome, una per PERFECT, due per i caratteri della targa).
+TTL_OFF  = INI_OFF + $0400
+TTL_BANK = END_BANK + TTL_OFF / $2000
+CHC_SRC  = $80 + (TTL_OFF .mod $2000) / 256
+TTL_SRC  = CHC_SRC + 2
+CHC_RUN  = SCREEN2
+.import __CHCODE_RUN__, __CHCODE_SIZE__, __TITLES_LOAD__, __TITLES_SIZE__
+.assert __CHCODE_RUN__ = CHC_RUN .and __CHCODE_SIZE__ <= $200, lderror, "targa: codice fuori posto"
+.assert __TITLES_LOAD__ = $8000 + (TTL_OFF .mod $2000) + $200 .and __TITLES_SIZE__ = TTL_PAGES * 256, lderror, "titoli fuori posto"
+.assert (TTL_OFF .mod $2000) + $200 + TTL_PAGES * 256 <= $2000 .and TTL_OFF / $2000 = (INI_OFF / $2000), error, "titoli oltre il banco"
+
+; La pagina A di titles.bin (TTL_NAMES + tipo, TTL_PERFECT) nei caratteri da TN_FIRST: un nome
+; o PERFECT, su uno schermo dove quei caratteri non ci sono (circa 3.800 cicli; mai durante una voce).
+.proc title_copy
+    clc
+    adc #TTL_SRC
+    sta ef_src+2
+    lda #TTL_BANK
+    ldx #1
+    ldy #>(CHARSET + 8 * TN_FIRST)
+    jmp ef_copy
+.endproc
+
+; Disegno in tre frame (ch_more; ch_elapsed, fermo finché si disegna, conta i passi): i caratteri
+; della targa dalla cartuccia (sulle lettere 2x: le scelte dello sfidante, subito dopo, le rifanno),
+; il suo codice nel secondo schermo (libero: dopo la targa le scelte e la partita ci ricopiano le
+; mosse speciali), poi la targa, le bande e chi sfida.
 .proc draw_challenger
+    ldx ch_elapsed
+    cpx #2
+    beq draw
+    inc ch_elapsed
+    inc ch_more
+    lda chal_src,x
+    sta ef_src+2
+    ldy chal_dst,x
+    lda #TTL_BANK
+    ldx #2
+    jmp ef_copy
+draw:
+    jsr CHC_RUN                 ; targa e sprite del rosso
     ldy #CHAL_BAND0
     jsr solid_row
     ldy #CHAL_BAND1
     jsr solid_row
-    jsr print_at
-    .byte 15, CHAL_ROW0, "HERE COMES", 0
-    jsr print_at
-    .byte 11, CHAL_ROW1, "A NEW CHALLENGER!", 0
     jsr print_at
     .byte 6, CHAL_ROW2, "P  VS CHAMPION   FIRST TO", 0
     lda #'2'                    ; lo sfidante: P2 se chi gioca è a sinistra
@@ -1141,8 +1180,10 @@ CHAL_ROW2  = 16                 ; chi sfida e punti
     jsr print_points
     jmp challenger_colors
 .endproc
+chal_src: .byte TTL_SRC + TTL_PLATE, CHC_SRC
+chal_dst: .byte >(CHARSET + 8 * TC_FIRST), >CHC_RUN
 
-; Lampeggio: le due scritte si scambiano giallo e bianco, le bande giallo e grigio.
+; Lampeggio: le bande giallo e grigio.
 .proc challenger_colors
     lda frame_count
     lsr a
@@ -1157,21 +1198,11 @@ CHAL_ROW2  = 16                 ; chi sfida e punti
     ldx ch_tmp+3
     lda chal_col_b,x
     ldy #CHAL_BAND1
-    jsr color_row
-    ldx ch_tmp+3
-    lda chal_col_c,x
-    ldy #CHAL_ROW0
-    jsr color_row
-    ldx ch_tmp+3
-    lda chal_col_d,x
-    ldy #CHAL_ROW1
     jmp color_row
 .endproc
 
 chal_col_a: .byte COL_YELLOW, COL_GRAY      ; banda alta
 chal_col_b: .byte COL_GRAY, COL_YELLOW      ; banda bassa
-chal_col_c: .byte COL_WHITE, COL_YELLOW     ; HERE COMES
-chal_col_d: .byte COL_YELLOW, COL_WHITE     ; A NEW CHALLENGER!
 
 .proc challenger_scene
     jsr ch_phases
@@ -1179,6 +1210,7 @@ chal_col_d: .byte COL_YELLOW, COL_WHITE     ; A NEW CHALLENGER!
     jsr challenger_colors
     jsr ch_timeout
     bcc done
+    jsr CHC_RUN + 3             ; via gli sprite della targa
     jmp pick_challenger
 done:
     rts
@@ -2652,4 +2684,87 @@ write:
 
 .segment "ZEROPAGE"
 ch_draw: .res 2                 ; routine di disegno della schermata
+.segment "CODE"
+
+; --- la targa di HERE COMES A NEW CHALLENGER! (CHCODE, nel secondo schermo: draw_challenger)
+
+.segment "CHCODE"
+.scope chc
+    jmp plate
+    ; (CHC_RUN + 3) via gli sprite della targa, prima delle scelte dello sfidante
+    lda #0
+    sta $d01b
+    sta sh_enable
+    sta sh_xexp
+    sta sh_yexp
+    rts
+; La targa (tools/gen_c64_assets.py, title_plate): TC_H righe di TC_W celle dalla riga CHAL_ROW0,
+; colonna CHAL_COL, bianche e da TC_YEL0 gialle; il rosso dentro il bordo: quattro sprite hires
+; espansi, dietro i caratteri (l'immagine nel set, TC_SPRITE).
+plate:
+    lda #CHAL_ROW0
+    sta row
+    ldx #0
+line:
+    ldy row
+    lda row_lo,y
+    clc
+    adc #CHAL_COL
+    sta ptr
+    sta ptr2
+    lda row_hi,y
+    adc #0
+    sta ptr+1
+    adc #>($d800 - SCREEN)
+    sta ptr2+1
+    ldy #0
+cell:
+    lda map,x
+    sta (ptr),y
+    cmp #TC_YEL0
+    lda #COL_WHITE
+    bcc :+
+    lda egg_yel
+:   sta (ptr2),y
+    inx
+    iny
+    cpy #TC_W
+    bne cell
+    inc row
+    cpx #TC_W * TC_H
+    bne line
+    ldx #3
+:   lda spr_x,x
+    sta sh_x,x
+    lda #SPR_Y0 + CHAL_ROW0 * 8 + TC_SPR_Y
+    sta sh_y,x
+    lda #(CHARSET + 8 * TC_SPRITE - $C000) / 64
+    sta sh_ptr,x
+    lda egg_red
+    sta sh_col,x
+    dex
+    bpl :-
+    lda #$f0
+    and sh_msb
+    sta sh_msb
+    lda #$f0
+    and sh_mc
+    sta sh_mc
+    lda #$0f
+    sta sh_xexp
+    sta sh_yexp
+    sta sh_enable
+    sta $d01b                   ; dietro i caratteri: il bordo e le scritte sopra il rosso
+    rts
+row:   .byte 0
+spr_x: .byte SPR_X0 + CHAL_COL * 8 + TC_SPR_X0, SPR_X0 + CHAL_COL * 8 + TC_SPR_X1
+       .byte SPR_X0 + CHAL_COL * 8 + TC_SPR_X2, SPR_X0 + CHAL_COL * 8 + TC_SPR_X3
+map:   .byte TC_MAP
+.endscope
+.assert SPR_X0 + CHAL_COL * 8 + TC_SPR_X3 < 256, error, "targa: sprite oltre la x 255"
+.assert TC_SPRITE * 8 .mod 64 = 0, error, "targa: immagine dello sprite non allineata"
+
+; i titoli disegnati (gen/titles.bin), dopo il codice della targa nel file del finale
+.segment "TITLES"
+    .incbin "titles.bin"
 .segment "CODE"

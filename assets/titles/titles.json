@@ -1,0 +1,78 @@
+{
+  "palette": [
+    "transparent",
+    "black",
+    "white",
+    "yellow",
+    "dark_yellow",
+    "gray",
+    "dark_gray",
+    "red",
+    "dark_red"
+  ],
+  "titles": {
+    "name_arcade": {
+      "file": "name_arcade.png",
+      "size": [
+        58,
+        15
+      ]
+    },
+    "name_titan": {
+      "file": "name_titan.png",
+      "size": [
+        44,
+        26
+      ]
+    },
+    "name_hammer": {
+      "file": "name_hammer.png",
+      "size": [
+        80,
+        16
+      ]
+    },
+    "name_twist": {
+      "file": "name_twist.png",
+      "size": [
+        46,
+        20
+      ]
+    },
+    "name_blaster": {
+      "file": "name_blaster.png",
+      "size": [
+        86,
+        14
+      ]
+    },
+    "name_rush": {
+      "file": "name_rush.png",
+      "size": [
+        50,
+        14
+      ]
+    },
+    "name_guardian": {
+      "file": "name_guardian.png",
+      "size": [
+        77,
+        14
+      ]
+    },
+    "challenger": {
+      "file": "challenger.png",
+      "size": [
+        192,
+        38
+      ]
+    },
+    "perfect": {
+      "file": "perfect.png",
+      "size": [
+        114,
+        25
+      ]
+    }
+  }
+}

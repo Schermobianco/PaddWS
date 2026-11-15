@@ -5,10 +5,18 @@
 // tools/gen_challenge_assets.py; numeri e iniziali con lo stesso font (Press Start 2P) in celle di 8x8
 // pixel: per ogni pixel si sceglie al più una cella, poi un solo accesso al font. Tutto a scala 1,
 // solo GAME OVER (continue scaduto) alla scala grande della fine partita (1 << BIG_SH).
+// I nomi degli avversari nelle presentazioni e HERE COMES A NEW CHALLENGER! sono grafiche disegnate
+// a pixel (tools/gen_mister_titles.py, pong_titles.vh): una ROM in M10K con il ruolo del colore di
+// ogni pixel, letta da due porte (la seconda per l'immagine gialla dietro al nome del RUSH). Pipeline
+// di due cicli: nel primo l'indirizzo della ROM e il colore del resto della schermata, dove il titolo
+// lascia un segno (MARK) con il colore che sta sotto; nel secondo il colore del titolo o quello sotto.
+// Un pixel dura 3 cicli di clk, quindi il colore arriva in tempo, come in howto_render.
 
 `timescale 1ns / 1ps
 
-module challenge_render (
+module challenge_render #(
+    parameter TITLE_ROM = "rtl/gen/title_challenge.hex"
+) (
     input  wire        clk,
     input  wire [9:0]  hc,
     input  wire [9:0]  vc,
@@ -52,15 +60,18 @@ module challenge_render (
 `include "pong_next.vh"
 `include "pong_challenge.vh"
 `include "pong_attract.vh"
+`include "pong_titles.vh"
 
 localparam integer W = P_WIDTH >>> 16;
 localparam [23:0] RGB_WHITE = 24'hFFFFFF, RGB_GRAY = 24'hB4B4B4, RGB_BLACK = 24'h000000, RGB_ACCENT = 24'hFFD225;
 localparam [5:0] G_SPACE = 6'd36, G_PLUS = 6'd37, G_DOT = 6'd38, G_X = 6'd39, G_L = 6'd21;
 localparam integer C = CH_CELL;
-// presentazione: nome della racchetta, capsule dei bonus (lato 13 come nel gioco PC, l'icona 9x9
-// con un pixel di margine), riga FIRST TO n centrata con una o due cifre
-localparam integer INTRO_KIND_Y = 118, INTRO_CAP = 13, INTRO_CAP_Y = 154, INTRO_FIRST_Y = 190;
-localparam integer INTRO_TAG_Y = INTRO_KIND_Y + 14;
+// presentazione: nome della racchetta (grafica centrata che finisce sulla riga NAME_BASE, esclusa;
+// TITAN, alto 26, comincia a TITAN_TOP, sotto la sua racchetta, e il motto scende di 3 righe),
+// motto TAG_GAP righe sotto il nome, capsule dei bonus (lato 13 come nel gioco PC, l'icona 9x9 con
+// un pixel di margine), riga FIRST TO n centrata con una o due cifre
+localparam integer NAME_BASE = 131, TITAN_TOP = 108, TAG_GAP = 4;
+localparam integer INTRO_CAP = 13, INTRO_CAP_Y = 154, INTRO_FIRST_Y = 190;
 localparam integer INTRO_TITLE_Y = 20;
 // FIRST TO n: dopo la scritta uno spazio (le parole stanno nella griglia di 8 pixel)
 localparam integer FIRST_X1 = (W - (CH_FIRST_W + 1 + 2 * C)) / 2, FIRST_X2 = (W - (CH_FIRST_W + 1 + 3 * C)) / 2;
@@ -68,8 +79,9 @@ localparam integer FIRST_X1 = (W - (CH_FIRST_W + 1 + 2 * C)) / 2, FIRST_X2 = (W 
 // sopra il riquadro della scritta del bonus di NEXT (righe 218-237), che è largo fino a 168 pixel:
 // "L1 0000000 x3", celle di 8 pixel con uno spazio fra i gruppi
 localparam integer HUD_R = 200, HUD_SPAN = 13 * C - 1, HUD_L = W - HUD_R - HUD_SPAN, HUD_Y = 206;
-// nuovo sfidante: banda rossa con le due righe
-localparam integer NEW_BAND_Y = 96, NEW_BAND_H = 48, NEW_Y1 = 108, NEW_Y2 = 124;
+// nuovo sfidante: banda rossa con la targa disegnata al centro
+localparam integer NEW_BAND_Y = 96, NEW_BAND_H = 48;
+localparam integer NEW_X = (W - TL_NEWCH_W) / 2, NEW_Y = NEW_BAND_Y + (NEW_BAND_H - TL_NEWCH_H) / 2;
 // GAME OVER del continue scaduto: larghezza e altezza dell'inchiostro alla scala grande
 localparam integer GO_WB = GAME_OVER_W << BIG_SH, BH = 7 << BIG_SH;
 localparam [23:0] RGB_BAND = 24'h8C1414;
@@ -87,9 +99,13 @@ localparam integer TB_X = (W - TB_SPAN) / 2;
 localparam [9:0] TB_Y0 = 10'd40, TB_STEP = 10'd20;
 
 // Colori come indici della tavolozza `pal` (4 bit invece di 24): le scelte del pixel si fanno fra
-// indici e il colore vero si legge una volta sola, all'uscita
+// indici e il colore vero si legge una volta sola, all'uscita. Per i titoli disegnati il giallo scuro,
+// il grigio, il rosso e il rosso scuro (gli stessi di pong_render; egg_swap in pong_top li conosce);
+// MARK non è un colore: il pixel va al titolo (secondo ciclo)
 localparam [3:0] WHITE = 4'd0, GRAY = 4'd1, BLACK = 4'd2, ACCENT = 4'd3, BAND = 4'd4, DIM = 4'd5, GHOST = 4'd6,
-                 TRAIL1 = 4'd7, TRAIL2 = 4'd8, TRAIL3 = 4'd9;
+                 TRAIL1 = 4'd7, TRAIL2 = 4'd8, TRAIL3 = 4'd9, T_DKYEL = 4'd10, T_GRAY = 4'd11, T_RED = 4'd12,
+                 T_DKRED = 4'd13, MARK = 4'd15;
+localparam [23:0] RGB_T_DKYEL = 24'h8A7114, RGB_T_GRAY = 24'h6E6E6E, RGB_T_RED = 24'hE62828, RGB_T_DKRED = 24'h5A0A0A;
 function [23:0] pal(input [3:0] i);
     case (i)
         WHITE:  pal = RGB_WHITE;
@@ -101,7 +117,24 @@ function [23:0] pal(input [3:0] i);
         TRAIL1: pal = RGB_TRAIL1;
         TRAIL2: pal = RGB_TRAIL2;
         TRAIL3: pal = RGB_TRAIL3;
+        T_DKYEL: pal = RGB_T_DKYEL;
+        T_GRAY: pal = RGB_T_GRAY;
+        T_RED:  pal = RGB_T_RED;
+        T_DKRED: pal = RGB_T_DKRED;
         default: pal = RGB_BLACK;
+    endcase
+endfunction
+// ruolo di un pixel dei titoli -> indice della tavolozza; `hi`: il bianco diventa giallo (lampo)
+function [3:0] role_col(input [3:0] r, input hi);
+    case (r)
+        TL_WHITE:       role_col = hi ? ACCENT : WHITE;
+        TL_YELLOW:      role_col = ACCENT;
+        TL_DARK_YELLOW: role_col = T_DKYEL;
+        TL_GRAY:        role_col = T_GRAY;
+        TL_DARK_GRAY:   role_col = DIM;
+        TL_RED:         role_col = T_RED;
+        TL_DARK_RED:    role_col = T_DKRED;
+        default:        role_col = BLACK;
     endcase
 endfunction
 
@@ -137,10 +170,15 @@ reg [4:0]  pts, pts_units;
 reg [1:0]  pts_tens;
 reg [9:0]  hud_x;
 integer    i, j;
-// presentazione: nome (riga, origine, colonna, lettera del GUARDIAN), capsula
-reg signed [10:0] n_row, n_x0, n_u, n_v;
+// presentazione: nome (riga, origine, colonna, colonna senza il corsivo del BLASTER, lettera del
+// GUARDIAN e del BLASTER, riga nella grafica), immagine del RUSH, capsula
+reg signed [10:0] n_row, n_x0, n_u, n_us, n_v, g_u, g_v;
 reg [2:0]  n_li;
-reg        n_px, c_lit;
+reg        n_ok, g_ok, c_lit;
+// titoli: indirizzi delle due porte della ROM, il titolo copre il pixel, colore sotto il titolo
+reg [TL_CH_ABITS-1:0] ta_addr, tb_addr;
+reg        ta_ok;
+reg [3:0]  under;
 // "n WINS": pixel dall'inizio della scritta, cella
 reg signed [10:0] w_x, w_y, w_u;
 reg [2:0]  w_k;
@@ -169,7 +207,7 @@ endtask
 // vanno verso la sua metà campo, da dove entra.
 localparam integer IP_Y = 82;                     // centro della racchetta (INTRO_Y di next_render)
 localparam integer LADDER_Y = 34, LADDER_X = 76;  // scala: 7 trattini 16x4 ogni 24 pixel
-localparam integer NAME_GROUND = INTRO_KIND_Y + 9;    // TITAN: il pavimento sotto il nome
+localparam integer NAME_GROUND = TITAN_TOP + 26;  // TITAN: il pavimento sotto il nome (alto 26)
 localparam integer WALL_TOP = IP_Y - 36;          // GUARDIAN: 5 settori da 12 righe ogni 14, sopra il nome
 localparam [2:0] K_ARCADE = 3'd0, K_TITAN = 3'd1, K_HAMMER = 3'd2, K_TWIST = 3'd3, K_BLASTER = 3'd4,
                  K_RUSH = 3'd5, K_GUARDIAN = 3'd6;
@@ -204,6 +242,23 @@ function signed [2:0] twist_shear(input [4:0] t);
         5'd4, 5'd7, 5'd13, 5'd14, 5'd15: twist_shear = -3'sd1;
         default: twist_shear = 3'sd0;
     endcase
+endfunction
+// ... spostamento della riga r (dal centro del nome, alto 20): s * r / 2 senza moltiplicazioni
+function signed [10:0] twist_dx(input signed [2:0] s, input signed [10:0] r);
+    case (s)
+        3'sd1:   twist_dx = r >>> 1;
+        3'sd2:   twist_dx = r;
+        -3'sd1:  twist_dx = -(r >>> 1);
+        -3'sd2:  twist_dx = -r;
+        default: twist_dx = 11'sd0;
+    endcase
+endfunction
+// presentazione: prima riga del nome e riga del motto
+function [7:0] name_top(input [2:0] k);
+    name_top = (k == K_TITAN) ? TITAN_TOP : NAME_BASE - tl_name_h(k);
+endfunction
+function [7:0] tag_y(input [2:0] k);
+    tag_y = ((k == K_TITAN) ? NAME_GROUND : NAME_BASE) + TAG_GAP;
 endfunction
 // caduta: frazione della strada fatta (256 = arrivata) dopo t + 1 frame su 5, ((t + 1) / 5)^2
 function [8:0] fall_q(input [2:0] t);
@@ -252,8 +307,8 @@ end
 
 reg        i_title, i_name, i_nacc, i_ground, i_gline, i_ghost, i_tag, i_first, i_net, i_ball, i_dust, i_wflash;
 reg [2:0]  i_lad, i_cap, i_cinv, i_cname, i_trail, i_shot;
-reg [3:0]  i_son;
-reg [6:0]  i_nlo, i_nhi, i_tcols;
+reg [3:0]  i_son, i_lmin, i_lmax;     // lettere del nome accese: da i_lmin a i_lmax escluso (BLASTER)
+reg [6:0]  i_tcols;
 reg signed [10:0] i_ndx, i_ndy, i_gdx, i_tdx, i_bx, i_by, i_netx, i_wx;
 reg signed [2:0]  i_shear;
 reg signed [10:0] i_cdx [0:2];
@@ -319,8 +374,8 @@ always @(posedge clk) begin
     i_ndx <= 11'sd0;
     i_ndy <= 11'sd0;
     i_nacc <= 1'b0;
-    i_nlo <= 7'd0;
-    i_nhi <= 7'd127;
+    i_lmin <= 4'd0;
+    i_lmax <= 4'd8;
     i_shear <= 3'sd0;
     i_ground <= 1'b0;
     i_gline <= 1'b0;
@@ -419,16 +474,16 @@ always @(posedge clk) begin
                 tt = intro_age - 8'd72;
                 tv = $signed({8'd0, tt});
                 tm = (tv * tv * 13) >>> 5;
-                tw = $signed({9'd0, kind_name_w(kind)});
+                tw = $signed({9'd0, tl_name_w(K_HAMMER)});
                 i_dust <= 1'b1;
                 i_ux[0] <= W / 2 - (tw >>> 1) - 5 - tv * 3;
                 i_ux[1] <= W / 2 + (tw >>> 1) + 3 + tv * 3;
                 i_ux[2] <= W / 2 - (tw >>> 1) - 5 - tv * 5;
                 i_ux[3] <= W / 2 + (tw >>> 1) + 3 + tv * 5;
-                i_uy[0] <= INTRO_KIND_Y + 7 - ((tv * 5) >>> 1) + tm;
-                i_uy[1] <= INTRO_KIND_Y + 7 - ((tv * 5) >>> 1) + tm;
-                i_uy[2] <= INTRO_KIND_Y + 7 - ((tv * 3) >>> 1) + tm;
-                i_uy[3] <= INTRO_KIND_Y + 7 - ((tv * 3) >>> 1) + tm;
+                i_uy[0] <= NAME_BASE - 1 - ((tv * 5) >>> 1) + tm;
+                i_uy[1] <= NAME_BASE - 1 - ((tv * 5) >>> 1) + tm;
+                i_uy[2] <= NAME_BASE - 1 - ((tv * 3) >>> 1) + tm;
+                i_uy[3] <= NAME_BASE - 1 - ((tv * 3) >>> 1) + tm;
             end
             tag_from(8'd88);
             // le capsule cadono pesanti
@@ -444,10 +499,10 @@ always @(posedge clk) begin
             i_first <= intro_age >= 8'd150;
         end
         K_TITAN: begin
-            // il nome sale da sotto il pavimento, un pixel per frame
+            // il nome sale da sotto il pavimento, un pixel per frame (26 frame, alto 26)
             i_name <= intro_age >= 8'd84;
             tt = intro_age - 8'd84;
-            i_ndy <= (intro_age < 8'd84 || tt >= 8'd25) ? 11'sd0 : 11'sd25 - $signed({3'd0, tt});
+            i_ndy <= (intro_age < 8'd84 || tt >= 8'd26) ? 11'sd0 : 11'sd26 - $signed({3'd0, tt});
             i_ground <= 1'b1;
             i_gline <= intro_age >= 8'd84 && intro_age < 8'd112;
             // il motto si scrive piano: una lettera (8 pixel) ogni 3 frame
@@ -461,12 +516,11 @@ always @(posedge clk) begin
             // ogni colpo accende una lettera del nome, dalla più vicina alla racchetta (bocca a 112
             // pixel verso l'avversario, colpi a 20 pixel per frame, uno ogni 5 frame dal 12)
             tn = 4'd0;
-            tx0 = (W - kind_name_w(K_BLASTER)) / 2;
+            tx0 = (W - tl_name_w(K_BLASTER)) / 2;
             for (q = 0; q < 7; q = q + 1) begin
-                // centro della lettera j (contata da sinistra) e distanza dalla bocca
+                // centro della lettera j (contata da sinistra) a metà altezza e distanza dalla bocca
                 tv = side ? q : 6 - q;
-                td = tx0 + (((tv == 0) ? kind_l1(K_BLASTER, 4'd0) - 1 :
-                             kind_l1(K_BLASTER, tv[3:0] - 4'd1) + kind_l1(K_BLASTER, tv[3:0])) >>> 1);
+                td = tx0 + TL_BLASTER_CX0 + TL_BLASTER_STEP * tv;
                 td = ax(11'sd112) - td;
                 td = (td < 0) ? -td : td;
                 ts = 8'd12 + 8'd5 * q;
@@ -475,11 +529,12 @@ always @(posedge clk) begin
                 if (intro_age >= ts && tm < td) begin
                     i_shot[q % 3] <= 1'b1;
                     i_shx[q % 3] <= ax(11'sd112 - tm[10:0]) - 11'sd3;
-                    i_shy[q % 3] <= INTRO_KIND_Y + 3;
+                    i_shy[q % 3] <= NAME_BASE - 7;
                 end
             end
-            i_nlo <= side ? 7'd0 : (tn == 4'd0) ? 7'd127 : (tn >= 4'd7) ? 7'd0 : kind_l1(K_BLASTER, 4'd6 - tn);
-            i_nhi <= !side ? 7'd127 : (tn == 4'd0) ? 7'd0 : kind_l1(K_BLASTER, tn - 4'd1);
+            // accese le tn lettere più vicine alla racchetta (a destra, o a sinistra con side)
+            i_lmin <= side ? 4'd0 : 4'd7 - tn;
+            i_lmax <= side ? tn : 4'd8;
             tag_from(8'd56);
             // poi, sceso all'altezza delle capsule (dal frame 76), le colpisce al volo: arrivano
             // dalla parte del giocatore e il colpo, dalla bocca, le ferma al loro posto
@@ -567,6 +622,31 @@ always @(posedge clk) begin
     endcase
 end
 
+// grafica del nome (pong_titles.vh): posto (con gli spostamenti dell'entrata), misure, indirizzo nella
+// ROM, inizio delle lettere; anche questi fermi durante il frame
+reg signed [10:0] i_nx, i_ny, i_gx;
+reg [7:0]  i_gy, i_tagy;
+reg [6:0]  i_nw;
+reg [4:0]  i_nh;
+reg [TL_CH_ABITS-1:0] i_nbase;
+reg        i_nsh7, i_slant, i_lfall;
+reg [6:0]  i_lx [1:7];
+integer    lq;
+always @(posedge clk) begin
+    i_nw <= tl_name_w(kind);
+    i_nh <= tl_name_h(kind);
+    i_nbase <= tl_name_base(kind);
+    i_nsh7 <= tl_name_sh7(kind);
+    i_nx <= (W - tl_name_w(kind)) / 2 + i_ndx;
+    i_gx <= (W - tl_name_w(kind)) / 2 + i_gdx;
+    i_ny <= $signed({3'd0, name_top(kind)}) + i_ndy;
+    i_gy <= name_top(kind);
+    i_tagy <= tag_y(kind);
+    i_slant <= kind == K_BLASTER;
+    i_lfall <= kind == K_GUARDIAN;
+    for (lq = 1; lq < 8; lq = lq + 1) i_lx[lq] <= tl_letter_x(kind, lq[2:0]);
+end
+
 // scritta centrata
 `define CENTER1(lit, w, y0) lit(x - (W - (w)) / 2, y - (y0))
 
@@ -638,6 +718,21 @@ always @(*) begin
     pts_tens = 2'd0;
     pts_units = 5'd0;
     hud_x = 10'd0;
+    n_row = 11'sd0;
+    n_x0 = 11'sd0;
+    n_u = 11'sd0;
+    n_us = 11'sd0;
+    n_v = 11'sd0;
+    n_li = 3'd0;
+    n_ok = 1'b0;
+    g_u = 11'sd0;
+    g_v = 11'sd0;
+    g_ok = 1'b0;
+    ta_addr = {TL_CH_ABITS{1'b0}};
+    tb_addr = {TL_CH_ABITS{1'b0}};
+    ta_ok = 1'b0;
+    under = BLACK;
+    c_lit = 1'b0;
     case (screen)
         3'd1: begin   // ------------------------------------------------ presentazione
             on = 1'b1;
@@ -651,24 +746,33 @@ always @(*) begin
                     col = (j < level && !train) ? WHITE : (j == level && !intro_age[3]) ? ACCENT : DIM;
             // nome: spostato, inclinato per riga (TWIST), a colonne (BLASTER), sotto il pavimento
             // (TITAN), lettera per lettera (GUARDIAN); RUSH ha un'immagine gialla dietro
-            n_row = $signed({2'b0, y}) - (INTRO_KIND_Y + i_ndy);
-            n_x0 = (W - kind_name_w(kind)) / 2 + i_ndx + i_shear * (n_row - 11'sd4);
+            // (la grafica dalla ROM: qui solo indirizzo e riquadro, il colore al ciclo dopo)
+            n_row = $signed({2'b0, y}) - i_ny;
+            n_x0 = i_nx + twist_dx(i_shear, n_row - 11'sd10);
             n_u = $signed({2'b0, x}) - n_x0;
-            n_li = (n_u >= kind_l1(K_GUARDIAN, 4'd0)) + (n_u >= kind_l1(K_GUARDIAN, 4'd1)) +
-                   (n_u >= kind_l1(K_GUARDIAN, 4'd2)) + (n_u >= kind_l1(K_GUARDIAN, 4'd3)) +
-                   (n_u >= kind_l1(K_GUARDIAN, 4'd4)) + (n_u >= kind_l1(K_GUARDIAN, 4'd5)) +
-                   (n_u >= kind_l1(K_GUARDIAN, 4'd6));
-            n_v = $signed({2'b0, y}) - (INTRO_KIND_Y + i_ndy + (kind == K_GUARDIAN ? i_ldy[n_li] : 11'sd0));
-            n_px = i_name && n_u >= 0 && n_u >= $signed({4'd0, i_nlo}) && n_u < $signed({4'd0, i_nhi}) &&
-                   kind_name_lit(kind, n_u[9:0], n_v[9:0]) && (kind != K_GUARDIAN || i_lshow[n_li]) &&
+            n_us = n_u - (i_slant ? $signed({8'd0, tl_blaster_slant(n_row[4:0])}) : 11'sd0);
+            n_li = (n_us >= $signed({4'd0, i_lx[1]})) + (n_us >= $signed({4'd0, i_lx[2]})) +
+                   (n_us >= $signed({4'd0, i_lx[3]})) + (n_us >= $signed({4'd0, i_lx[4]})) +
+                   (n_us >= $signed({4'd0, i_lx[5]})) + (n_us >= $signed({4'd0, i_lx[6]})) +
+                   (n_us >= $signed({4'd0, i_lx[7]}));
+            n_v = n_row - (i_lfall ? i_ldy[n_li] : 11'sd0);
+            n_ok = i_name && n_u >= 0 && n_u < $signed({4'd0, i_nw}) && n_v >= 0 && n_v < $signed({6'd0, i_nh}) &&
+                   {1'b0, n_li} >= i_lmin && {1'b0, n_li} < i_lmax && (!i_lfall || i_lshow[n_li]) &&
                    !(i_ground && y >= NAME_GROUND);
-            if (i_ghost && !n_px && kind_name_lit(kind, x - ((W - kind_name_w(kind)) / 2 + i_gdx), y - INTRO_KIND_Y))
-                col = GHOST;
-            if (n_px) col = i_nacc ? ACCENT : WHITE;
-            if (i_gline && y == NAME_GROUND && in_box(W / 2 - kind_name_w(kind) / 2 - 8, NAME_GROUND, kind_name_w(kind) + 16, 7'd1))
+            ta_addr = i_nbase + (i_nsh7 ? {n_v[4:0], n_u[6:0]} : {2'b0, n_v[4:0], n_u[5:0]});
+            ta_ok = n_ok;
+            g_u = $signed({2'b0, x}) - i_gx;
+            g_v = $signed({2'b0, y}) - $signed({3'd0, i_gy});
+            g_ok = i_ghost && g_u >= 0 && g_u < $signed({4'd0, i_nw}) && g_v >= 0 && g_v < $signed({6'd0, i_nh});
+            tb_addr = i_nbase + (i_nsh7 ? {g_v[4:0], g_u[6:0]} : {2'b0, g_v[4:0], g_u[5:0]});
+            if (n_ok || g_ok) begin
+                under = col;
+                col = MARK;
+            end
+            if (i_gline && y == NAME_GROUND && in_box(W / 2 - i_nw / 2 - 8, NAME_GROUND, i_nw + 7'd16, 7'd1))
                 col = DIM;
             // motto: scritto a colonne, o spostato (RUSH)
-            if (i_tag && tag_lit(kind, x - ((W - tag_w(kind)) / 2 + i_tdx), y - INTRO_TAG_Y) &&
+            if (i_tag && tag_lit(kind, x - ((W - tag_w(kind)) / 2 + i_tdx), y - i_tagy) &&
                 x - ((W - tag_w(kind)) / 2 + i_tdx) < i_tcols)
                 col = GRAY;
             // i bonus dell'avversario su tre colonne (centri a 80, 160 e 240): capsula con l'icona di
@@ -900,11 +1004,18 @@ always @(*) begin
         end
         3'd7: begin   // ----------------------------------- HERE COMES A NEW CHALLENGER!
             // come nei picchiaduro: banda rossa e scritta che lampeggia (8 frame per colore)
+            // (la targa disegnata, con il bianco che lampeggia in giallo, dalla ROM come i nomi)
             on = 1'b1;
             if (y - NEW_BAND_Y < NEW_BAND_H) col = BAND;
             if (y - NEW_BAND_Y == 0 || y - NEW_BAND_Y == NEW_BAND_H - 1) col = ACCENT;
-            if (`CENTER1(ch_here_lit, CH_HERE_W, NEW_Y1) || `CENTER1(ch_newch_lit, CH_NEWCH_W, NEW_Y2))
-                col = blink[3] ? WHITE : ACCENT;
+            n_u = $signed({2'b0, x}) - NEW_X;
+            n_v = $signed({2'b0, y}) - NEW_Y;
+            ta_addr = TL_NEWCH_BASE + {n_v[5:0], n_u[7:0]};
+            ta_ok = n_u >= 0 && n_u < TL_NEWCH_W && n_v >= 0 && n_v < TL_NEWCH_H;
+            if (ta_ok) begin
+                under = col;
+                col = MARK;
+            end
         end
         default: ;
     endcase
@@ -941,9 +1052,26 @@ end
 
 `undef CENTER1
 
+// ROM dei titoli: porta A il nome o la targa, porta B l'immagine dietro al nome del RUSH
+reg [3:0] trom [0:TL_CH_DEPTH-1];
+initial $readmemh(TITLE_ROM, trom);
+reg [3:0] ta_q = 4'd0, tb_q = 4'd0;
+always @(posedge clk) ta_q <= trom[ta_addr];
+always @(posedge clk) tb_q <= trom[tb_addr];
+
+// primo ciclo: colore del resto (o MARK) e del sotto; secondo: il colore del titolo se il pixel è acceso
+reg [3:0] col_q = BLACK, under_q = BLACK;
+reg       on_q = 1'b0, ta_ok_q = 1'b0, g_ok_q = 1'b0, hi_q = 1'b0;
 always @(posedge clk) begin
-    rgb <= pal(col);
-    opaque <= on;
+    col_q <= col;
+    under_q <= under;
+    on_q <= on;
+    ta_ok_q <= ta_ok;
+    g_ok_q <= g_ok;
+    hi_q <= (screen == 3'd7) ? !blink[3] : i_nacc;
+    rgb <= pal((col_q != MARK) ? col_q : (ta_ok_q && ta_q != TL_CLEAR) ? role_col(ta_q, hi_q) :
+               (g_ok_q && tb_q != TL_CLEAR) ? GHOST : under_q);
+    opaque <= on_q;
 end
 
 endmodule
