@@ -486,15 +486,16 @@ wire [7:0] label_w_n = NX_P1_W + 9 + label_name_w + 1 + NX_BANG_W;
 // - LK_BONUS, "P1 SMASH!": si accende e si spegne come un vecchio televisore. In 72 frame: una riga
 //   bianca che si allarga (4 frame), l'immagine che si apre in altezza con i bordi bianchi (4), ferma,
 //   che si richiude (3), la riga che si stringe (4), il puntino;
-// la scritta è a scala 1 (righe del font 222-229, lettere 222-228), su un riquadro di 20 righe;
+// la scritta è a scala 1 (righe del font 40-47, lettere 40-46), su un riquadro di 20 righe, sotto i
+// punteggi come nel gioco Rust (in fondo al campo ci sono i punti della scalata);
 // - LK_ARMED, mossa armata: solo i trattini sotto le lettere (due righe con la MAX), che si
 //   disegnano dal lato del giocatore, una lettera (8 pixel) ogni 2 frame, e si accendono di giallo mentre la
 //   palla arriva verso di lui;
 // - LK_HIT, colpo della mossa (60 frame): per 2 frame blocchi bianchi al posto delle lettere, poi la
 //   scritta, bianca fino al frame 4; i trattini accesi fino al 24; dal 44 lampeggia.
 localparam [1:0] LK_BONUS = 2'd0, LK_ARMED = 2'd1, LK_HIT = 2'd2;
-localparam integer LABEL_TOP = 222;     // prima riga del font della scritta
-localparam integer LABEL_MID = 228;     // riga centrale del riquadro (218-237)
+localparam integer LABEL_TOP = 40;      // prima riga del font della scritta
+localparam integer LABEL_MID = 46;      // riga centrale del riquadro (36-55)
 // mezza altezza della fascia che si apre (frame 4-7) e si richiude (frame 64-66)
 function [3:0] crt_open(input [1:0] k);
     case (k)

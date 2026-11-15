@@ -75,10 +75,10 @@ localparam integer INTRO_CAP = 13, INTRO_CAP_Y = 154, INTRO_FIRST_Y = 190;
 localparam integer INTRO_TITLE_Y = 20;
 // FIRST TO n: dopo la scritta uno spazio (le parole stanno nella griglia di 8 pixel)
 localparam integer FIRST_X1 = (W - (CH_FIRST_W + 1 + 2 * C)) / 2, FIRST_X2 = (W - (CH_FIRST_W + 1 + 3 * C)) / 2;
-// punti in partita: in basso, dalla parte dell'avversario (a destra da HUD_R, a sinistra speculari),
-// sopra il riquadro della scritta del bonus di NEXT (righe 218-237), che è largo fino a 168 pixel:
+// punti in partita: in fondo al campo, dalla parte dell'avversario (a destra da HUD_R, a sinistra
+// speculari), in grigio per non distrarre; la scritta del bonus di NEXT sta in alto:
 // "L1 0000000 x3", celle di 8 pixel con uno spazio fra i gruppi
-localparam integer HUD_R = 200, HUD_SPAN = 13 * C - 1, HUD_L = W - HUD_R - HUD_SPAN, HUD_Y = 206;
+localparam integer HUD_R = 200, HUD_SPAN = 13 * C - 1, HUD_L = W - HUD_R - HUD_SPAN, HUD_Y = 228;
 // nuovo sfidante: banda rossa con la targa disegnata al centro
 localparam integer NEW_BAND_Y = 96, NEW_BAND_H = 48;
 localparam integer NEW_X = (W - TL_NEWCH_W) / 2, NEW_Y = NEW_BAND_Y + (NEW_BAND_H - TL_NEWCH_H) / 2;
@@ -996,7 +996,7 @@ always @(*) begin
             hud_x = side ? HUD_L : HUD_R;
             put(hud_x, HUD_Y, G_L, 2'd0, GRAY);
             put(hud_x + C, HUD_Y, {3'd0, level} + 6'd1, 2'd0, GRAY);
-            digits7(hud_x + 3 * C, HUD_Y, score_bcd, WHITE);
+            digits7(hud_x + 3 * C, HUD_Y, score_bcd, GRAY);
             if (mult > 4'd1) begin
                 put(hud_x + 11 * C, HUD_Y, G_X, 2'd0, ACCENT);
                 put(hud_x + 12 * C, HUD_Y, {2'd0, mult}, 2'd0, ACCENT);

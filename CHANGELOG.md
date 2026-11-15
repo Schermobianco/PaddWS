@@ -39,7 +39,8 @@ crea il commit e il tag `vX.Y.Z`.
   C64 non ha più testi di font.
 - MiSTer: un po' meno logica occupata (30.905 ALM, 74%, prima 31.532); le grafiche dei titoli
   stanno in 12 blocchi di memoria. Nella modalità da tavolo PERFECT non ha più il timbro: copriva
-  il punteggio.
+  il punteggio. In NEXT i punti della scalata stanno in fondo al campo e sono grigi, per non
+  distrarre; la scritta del bonus passa in alto, sotto i punteggi, come sul PC.
   Le scritte ruotate sono più vicine a chi legge.
 - Le presentazioni degli avversari sul C64 mostrano per intero motto, bonus e FIRST TO prima di
   finire (prima alcune si interrompevano).
