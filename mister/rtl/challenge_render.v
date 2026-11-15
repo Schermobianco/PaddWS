@@ -61,6 +61,7 @@ module challenge_render #(
 `include "pong_challenge.vh"
 `include "pong_attract.vh"
 `include "pong_titles.vh"
+`include "pong_fonts.vh"
 
 localparam integer W = P_WIDTH >>> 16;
 localparam [23:0] RGB_WHITE = 24'hFFFFFF, RGB_GRAY = 24'hB4B4B4, RGB_BLACK = 24'h000000, RGB_ACCENT = 24'hFFD225;
@@ -280,20 +281,11 @@ endfunction
 // continue: y della pallina (parabola di 60 frame, alta 30 pixel: s (60 - s) * 17 / 512) e GAME OVER
 // che si scrive (una lettera ogni 5 frame dal 12, cursore) e si chiude (dal frame 158)
 localparam integer CONT_Y = 84;                  // continue: riga della cifra
-localparam integer CONT_W = 3 * C, CONT_H = 3 * CH_GLYPH_H;   // la cifra a scala 3 (24 x 24)
-// v / 3 per v < 24 (la cifra a scala 3), con una tabella: niente moltiplicatori
-function [9:0] div3(input [4:0] v);
-    case (v)
-        5'd0, 5'd1, 5'd2:    div3 = 10'd0;
-        5'd3, 5'd4, 5'd5:    div3 = 10'd1;
-        5'd6, 5'd7, 5'd8:    div3 = 10'd2;
-        5'd9, 5'd10, 5'd11:  div3 = 10'd3;
-        5'd12, 5'd13, 5'd14: div3 = 10'd4;
-        5'd15, 5'd16, 5'd17: div3 = 10'd5;
-        5'd18, 5'd19, 5'd20: div3 = 10'd6;
-        default:             div3 = 10'd7;
-    endcase
-endfunction
+// la cifra con il font dei punteggi (come sul PC e sul C64), a scala 2: l'inchiostro è largo 11
+// pixel nella cella da 22, quindi 22 x 44 centrati
+localparam integer CONT_INK = 11, CONT_X0 = W / 2 - CONT_INK, CONT_H = 2 * SCORE_H;
+localparam integer CONT_W = 2 * CONT_INK;
+reg [21:0] cont_row;
 localparam integer CL_X = 80, CL_V = 184;        // livello superato: etichette e numeri
 reg signed [10:0] cont_ball_y;
 reg [6:0]  go_cols;
@@ -906,10 +898,10 @@ always @(*) begin
                     col = BLACK;
             end else begin
                 if (`CENTER1(ch_cont_lit, CH_CONT_W, 40)) col = ACCENT;
-                // la cifra a scala 3: come put, con la divisione per 3 della tabella
-                if (span(x, W / 2 - CONT_W / 2, 11'd0, CONT_W) && span(y, CONT_Y, 11'd0, CONT_H)) begin
-                    g_on = 1'b1; g_code = {2'd0, cont_digit}; g_col = WHITE;
-                    g_dx = div3(x - (W / 2 - CONT_W / 2)); g_dy = div3(y - CONT_Y);
+                // la cifra: font dei punteggi a scala 2
+                if (span(x, CONT_X0, 11'd0, 2 * SCORE_W) && span(y, CONT_Y, 11'd0, CONT_H)) begin
+                    cont_row = score_glyph(cont_digit, (y - CONT_Y) >> 1);
+                    if (cont_row[SCORE_W - 1 - ((x - CONT_X0) >> 1)]) col = WHITE;
                 end
                 // pallina che rimbalza a destra del numero: tocca terra a ogni secondo, quando il
                 // numero cambia; negli ultimi tre secondi diventa gialla

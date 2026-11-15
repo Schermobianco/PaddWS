@@ -41,7 +41,7 @@ crea il commit e il tag `vX.Y.Z`.
   stanno in 12 blocchi di memoria. Nella modalità da tavolo PERFECT non ha più il timbro: copriva
   il punteggio. In NEXT i punti della scalata stanno in fondo al campo e sono grigi, per non
   distrarre; la scritta del bonus passa in alto, sotto i punteggi, come sul PC. La cifra del
-  continue è a 3x.
+  continue usa il font dei punteggi, grande, come sul PC e sul C64.
   Le scritte ruotate sono più vicine a chi legge.
 - Le presentazioni degli avversari sul C64 mostrano per intero motto, bonus e FIRST TO prima di
   finire (prima alcune si interrompevano).
