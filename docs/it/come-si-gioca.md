@@ -140,7 +140,8 @@ semplici). Le partite sono NEXT a 5 punti.
   partita perfetta, se l'avversario non ha fatto punti.
 - **Continue**: perso un livello, 10 secondi per inserire un gettone (o premere Start in Free
   Play) e riprovare lo stesso livello, con i punti da zero.
-- **Classifica**: i 10 migliori con le iniziali, mostrata anche nell'attract. Si accende con una
+- **Classifica**: i 10 migliori con le iniziali; a schermo, anche nell'attract, si vedono i primi 8,
+  e un 9° o 10° posto appena fatto compare nell'ultima riga con il suo numero. Si accende con una
   palla che scende fra le righe e i punti che contano; il posto appena inserito ha le racchette ai
   lati e un riflesso giallo (sul C64 e sul MiSTer le cifre girano e si fermano una alla volta).
   Sul PC si salva in
@@ -336,7 +337,7 @@ menu. Solo PAL; finora provata in VICE. Dettagli in [c64/README.md](../../c64/RE
 | NEXT: HOW TO PLAY, le mosse speciali prima della partita | NEXT: barre delle mosse accanto alle riserve, STRAIGHT SHOT in volo |
 | ![NEXT: presentazione dell'avversario](../screenshots/challenge-intro.png) | ![NEXT: nuovo sfidante](../screenshots/challenge-challenger.png) |
 | NEXT: presentazione del sesto avversario, RUSH | NEXT: entra un secondo giocatore |
-| ![Core MiSTer: titolo](../screenshots/mister-title.png) | ![Core MiSTer: demo NEXT](../screenshots/mister-demo.png) |
+| ![Core MiSTer: titolo](../screenshots/mister-title.png) | ![Core MiSTer: scelta della racchetta](../screenshots/mister-pick.png) |
 | Core MiSTer a 320×240: titolo dopo il gettone | Core MiSTer: demo CPU contro CPU della modalità scelta (qui NEXT) |
 | ![Commodore 64: titolo](../screenshots/c64-title.png) | ![Commodore 64: partita NEXT](../screenshots/c64-next.png) |
 | Commodore 64: titolo in Free Play | Commodore 64: NEXT, con la capsula di CURVE |

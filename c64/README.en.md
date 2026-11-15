@@ -122,9 +122,10 @@ ending, `profile` gives cycles per routine, `--build DIR` uses another build fol
 - **18,000 cycles per frame.** `paddws-c64 frames` fails if a frame goes over. Its raster model (58
   cycles per line) is approximate: with frames close to the limit, check in VICE too. Long work is
   split over several frames, or waits for the next frame by looking at the raster.
-- **Charset and sprites are used up.** All 256 characters are taken (a new character replaces one
-  where the other is not needed, and `tools/gen_c64_assets.py` checks it), and so are the 8
-  sprites.
+- **Charset and sprites are nearly used up.** Only a few of the 256 characters are free (a new
+  character replaces one where the other is not needed, and `tools/gen_c64_assets.py` checks it),
+  and all 8 sprites are taken. The letters are not in the cartridge: at boot they are copied from
+  the C64 character ROM, and the big ones are built from there too.
 - **BASIC and KERNAL are off** (`$01 = $35`): data and variables live under their ROMs, and the RAM
   under I/O is read and written with `$01 = $34`.
 - **Border and background** (`$D020`, `$D021`) are written only when the colour changes: every

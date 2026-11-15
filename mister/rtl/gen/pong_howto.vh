@@ -1,6 +1,6 @@
 // Generato da tools/gen_howto_assets.py: non modificare a mano.
 // Schermata HOW TO PLAY delle mosse speciali (howto_render.v).
-localparam integer HT_TEXT_ROWS = 88;          // righe di 320 pixel in howto_text.hex
+localparam integer HT_TEXT_ROWS = 92;          // righe di 320 pixel in howto_text.hex
 // howto_rows.hex: 1024 voci {controllo, y} -> bit 8 la riga ha scritte, bit 7-0 la riga
 localparam integer HT_SPRITES = 10;            // celle 32x32 in howto_sprites.hex
 localparam integer HT_SKIP_Y0 = 228, HT_SKIP_Y1 = 235;   // righe della scritta che lampeggia
@@ -14,7 +14,7 @@ localparam integer HT_KNOB_S0 = 30, HT_KNOB_S1 = 64, HT_KNOB_A = 112;
 // freccette tra i passi: colonna di sinistra (centro del passo + 15), righe da cy - 3
 localparam integer HT_ARROW_DX = 15;
 // legenda: centri dei pulsanti piccoli sulla riga HT_LEG_CY
-localparam integer HT_LEG_CY = 205, HT_LEG_X0 = 22, HT_LEG_X1 = 75, HT_LEG_X2 = 133;
+localparam integer HT_LEG_CY = 205, HT_LEG_X0 = 22, HT_LEG_X1 = 88, HT_LEG_X2 = 170;
 // figurine
 localparam [3:0] HT_STICK_D = 4'd0;
 localparam [3:0] HT_STICK_DF = 4'd1;

@@ -371,6 +371,18 @@ const TABLE: [Option<Entry>; 256] = {
     t
 };
 
+/// ROM dei caratteri finta: per ogni byte un valore pseudocasuale deterministico (la ROM vera del
+/// C64 non sta nel repository). Ogni glifo è diverso dagli altri e non è vuoto, così un glifo
+/// copiato dal posto sbagliato, o non copiato, si vede.
+pub fn fake_char_rom() -> Box<[u8; 0x1000]> {
+    let mut rom = Box::new([0u8; 0x1000]);
+    for (i, b) in rom.iter_mut().enumerate() {
+        let x = (i as u32).wrapping_add(0x1234).wrapping_mul(0x9E37_79B1);
+        *b = (x >> 24) as u8 ^ (x >> 11) as u8;
+    }
+    rom
+}
+
 /// (Clone: il banco di prova rigioca un tratto da una copia, es. con e senza l'easter egg)
 #[derive(Clone)]
 pub struct Cpu {
@@ -384,6 +396,9 @@ pub struct Cpu {
     /// RAM sotto l'I/O ($D000-$DFFF): la vede il 6502 quando la porta $01 spegne l'I/O (bit 0 e
     /// 1 a zero, es. $34), altrimenti a quegli indirizzi ci sono i registri (in `mem`)
     pub under_io: Box<[u8; 0x1000]>,
+    /// ROM dei caratteri ($D000-$DFFF con CHAREN = 0, bit 2 della porta $01, e l'I/O non spento
+    /// del tutto): una finta (`fake_char_rom`), non quella del C64
+    pub char_rom: Box<[u8; 0x1000]>,
     /// cicli eseguiti dall'accensione
     pub cycles: u64,
     /// indirizzi (primo, ultimo) delle scritture da registrare in `writes`, es. i registri del SID
@@ -432,6 +447,7 @@ impl Cpu {
             p: U | I,
             mem: Box::new([0; 0x10000]),
             under_io: Box::new([0; 0x1000]),
+            char_rom: fake_char_rom(),
             cycles: 0,
             watch: None,
             writes: Vec::new(),
@@ -455,6 +471,12 @@ impl Cpu {
         (0xD000..0xE000).contains(&addr) && self.mem[1] & 3 == 0
     }
 
+    /// Al posto dell'I/O c'è la ROM dei caratteri (CHAREN = 0): le letture la vedono, le
+    /// scritture vanno nella RAM sotto.
+    fn char_rom_on(&self, addr: u16) -> bool {
+        (0xD000..0xE000).contains(&addr) && self.mem[1] & 3 != 0 && self.mem[1] & 4 == 0
+    }
+
     pub fn read(&self, addr: u16) -> u8 {
         if self.ef_on
             && let Some(v) = self.ef.as_ref().and_then(|ef| ef.read(addr, self.mem[1]))
@@ -463,6 +485,9 @@ impl Cpu {
         }
         if self.ram_under_io(addr) {
             return self.under_io[addr as usize - 0xD000];
+        }
+        if self.char_rom_on(addr) {
+            return self.char_rom[addr as usize - 0xD000];
         }
         match addr {
             0xDC00 => self.mem[addr as usize] & self.joy_port2,
@@ -492,7 +517,7 @@ impl Cpu {
         {
             return;
         }
-        if self.ram_under_io(addr) {
+        if self.ram_under_io(addr) || self.char_rom_on(addr) {
             self.under_io[addr as usize - 0xD000] = v;
             return;
         }
@@ -666,12 +691,12 @@ impl Cpu {
     }
 
     /// Esegue un'istruzione, prima l'NMI se la linea è scesa (con l'I/O acceso: il gestore
-    /// scrive nel SID).
+    /// scrive nel SID; né la RAM né la ROM dei caratteri al suo posto).
     pub fn step(&mut self) -> Result<(), String> {
         let before = self.cycles;
         if self.nmi_pending {
             self.nmi_pending = false;
-            if self.mem[1] & 3 == 0 {
+            if self.mem[1] & 3 == 0 || self.mem[1] & 4 == 0 {
                 return Err(format!("NMI con l'I/O spento ($01 = ${:02X}) a ${:04X}", self.mem[1], self.pc));
             }
             self.push((self.pc >> 8) as u8);

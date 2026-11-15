@@ -10,7 +10,7 @@
 PICK_FRAMES  = 10 * 50
 READY_FRAMES = 60               ; 1,2 secondi
 PICK_ROW0    = 8                ; prima voce, una ogni 2 righe
-PICK_HINT    = 23               ; riga dei comandi e di READY!
+PICK_HINT    = 24               ; riga dei comandi e di READY! (una vuota dopo la frase del tipo, riga 22)
 PICK_SEED_BONUS = $9E3779B9     ; seme xor delle scelte della CPU (next_ui.rs, paddle_ui.rs)
 PICK_SEED_KIND  = $7A11E5ED
 KINDS = 7
@@ -18,15 +18,17 @@ KINDS = 7
 ; fasi della scena: il lavoro di un cambio di schermo non sta in un frame
 PH_NONE  = 0
 PH_CLEAR = 1                    ; pulire lo schermo
-PH_CHARS = 2                    ; caratteri della scelta (ef_pick, circa 11.000 cicli)
+PH_CHARS = 2                    ; caratteri della scelta (pick_chars, circa 9.500 cicli)
 PH_DRAW  = 3                    ; scritte fisse (poi le colonne, una per frame)
 PH_MATCH = 4                    ; partita (lo schermo è già pulito)
 PH_RESTORE = 5                  ; scelte finite, schermo pulito: i caratteri di sempre, poi la
                                 ; HOW TO PLAY o la partita
 PH_THEME = 6                    ; sfida di CHALLENGE: il tema (ch_duel_theme), poi la partita
+PH_RESTORE2 = 7                 ; la seconda metà delle lettere 2x, poi come PH_RESTORE
 ; HOW TO PLAY delle mosse speciali, dopo le scelte (come su PC e MiSTer): bitmap e
 ; colori dalla cartuccia (gen/howto.bin, banchi HOWTO_BANK) a schermo spento, HW_STEP pagine per
-; frame, poi la bitmap per HOWTO_FRAMES frame (8 s); fuoco o Start la saltano dopo HOWTO_SKIP.
+; frame, poi le scritte (HT_TEXTS, un gruppo per frame, con i glifi del set: il font della ROM),
+; poi la bitmap per HOWTO_FRAMES frame (8 s); fuoco o Start la saltano dopo HOWTO_SKIP.
 ; La bitmap copre le tabelle dei quadrati ($F000), che poi si rifanno (math_invalidate, math_step
 ; nel conto alla rovescia o nella presentazione); i colori vanno nello schermo di testo ($C000),
 ; non a $C400, dove c'è già il codice delle mosse speciali.
@@ -413,7 +415,7 @@ done:
 :   lda #KEY_STOP
     jsr key_pressed
     bcc :+
-    jsr ef_pick                 ; (C = 1) i caratteri di prima
+    jsr pick_letters            ; di nuovo le lettere 2x (un frame lungo, verso il menu)
     jmp enter_menu
 :   lda pk_phase
     beq ready
@@ -430,13 +432,15 @@ done:
     lda #COL_WHITE
     jmp clear_text
 chars:
-    ; sullo schermo vuoto: nella scelta dei bonus le metà delle lettere (put_low), in quella della
-    ; racchetta i caratteri di sempre
+    ; sullo schermo vuoto: nella scelta dei bonus le metà delle lettere (put_low); in quella della
+    ; racchetta, che viene prima, ci sono già i caratteri di sempre
     lda #PH_DRAW
     sta pk_phase
-    lda pk_kind                 ; C = 0 i caratteri della scelta dei bonus, C = 1 quelli di prima
-    cmp #1
-    jmp ef_pick
+    lda pk_kind
+    bne :+
+    clc
+    jmp pick_chars
+:   rts
 draw:
     lda #PH_NONE
     sta pk_phase
@@ -453,11 +457,21 @@ late:
     sta pk_phase
     rts
 restore:
-    ; di nuovo i caratteri di sempre (circa 11.000 cicli, sullo schermo già pulito); con le mosse
-    ; speciali prima la HOW TO PLAY (non con i paddle, senza gesti, né per lo sfidante); la sfida
-    ; prima il suo tema (PH_THEME); poi la partita al prossimo frame
+    ; di nuovo le lettere 2x (pick_chars, sullo schermo già pulito), in due frame: PH_RESTORE la
+    ; prima metà, PH_RESTORE2 la seconda; poi con le mosse speciali la HOW TO PLAY (non con i
+    ; paddle, senza gesti, né per lo sfidante); la sfida prima il suo tema (PH_THEME); poi la
+    ; partita al prossimo frame
+    cmp #PH_RESTORE2
+    beq second
+    lda #PH_RESTORE2
+    sta pk_phase
+    lda #0
     sec
-    jsr ef_pick
+    jmp pick_chars
+second:
+    lda #1
+    sec
+    jsr pick_chars
     ldx #PH_THEME
     lda cg_active
     cmp #CG_DUEL
@@ -548,6 +562,16 @@ redraw:
     beq :+
     jsr draw_columns
 :   rts
+.endproc
+
+; Di nuovo tutte le lettere 2x al posto delle metà delle lettere (pick_chars, le due metà).
+.proc pick_letters
+    lda #0
+    sec
+    jsr pick_chars
+    lda #1
+    sec
+    jmp pick_chars
 .endproc
 
 ; Comandi del giocatore X nella scelta.
@@ -1135,8 +1159,8 @@ name_kind:
 .endproc
 
 ; La capsula (2x2 caratteri) ha il centro tra due righe: nella scelta dei bonus il nome e il
-; cursore accanto si abbassano di 4 pixel, con le metà delle lettere che ef_pick mette al posto
-; delle scritte grandi (pick_start): la metà alta nella riga v_row, la bassa in quella sotto.
+; cursore accanto si abbassano di 4 pixel, con le metà delle lettere che pick_chars mette al posto
+; delle lettere 2x (pick_start): la metà alta nella riga v_row, la bassa in quella sotto.
 
 ; Carattere ASCII A alla colonna X, riga v_row: nella scelta dei bonus abbassato (put_low).
 .proc put_pick
@@ -1580,7 +1604,11 @@ empty_tmp = m_p                 ; quattro caratteri del posto vuoto (m_p non ser
     sta pk_phase
     rts
 :   cmp #HW_PAGES + 1
-    bcs show
+    bcc copy_frame
+    cmp #HW_PAGES + 1 + HT_GROUPS
+    bcc texts
+    jmp show
+copy_frame:
     ; copia: la bitmap a $E000, poi i colori (quelli dell'easter egg 4 pagine dopo) a $C000
     ldx #HW_STEP
 copy:
@@ -1621,11 +1649,19 @@ one:
     tax
     lda hw_pg
     cmp #HW_PAGES + 1
-    bcs shown
+    bcs :+
     dex
     bne copy
-    rts
-shown:
+:   rts
+texts:
+    ; le scritte, un gruppo per frame; poi si vede
+    sec
+    sbc #HW_PAGES + 1
+    jsr howto_texts
+    inc hw_pg
+    lda hw_pg
+    cmp #HW_PAGES + 1 + HT_GROUPS
+    bcc :-
     lda #MODE_HOWTO
     sta sh_mode
     lda #0
@@ -1662,6 +1698,52 @@ leave:
     lda #COL_WHITE
     jmp clear_text
 .endproc
+
+; Le scritte del gruppo A di HT_TEXTS nella bitmap (print_str con i glifi del set).
+.proc howto_texts
+    tax
+    lda #<ht_texts
+    sta ptr2
+    lda #>ht_texts
+    sta ptr2+1
+find:
+    dex
+    bmi entry
+:   jsr ht_byte                 ; il gruppo dopo: fino a $FE
+    cmp #$fe
+    bne :-
+    beq find
+entry:
+    jsr ht_byte                 ; colonna, o la fine del gruppo
+    cmp #$fe
+    bcs done
+    tax
+    lda #$40                    ; nella bitmap
+    sta v_big
+    jsr ht_byte                 ; riga
+    tay
+    jsr print_str               ; (Y = lunghezza)
+    tya
+    sec
+    adc ptr2
+    sta ptr2
+    bcc entry
+    inc ptr2+1
+    bcs entry
+done:
+    lda #0
+    sta v_big
+    rts
+ht_byte:
+    ldy #0
+    lda (ptr2),y
+    inc ptr2
+    bne :+
+    inc ptr2+1
+:   rts
+.endproc
+ht_texts: .byte HT_TEXTS
+.assert HW_PAGES + 1 + HT_GROUPS < $ff, error, "HOW TO PLAY: hw_pg arriva a $FF"
 
 .segment "NEXTBSS"
 hw_pg:  .res 1                  ; HOW TO PLAY: pagina da copiare + 1 (0 = non in corso, $FF = finita,

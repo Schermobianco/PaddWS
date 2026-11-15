@@ -27,10 +27,10 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parent.parent
 GEN = ROOT / "mister" / "rtl" / "gen"
-FONT = ROOT / "assets" / "fonts" / "munro.ttf"
+FONT = ROOT / "assets" / "fonts" / "PressStart2P-Regular.ttf"
 W, H = 320, 240
-f10 = ImageFont.truetype(str(FONT), 10)
-f20 = ImageFont.truetype(str(FONT), 20)
+# Press Start 2P a 8 pixel (scala 1), per tutte le scritte
+f10 = ImageFont.truetype(str(FONT), 8)
 
 # codici delle scritte (2 bit)
 T_WHITE, T_GRAY, T_ACCENT = 1, 2, 3
@@ -77,9 +77,11 @@ def command_x(joystick: bool) -> tuple[list[int], int, int, int]:
 
 
 def paint_text(img: Image.Image, xy, s: str, font, code: int, anchor: str = "la") -> None:
-    """Scritta in Munro senza sfumature: i pixel accesi prendono il codice `code`."""
+    """Scritta senza sfumature: i pixel accesi prendono il codice `code`."""
     mask = Image.new("L", img.size, 0)
-    ImageDraw.Draw(mask).text(xy, s, font=font, fill=255, anchor=anchor)
+    draw = ImageDraw.Draw(mask)
+    draw.fontmode = "1"
+    draw.text(xy, s, font=font, fill=255, anchor=anchor)
     img.paste(code, (0, 0, *img.size), mask.point(lambda v: 255 if v > 127 else 0))
 
 
@@ -148,13 +150,13 @@ def text_layer(name: str, joystick: bool) -> Image.Image:
     """Scritte, "+" e barre del costo di una variante, codici a 2 bit."""
     img = Image.new("L", (W, H), 0)
     d = ImageDraw.Draw(img)
-    paint_text(img, (W // 2, 12), "HOW TO PLAY", f20, T_ACCENT, "mm")
+    paint_text(img, (W // 2, 14), "HOW TO PLAY", f10, T_ACCENT, "mm")
     paint_text(img, (W // 2, 28), "SUPER MOVES - " + name, f10, T_GRAY, "mm")
     _, plus_x, _, dash_x = command_x(joystick)
     for (move, effect), y0, cy in zip(MOVES, BOX_Y0, CMD_CY):
-        paint_text(img, (16, y0), move, f20, T_ACCENT)
-        paint_text(img, (16, y0 + 18), effect, f10, T_WHITE)
-        paint_text(img, (plus_x, cy), "+", f20, T_WHITE, "mm")
+        paint_text(img, (16, y0 + 2), move, f10, T_ACCENT)
+        paint_text(img, (16, y0 + 16), effect, f10, T_WHITE)
+        paint_text(img, (plus_x, cy), "+", f10, T_WHITE, "mm")
         paint_text(img, (dash_x, cy + 1), "DASH", f10, T_GRAY, "lm")
     # costo: mezza barra = mossa, barra piena = MAX (barre gialle come quelle pronte del gioco)
     y = BARS_Y

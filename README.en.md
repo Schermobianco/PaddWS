@@ -32,7 +32,7 @@ keyboard, a gamepad or the mouse.
 | Attract mode title, with the CRT filter | NEXT: power-ups in the reserves at the top and capsules in flight |
 | ![NEXT: STRAIGHT SHOT in flight](docs/screenshots/next-supers.png) | ![NEXT: new challenger](docs/screenshots/challenge-challenger.png) |
 | Special moves: MAX STRAIGHT SHOT in flight | NEXT: a second player joins in |
-| ![MiSTer core: NEXT demo](docs/screenshots/mister-demo.png) | ![Commodore 64: NEXT match](docs/screenshots/c64-next.png) |
+| ![MiSTer core: paddle pick](docs/screenshots/mister-pick.png) | ![Commodore 64: NEXT match](docs/screenshots/c64-next.png) |
 | MiSTer core at 320×240 | Commodore 64: NEXT |
 
 More screenshots in [How to play](docs/en/how-to-play.md#screenshots).

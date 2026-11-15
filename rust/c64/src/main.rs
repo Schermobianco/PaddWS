@@ -124,6 +124,12 @@ fn ui(m: &mut Machine) -> bool {
             }
         }
     }
+    // il font e le lettere 2x dalla ROM dei caratteri (video_init)
+    if let Err(e) = check_glyphs(m, &program_glyphs(m), "dopo l'avvio") {
+        println!("FAIL: {e}");
+        return false;
+    }
+    println!("  video_init: font 1x e lettere 2x dalla ROM dei caratteri (finta)");
     // la tendina del logo scopre le righe man mano: a metà, circa metà del logo
     m.call("logo_enter");
     for _ in 0..35 {
@@ -227,21 +233,11 @@ fn ui(m: &mut Machine) -> bool {
             return false;
         }
     }
-    // caratteri della scelta dei bonus dalla cartuccia (ef_pick, C = 0) e di nuovo quelli di prima
-    // (C = 1): le pagine da PICK_FIRST come gen/pick_bank.bin e gen/charset.bin
-    let pages = 0xCA00..0xCD00; // PICK_FIRST = 64, PICK_PAGES = 3
-    let cs_pages = pages.start - 0xC800..pages.end - 0xC800;
-    let pick_bank = std::fs::read(c64_dir().join("gen/pick_bank.bin")).unwrap_or_default();
-    let charset = std::fs::read(c64_dir().join("gen/charset.bin")).unwrap_or_default();
-    for (carry, want, what) in [(0u8, &pick_bank, "della scelta"), (1, &charset, "di prima")] {
-        m.cpu.p = (m.cpu.p & !1) | carry;
-        let c = m.call("ef_pick");
-        if want.len() < cs_pages.end || m.cpu.mem[pages.clone()] != want[cs_pages.clone()] {
-            println!("FAIL: ef_pick non mette i caratteri {what}");
+    match pick_chars_ui(m) {
+        Ok(s) => println!("  {s}"),
+        Err(e) => {
+            println!("FAIL: pick_chars: {e}");
             return false;
-        }
-        if carry == 0 {
-            println!("  ef_pick: caratteri della scelta dei bonus e di nuovo quelli di prima ({c} cicli)");
         }
     }
     match hiscore(m) {
@@ -464,7 +460,9 @@ fn supers_ui(m: &mut Machine) -> Result<String, String> {
     // stringe, il trattino, poi via (label_erase)
     let font = m.addr("font_map");
     let ch = |m: &Machine, c: u8| m.cpu.read(font + (c - 32) as u16);
-    let (grid_t, solid, dash) = (176u8, 255u8, ch(m, b'-'));
+    let inc = std::fs::read_to_string(c64_dir().join("gen/assets.inc")).unwrap_or_default();
+    let solid = inc_const(&inc, "CH_SOLID").unwrap_or(0) as u8;
+    let (grid_t, dash) = (ch_grid_t() as u8, ch(m, b'-'));
     m.call("clear_screen");
     m.write_u8("lb_bonus", 0, 1); // SMASH
     m.write_u8("lb_player", 0, 4);
@@ -553,7 +551,7 @@ fn supers_ui(m: &mut Machine) -> Result<String, String> {
     m.write_i32("ball_vx", 0, -0x0002_0000);
     frames(m, 1);
     let letters: Vec<usize> = title.bytes().enumerate().filter(|&(_, c)| c != b' ').map(|(i, _)| i).collect();
-    if !letters.iter().all(|&i| m.cpu.mem[r4 + i] == 255) {
+    if !letters.iter().all(|&i| m.cpu.mem[r4 + i] == solid) {
         return Err("colpo della mossa: niente blocchi al posto delle lettere".into());
     }
     frames(m, 5);
@@ -569,7 +567,7 @@ fn supers_ui(m: &mut Machine) -> Result<String, String> {
     m.write_u8("sm_fl", 0, 0);
     frames(m, 30);
     let l5 = 0xC000 + 5 * 40 + 4;
-    if m.cpu.mem[l5..l5 + 13].iter().filter(|&&c| c == 176).count() != 12 {
+    if m.cpu.mem[l5..l5 + 13].iter().filter(|&&c| c as usize == ch_grid_t()).count() != 12 {
         return Err("STRAIGHT SHOT di P1 armata: non 12 trattini a sinistra".into());
     }
     m.write_u8("sm_arm", 0, 0);
@@ -585,7 +583,7 @@ fn supers_ui(m: &mut Machine) -> Result<String, String> {
     frames(m, 1);
     m.write_u8("events", 1, 0);
     let l4 = 0xC000 + 4 * 40 + 4;
-    if m.read_u8("mv_st", 0) != 2 || m.read_u8("mv_kind", 0) != 1 || m.cpu.mem[l4..l4 + 13].iter().filter(|&&c| c == 255).count() != 12 {
+    if m.read_u8("mv_st", 0) != 2 || m.read_u8("mv_kind", 0) != 1 || m.cpu.mem[l4..l4 + 13].iter().filter(|&&c| c == solid).count() != 12 {
         return Err("colpo con la mossa nello stesso tick dell'armata: niente scritta STRAIGHT SHOT di P1".into());
     }
     m.write_u8("sm_on", 0, 0);
@@ -1547,8 +1545,10 @@ fn challenger(m: &mut Machine) -> Result<(), String> {
     expect("credito speso", m.read_u8("credits", 0) as i64, 0)?;
     // HERE COMES A NEW CHALLENGER!, poi la scelta del solo sfidante
     step(m, 3);
+    let inc = std::fs::read_to_string(c64_dir().join("gen/assets.inc")).unwrap_or_default();
+    let solid = inc_const(&inc, "CH_SOLID").unwrap_or(256) as u8;
     let screen = &m.cpu.mem[0xC000..0xC000 + 1000];
-    if !screen.contains(&255) {
+    if !screen.contains(&solid) {
         return Err("schermata del nuovo sfidante senza le bande".into());
     }
     step(m, 160);
@@ -1705,8 +1705,79 @@ const FRAME_BUDGET: u64 = 18_000;
 /// Set di caratteri del programma (CHARSET di video.s) e due suoi caratteri (gen/assets.inc,
 /// controllati in `frames`)
 const CHARSET: usize = 0xC800;
-const CH_GRID_T: usize = 176;
 const CH_WALL: usize = 3;
+
+/// CH_GRID_T di gen/assets.inc.
+fn ch_grid_t() -> usize {
+    static V: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *V.get_or_init(|| {
+        let inc = std::fs::read_to_string(c64_dir().join("gen/assets.inc")).unwrap_or_default();
+        inc_const(&inc, "CH_GRID_T").expect("assets.inc: manca CH_GRID_T")
+    })
+}
+
+/// Codice nella ROM dei caratteri (set maiuscolo) del carattere ASCII `c` (32-95).
+fn rom_code(c: u8) -> usize {
+    if c >= 64 { (c - 64) as usize } else { c as usize }
+}
+
+/// Quattro pixel doppi: i bit del nibble `n` (bit 3 a sinistra) ciascuno due volte.
+fn double_nibble(n: u8) -> u8 {
+    (0..4).fold(0, |acc, b| if n >> b & 1 != 0 { acc | 3 << (2 * b) } else { acc })
+}
+
+/// I glifi che il programma deve prendere dalla ROM dei caratteri (qui la finta del banco di
+/// prova, `fake_char_rom`), per codice del set: il font 1x (FONT_MAP di gen/assets.inc, il glifo
+/// della ROM del suo carattere ASCII, trovato qui senza FONT_ROM) e le lettere 2x da `big_first`
+/// (quattro caratteri per lettera, dal carattere del font `big_src`, ogni pixel 2x2).
+fn rom_glyphs(m: &Machine, big_src: &[u8], big_first: usize) -> Vec<(usize, [u8; 8])> {
+    let rom = &m.cpu.char_rom;
+    let mut out: Vec<(usize, [u8; 8])> = Vec::new();
+    for (i, &code) in assets_list("FONT_MAP").iter().enumerate() {
+        if code != 0 {
+            let a = rom_code(32 + i as u8) * 8;
+            out.push((code as usize, rom[a..a + 8].try_into().unwrap()));
+        }
+    }
+    for (k, &src) in big_src.iter().enumerate() {
+        let g = out.iter().find(|(c, _)| *c == src as usize).map(|(_, g)| *g).unwrap_or([0; 8]);
+        for q in 0..4 {
+            let glyph = std::array::from_fn(|r| {
+                let b = g[(q / 2) * 4 + r / 2];
+                double_nibble(if q % 2 == 0 { b >> 4 } else { b & 15 })
+            });
+            out.push((big_first + 4 * k + q, glyph));
+        }
+    }
+    out
+}
+
+/// I glifi della ROM del set del programma (font e lettere 2x di BIG2_SRC).
+fn program_glyphs(m: &Machine) -> Vec<(usize, [u8; 8])> {
+    let inc = std::fs::read_to_string(c64_dir().join("gen/assets.inc")).unwrap_or_default();
+    rom_glyphs(m, &assets_list("BIG2_SRC"), inc_const(&inc, "BIG2_FIRST").unwrap_or(0))
+}
+
+/// Errore se nel set di caratteri a $C800 un glifo di `glyphs` non è quello giusto.
+fn check_glyphs(m: &Machine, glyphs: &[(usize, [u8; 8])], what: &str) -> Result<(), String> {
+    if glyphs.is_empty() {
+        return Err(format!("{what}: nessun glifo della ROM in gen/assets.inc"));
+    }
+    match glyphs.iter().find(|(c, g)| m.cpu.mem[CHARSET + 8 * c..CHARSET + 8 * c + 8] != g[..]) {
+        Some((c, _)) => Err(format!("{what}: il carattere {c} non ha il glifo della ROM dei caratteri")),
+        None => Ok(()),
+    }
+}
+
+/// Il set di caratteri del programma come deve essere: gen/charset.bin (nel .prg) con i glifi della ROM.
+fn program_charset(m: &Machine) -> Vec<u8> {
+    let at = m.addr("charset_data") as usize - 0x0801;
+    let mut cs = m.image[at..at + 0x800].to_vec();
+    for (c, g) in program_glyphs(m) {
+        cs[8 * c..8 * c + 8].copy_from_slice(&g);
+    }
+    cs
+}
 
 /// Racchette in partita NEXT: le immagini preparate a inizio partita diventano pronte per tutti e
 /// due i lati e la racchetta sinistra (sprite 3) ha sempre un'immagine non vuota, letta nella RAM
@@ -1845,6 +1916,8 @@ struct CometCheck {
     /// frame con uno sprite della coda (grigia o cometa) e quelli nell'angolo sbagliato
     trails: u32,
     trails_wrong: u32,
+    /// cicli del frame controllato
+    cur: u64,
 }
 
 /// L'angolo della palla nello sprite della coda (trail_dir di video.s): bit 7 il segno di vx, bit
@@ -1862,6 +1935,8 @@ impl CometCheck {
     /// cicli del frame sotto i quali trail_end ha avuto il tempo di disegnare (TRAIL_LATE di video.s:
     /// comincia entro circa 12.500 cicli)
     const LIGHT: u64 = 12_000;
+    /// KEEP_SPRITES_LINE di play.s in cicli: oltre, gli sprite possono restare quelli del frame prima
+    const KEEP_SPRITES: u64 = 14_500;
 
     /// `prev`: cicli del frame prima (è lì che trail_end disegna la cometa che si vede in questo).
     fn check(&mut self, m: &Machine, prev: u64) {
@@ -1869,7 +1944,9 @@ impl CometCheck {
         let ptr = m.read_u8("sh_ptr", 0);
         if m.read_u8("sh_enable", 0) & 1 != 0 && (Self::SP_TRAIL0..Self::SP_TRAIL0 + Self::TRAIL_BUFS).contains(&ptr) {
             self.trails += 1;
-            self.trails_wrong += (m.read_u8("tr_shdir", 0) != trail_dir(m)) as u32;
+            // (in un frame oltre KEEP_SPRITES di play.s gli sprite possono essere quelli del frame
+            // prima, con la palla dov'era: lì l'angolo è quello di prima, e va bene)
+            self.trails_wrong += (m.read_u8("tr_shdir", 0) != trail_dir(m) && self.cur <= Self::KEEP_SPRITES) as u32;
         }
         if m.read_u8("nx_super", 0) == 0
             || m.read_u8("nx_super_a", 0) != 2
@@ -2116,7 +2193,7 @@ fn frames(m: &mut Machine) -> bool {
         "finale",
     ];
     let inc = std::fs::read_to_string(c64_dir().join("gen/assets.inc")).unwrap_or_default();
-    if inc_const(&inc, "CH_GRID_T") != Some(CH_GRID_T) || inc_const(&inc, "CH_WALL") != Some(CH_WALL) {
+    if inc_const(&inc, "CH_GRID_T") != Some(ch_grid_t()) || inc_const(&inc, "CH_WALL") != Some(CH_WALL) {
         println!("FAIL: CH_GRID_T o CH_WALL diversi da gen/assets.inc");
         return false;
     }
@@ -2152,6 +2229,7 @@ fn frames(m: &mut Machine) -> bool {
     // essere 0, in partita un colore della partita)
     let border = std::cell::Cell::new([0u32; 5]);
     let last_writes = std::cell::Cell::new(0usize);
+    let rom_glyphs_now = program_glyphs(m);
     m.cpu.watch = Some((0xD418, 0xD418));
     let nmi = m.addr("nmi_handler");
     let frame = |m: &mut Machine,
@@ -2190,9 +2268,12 @@ fn frames(m: &mut Machine) -> bool {
         }
         if matches!(m.read_u8("state", 0), 7 | 8 | 10 | 12) {
             let glyph = |c: usize| &m.cpu.mem[CHARSET + 8 * c..CHARSET + 8 * c + 8];
-            if glyph(CH_GRID_T) != [0xFF, 0, 0, 0, 0, 0, 0, 0] || glyph(CH_WALL) != [0x3C; 8] {
+            if glyph(ch_grid_t()) != [0xFF, 0, 0, 0, 0, 0, 0, 0] || glyph(CH_WALL) != [0x3C; 8] {
                 return Err(format!("caratteri della riga o del muro cambiati (stato {})", m.read_u8("state", 0)));
             }
+            // il font e le lettere 2x della ROM dei caratteri: anche dopo le scelte, il GAME OVER
+            // e il finale
+            check_glyphs(m, &rom_glyphs_now, &format!("stato {}", m.read_u8("state", 0)))?;
         }
         if m.read_u8("state", 0) == 7 && m.read_u8("m_next", 0) != 0 {
             let (mut seen, prev, mut full, mut shown, mut open, mut slowest) = bonus_labels.get();
@@ -2448,6 +2529,7 @@ fn frames(m: &mut Machine) -> bool {
             next_on = true;
             next_pads.check(m);
             warp.check(m);
+            comet.cur = c;
             comet.check(m, prev_cycles);
             rings = rings.max(m.read_u8("fx_pages", 0));
         }
@@ -2781,6 +2863,13 @@ fn frames(m: &mut Machine) -> bool {
             return false;
         }
     }
+    match scores_rows(m) {
+        Ok(s) => println!("  {s}"),
+        Err(e) => {
+            println!("FAIL: classifica: {e}");
+            return false;
+        }
+    }
     match egg_frames(m) {
         Ok(s) => println!("  {s}"),
         Err(e) => {
@@ -2840,6 +2929,56 @@ fn scores_border(m: &mut Machine) -> Result<String, String> {
         return Err(format!("{frames} frame, cicli max {worst}"));
     }
     Ok(format!("classifica: {frames} frame con il bordo nero, cicli max {worst}; uscita al frame {left}"))
+}
+
+/// Righe della classifica (challenge.s, HS_ROWS = 8 dei 10 posti), come Scores::draw del PC: i
+/// primi 8 posti, ma con il posto nuovo al 9° o 10° posto l'ultima riga è la sua, con il suo
+/// numero; il posto nuovo giallo, gli altri bianchi, a tabella ferma.
+fn scores_rows(m: &mut Machine) -> Result<String, String> {
+    const ENTRY: u16 = 8;
+    let saved: Vec<u8> = (0..10 * ENTRY).map(|i| m.read_u8("ch_table", i)).collect();
+    // iniziali diverse per posto: AAA, BBB, ...
+    for i in 0..10u16 {
+        for c in 0..3 {
+            m.write_u8("ch_table", i * ENTRY + c, b'A' + i as u8);
+        }
+    }
+    let frame = m.addr("frame");
+    let mut cases = 0;
+    for (hl, last) in [(0xFFu8, 7u8), (3, 7), (7, 7), (8, 8), (9, 9)] {
+        m.write_u8("ch_hl", 0, hl);
+        m.call("enter_scores");
+        for _ in 0..260 {
+            let n = m.read_u8("frame_count", 0);
+            m.write_u8("frame_count", 0, n.wrapping_add(1));
+            m.cpu.frame_start = Some(m.cpu.cycles);
+            m.cpu.call(frame, 1_000_000)?;
+            m.cpu.frame_start = None;
+            if m.read_u8("state", 0) != ST_SCORES {
+                return Err(format!("posto nuovo {hl}: la classifica finisce prima del controllo"));
+            }
+        }
+        for row in 0..8u16 {
+            let place = if row == 7 { last } else { row as u8 };
+            let rank = format!("{:>2}", place + 1);
+            let name: String = std::iter::repeat_n((b'A' + place) as char, 3).collect();
+            let y = 4 + 2 * row;
+            if !text_at(m, 0xC000, y, 8, &rank) || !text_at(m, 0xC000, y, 13, &name) {
+                return Err(format!("posto nuovo {hl}: la riga {row} non è il posto {}", place + 1));
+            }
+            let color = m.cpu.mem[0xD800 + (y * 40 + 13) as usize] & 15;
+            let want = if place == hl { COL_YELLOW } else { 1 };
+            if color != want {
+                return Err(format!("posto nuovo {hl}: la riga {row} del colore {color}"));
+            }
+        }
+        cases += 1;
+    }
+    for (i, v) in saved.into_iter().enumerate() {
+        m.write_u8("ch_table", i as u16, v);
+    }
+    m.write_u8("ch_hl", 0, 0xFF);
+    Ok(format!("classifica: 8 righe in {cases} casi, il 9° e il 10° posto nuovi nell'ultima riga con il loro numero"))
 }
 
 /// Bordo della partita (border_game, play.s) caso per caso: BLACK sempre 0 (quello dello sfondo),
@@ -4798,8 +4937,15 @@ fn ending_run(m: &mut Machine, score: u32, fire_at: Option<u32>) -> Result<Endin
     // bianco, giallo, rosso e il cielo dei fuochi (multicolore, %11 il rosso)
     let allowed = [1, COL_RED, COL_YELLOW, 8 | red];
     let nmi = m.addr("nmi_handler");
-    let charset_at = m.addr("charset_data") as usize - 0x0801;
-    let charset: Vec<u8> = m.image[charset_at..charset_at + 0x800].to_vec();
+    let charset = program_charset(m);
+    // il set del finale: il font e le sue lettere 2x dalla ROM (gen/ending.inc)
+    let einc = std::fs::read_to_string(c64_dir().join("gen/ending.inc")).unwrap_or_default();
+    let end_src: Vec<u8> = einc
+        .lines()
+        .find_map(|l| l.strip_prefix(".define END_BIG_SRC "))
+        .map(|l| l.split(',').filter_map(|v| v.trim().parse().ok()).collect())
+        .unwrap_or_default();
+    let end_glyphs = rom_glyphs(m, &end_src, inc_const(&einc, "END_BIG_BASE").unwrap_or(0));
     let mut r = EndingRun::default();
     let mut d418 = Vec::new();
     m.cpu.watch = Some((0xD418, 0xDBE7));
@@ -4895,10 +5041,13 @@ fn ending_run(m: &mut Machine, score: u32, fire_at: Option<u32>) -> Result<Endin
             }
         };
         match (now, t) {
-            (1, 10) => check(big_text_at(m, "CONGRATULATIONS!", 4, 10), "CONGRATULATIONS! non a schermo"),
+            (1, 10) => {
+                check(text_at(m, 0xC000, 10, 12, "CONGRATULATIONS!"), "CONGRATULATIONS! non a schermo");
+                check(!end_src.is_empty() && check_glyphs(m, &end_glyphs, "finale").is_ok(), "set del finale senza i glifi della ROM");
+            }
             (1, 60) => check(big_text_at(m, "YOU WIN!", 12, 15), "YOU WIN! non a schermo"),
             (2, 400) => {
-                check(big_text_at(m, "YOUR OPPONENTS", 6, 2), "sfilata: YOUR OPPONENTS non a schermo");
+                check(text_at(m, 0xC000, 2, 13, "YOUR OPPONENTS"), "sfilata: YOUR OPPONENTS non a schermo");
                 check(m.cpu.mem[0xD015] == 0x7F, "sfilata: non ci sono le sette racchette");
                 for k in 0..7u16 {
                     let img = 0xC400 + k as usize * 64;
@@ -4923,23 +5072,23 @@ fn ending_run(m: &mut Machine, score: u32, fire_at: Option<u32>) -> Result<Endin
                     text_at(m, 0xC000, 11, 6, &format!("CHAMPION BONUS   +{ENDING_BONUS:06}")),
                     "punteggio: CHAMPION BONUS sbagliato",
                 );
-                check(big_text_at(m, "FINAL SCORE", 9, 4), "punteggio: FINAL SCORE non a schermo");
+                check(text_at(m, 0xC000, 4, 14, "FINAL SCORE"), "punteggio: FINAL SCORE non a schermo");
                 let total = format!("{:07}", score + ENDING_BONUS);
                 check(
-                    big_text_at(m, "TOTAL", 6, 15) && big_text_at(m, &total, 20, 15),
+                    text_at(m, 0xC000, 15, 11, "TOTAL") && text_at(m, 0xC000, 15, 24, &total),
                     "punteggio: TOTAL non a schermo",
                 );
             }
             (4, 100) => check(
-                big_text_at(m, "PADD WS CHAMPION", 4, 21) && text_at(m, 0xC000, 19, 14, "YOU ARE THE"),
+                text_at(m, 0xC000, 21, 12, "PADD WS CHAMPION") && text_at(m, 0xC000, 19, 14, "YOU ARE THE"),
                 "YOU ARE THE PADD WS CHAMPION non a schermo",
             ),
-            (6, 20) => check(big_text_at(m, "THE END", 13, 11), "THE END non a schermo"),
+            (6, 20) => check(text_at(m, 0xC000, 11, 16, "THE END"), "THE END non a schermo"),
             _ => {}
         }
         if now == EP_CREDITS && m.read_u8("e_hold", 0) == 50 {
             check(
-                filled(m, 12) >= 18 && m.cpu.mem[0xD800 + 12 * 40 + 20] & 15 == yel,
+                filled(m, 12) >= 9 && m.cpu.mem[0xD800 + 12 * 40 + 20] & 15 == yel,
                 "titoli: alla fine FOR PLAYING non è al centro",
             );
         }
@@ -4956,7 +5105,7 @@ fn ending_run(m: &mut Machine, score: u32, fire_at: Option<u32>) -> Result<Endin
         wrong.push(format!("scena {state} dopo il finale"));
     }
     if m.cpu.mem[0xC800..0xD000] != charset[..] {
-        wrong.push("set di caratteri del programma non rimesso".into());
+        wrong.push("set di caratteri del programma non rimesso (con i glifi della ROM)".into());
     }
     for (what, got, want) in [
         ("$D016", m.cpu.mem[0xD016], 0xC8),
@@ -5343,6 +5492,48 @@ fn big_codes_at(m: &Machine, codes: &[u8], row: u16) -> bool {
     (0..2).all(|r| (0..w).all(|c| m.cpu.mem[(0xC000 + (row + r) * 40 + col + c) as usize] == codes[(r * w + c) as usize]))
 }
 
+/// Caratteri della scelta dei bonus (pick_chars, C = 0): da PICK_FIRST le metà alte dei glifi del
+/// font abbassate di 4 pixel, poi le metà basse in cima; il resto del set com'era. Poi (C = 1, A = 0
+/// e 1) di nuovo le lettere 2x: il set come all'avvio. Ogni chiamata nel budget di un frame.
+fn pick_chars_ui(m: &mut Machine) -> Result<String, String> {
+    let inc = std::fs::read_to_string(c64_dir().join("gen/assets.inc")).map_err(|e| format!("assets.inc: {e}"))?;
+    let (Some(first), Some(font_first), Some(n)) =
+        (inc_const(&inc, "PICK_FIRST"), inc_const(&inc, "FONT_FIRST"), inc_const(&inc, "FONT_CHARS"))
+    else {
+        return Err("assets.inc: manca PICK_FIRST, FONT_FIRST o FONT_CHARS".into());
+    };
+    let before: Vec<u8> = m.cpu.mem[CHARSET..CHARSET + 0x800].to_vec();
+    if before != program_charset(m) {
+        return Err("set di caratteri diverso da quello dell'avvio".into());
+    }
+    let mut want = before.clone();
+    for i in 0..n {
+        let g = &before[8 * (font_first + i)..8 * (font_first + i) + 8];
+        let (top, bot) = (8 * (first + i), 8 * (first + n + i));
+        want[top..top + 4].fill(0);
+        want[top + 4..top + 8].copy_from_slice(&g[..4]);
+        want[bot..bot + 4].copy_from_slice(&g[4..]);
+        want[bot + 4..bot + 8].fill(0);
+    }
+    m.cpu.p &= !1;
+    let mut worst = m.call("pick_chars");
+    if m.cpu.mem[CHARSET..CHARSET + 0x800] != want[..] {
+        return Err("metà delle lettere sbagliate".into());
+    }
+    for half in 0..2u8 {
+        m.cpu.p |= 1;
+        m.cpu.a = half;
+        worst = worst.max(m.call("pick_chars"));
+    }
+    if m.cpu.mem[CHARSET..CHARSET + 0x800] != before[..] {
+        return Err("dopo la scelta le lettere 2x non sono quelle di prima".into());
+    }
+    if worst > FRAME_BUDGET - 3_000 {
+        return Err(format!("{worst} cicli"));
+    }
+    Ok(format!("pick_chars: metà delle lettere della scelta dei bonus dai glifi del font, poi di nuovo le lettere 2x (al più {worst} cicli)"))
+}
+
 /// PERFECT nel GAME OVER, come sul PC e sul MiSTer: vinta da un giocatore (non dalla CPU) con chi
 /// perde a 0 punti, PERFECT da sola al posto di YOU WIN contro la CPU, al posto di GAME OVER sopra
 /// P1 / P2 WINS in due; la voce PERFECT una volta al posto di YOU WIN (anche in due, non
@@ -5353,41 +5544,11 @@ fn big_codes_at(m: &Machine, codes: &[u8], row: u16) -> bool {
 /// INSERT COIN (nella bitmap: i caratteri di PERFECT restano, non si vedono più altrove).
 fn perfect_ui(m: &mut Machine) -> Result<String, String> {
     let inc = std::fs::read_to_string(c64_dir().join("gen/assets.inc")).map_err(|e| format!("assets.inc: {e}"))?;
-    let charset = std::fs::read(c64_dir().join("gen/charset.bin")).map_err(|e| format!("charset.bin: {e}"))?;
-    let (Some(c0), Some(n)) = (inc_const(&inc, "PERFECT_C0"), inc_const(&inc, "PERFECT_CHARS")) else {
-        return Err("assets.inc: manca PERFECT_C0 o PERFECT_CHARS".into());
-    };
     let perfect = assets_list("BIG_PERFECT");
     if perfect.len() != 2 * inc_const(&inc, "BIG_PERFECT_W").unwrap_or(0) {
         return Err("assets.inc: BIG_PERFECT della lunghezza sbagliata".into());
     }
-    // la pagina del set di caratteri che il GAME OVER copia con PERFECT: diversa da quella
-    // originale solo nei caratteri di PERFECT e in quelli che in NEXT sono del BULLET (lì come in
-    // NEXT, gen/pick_bank.bin a $FF40: fuori da NEXT nel GAME OVER non si vedono)
-    let page = std::fs::read(c64_dir().join("gen/perfect_chars.bin")).map_err(|e| format!("perfect_chars.bin: {e}"))?;
-    let pick = std::fs::read(c64_dir().join("gen/pick_bank.bin")).map_err(|e| format!("pick_bank.bin: {e}"))?;
-    let first = c0 / 32 * 32;
-    if page.len() != 256 || c0 + n > first + 32 || pick.len() < 0x900 {
-        return Err("perfect_chars.bin o pick_bank.bin della lunghezza sbagliata, o PERFECT su due pagine".into());
-    }
-    for c in first..first + 32 {
-        let bullet = (0..8).find(|&i| inc_const(&inc, &format!("BULLET_C{i}")) == Some(c));
-        let want = match bullet {
-            Some(i) => &pick[0x840 + 8 * i..0x848 + 8 * i],
-            None => &charset[8 * c..8 * c + 8],
-        };
-        if !(c0..c0 + n).contains(&c) && page[8 * (c - first)..8 * (c - first) + 8] != *want {
-            return Err(format!("perfect_chars.bin: carattere {c} diverso da quello che deve restare"));
-        }
-    }
-    // ogni carattere della scritta: della pagina copiata o, fuori, l'originale
-    let tile_of = |code: u8| -> Vec<u8> {
-        let c = code as usize;
-        if (first..first + 32).contains(&c) { page[8 * (c - first)..8 * (c - first) + 8].to_vec() } else { charset[8 * c..8 * c + 8].to_vec() }
-    };
-    if perfect.iter().any(|&c| !(c0..c0 + n).contains(&(c as usize)) && tile_of(c)[..] != charset[8 * c as usize..8 * c as usize + 8]) {
-        return Err("PERFECT: un carattere riusato non è l'originale".into());
-    }
+    let glyphs = program_glyphs(m);
     const CHARSET: usize = 0xC800;
     const OV_RUN: usize = 0xC400;
     m.call("math_ensure");
@@ -5427,9 +5588,7 @@ fn perfect_ui(m: &mut Machine) -> Result<String, String> {
             m.write_u8("score", o, v);
         }
         m.call("clear_screen");
-        // i caratteri di PERFECT originali (come all'avvio), il codice del GAME OVER cancellato
-        // (BRK): deve copiarlo enter_over
-        m.cpu.mem[CHARSET + 8 * c0..CHARSET + 8 * (c0 + n)].copy_from_slice(&charset[8 * c0..8 * (c0 + n)]);
+        // il codice del GAME OVER cancellato (BRK): deve copiarlo enter_over
         m.cpu.mem[OV_RUN..OV_RUN + 0x400].fill(0);
         let before: Vec<u8> = m.cpu.mem[CHARSET..CHARSET + 0x800].to_vec();
         // il frame dopo l'ultimo punto
@@ -5450,19 +5609,14 @@ fn perfect_ui(m: &mut Machine) -> Result<String, String> {
             if m.read_u8("timer", 0) == 1 {
                 rebuilt = Some(m.read_u8("math_ready", 0) != 0 && m.cpu.mem[0xF000..0xF800] == squares[..]);
                 // all'ultimo frame: PERFECT a schermo (con GAME OVER in alto lo schermo è già nero),
-                // e del set di caratteri cambiata solo la sua pagina, solo con PERFECT
+                // il set di caratteri com'era, con i glifi della ROM
                 if shown != big_codes_at(m, &perfect, 10) {
                     return Err(format!("{what}: PERFECT {} nelle righe 10-11", if shown { "non" } else { "di troppo" }));
                 }
-                for code in 0..256usize {
-                    let want = if shown && (first..first + 32).contains(&code) { tile_of(code as u8) } else { before[8 * code..8 * code + 8].to_vec() };
-                    if m.cpu.mem[CHARSET + 8 * code..CHARSET + 8 * code + 8] != want[..] {
-                        return Err(format!("{what}: carattere {code} cambiato dal GAME OVER"));
-                    }
+                if m.cpu.mem[CHARSET..CHARSET + 0x800] != before[..] {
+                    return Err(format!("{what}: set di caratteri cambiato dal GAME OVER"));
                 }
-                if shown && perfect.iter().any(|&code| m.cpu.mem[CHARSET + 8 * code as usize..CHARSET + 8 * code as usize + 8] != tile_of(code)[..]) {
-                    return Err(format!("{what}: caratteri di PERFECT sbagliati"));
-                }
+                check_glyphs(m, &glyphs, what)?;
             }
             let ef = m.cpu.ef_cycles;
             let c = full_frame(m).map_err(|e| format!("{what}, frame {frames} (win_pg {}): {e}", m.read_u8("win_pg", 0)))?;
@@ -5543,7 +5697,7 @@ fn perfect_ui(m: &mut Machine) -> Result<String, String> {
     m.write_u8("opt_free", 0, free);
     m.call("math_ensure");
     Ok(format!(
-        "PERFECT nel GAME OVER da solo contro la CPU e sopra P1 / P2 WINS in due, con la voce (non all'ultimo livello di CHALLENGE); YOU WIN, CPU WINS, GAME OVER come prima; solo la pagina di PERFECT del set di caratteri cambia; frame dell'ultimo punto al più {worst_enter} cicli, GAME OVER al più {worst}; poi l'attract fino al titolo con INSERT COIN (dopo {frames} frame)"
+        "PERFECT nel GAME OVER da solo contro la CPU e sopra P1 / P2 WINS in due, con la voce (non all'ultimo livello di CHALLENGE); YOU WIN, CPU WINS, GAME OVER come prima; il set di caratteri non cambia (glifi della ROM); frame dell'ultimo punto al più {worst_enter} cicli, GAME OVER al più {worst}; poi l'attract fino al titolo con INSERT COIN (dopo {frames} frame)"
     ))
 }
 

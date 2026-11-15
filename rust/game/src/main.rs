@@ -171,7 +171,8 @@ fn main() {
 
 fn load_assets() -> Assets {
     Assets {
-        font_text: GameFont::from_bytes(include_bytes!("../../../assets/fonts/munro.ttf")),
+        // Press Start 2P, disegnato su una griglia di 8x8 pixel: vedi `render::PixelFont`
+        font_text: GameFont::pixel_from_bytes(include_bytes!("../../../assets/fonts/PressStart2P-Regular.ttf"), 8),
         font_score: GameFont::from_bytes(include_bytes!("../../../assets/fonts/pong-score.ttf")),
     }
 }
@@ -378,18 +379,18 @@ fn draw_rotate(app: &App) {
     r.text_centered(
         "ROTATE",
         &app.assets.font_text,
-        90.0 * s,
+        r.text_1x(),
         w / 2.0,
-        h / 2.0 - 50.0 * s,
+        h / 2.0 - 14.0 * s,
         0.0,
         white,
     );
     r.text_centered(
         "THE DEVICE",
         &app.assets.font_text,
-        90.0 * s,
+        r.text_1x(),
         w / 2.0,
-        h / 2.0 + 50.0 * s,
+        h / 2.0 + 14.0 * s,
         0.0,
         white,
     );
@@ -580,12 +581,12 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         ("8_duel_wins_perfect", |app| duel_over_at(app, [5, 0], 1.0)),
         ("8_duel_wins_facing", |app| {
             // punteggi rivolti ai giocatori: l'opzione resta accesa per il disegno, la schermata
-            // dopo la rimette com'era
+            // dopo la rimette com'è nel file di configurazione (per il giro con il tavolo)
             app.cfg.game.scores_upright = false;
             duel_over_at(app, [2, 5], 2.0)
         }),
         ("8_intro_wins", |app| {
-            app.cfg.game.scores_upright = true;
+            app.cfg.game.scores_upright = config::load(&app.config_path).game.scores_upright;
             challenge(app, 3);
             if let Some(run) = &mut app.run {
                 run.wins = 3;

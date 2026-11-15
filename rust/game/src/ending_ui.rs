@@ -12,7 +12,7 @@ use paddws_core::challenge::{LEVELS, Score};
 use paddws_core::fixed::to_f32;
 use paddws_core::{Event, PaddleKind, Rng};
 
-use crate::challenge_ui;
+use crate::challenge_ui::{self, T1};
 use crate::input;
 use crate::next_ui::unit;
 use crate::paddle_ui::{Look, Shape, TWIST_MAX_TILT, draw_paddle};
@@ -47,8 +47,6 @@ const RED: Color = Color::new(230.0 / 255.0, 40.0 / 255.0, 40.0 / 255.0, 1.0);
 /// Righe dei titoli di coda.
 #[derive(Clone, Copy, PartialEq)]
 enum Line {
-    /// titolo grande, giallo
-    Title(&'static str),
     /// titolo di una sezione, giallo
     Head(&'static str),
     /// voce, bianca
@@ -57,7 +55,7 @@ enum Line {
 }
 
 const CREDITS: &[Line] = &[
-    Line::Title("PADD WS"),
+    Line::Head("PADD WS"),
     Line::Head("GAME DESIGN AND PROGRAMMING"),
     Line::Text("SCHERMOBIANCO"),
     Line::Head("PLATFORMS"),
@@ -74,7 +72,7 @@ const CREDITS: &[Line] = &[
     Line::Text("AND GUARDIAN"),
     // i lavori di altri usati nel gioco (THIRD_PARTY.md)
     Line::Head("THIRD-PARTY WORKS"),
-    Line::Text("MUNRO FONT  ED MERRITT"),
+    Line::Text("PRESS START 2P FONT  CODEMAN38"),
     Line::Text("PONG SCORE FONT  PWNZOR.AK"),
     Line::Text("MISTER FRAMEWORK  SORGELIG"),
     Line::Text("SID EMULATION  DAG LEM  A. MELNIKOV"),
@@ -86,14 +84,14 @@ const CREDITS: &[Line] = &[
     Line::Text("THE MISTER FPGA COMMUNITY"),
     Line::Text("THE COMMODORE 64 SCENE"),
     Line::Gap,
-    Line::Title("THANK YOU FOR PLAYING"),
+    Line::Head("THANK YOU FOR PLAYING"),
 ];
 
 impl Line {
     /// Spazio prima della riga (unità a 480 righe).
     fn advance(self) -> f32 {
         match self {
-            Line::Title(_) | Line::Head(_) => 70.0,
+            Line::Head(_) => 70.0,
             Line::Text(_) => 38.0,
             Line::Gap => 60.0,
         }
@@ -431,9 +429,11 @@ impl Ending {
         let flash = |period: f64| if (at / period) as i64 % 2 == 0 { yellow } else { white };
         match part {
             Part::Congrats => {
-                text(app, "CONGRATULATIONS!", 60.0, 220.0, flash(0.5));
+                text(app, "CONGRATULATIONS!", T1, 216.0, flash(0.5));
                 if at >= YOU_WIN_AT {
-                    text(app, "YOU WIN!", 40.0, 290.0, white);
+                    // a 2x come YOU WIN a fine partita (le uniche scritte grandi)
+                    let big = app.renderer.text_2x() / app.scale();
+                    text(app, "YOU WIN!", big, 264.0, white);
                 }
             }
             Part::Parade => self.draw_parade(app, at, white, yellow),
@@ -443,11 +443,11 @@ impl Ending {
                 for fw in &self.fireworks {
                     fw.draw(app, f, white, yellow);
                 }
-                text(app, "YOU ARE THE", 30.0, 360.0, white);
-                text(app, "PADD WS CHAMPION", 50.0, 410.0, yellow);
+                text(app, "YOU ARE THE", T1, 380.0, white);
+                text(app, "PADD WS CHAMPION", T1, 408.0, yellow);
             }
             Part::Credits => self.draw_credits(app, at, white, yellow),
-            Part::TheEnd => text(app, "THE END", 60.0, 240.0, flash(0.66)),
+            Part::TheEnd => text(app, "THE END", T1, 240.0, flash(0.66)),
         }
     }
 
@@ -456,19 +456,22 @@ impl Ending {
         let r = &app.renderer;
         let (sc, u) = (app.scale(), unit(app));
         let p = &app.params;
-        text(app, "YOUR OPPONENTS", 40.0, 50.0, yellow);
+        text(app, "YOUR OPPONENTS", T1, 60.0, yellow);
         let zoom = 1.2;
         let look = Look {
             body: white,
             mark: yellow,
             detail: yellow,
         };
+        let font = &app.assets.font_text;
+        let char_w = r.text_width("M", font, T1 * sc);
+        let lay = parade_layout(r.world_w, sc, char_w, stamp_size(app), 8.0 * r.arcade_px());
         for (i, kind) in PaddleKind::ALL.into_iter().enumerate() {
             let age = at - i as f64 * PARADE_STEP;
             if age < 0.0 {
                 break;
             }
-            let x = r.world_w * (i as f32 + 0.5) / PaddleKind::COUNT as f32;
+            let x = lay.x(r.world_w, i);
             let cy = 185.0 * sc; // dall'alto
             let shape = Shape {
                 kind: Some(kind),
@@ -482,37 +485,40 @@ impl Ending {
                 preview: true,
             };
             draw_paddle(r, &shape, u * zoom, look);
-            r.text_centered(kind.name(), &app.assets.font_text, 22.0 * sc, x, 290.0 * sc, 0.0, white);
+            let name_y = if lay.stagger && i % 2 == 1 { 315.0 } else { 290.0 };
+            r.text_centered(kind.name(), font, T1 * sc, x, name_y * sc, 0.0, white);
             if age >= STAMP_AFTER {
-                stamp(app, x - 2.0 * sc, cy + 15.0 * sc);
+                stamp(app, x + STAMP_DX * sc, cy + 15.0 * sc + lay.stamp_dy(i));
             }
         }
     }
 
     /// SCORE che sale, il premio del campione, poi il totale.
     fn draw_score(&self, app: &App, at: f64, white: Color, yellow: Color) {
-        text(app, "FINAL SCORE", 40.0, 80.0, yellow);
+        text(app, "FINAL SCORE", T1, 140.0, yellow);
         let k = (at / SCORE_COUNT).min(1.0);
         let row = |label: &str, value: String, size: f32, y: f32, color: Color| {
             let sc = app.scale();
             let (r, font) = (&app.renderer, &app.assets.font_text);
-            let cx = r.world_w / 2.0;
-            r.text_centered(label, font, size * sc, cx - 110.0 * sc, y * sc, 0.0, color);
-            r.text_centered(&value, font, size * sc, cx + 110.0 * sc, y * sc, 0.0, color);
+            // in colonna: le voci allineate a sinistra, i punti a destra
+            let (cx, edge) = (r.world_w / 2.0, 180.0 * sc);
+            let half = |s: &str| r.text_width(s, font, size * sc) / 2.0;
+            r.text_centered(label, font, size * sc, cx - edge + half(label), y * sc, 0.0, color);
+            r.text_centered(&value, font, size * sc, cx + edge - half(&value), y * sc, 0.0, color);
         };
-        row("SCORE", format!("{:07}", (self.score as f64 * k) as u32), 30.0, 160.0, white);
+        row("SCORE", format!("{:07}", (self.score as f64 * k) as u32), T1, 200.0, white);
         if at >= SCORE_COUNT {
             let b = ((at - SCORE_COUNT) / BONUS_COUNT).min(1.0);
             row(
                 "CHAMPION BONUS",
                 format!("+{:06}", (self.bonus as f64 * b) as u32),
-                30.0,
-                210.0,
+                T1,
+                232.0,
                 yellow,
             );
         }
         if at >= TOTAL_AT {
-            row("TOTAL", format!("{:07}", self.total), 40.0, 290.0, white);
+            row("TOTAL", format!("{:07}", self.total), T1, 290.0, white);
         }
     }
 
@@ -528,36 +534,103 @@ impl Ending {
                 continue;
             }
             match line {
-                Line::Title(s) => text(app, s, 50.0, y, yellow),
-                Line::Head(s) => text(app, s, 30.0, y, yellow),
-                Line::Text(s) => text(app, s, 30.0, y, white),
+                Line::Head(s) => text(app, s, T1, y, yellow),
+                Line::Text(s) => text(app, s, T1, y, white),
                 Line::Gap => {}
             }
         }
     }
 }
 
-/// Testo centrato in orizzontale sulla riga `y` (unità a 480 righe dall'alto).
+/// Testo centrato in orizzontale sulla riga `y` (unità a 480 righe dall'alto), alto `size`
+/// (`T1`, o 2x per YOU WIN).
 fn text(app: &App, s: &str, size: f32, y: f32, color: Color) {
     let sc = app.scale();
     let r = &app.renderer;
     r.text_centered(s, &app.assets.font_text, size * sc, r.world_w / 2.0, y * sc, 0.0, color);
 }
 
+/// Inclinazione del timbro, in salita verso destra: poca, perché i timbri vicini (uno più su e
+/// uno più giù, `ParadeLayout`) restino uno sopra l'altro senza toccarsi.
+const STAMP_ANGLE: f32 = -8.0 * std::f32::consts::PI / 180.0;
+/// Spostamento del timbro rispetto alla racchetta (unità a 480 righe) e spessore del bordo.
+const STAMP_DX: f32 = -2.0;
+const STAMP_LINE: f32 = 2.0;
+
+/// Sfilata del finale: distanza fra le colonne, nomi su due righe e timbri alternati.
+#[derive(Clone, Copy, Debug)]
+struct ParadeLayout {
+    gap: f32,
+    /// nomi alternati su due righe (quando due vicini non stanno sulla stessa con un carattere
+    /// di spazio)
+    stagger: bool,
+    /// metà della distanza in verticale fra un timbro e il successivo: uno più su, uno più giù
+    stamp_half_step: f32,
+}
+
+impl ParadeLayout {
+    /// Centro della colonna `i` (coordinate di disegno).
+    fn x(&self, world_w: f32, i: usize) -> f32 {
+        world_w / 2.0 + (i as f32 - (PaddleKind::COUNT as f32 - 1.0) / 2.0) * self.gap
+    }
+
+    /// Spostamento verticale del timbro della colonna `i`.
+    fn stamp_dy(&self, i: usize) -> f32 {
+        if i.is_multiple_of(2) { -self.stamp_half_step } else { self.stamp_half_step }
+    }
+}
+
+/// Mezza larghezza e mezza altezza del riquadro del timbro ruotato, bordo compreso, con il
+/// riquadro di mezze misure `(hw, hh)` (`stamp_size`).
+fn stamp_extent((hw, hh): (f32, f32), sc: f32) -> (f32, f32) {
+    let (sin, cos) = STAMP_ANGLE.sin_cos();
+    let (hw, hh) = (hw + STAMP_LINE * sc / 2.0, hh + STAMP_LINE * sc / 2.0);
+    (hw * cos + hh * sin.abs(), hw * sin.abs() + hh * cos)
+}
+
+/// Disposizione della sfilata nel campo largo `world_w`, con un carattere a 1x largo `char_w`, il
+/// timbro di mezze misure `stamp` e almeno `margin` dai bordi. I timbri vicini sono sfalsati in
+/// verticale di più della loro altezza (uno più su, uno più giù), così non si toccano mai; quelli
+/// a due colonne di distanza, alla stessa altezza, stanno uno accanto all'altro. Le colonne sono
+/// strette quanto basta perché timbri e nomi dei due estremi restino nello schermo.
+fn parade_layout(world_w: f32, sc: f32, char_w: f32, stamp: (f32, f32), margin: f32) -> ParadeLayout {
+    let (ex, ey) = stamp_extent(stamp, sc);
+    let half = |k: PaddleKind| k.name().len() as f32 * char_w / 2.0;
+    let reach = (ex + STAMP_DX.abs() * sc).max(PaddleKind::ALL.into_iter().map(half).fold(0.0, f32::max));
+    let n = PaddleKind::COUNT as f32;
+    let gap = (world_w / n).min((world_w - 2.0 * (reach + margin)) / (n - 1.0));
+    // nomi: un carattere di spazio fra uno e l'altro, se no righe alternate
+    let stagger = PaddleKind::ALL
+        .windows(2)
+        .any(|pair| half(pair[0]) + half(pair[1]) + char_w > gap);
+    ParadeLayout {
+        gap,
+        stagger,
+        stamp_half_step: ey + 2.0 * sc,
+    }
+}
+
+/// Metà larghezza e metà altezza del riquadro del timbro: attorno alla scritta a 1x.
+fn stamp_size(app: &App) -> (f32, f32) {
+    let sc = app.scale();
+    let width = app.renderer.text_width("DEFEATED", &app.assets.font_text, T1 * sc);
+    (width / 2.0 + 8.0 * sc, 15.0 * sc)
+}
+
 /// Timbro rosso inclinato "DEFEATED" centrato in (x, y), coordinate di disegno.
 fn stamp(app: &App, x: f32, y: f32) {
     let sc = app.scale();
-    let angle: f32 = -18f32.to_radians(); // in salita verso destra
+    let angle = STAMP_ANGLE;
     let (sin, cos) = angle.sin_cos();
-    let (hw, hh) = (55.0 * sc, 15.0 * sc);
+    let font = &app.assets.font_text;
+    let (hw, hh) = stamp_size(app);
     let corner = |dx: f32, dy: f32| vec2(x + dx * cos - dy * sin, y + dx * sin + dy * cos);
     let pts = [corner(-hw, -hh), corner(hw, -hh), corner(hw, hh), corner(-hw, hh)];
     for i in 0..4 {
         let (a, b) = (pts[i], pts[(i + 1) % 4]);
-        draw_line(a.x, a.y, b.x, b.y, 2.0 * sc, RED);
+        draw_line(a.x, a.y, b.x, b.y, STAMP_LINE * sc, RED);
     }
-    app.renderer
-        .text_centered("DEFEATED", &app.assets.font_text, 20.0 * sc, x, y, angle, RED);
+    app.renderer.text_centered("DEFEATED", font, T1 * sc, x, y, angle, RED);
 }
 
 #[cfg(test)]
@@ -575,6 +648,58 @@ mod tests {
         assert_eq!(part_at(end), None);
         // titoli lenti: un paio di righe al secondo, il finale tra i 45 s e il minuto
         assert!((45.0..62.0).contains(&end), "{end}");
+    }
+
+    /// Sfilata nel campo 16:9 e 4:3 (480 righe, 1x = 16 unità): timbri che non si toccano (i
+    /// riquadri ruotati, bordo compreso, separati da un asse), nomi con almeno un carattere di
+    /// spazio, tutto ad almeno 8 pixel arcade (16 unità) dai bordi.
+    #[test]
+    fn the_parade_never_overlaps_and_stays_inside() {
+        for (w, sc) in [(852.0f32, (852.0 / 800.0 + 1.0) / 2.0), (640.0, (640.0 / 800.0 + 1.0) / 2.0), (1056.0, 1.0)] {
+            let (char_w, margin) = (16.0, 16.0);
+            let stamp = (4.0 * char_w + 8.0 * sc, 15.0 * sc);
+            let lay = parade_layout(w, sc, char_w, stamp, margin);
+            let (hw, hh) = stamp;
+            let line = STAMP_LINE * sc / 2.0;
+            let (sin, cos) = STAMP_ANGLE.sin_cos();
+            // angoli del riquadro di ogni timbro, allargato di mezzo bordo
+            let boxes: Vec<[(f32, f32); 4]> = (0..PaddleKind::COUNT)
+                .map(|i| {
+                    let (x, y) = (lay.x(w, i) + STAMP_DX * sc, lay.stamp_dy(i));
+                    let (a, b) = (hw + line, hh + line);
+                    [(-a, -b), (a, -b), (a, b), (-a, b)].map(|(dx, dy)| (x + dx * cos - dy * sin, y + dx * sin + dy * cos))
+                })
+                .collect();
+            let separated = |p: &[(f32, f32); 4], q: &[(f32, f32); 4]| {
+                // assi separatori: le normali ai lati (i riquadri hanno la stessa inclinazione)
+                [(cos, sin), (-sin, cos)].iter().any(|&(ax, ay)| {
+                    let proj = |b: &[(f32, f32); 4]| {
+                        b.iter().map(|&(x, y)| x * ax + y * ay).fold((f32::MAX, f32::MIN), |(lo, hi), v| (lo.min(v), hi.max(v)))
+                    };
+                    let ((p0, p1), (q0, q1)) = (proj(p), proj(q));
+                    p1 < q0 - 1.0 || q1 < p0 - 1.0
+                })
+            };
+            for i in 0..boxes.len() {
+                for j in i + 1..boxes.len() {
+                    assert!(separated(&boxes[i], &boxes[j]), "{w}: timbri {i} e {j} si toccano");
+                }
+                for &(x, _) in &boxes[i] {
+                    assert!(x >= margin - 0.01 && x <= w - margin + 0.01, "{w}: timbro {i} a {x}");
+                }
+            }
+            // nomi: un carattere di spazio fra vicini sulla stessa riga, margine dai bordi
+            let half = |k: PaddleKind| k.name().len() as f32 * char_w / 2.0;
+            for (i, k) in PaddleKind::ALL.into_iter().enumerate() {
+                let x = lay.x(w, i);
+                assert!(x - half(k) >= margin - 0.01 && x + half(k) <= w - margin + 0.01, "{w}: {}", k.name());
+                let next = if lay.stagger { i + 2 } else { i + 1 };
+                if let Some(&n) = PaddleKind::ALL.get(next) {
+                    let space = lay.x(w, next) - x - half(k) - half(n);
+                    assert!(space >= char_w - 0.01, "{w}: {} e {} a {space}", k.name(), n.name());
+                }
+            }
+        }
     }
 
     #[test]

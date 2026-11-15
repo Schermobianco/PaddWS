@@ -47,7 +47,7 @@ module next_render (
     // colonna, con il nome sotto); solo bianco e giallo, come il resto del finale (ending_render)
     input  wire        parade,
     input  wire [2:0]  parade_n,
-    input  wire [2:0]  parade_ko,           // ... le prime `parade_ko` già battute (K.O.): spente
+    input  wire [2:0]  parade_ko,           // ... le prime `parade_ko` già battute (KO): spente
 
     // partita NEXT
     input  wire        nxt,
@@ -183,6 +183,11 @@ localparam integer WALL_TOP_SUP = BAR_Y + 7;      // GUARDIAN: primo tratto del 
 // presentazione di CHALLENGE: riga del centro della racchetta; munizioni del BLASTER (caricatore
 // pieno, 4 righe per colpo come in partita)
 localparam integer INTRO_Y = 82, AMMO_ROWS = 4 * P_BLASTER_SHOTS;
+// schermate di scelta (Press Start 2P, tutto a scala 1): titolo, secondi rimasti (due celle di 8
+// pixel al centro), scostamento delle scritte nelle righe delle racchette (20 pixel) e dei bonus
+// (18), frase del tipo e READY! in basso
+localparam integer PICK_TITLE_Y = 8, SECS_X1 = W / 2 - 8, SECS_X2 = W / 2;
+localparam integer KIND_TEXT_DY = 5, PICK_TEXT_DY = 5, TAG_Y = 218, READY_Y = 230;
 
 // grigio della coda al passo j (1 = mezzo frame fa, 2 * TRAIL = il più vecchio): dal grigio verso il nero
 function [23:0] trail_col(input integer j);
@@ -469,20 +474,21 @@ endfunction
 
 // ------------------------------------------------------------- fotografia del frame
 
-// larghezza del nome nella scritta: bonus o mossa speciale (con "MAX " davanti al livello 2)
+// larghezza del nome nella scritta: bonus o mossa speciale (con "MAX " davanti al livello 2). Le
+// parole sono nella griglia di 8 pixel del font: dopo una parola (larga 8 n - 1) lo spazio è 9 pixel
 wire       label_mx = label_move != 2'd0 && label_max;
-wire [6:0] label_name_w = (label_move != 2'd0) ? move_w({2'd0, label_move == 2'd2}) + (label_mx ? NX_MAX_W + 3 : 0)
-                                               : {1'b0, name_w(label_bonus)};
+wire [7:0] label_name_w = (label_move != 2'd0) ? {1'b0, move_w({2'd0, label_move == 2'd2})} + (label_mx ? NX_MAX_W + 9 : 0)
+                                               : {2'b0, name_w(label_bonus)};
 // larghezza di tutta la scritta ("P1 " + nome + "!") in pixel del font, a scala 1
-wire [6:0] label_w_n = NX_P1_W + 3 + label_name_w + 1 + NX_BANG_W;
+wire [7:0] label_w_n = NX_P1_W + 9 + label_name_w + 1 + NX_BANG_W;
 
 // Tipi della scritta (`label_kind`), come rust/game/src/next_ui.rs:
 // - LK_BONUS, "P1 SMASH!": si accende e si spegne come un vecchio televisore. In 72 frame: una riga
 //   bianca che si allarga (4 frame), l'immagine che si apre in altezza con i bordi bianchi (4), ferma,
 //   che si richiude (3), la riga che si stringe (4), il puntino;
-// la scritta è a scala 1 (righe del font 222-230, lettere 223-229), su un riquadro di 20 righe;
+// la scritta è a scala 1 (righe del font 222-229, lettere 222-228), su un riquadro di 20 righe;
 // - LK_ARMED, mossa armata: solo i trattini sotto le lettere (due righe con la MAX), che si
-//   disegnano dal lato del giocatore, una lettera (6 pixel) ogni 2 frame, e si accendono di giallo mentre la
+//   disegnano dal lato del giocatore, una lettera (8 pixel) ogni 2 frame, e si accendono di giallo mentre la
 //   palla arriva verso di lui;
 // - LK_HIT, colpo della mossa (60 frame): per 2 frame blocchi bianchi al posto delle lettere, poi la
 //   scritta, bianca fino al frame 4; i trattini accesi fino al 24; dal 44 lampeggia.
@@ -545,7 +551,7 @@ reg [HIST-1:0] hv;
 reg [9:0]  mx [1:TRAIL];               // coda: punto a metà tra le posizioni k - 1 e k
 reg [9:0]  my [1:TRAIL];
 reg [9:0]  label_x;
-reg [6:0]  label_w;
+reg [7:0]  label_w;
 integer    i;
 // tipi di racchetta
 reg [2:0]  kd [0:1];
@@ -610,14 +616,6 @@ initial begin
     gph = 2'd0;
 end
 
-// v / 3 per v fino a 31 (le cifre a scala 3, sempre dentro la loro casella), senza divisore
-function [3:0] div3(input [9:0] v);
-    reg [9:0] t;
-    begin
-        t = v[4:0] * 10'd11;
-        div3 = t[8:5];
-    end
-endfunction
 // v / 5 esatto per v a 14 bit (il lato della cometa), con una moltiplicazione per una costante
 function [9:0] div5(input [13:0] v);
     reg [31:0] t;
@@ -858,7 +856,7 @@ always @(posedge clk) begin
             mx[i] <= mx[i - 1];
             my[i] <= my[i - 1];
         end
-        // scritta del bonus o della mossa: "P1 " + nome + "!" a scala 2, centrata in basso
+        // scritta del bonus o della mossa: "P1 " + nome + "!" a scala 1, centrata in basso
         label_w <= label_w_n;
         label_x <= W / 2 - (label_w_n >> 1);
         // televisore della scritta del bonus (vedi LK_BONUS); la riga è larga quanto il riquadro
@@ -869,7 +867,7 @@ always @(posedge clk) begin
         crt_lw <= 8'd0;
         if (label_age < 7'd4) begin
             crt_line <= 1'b1;
-            crt_lw <= quarters({2'b0, label_w_n[6:1]} + 8'd4, label_age[2:0] + 3'd1);
+            crt_lw <= quarters({1'b0, label_w_n[7:1]} + 8'd4, label_age[2:0] + 3'd1);
         end else if (label_age < 7'd8) begin
             crt_hh <= crt_open(label_age[1:0]);                                   // 3, 5, 8, 10
             crt_edge <= 1'b1;
@@ -878,12 +876,12 @@ always @(posedge clk) begin
             crt_edge <= 1'b1;
         end else if (label_age >= 7'd67 && label_age < 7'd71) begin
             crt_line <= 1'b1;
-            crt_lw <= quarters({2'b0, label_w_n[6:1]} + 8'd4, 3'd7 - label_age[2:0]);  // 4/4 .. 1/4
+            crt_lw <= quarters({1'b0, label_w_n[7:1]} + 8'd4, 3'd7 - label_age[2:0]);  // 4/4 .. 1/4
         end else if (label_age >= 7'd71) begin
             crt_dot <= 1'b1;
         end
-        // trattini della mossa armata: una lettera (6 pixel) ogni 2 frame, e quelli accesi
-        dash_rev <= {1'b0, label_age, 1'b0} + {2'b0, label_age};
+        // trattini della mossa armata: una lettera (8 pixel) ogni 2 frame, e quelli accesi
+        dash_rev <= {1'b0, label_age, 2'b0};
         dash_lit <= arm_lit[15:8];
     end
 end
@@ -912,7 +910,7 @@ reg [6:0]  col;                        // indice della tavolozza (pal)
 reg [9:0]  dx, dy, sx, cxl;
 reg [1:0]  t_count;
 reg [3:0]  rb;                         // codice del bonus della riga r della scelta
-reg [4:0]  trow;
+reg [TEXT_W-1:0] trow;
 reg signed [10:0] sdx, sdy;
 reg signed [21:0] u8, v8;
 reg signed [11:0] sy;
@@ -924,6 +922,8 @@ reg [2:0]  kcur;
 reg [9:0]  kcx;
 reg [2:0]  pk;                         // sfilata del finale: colonna e suo centro
 reg [9:0]  pdx;
+reg [2:0]  pkn;                        // ... e colonna del nome (pari o dispari secondo la riga)
+reg [9:0]  pdxn;
 integer    k, p, r;
 // mosse speciali: nome della mossa nella scritta e barre dei due giocatori (un solo confronto per pixel)
 reg        mv_code, mv_on, hb_p;
@@ -979,7 +979,7 @@ always @(*) begin
     w_line = x - (wx - WARP_LINE_HALF) < 2 * WARP_LINE_HALF;
     hb_p = x >= W / 2;
     mv_code = label_move == 2'd2;
-    mv_dx = x - label_x - (NX_P1_W + 3) - (label_mx ? NX_MAX_W + 3 : 0);
+    mv_dx = x - label_x - (NX_P1_W + 9) - (label_mx ? NX_MAX_W + 9 : 0);
     mv_dy = y - LABEL_TOP;
     ldx = x - label_x;
     lbox = 1'b0;
@@ -1015,6 +1015,15 @@ always @(*) begin
          (x >= (END_COL3 + END_COL4) / 2) + (x >= (END_COL4 + END_COL5) / 2) + (x >= (END_COL5 + END_COL6) / 2);
     pdx = (pk == 3'd0) ? END_COL0 : (pk == 3'd1) ? END_COL1 : (pk == 3'd2) ? END_COL2 : (pk == 3'd3) ? END_COL3 :
           (pk == 3'd4) ? END_COL4 : (pk == 3'd5) ? END_COL5 : END_COL6;
+    // i nomi sono più larghi di una colonna: stanno su due righe, i pari sopra e i dispari sotto, e
+    // nella riga del pixel si sceglie fra le sole colonne di quella riga
+    if (y >= END_PARADE_NAME_Y - NX_NAME0_H / 2 + END_PARADE_NAME_DY)
+        pkn = (x >= (END_COL1 + END_COL3) / 2) ? ((x >= (END_COL3 + END_COL5) / 2) ? 3'd5 : 3'd3) : 3'd1;
+    else
+        pkn = (x >= (END_COL0 + END_COL2) / 2) ? ((x >= (END_COL2 + END_COL4) / 2) ?
+              ((x >= (END_COL4 + END_COL6) / 2) ? 3'd6 : 3'd4) : 3'd2) : 3'd0;
+    pdxn = (pkn == 3'd0) ? END_COL0 : (pkn == 3'd1) ? END_COL1 : (pkn == 3'd2) ? END_COL2 : (pkn == 3'd3) ? END_COL3 :
+           (pkn == 3'd4) ? END_COL4 : (pkn == 3'd5) ? END_COL5 : END_COL6;
 
     // Chiamate condivise. Le schermate di scelta e la partita non sono mai insieme sullo schermo:
     // le funzioni più grandi (due kind_px, il nome del bonus e quello della racchetta) si fanno una
@@ -1062,11 +1071,13 @@ always @(*) begin
                     sh_game ? ktilt[1] : (sh_r == K_TWIST) ? 3'sd3 : 3'sd0,
                     1'b0, !sh_game);
     sh_name = name_lit(sh_pickb ? rb[2:0] : label_bonus,
-                       sh_pickb ? (x - (sh_cxb - 34)) >> 1 : ldx - (NX_P1_W + 3),
-                       sh_pickb ? (y - by0) >> 1 : y - LABEL_TOP);
-    sh_kname = kind_name_lit(parade ? pk : sh_r[2:0],
-                             parade ? x - (pdx - kind_name_w(pk) / 2) : (x - (sh_cxl - 14)) >> 1,
-                             parade ? y - (END_PARADE_NAME_Y - NX_NAME0_H / 2) : (y - 74 - ((sh_r <<< 4) + (sh_r <<< 2))) >> 1);
+                       sh_pickb ? x - (sh_cxb - 34) : ldx - (NX_P1_W + 9),
+                       sh_pickb ? y - (by0 + PICK_TEXT_DY) : y - LABEL_TOP);
+    // nella sfilata i nomi pari e dispari su due righe (GUARDIAN e BLASTER sono più larghi di una colonna)
+    sh_kname = kind_name_lit(parade ? pkn : sh_r[2:0],
+                             parade ? x - (pdxn - kind_name_w(pkn) / 2) : x - (sh_cxl - 14),
+                             parade ? y - (END_PARADE_NAME_Y - NX_NAME0_H / 2 + (pkn[0] ? END_PARADE_NAME_DY : 0))
+                                    : y - (74 + ((sh_r <<< 4) + (sh_r <<< 2)) + KIND_TEXT_DY));
 
     if ((pick && pick_paddle) || intro || parade) begin
         // ------------------------------------------------- scelta della racchetta
@@ -1079,14 +1090,14 @@ always @(*) begin
         col = BLACK;
         on = !intro && !parade;
         if (!intro && !parade) begin
-            if (nx_ppick_lit((x - (W - 2 * NX_PPICK_W) / 2) >> 1, (y - 6) >> 1)) col = ACCENT;
-            trow = text_glyph(pick_secs >= 4'd10 ? 4'd1 : 4'd0, div3(y - 10'd30));
-            if (y >= 30 && y < 30 + 3 * TEXT_H && x >= W / 2 - 17 && x < W / 2 - 17 + 3 * TEXT_W &&
-                trow[TEXT_W - 1 - div3(x - (W / 2 - 17))]) col = WHITE;
-            trow = text_glyph(pick_secs >= 4'd10 ? 4'd0 : pick_secs, div3(y - 10'd30));
-            if (y >= 30 && y < 30 + 3 * TEXT_H && x >= W / 2 + 2 && x < W / 2 + 2 + 3 * TEXT_W &&
-                trow[TEXT_W - 1 - div3(x - (W / 2 + 2))]) col = WHITE;
-            if ((x == W / 2 - 1 || x == W / 2) && y >= 56 && y[2] == 1'b0) col = WHITE;
+            if (nx_ppick_lit(x - (W - NX_PPICK_W) / 2, y - PICK_TITLE_Y)) col = ACCENT;
+            trow = text_glyph(pick_secs >= 4'd10 ? 4'd1 : 4'd0, y - 10'd30);
+            if (y >= 30 && y < 30 + TEXT_H && x >= SECS_X1 && x < SECS_X1 + TEXT_W &&
+                trow[TEXT_W - 1 - (x - SECS_X1)]) col = WHITE;
+            trow = text_glyph(pick_secs >= 4'd10 ? 4'd0 : pick_secs, y - 10'd30);
+            if (y >= 30 && y < 30 + TEXT_H && x >= SECS_X2 && x < SECS_X2 + TEXT_W &&
+                trow[TEXT_W - 1 - (x - SECS_X2)]) col = WHITE;
+            if ((x == W / 2 - 1 || x == W / 2) && y >= 56 && y < 216 && y[2] == 1'b0) col = WHITE;
         end
         // ogni colonna sta nella sua metà dello schermo: il lato viene dal pixel e la colonna si disegna
         // una volta sola; nella presentazione e nella sfilata c'è solo quella di sinistra (p = 0)
@@ -1137,10 +1148,10 @@ always @(*) begin
                 on = 1'b1;
                 col = ACCENT;
             end
-            // sfilata: la racchetta che ha già il K.O. si spegne (il nome resta bianco)
+            // sfilata: la racchetta che ha già il KO si spegne (il nome resta bianco)
             if (parade && pk < parade_ko && col != BLACK) col = DIM;
             // sfilata: il nome sotto la racchetta
-            if (parade && p == 0 && pk < parade_n &&
+            if (parade && p == 0 && pkn < parade_n &&
                 sh_kname) begin
                 on = 1'b1;
                 col = WHITE;
@@ -1149,7 +1160,7 @@ always @(*) begin
             if (!intro && !parade && y >= 74 && y < 74 + 20 * 7) begin
                 r = row20(y);
                 if (kcur == r && !kind_chosen[p] && !pick_ready &&
-                    nx_cursor_lit((x - (cxl - 42)) >> 1, (y - 74 - ((r <<< 4) + (r <<< 2))) >> 1))
+                    nx_cursor_lit(x - (cxl - 42), y - (74 + ((r <<< 4) + (r <<< 2)) + KIND_TEXT_DY)))
                     col = ACCENT;
                 // miniatura a metà grandezza
                 kx = $signed({2'b0, x}) - ($signed({2'b0, cxl}) - 25);
@@ -1166,24 +1177,24 @@ always @(*) begin
                     col = (kcur == r) ? (kind_chosen[p] ? ACCENT : WHITE) : GRAY;
             end
             // frase del tipo sotto la colonna
-            if (!intro && !parade && tag_lit(kcur, x - (cxl - tag_w(kcur) / 2), y - 222)) col = GRAY;
+            if (!intro && !parade && tag_lit(kcur, x - (cxl - tag_w(kcur) / 2), y - TAG_Y)) col = GRAY;
         end
-        if (!intro && !parade && pick_ready && blink < 6'd37 && nx_ready_lit((x - (W - 2 * NX_READY_W) / 2) >> 1, (y - 220) >> 1))
+        if (!intro && !parade && pick_ready && blink < 6'd37 && nx_ready_lit(x - (W - NX_READY_W) / 2, y - READY_Y))
             col = ACCENT;
     end else if (pick) begin
         // ---------------------------------------------------- scelta dei bonus
         col = BLACK;
         on = 1'b1;                                         // schermo tutto nero
-        if (nx_pick_lit((x - (W - 2 * NX_PICK_W) / 2) >> 1, (y - 6) >> 1)) col = ACCENT;
-        // secondi rimasti, cifre a scala 3
-        trow = text_glyph(pick_secs >= 4'd10 ? 4'd1 : 4'd0, div3(y - 10'd30));
-        if (y >= 30 && y < 30 + 3 * TEXT_H && x >= W / 2 - 17 && x < W / 2 - 17 + 3 * TEXT_W &&
-            trow[TEXT_W - 1 - div3(x - (W / 2 - 17))]) col = WHITE;
-        trow = text_glyph(pick_secs >= 4'd10 ? 4'd0 : pick_secs, div3(y - 10'd30));
-        if (y >= 30 && y < 30 + 3 * TEXT_H && x >= W / 2 + 2 && x < W / 2 + 2 + 3 * TEXT_W &&
-            trow[TEXT_W - 1 - div3(x - (W / 2 + 2))]) col = WHITE;
+        if (nx_pick_lit(x - (W - NX_PICK_W) / 2, y - PICK_TITLE_Y)) col = ACCENT;
+        // secondi rimasti
+        trow = text_glyph(pick_secs >= 4'd10 ? 4'd1 : 4'd0, y - 10'd30);
+        if (y >= 30 && y < 30 + TEXT_H && x >= SECS_X1 && x < SECS_X1 + TEXT_W &&
+            trow[TEXT_W - 1 - (x - SECS_X1)]) col = WHITE;
+        trow = text_glyph(pick_secs >= 4'd10 ? 4'd0 : pick_secs, y - 10'd30);
+        if (y >= 30 && y < 30 + TEXT_H && x >= SECS_X2 && x < SECS_X2 + TEXT_W &&
+            trow[TEXT_W - 1 - (x - SECS_X2)]) col = WHITE;
         // mezzeria
-        if ((x == W / 2 - 1 || x == W / 2) && y >= 56 && y[2] == 1'b0) col = WHITE;
+        if ((x == W / 2 - 1 || x == W / 2) && y >= 56 && y < 216 && y[2] == 1'b0) col = WHITE;
         // ogni colonna sta nella sua metà dello schermo e ogni riga nelle sue 24 righe: lato e riga
         // vengono dal pixel, così cursore, capsula e nome si disegnano una volta sola (e non 12)
         cxl = sh_cxb;
@@ -1192,22 +1203,22 @@ always @(*) begin
             (cpu ? nx_cpu_lit(x - (cxl - 50), y - 58) : nx_p2_lit(x - (cxl - 50), y - 58)))
             col = WHITE;
         t_count = bmask[0] + bmask[1] + bmask[2] + bmask[3] + bmask[4] + bmask[5];
-        trow = text_glyph({2'd0, t_count}, y - 59);
-        if (y >= 59 && y < 59 + TEXT_H && x >= cxl + 26 && x < cxl + 26 + TEXT_W && trow[TEXT_W - 1 - (x - cxl - 26)])
+        trow = text_glyph({2'd0, t_count}, y - 58);
+        if (y >= 58 && y < 58 + TEXT_H && x >= cxl + 26 && x < cxl + 26 + TEXT_W && trow[TEXT_W - 1 - (x - cxl - 26)])
             col = (t_count == 2'd3) ? WHITE : GRAY;
-        if (nx_of3_lit(x - (cxl + 31), y - 58)) col = (t_count == 2'd3) ? WHITE : GRAY;
+        if (nx_of3_lit(x - (cxl + 26 + TEXT_W), y - 58)) col = (t_count == 2'd3) ? WHITE : GRAY;
         // le sei righe, ogni 24 pixel da y = 76, alte 18: cursore, capsula e nome; l'ultima è STEER
         // (codice 6)
         if (y >= by0 && y < by0 + 18) begin
             if (bcur == br && !lock[bp] && t_count != 2'd3 && !pick_ready &&
-                nx_cursor_lit((x - (cxl - 66)) >> 1, (y - by0) >> 1))
+                nx_cursor_lit(x - (cxl - 66), y - (by0 + PICK_TEXT_DY)))
                 col = ACCENT;
             if (cap_px(x, y, cxl - 52, by0 + 2, rb, bmask[br]))
                 col = (bmask[br] || bcur == br) ? WHITE : GRAY;
             if (sh_name)
                 col = (bmask[br] || bcur == br) ? WHITE : GRAY;
         end
-        if (pick_ready && blink < 6'd37 && nx_ready_lit((x - (W - 2 * NX_READY_W) / 2) >> 1, (y - 220) >> 1))
+        if (pick_ready && blink < 6'd37 && nx_ready_lit(x - (W - NX_READY_W) / 2, y - READY_Y))
             col = ACCENT;
     end else if (nxt) begin
         // --------------------------------------------------------------- partita
@@ -1471,16 +1482,16 @@ always @(*) begin
         // palla non c'è)
         lbox = x >= label_x - 4 && x < label_x + label_w + 4 && y >= LABEL_MID - 10 && y < LABEL_MID + 10;
         ltext = (label_player ? nx_p2_lit(ldx, y - LABEL_TOP) : nx_p1_lit(ldx, y - LABEL_TOP)) ||
-                (label_mx && nx_max_lit(ldx - (NX_P1_W + 3), y - LABEL_TOP)) ||
+                (label_mx && nx_max_lit(ldx - (NX_P1_W + 9), y - LABEL_TOP)) ||
                 (label_move != 2'd0 ? mv_on : sh_name) ||
-                nx_bang_lit(ldx - (NX_P1_W + 3 + label_name_w + 1), y - LABEL_TOP);
+                nx_bang_lit(ldx - (NX_P1_W + 9 + label_name_w + 1), y - LABEL_TOP);
         // colonne con una lettera (solo per le mosse): sotto di loro i trattini, al colpo i blocchi
         lcol = x - label_x < label_w &&
                ((label_player ? nx_p2_col(ldx) : nx_p1_col(ldx)) ||
-                (label_mx && nx_max_col(ldx - (NX_P1_W + 3))) ||
-                (label_move == 2'd2 ? nx_move1_col(ldx - (NX_P1_W + 3) - (label_mx ? NX_MAX_W + 3 : 0))
-                                    : nx_move0_col(ldx - (NX_P1_W + 3) - (label_mx ? NX_MAX_W + 3 : 0))) ||
-                nx_bang_col(ldx - (NX_P1_W + 3 + label_name_w + 1)));
+                (label_mx && nx_max_col(ldx - (NX_P1_W + 9))) ||
+                (label_move == 2'd2 ? nx_move1_col(ldx - (NX_P1_W + 9) - (label_mx ? NX_MAX_W + 9 : 0))
+                                    : nx_move0_col(ldx - (NX_P1_W + 9) - (label_mx ? NX_MAX_W + 9 : 0))) ||
+                nx_bang_col(ldx - (NX_P1_W + 9 + label_name_w + 1)));
         ldash = lcol && (y == LABEL_TOP + 9 || (label_mx && y == LABEL_TOP + 11));
         // distanza dal lato del giocatore che ha fatto la mossa
         lpos = label_player ? label_x + label_w - 1 - x : x - label_x;
@@ -1494,7 +1505,7 @@ always @(*) begin
             if (ldash && lpos < dash_rev) begin
                 on = 1'b1;
                 lb = 1'b1;
-                col = (lpos + 6 >= dash_rev && dash_rev < label_w) ? WHITE : (lpos < dash_lit) ? ACCENT : DIM;
+                col = (lpos + 8 >= dash_rev && dash_rev < label_w) ? WHITE : (lpos < dash_lit) ? ACCENT : DIM;
             end
         end else if (label_on && label_kind == LK_HIT) begin
             // colpo: blocchi bianchi, poi la scritta e i trattini accesi; nell'ultima parte lampeggia
@@ -1502,7 +1513,7 @@ always @(*) begin
                 on = 1'b1;
                 lb = 1'b1;
                 col = BLACK;
-                if (label_age < 7'd2 ? (lcol && y >= LABEL_TOP + 1 && y < LABEL_TOP + 8) : ltext)
+                if (label_age < 7'd2 ? (lcol && y >= LABEL_TOP && y < LABEL_TOP + 7) : ltext)
                     col = (label_age < 7'd4) ? WHITE : ACCENT;
                 if (ldash && label_age < 7'd24)
                     col = (label_age < 7'd4) ? WHITE : ACCENT;

@@ -1,8 +1,10 @@
 // Schermate della scalata di NEXT (la modalità CHALLENGE fino alla 4.1, come
 // rust/game/src/challenge_ui.rs): presentazione dell'avversario, livello superato, continue, iniziali,
 // classifica, nuovo sfidante, e in partita i punti arcade in basso dalla parte dell'avversario; sopra
-// a tutte, quando serve, "n WINS" (duelli vinti di fila dal campione). Scritte fisse da tools/gen_challenge_assets.py; numeri e iniziali con un font a
-// celle: per ogni pixel si sceglie al più una cella, poi un solo accesso al font.
+// a tutte, quando serve, "n WINS" (duelli vinti di fila dal campione). Scritte fisse da
+// tools/gen_challenge_assets.py; numeri e iniziali con lo stesso font (Press Start 2P) in celle di 8x8
+// pixel: per ogni pixel si sceglie al più una cella, poi un solo accesso al font. Tutto a scala 1,
+// solo GAME OVER (continue scaduto) alla scala grande della fine partita (1 << BIG_SH).
 
 `timescale 1ns / 1ps
 
@@ -36,7 +38,7 @@ module challenge_render (
     input  wire [3:0]  mult,              // moltiplicatore dello scambio
     input  wire [7:0]  intro_age,         // presentazione: frame dall'inizio (fermi a 255)
     // "n WINS" in giallo, nella metà sinistra o destra: piccolo in alto al centro della metà
-    // (presentazione) o a scala 2 in basso verso il bordo (fine del duello, lontano dai punteggi
+    // (presentazione) o in basso verso il bordo (fine del duello, lontano dai punteggi
     // ruotati verso i giocatori); n in BCD, 1-99
     input  wire        wins_on,
     input  wire        wins_right,
@@ -57,22 +59,32 @@ localparam [5:0] G_SPACE = 6'd36, G_PLUS = 6'd37, G_DOT = 6'd38, G_X = 6'd39, G_
 localparam integer C = CH_CELL;
 // presentazione: nome della racchetta, capsule dei bonus (lato 13 come nel gioco PC, l'icona 9x9
 // con un pixel di margine), riga FIRST TO n centrata con una o due cifre
-localparam integer INTRO_KIND_Y = 114, INTRO_CAP = 13, INTRO_CAP_Y = 154, INTRO_FIRST_Y = 190;
-localparam integer FIRST_X1 = (W - (CH_FIRST_W + 2 + C)) / 2, FIRST_X2 = (W - (CH_FIRST_W + 2 + 2 * C)) / 2;
-// punti in partita: in basso, dalla parte dell'avversario (a destra da HUD_R, a sinistra speculari)
-localparam integer HUD_R = 196, HUD_SPAN = 74 + 2 * C, HUD_L = W - HUD_R - HUD_SPAN;
-// nuovo sfidante: banda rossa con le due righe a scala 4
-localparam integer NEW_BAND_Y = 58, NEW_BAND_H = 104, NEW_Y1 = 70, NEW_Y2 = 116;
+localparam integer INTRO_KIND_Y = 118, INTRO_CAP = 13, INTRO_CAP_Y = 154, INTRO_FIRST_Y = 190;
+localparam integer INTRO_TAG_Y = INTRO_KIND_Y + 14;
+localparam integer INTRO_TITLE_Y = 20;
+// FIRST TO n: dopo la scritta uno spazio (le parole stanno nella griglia di 8 pixel)
+localparam integer FIRST_X1 = (W - (CH_FIRST_W + 1 + 2 * C)) / 2, FIRST_X2 = (W - (CH_FIRST_W + 1 + 3 * C)) / 2;
+// punti in partita: in basso, dalla parte dell'avversario (a destra da HUD_R, a sinistra speculari),
+// sopra il riquadro della scritta del bonus di NEXT (righe 218-237), che è largo fino a 168 pixel:
+// "L1 0000000 x3", celle di 8 pixel con uno spazio fra i gruppi
+localparam integer HUD_R = 200, HUD_SPAN = 13 * C - 1, HUD_L = W - HUD_R - HUD_SPAN, HUD_Y = 206;
+// nuovo sfidante: banda rossa con le due righe
+localparam integer NEW_BAND_Y = 96, NEW_BAND_H = 48, NEW_Y1 = 108, NEW_Y2 = 124;
+// GAME OVER del continue scaduto: larghezza e altezza dell'inchiostro alla scala grande
+localparam integer GO_WB = GAME_OVER_W << BIG_SH, BH = 7 << BIG_SH;
 localparam [23:0] RGB_BAND = 24'h8C1414;
 // invito allo sfidante, in alto al centro del lato libero: "P2 PRESS START" o "INSERT COIN"
-localparam integer JOIN_Y = 2, JOIN_W = 2 * C + 4 + CH_PRESS_W;
+localparam integer JOIN_Y = 2, JOIN_W = 3 * C + CH_PRESS_W;
 localparam integer JOIN_XL = W / 4 - JOIN_W / 2, JOIN_XR = 3 * W / 4 - JOIN_W / 2;
 localparam integer COIN_XL = W / 4 - CH_COIN_W / 2, COIN_XR = 3 * W / 4 - CH_COIN_W / 2;
-localparam [5:0] G_P = 6'd25;
-// classifica: colonne di posizione, iniziali, punti (7 cifre) e livello ("ALL", 3 celle), l'elenco
-// centrato sull'inchiostro (l'ultima colonna della cella è lo spazio fra i caratteri)
-localparam integer TB_NAMES = 36, TB_SCORE = 80, TB_LEVEL = 160, TB_SPAN = TB_LEVEL + 3 * C - 1;
+localparam [5:0] G_P = 6'd25, G_V = 6'd31;
+// classifica: colonne di posizione (due celle), iniziali, punti (7 cifre) e livello ("LV7" o "ALL", 3
+// celle), distanziate di due o tre celle; l'elenco centrato sull'inchiostro (l'ultima colonna della
+// cella è lo spazio fra i caratteri)
+localparam integer TB_NAMES = 4 * C, TB_SCORE = 10 * C, TB_LEVEL = 20 * C, TB_SPAN = TB_LEVEL + 3 * C - 1;
 localparam integer TB_X = (W - TB_SPAN) / 2;
+// otto righe mostrate, la prima a TB_Y0, ogni TB_STEP pixel
+localparam [9:0] TB_Y0 = 10'd40, TB_STEP = 10'd20;
 
 // Colori come indici della tavolozza `pal` (4 bit invece di 24): le scelte del pixel si fanno fra
 // indici e il colore vero si legge una volta sola, all'uscita
@@ -157,8 +169,8 @@ endtask
 // vanno verso la sua metà campo, da dove entra.
 localparam integer IP_Y = 82;                     // centro della racchetta (INTRO_Y di next_render)
 localparam integer LADDER_Y = 34, LADDER_X = 76;  // scala: 7 trattini 16x4 ogni 24 pixel
-localparam integer NAME_GROUND = INTRO_KIND_Y + 17;   // TITAN: il pavimento sotto il nome
-localparam integer WALL_TOP = IP_Y - 34;          // GUARDIAN: 5 settori da 12 righe ogni 14
+localparam integer NAME_GROUND = INTRO_KIND_Y + 9;    // TITAN: il pavimento sotto il nome
+localparam integer WALL_TOP = IP_Y - 36;          // GUARDIAN: 5 settori da 12 righe ogni 14, sopra il nome
 localparam [2:0] K_ARCADE = 3'd0, K_TITAN = 3'd1, K_HAMMER = 3'd2, K_TWIST = 3'd3, K_BLASTER = 3'd4,
                  K_RUSH = 3'd5, K_GUARDIAN = 3'd6;
 localparam [23:0] RGB_DIM = 24'h3A3A3A, RGB_GHOST = 24'h7F6912, RGB_TRAIL1 = 24'h9A9A9A, RGB_TRAIL2 = 24'h5E5E5E,
@@ -212,8 +224,10 @@ endfunction
 
 // continue: y della pallina (parabola di 60 frame, alta 30 pixel: s (60 - s) * 17 / 512) e GAME OVER
 // che si scrive (una lettera ogni 5 frame dal 12, cursore) e si chiude (dal frame 158)
+localparam integer CONT_Y = 84;                  // continue: riga della cifra
+localparam integer CL_X = 80, CL_V = 184;        // livello superato: etichette e numeri
 reg signed [10:0] cont_ball_y;
-reg [5:0]  go_cols;
+reg [6:0]  go_cols;
 reg        go_cur, go_close, go_close_line, go_close_dot, go_close_black;
 reg signed [10:0] go_cur_x;
 reg [6:0]  go_close_w, go_close_h;
@@ -222,11 +236,11 @@ reg [7:0]  go_a;
 reg [3:0]  go_n;
 always @(posedge clk) begin
     cb_m = {6'd0, cont_sub} * (12'd60 - {6'd0, cont_sub});
-    cont_ball_y <= 76 + 4 * CH_GLYPH_H - 6 - ((cb_m * 17) >> 9);
+    cont_ball_y <= CONT_Y + CH_GLYPH_H - 6 - ((cb_m * 17) >> 9);
     go_a = intro_age - 8'd12;
     go_n = (intro_age < 8'd12) ? 4'd0 : (go_a >= 8'd40) ? GAME_OVER_LETTERS : ((go_a * 13) >> 6) + 4'd1;
-    go_cols <= (go_n == 4'd0) ? 6'd0 : game_over_l1(go_n - 4'd1);
-    go_cur_x <= (W - 2 * GAME_OVER_W) / 2 + 2 * ((go_n == 4'd0) ? 6'd0 : game_over_l1(go_n - 4'd1)) + 2;
+    go_cols <= (go_n == 4'd0) ? 7'd0 : game_over_l1(go_n - 4'd1);
+    go_cur_x <= (W - GO_WB) / 2 + (((go_n == 4'd0) ? 7'd0 : game_over_l1(go_n - 4'd1)) << BIG_SH) + 2;
     go_cur <= intro_age >= 8'd12 && (go_n < GAME_OVER_LETTERS || intro_age[4]);
     go_close <= intro_age >= 8'd158;
     go_close_line <= intro_age >= 8'd166 && intro_age < 8'd174;
@@ -262,12 +276,12 @@ reg signed [15:0] tm, td, tv, tw;
 reg signed [10:0] tx0;
 integer    c, q;
 
-// motto scritto da t0, una lettera (5 pixel) per frame
+// motto scritto da t0, una lettera (8 pixel) per frame
 task tag_from(input [7:0] t0);
     begin
         i_tag <= intro_age >= t0;
         tt = intro_age - t0;
-        i_tcols <= (tt >= 8'd25) ? 7'd127 : ({tt[4:0], 2'b0} + tt[4:0]);
+        i_tcols <= (tt >= 8'd16) ? 7'd127 : {tt[3:0], 3'b0};
     end
 endtask
 // capsule che arrivano dalla metà campo dell'avversario (da 180 pixel dal centro), una ogni gap frame
@@ -407,14 +421,14 @@ always @(posedge clk) begin
                 tm = (tv * tv * 13) >>> 5;
                 tw = $signed({9'd0, kind_name_w(kind)});
                 i_dust <= 1'b1;
-                i_ux[0] <= W / 2 - tw - 5 - tv * 3;
-                i_ux[1] <= W / 2 + tw + 3 + tv * 3;
-                i_ux[2] <= W / 2 - tw - 5 - tv * 5;
-                i_ux[3] <= W / 2 + tw + 3 + tv * 5;
-                i_uy[0] <= 137 - ((tv * 5) >>> 1) + tm;
-                i_uy[1] <= 137 - ((tv * 5) >>> 1) + tm;
-                i_uy[2] <= 137 - ((tv * 3) >>> 1) + tm;
-                i_uy[3] <= 137 - ((tv * 3) >>> 1) + tm;
+                i_ux[0] <= W / 2 - (tw >>> 1) - 5 - tv * 3;
+                i_ux[1] <= W / 2 + (tw >>> 1) + 3 + tv * 3;
+                i_ux[2] <= W / 2 - (tw >>> 1) - 5 - tv * 5;
+                i_ux[3] <= W / 2 + (tw >>> 1) + 3 + tv * 5;
+                i_uy[0] <= INTRO_KIND_Y + 7 - ((tv * 5) >>> 1) + tm;
+                i_uy[1] <= INTRO_KIND_Y + 7 - ((tv * 5) >>> 1) + tm;
+                i_uy[2] <= INTRO_KIND_Y + 7 - ((tv * 3) >>> 1) + tm;
+                i_uy[3] <= INTRO_KIND_Y + 7 - ((tv * 3) >>> 1) + tm;
             end
             tag_from(8'd88);
             // le capsule cadono pesanti
@@ -436,10 +450,10 @@ always @(posedge clk) begin
             i_ndy <= (intro_age < 8'd84 || tt >= 8'd25) ? 11'sd0 : 11'sd25 - $signed({3'd0, tt});
             i_ground <= 1'b1;
             i_gline <= intro_age >= 8'd84 && intro_age < 8'd112;
-            // il motto si scrive piano: una lettera ogni 3 frame
+            // il motto si scrive piano: una lettera (8 pixel) ogni 3 frame
             i_tag <= intro_age >= 8'd114;
-            tm = ($signed({8'd0, intro_age - 8'd114}) * 55) >>> 5;
-            i_tcols <= (intro_age - 8'd114 >= 8'd74) ? 7'd127 : tm[6:0];
+            tm = ($signed({8'd0, intro_age - 8'd114}) * 85) >>> 5;
+            i_tcols <= (intro_age - 8'd114 >= 8'd48) ? 7'd127 : tm[6:0];
             caps_slide(8'd156, 8'd12, 6'd8);
             i_first <= intro_age >= 8'd214;
         end
@@ -447,12 +461,12 @@ always @(posedge clk) begin
             // ogni colpo accende una lettera del nome, dalla più vicina alla racchetta (bocca a 112
             // pixel verso l'avversario, colpi a 20 pixel per frame, uno ogni 5 frame dal 12)
             tn = 4'd0;
-            tx0 = (W - 2 * kind_name_w(K_BLASTER)) / 2;
+            tx0 = (W - kind_name_w(K_BLASTER)) / 2;
             for (q = 0; q < 7; q = q + 1) begin
                 // centro della lettera j (contata da sinistra) e distanza dalla bocca
                 tv = side ? q : 6 - q;
-                td = tx0 + ((tv == 0) ? kind_l1(K_BLASTER, 4'd0) - 1 :
-                            kind_l1(K_BLASTER, tv[3:0] - 4'd1) + kind_l1(K_BLASTER, tv[3:0]));
+                td = tx0 + (((tv == 0) ? kind_l1(K_BLASTER, 4'd0) - 1 :
+                             kind_l1(K_BLASTER, tv[3:0] - 4'd1) + kind_l1(K_BLASTER, tv[3:0])) >>> 1);
                 td = ax(11'sd112) - td;
                 td = (td < 0) ? -td : td;
                 ts = 8'd12 + 8'd5 * q;
@@ -461,7 +475,7 @@ always @(posedge clk) begin
                 if (intro_age >= ts && tm < td) begin
                     i_shot[q % 3] <= 1'b1;
                     i_shx[q % 3] <= ax(11'sd112 - tm[10:0]) - 11'sd3;
-                    i_shy[q % 3] <= INTRO_KIND_Y + 9;
+                    i_shy[q % 3] <= INTRO_KIND_Y + 3;
                 end
             end
             i_nlo <= side ? 7'd0 : (tn == 4'd0) ? 7'd127 : (tn >= 4'd7) ? 7'd0 : kind_l1(K_BLASTER, 4'd6 - tn);
@@ -553,8 +567,7 @@ always @(posedge clk) begin
     endcase
 end
 
-// scritta centrata, scala 2
-`define CENTER2(lit, w, y0) lit((x - (W - 2 * (w)) / 2) >> 1, (y - (y0)) >> 1)
+// scritta centrata
 `define CENTER1(lit, w, y0) lit(x - (W - (w)) / 2, y - (y0))
 
 // ------------------------------------------------ classifica animata (schermata 5)
@@ -567,7 +580,7 @@ end
 // una conversione in decimale per riga. Dal frame SC_MARK due racchette gialle arrivano dai bordi ai
 // lati del posto nuovo e, nella prima metà di ogni secondo (blink), un riflesso bianco lo attraversa.
 localparam [7:0] SC_MARK = 8'd190;
-localparam integer SC_LOCK0 = 8, SC_LOCK_STEP = 6, SC_DONE = SC_LOCK0 + 7 * SC_LOCK_STEP, SC_BOTTOM = 226;
+localparam integer SC_LOCK0 = 8, SC_LOCK_STEP = 6, SC_DONE = SC_LOCK0 + 7 * SC_LOCK_STEP, SC_BOTTOM = 206;
 reg [3:0]  sc_roll = 4'd0;              // cifra che gira, avanza a ogni frame
 reg [7:0]  sc_age_q = 8'd0;
 always @(posedge clk) begin
@@ -587,6 +600,7 @@ endfunction
 reg  signed [10:0] sc_lit;              // pixel di discesa della palla oltre la riga del pixel
 reg  signed [10:0] sc_pl, sc_pr;        // x delle racchette ai lati del posto nuovo
 reg  [9:0]  sc_row_y;
+reg  [3:0]  ri, hl_row;                 // classifica: posto della riga mostrata, riga del posto nuovo
 reg  [27:0] sc_bcd;
 reg  [3:0]  sc_rc, sc_lc;               // colori della riga e del livello
 reg  [4:0]  sc_t;
@@ -602,6 +616,8 @@ always @(*) begin
     sc_pl = 11'sd0;
     sc_pr = 11'sd0;
     sc_row_y = 10'd0;
+    ri = 4'd0;
+    hl_row = 4'd0;
     sc_bcd = 28'd0;
     sc_rc = WHITE;
     sc_lc = GRAY;
@@ -626,8 +642,8 @@ always @(*) begin
         3'd1: begin   // ------------------------------------------------ presentazione
             on = 1'b1;
             // titolo: LEVEL n OF 7 (FINAL LEVEL), nell'allenamento TRAINING come su PC e C64
-            if (i_title && (train ? ch_train_lit((x - (W - 2 * CH_TRAIN_W) / 2) >> 1, (y - 14) >> 1)
-                                  : ch_intro_lit(level, (x - (W - 2 * ch_intro_w(level)) / 2) >> 1, (y - 14) >> 1)))
+            if (i_title && (train ? `CENTER1(ch_train_lit, CH_TRAIN_W, INTRO_TITLE_Y)
+                                  : ch_intro_lit(level, x - (W - ch_intro_w(level)) / 2, y - INTRO_TITLE_Y)))
                 col = ACCENT;
             // la scala dei livelli
             for (j = 0; j < 7; j = j + 1)
@@ -635,25 +651,24 @@ always @(*) begin
                     col = (j < level && !train) ? WHITE : (j == level && !intro_age[3]) ? ACCENT : DIM;
             // nome: spostato, inclinato per riga (TWIST), a colonne (BLASTER), sotto il pavimento
             // (TITAN), lettera per lettera (GUARDIAN); RUSH ha un'immagine gialla dietro
-            n_row = ($signed({2'b0, y}) - (INTRO_KIND_Y + i_ndy)) >>> 1;
-            n_x0 = (W - 2 * kind_name_w(kind)) / 2 + i_ndx + i_shear * (n_row - 11'sd4);
-            n_u = ($signed({2'b0, x}) - n_x0) >>> 1;
+            n_row = $signed({2'b0, y}) - (INTRO_KIND_Y + i_ndy);
+            n_x0 = (W - kind_name_w(kind)) / 2 + i_ndx + i_shear * (n_row - 11'sd4);
+            n_u = $signed({2'b0, x}) - n_x0;
             n_li = (n_u >= kind_l1(K_GUARDIAN, 4'd0)) + (n_u >= kind_l1(K_GUARDIAN, 4'd1)) +
                    (n_u >= kind_l1(K_GUARDIAN, 4'd2)) + (n_u >= kind_l1(K_GUARDIAN, 4'd3)) +
                    (n_u >= kind_l1(K_GUARDIAN, 4'd4)) + (n_u >= kind_l1(K_GUARDIAN, 4'd5)) +
                    (n_u >= kind_l1(K_GUARDIAN, 4'd6));
-            n_v = ($signed({2'b0, y}) - (INTRO_KIND_Y + i_ndy + (kind == K_GUARDIAN ? i_ldy[n_li] : 11'sd0))) >>> 1;
+            n_v = $signed({2'b0, y}) - (INTRO_KIND_Y + i_ndy + (kind == K_GUARDIAN ? i_ldy[n_li] : 11'sd0));
             n_px = i_name && n_u >= 0 && n_u >= $signed({4'd0, i_nlo}) && n_u < $signed({4'd0, i_nhi}) &&
                    kind_name_lit(kind, n_u[9:0], n_v[9:0]) && (kind != K_GUARDIAN || i_lshow[n_li]) &&
                    !(i_ground && y >= NAME_GROUND);
-            if (i_ghost && !n_px && kind_name_lit(kind, (x - ((W - 2 * kind_name_w(kind)) / 2 + i_gdx)) >> 1,
-                                                  (y - INTRO_KIND_Y) >> 1))
+            if (i_ghost && !n_px && kind_name_lit(kind, x - ((W - kind_name_w(kind)) / 2 + i_gdx), y - INTRO_KIND_Y))
                 col = GHOST;
             if (n_px) col = i_nacc ? ACCENT : WHITE;
-            if (i_gline && y == NAME_GROUND && in_box(W / 2 - kind_name_w(kind) - 8, NAME_GROUND, 2 * kind_name_w(kind) + 16, 7'd1))
+            if (i_gline && y == NAME_GROUND && in_box(W / 2 - kind_name_w(kind) / 2 - 8, NAME_GROUND, kind_name_w(kind) + 16, 7'd1))
                 col = DIM;
             // motto: scritto a colonne, o spostato (RUSH)
-            if (i_tag && tag_lit(kind, x - ((W - tag_w(kind)) / 2 + i_tdx), y - (INTRO_KIND_Y + 22)) &&
+            if (i_tag && tag_lit(kind, x - ((W - tag_w(kind)) / 2 + i_tdx), y - INTRO_TAG_Y) &&
                 x - ((W - tag_w(kind)) / 2 + i_tdx) < i_tcols)
                 col = GRAY;
             // i bonus dell'avversario su tre colonne (centri a 80, 160 e 240): capsula con l'icona di
@@ -687,10 +702,10 @@ always @(*) begin
             if (i_first) begin
                 if (ch_first_lit(x - first_x, y - INTRO_FIRST_Y)) col = GRAY;
                 if (pts_tens != 2'd0) begin
-                    put(first_x + CH_FIRST_W + 2, INTRO_FIRST_Y, {4'd0, pts_tens}, 2'd0, GRAY);
-                    put(first_x + CH_FIRST_W + 2 + C, INTRO_FIRST_Y, {1'b0, pts_units}, 2'd0, GRAY);
+                    put(first_x + CH_FIRST_W + 1 + C, INTRO_FIRST_Y, {4'd0, pts_tens}, 2'd0, GRAY);
+                    put(first_x + CH_FIRST_W + 1 + 2 * C, INTRO_FIRST_Y, {1'b0, pts_units}, 2'd0, GRAY);
                 end else
-                    put(first_x + CH_FIRST_W + 2, INTRO_FIRST_Y, {1'b0, pts_units}, 2'd0, GRAY);
+                    put(first_x + CH_FIRST_W + 1 + C, INTRO_FIRST_Y, {1'b0, pts_units}, 2'd0, GRAY);
             end
             // il resto delle entrate: mezzeria e raffica (ARCADE), palla e scia, colpi (BLASTER),
             // polvere (HAMMER), muro a settori (GUARDIAN)
@@ -713,10 +728,10 @@ always @(*) begin
                     !in_box(i_wx, i_wy[j] + 7, 7'd2, 7'd1) && !in_box(i_wx, i_wy[j] + 11, 7'd2, 7'd1))
                     col = (j == 0 && i_wflash) ? WHITE : ACCENT;
             if (!train) begin
-                if (ch_score_lit(x - 40, y - 216)) col = WHITE;
-                digits7(10'd40 + CH_SCORE_W + 4, 10'd216, score_bcd, WHITE);
-                if (ch_hi_lit(x - 176, y - 216)) col = WHITE;
-                digits7(10'd176 + CH_HI_W + 4, 10'd216, hi_bcd, WHITE);
+                if (ch_score_lit(x - 24, y - 216)) col = WHITE;
+                digits7(10'd24 + CH_SCORE_W + 1 + C, 10'd216, score_bcd, WHITE);
+                if (ch_hi_lit(x - 192, y - 216)) col = WHITE;
+                digits7(10'd192 + CH_HI_W + 1 + C, 10'd216, hi_bcd, WHITE);
             end
             // sfidante: invito lampeggiante dal lato libero (P2 con il campione a sinistra)
             if (join_prompt && blink < 6'd30) begin
@@ -725,33 +740,34 @@ always @(*) begin
                 end else begin
                     put(side ? JOIN_XL : JOIN_XR, JOIN_Y, G_P, 2'd0, WHITE);
                     put((side ? JOIN_XL : JOIN_XR) + C, JOIN_Y, side ? 6'd1 : 6'd2, 2'd0, WHITE);
-                    if (ch_press_lit(x - ((side ? JOIN_XL : JOIN_XR) + 2 * C + 4), y - JOIN_Y)) col = WHITE;
+                    if (ch_press_lit(x - ((side ? JOIN_XL : JOIN_XR) + 3 * C), y - JOIN_Y)) col = WHITE;
                 end
             end
         end
         3'd2: begin   // ---------------------------------------------- livello superato
             on = 1'b1;
-            if (ch_clear_lit(level, (x - (W - 2 * ch_clear_w(level)) / 2) >> 1, (y - 40) >> 1)) col = ACCENT;
+            if (ch_clear_lit(level, x - (W - ch_clear_w(level)) / 2, y - 44)) col = ACCENT;
             if (level == CH_LEVELS - 1 && `CENTER1(ch_beat_lit, CH_BEAT_W, 72)) col = WHITE;
-            if (ch_win_lit(x - 90, y - 100)) col = WHITE;
+            // etichette da CL_X, numeri da CL_V (il "+" una cella prima)
+            if (ch_win_lit(x - CL_X, y - 100)) col = WHITE;
             // +1000 x livello: cifre "n000"
-            put(10'd180, 10'd100, G_PLUS, 2'd0, WHITE);
+            put(CL_V - C, 10'd100, G_PLUS, 2'd0, WHITE);
             for (j = 0; j < 4; j = j + 1)
-                put(10'd187 + C * j, 10'd100, (j == 0) ? {3'd0, level} + 6'd1 : 6'd0, 2'd0, WHITE);
+                put(CL_V + C * j, 10'd100, (j == 0) ? {3'd0, level} + 6'd1 : 6'd0, 2'd0, WHITE);
             if (perfect) begin
-                if (ch_perfect_lit(x - 90, y - 120)) col = ACCENT;
+                if (ch_perfect_lit(x - CL_X, y - 120)) col = ACCENT;
                 // +2000 x livello
-                put(10'd180, 10'd120, G_PLUS, 2'd0, ACCENT);
+                put(CL_V - C, 10'd120, G_PLUS, 2'd0, ACCENT);
                 if (level >= 3'd4) begin
-                    put(10'd187, 10'd120, 6'd1, 2'd0, ACCENT);
-                    put(10'd187 + C, 10'd120, {2'd0, ({level, 1'b0} + 4'd2) - 4'd10}, 2'd0, ACCENT);
+                    put(CL_V, 10'd120, 6'd1, 2'd0, ACCENT);
+                    put(CL_V + C, 10'd120, {2'd0, ({level, 1'b0} + 4'd2) - 4'd10}, 2'd0, ACCENT);
                 end else
-                    put(10'd187, 10'd120, {2'd0, {level, 1'b0} + 4'd2}, 2'd0, ACCENT);
+                    put(CL_V, 10'd120, {2'd0, {level, 1'b0} + 4'd2}, 2'd0, ACCENT);
                 for (j = 0; j < 3; j = j + 1)
-                    put(10'd187 + C * (j + (level >= 3'd4 ? 2 : 1)), 10'd120, 6'd0, 2'd0, ACCENT);
+                    put(CL_V + C * (j + (level >= 3'd4 ? 2 : 1)), 10'd120, 6'd0, 2'd0, ACCENT);
             end
-            if (ch_score_lit(x - 90, y - 150)) col = WHITE;
-            digits7(10'd180, 10'd150, score_bcd, WHITE);
+            if (ch_score_lit(x - CL_X, y - 150)) col = WHITE;
+            digits7(CL_V, 10'd150, score_bcd, WHITE);
             if (`CENTER1(ch_press_lit, CH_PRESS_W, 200)) col = GRAY;
         end
         3'd3: begin   // ------------------------------------------------------ continue
@@ -760,9 +776,10 @@ always @(*) begin
                 // continue scaduto: GAME OVER al centro, come quello sopra la partita ma senza campo
                 // da spegnere: si scrive subito con il cursore, poi lo schermo si chiude come un
                 // televisore (come OV_TYPE e OV_OFF di pong_render; intro_age conta i frame del GAME OVER)
-                if (`CENTER2(game_over_lit, GAME_OVER_W, AT_GAME_OVER_Y) && (x - (W - 2 * GAME_OVER_W) / 2) >> 1 < go_cols)
+                if (game_over_lit((x - (W - GO_WB) / 2) >> BIG_SH, (y - AT_GAME_OVER_Y) >> BIG_SH) &&
+                    (x - (W - GO_WB) / 2) >> BIG_SH < go_cols)
                     col = WHITE;
-                if (go_cur && in_box(go_cur_x, AT_GAME_OVER_Y, 7'd8, 7'd14)) col = WHITE;
+                if (go_cur && in_box(go_cur_x, AT_GAME_OVER_Y, 4 << BIG_SH, BH)) col = WHITE;
                 if (go_close && !go_close_black && (go_close_dot ? (x == W / 2 - 1 || x == W / 2) && (y == 119 || y == 120) :
                                  go_close_line ? (y == 119 || y == 120) && x >= W / 2 - go_close_w && x < W / 2 + go_close_w :
                                  (y == 120 - go_close_h || y == 119 + go_close_h)))
@@ -770,12 +787,12 @@ always @(*) begin
                 else if (go_close && (go_close_black || go_close_dot || go_close_line || y < 120 - go_close_h || y > 119 + go_close_h))
                     col = BLACK;
             end else begin
-                if (`CENTER2(ch_cont_lit, CH_CONT_W, 36)) col = ACCENT;
-                put(W / 2 - 2 * C, 10'd76, {2'd0, cont_digit}, 2'd2, WHITE);
+                if (`CENTER1(ch_cont_lit, CH_CONT_W, 40)) col = ACCENT;
+                put(W / 2 - C / 2, CONT_Y, {2'd0, cont_digit}, 2'd0, WHITE);
                 // pallina che rimbalza a destra del numero: tocca terra a ogni secondo, quando il
                 // numero cambia; negli ultimi tre secondi diventa gialla
-                if (in_box(W / 2 + 2 * C + 12, cont_ball_y, 7'd6, 7'd6)) col = (cont_digit <= 4'd2) ? ACCENT : WHITE;
-                if (in_box(W / 2 + 2 * C + 9, 10'd76 + 4 * CH_GLYPH_H, 7'd12, 7'd1)) col = GRAY;
+                if (in_box(W / 2 + C / 2 + 12, cont_ball_y, 7'd6, 7'd6)) col = (cont_digit <= 4'd2) ? ACCENT : WHITE;
+                if (in_box(W / 2 + C / 2 + 9, CONT_Y + CH_GLYPH_H, 7'd12, 7'd1)) col = GRAY;
                 if (blink < 6'd30 &&
                     (coin_prompt ? `CENTER1(ch_coin_lit, CH_COIN_W, 160) : `CENTER1(ch_press_lit, CH_PRESS_W, 160)))
                     col = WHITE;
@@ -784,26 +801,32 @@ always @(*) begin
         end
         3'd4: begin   // ------------------------------------------------------- iniziali
             on = 1'b1;
-            if (`CENTER2(ch_record_lit, CH_RECORD_W, 24)) col = ACCENT;
-            if (ch_score_lit(x - 100, y - 66)) col = WHITE;
-            digits7(10'd100 + CH_SCORE_W + 4, 10'd66, score_bcd, WHITE);
+            if (`CENTER1(ch_record_lit, CH_RECORD_W, 28)) col = ACCENT;
+            // SCORE 0000000 centrato (13 celle)
+            if (ch_score_lit(x - (W - 13 * C) / 2, y - 66)) col = WHITE;
+            digits7((W - 13 * C) / 2 + 6 * C, 10'd66, score_bcd, WHITE);
             if (`CENTER1(ch_enter_lit, CH_ENTER_W, 92)) col = GRAY;
+            // le tre lettere, ogni 16 pixel
             for (i = 0; i < 3; i = i + 1) begin
                 if (i < name_pos)
-                    put(10'd160 - 2 * C + 40 * (i - 1), 10'd116, name[6 * i +: 6], 2'd2, WHITE);
+                    put(10'd160 - C / 2 + 16 * (i - 1), 10'd120, name[6 * i +: 6], 2'd0, WHITE);
                 else if (i == name_pos) begin
-                    if (blink < 6'd40) put(10'd160 - 2 * C + 40 * (i - 1), 10'd116, letter, 2'd2, ACCENT);
+                    if (blink < 6'd40) put(10'd160 - C / 2 + 16 * (i - 1), 10'd120, letter, 2'd0, ACCENT);
                 end else
-                    put(10'd160 - 2 * C + 40 * (i - 1), 10'd116, G_DOT, 2'd2, WHITE);
+                    put(10'd160 - C / 2 + 16 * (i - 1), 10'd120, G_DOT, 2'd0, WHITE);
             end
             if (`CENTER1(ch_hint_lit, CH_HINT_W, 210)) col = GRAY;
         end
         3'd5: begin   // ----------------------------------------------------- classifica
             on = 1'b1;
-            if (`CENTER2(ch_table_lit, CH_TABLE_W, 6)) col = ACCENT;
-            // dieci righe da 18 pixel: si sceglie la riga, poi la cella
-            for (i = 0; i < 10; i = i + 1)
-                if (y - (36 + 18 * i) < CH_GLYPH_H) row = i[3:0];
+            if (`CENTER1(ch_table_lit, CH_TABLE_W, 14)) col = ACCENT;
+            // otto righe ogni TB_STEP pixel: si sceglie la riga, poi la cella. La classifica ha dieci
+            // posti: se quello nuovo è il 9° o il 10°, l'ultima riga mostra lui (con il suo numero),
+            // così chi ha appena scritto le iniziali si vede sempre (come nel gioco Rust)
+            for (i = 0; i < 8; i = i + 1)
+                if (y - (TB_Y0 + TB_STEP * i) < CH_GLYPH_H) row = i[3:0];
+            ri = (row == 4'd7 && (highlight == 4'd8 || highlight == 4'd9)) ? highlight : row;
+            hl_row = (highlight >= 4'd8) ? 4'd7 : highlight;
             // la palla, con la scia, finché non ha passato l'ultima riga (sotto le scritte)
             if (sc_ball_y(intro_age) < SC_BOTTOM) begin
                 for (sk = 3; sk >= 0; sk = sk - 1) begin
@@ -819,43 +842,44 @@ always @(*) begin
                 sc_pr = 11'sd320 - $signed({3'd0, sc_k}) * 3;
                 if (sc_pl > TB_X - 14) sc_pl = TB_X - 14;
                 if (sc_pr < TB_X + TB_SPAN + 10) sc_pr = TB_X + TB_SPAN + 10;
-                if (in_box(sc_pl, $signed({1'b0, 10'd32 + 18 * highlight}), 7'd4, 7'd15) ||
-                    in_box(sc_pr, $signed({1'b0, 10'd32 + 18 * highlight}), 7'd4, 7'd15))
+                if (in_box(sc_pl, $signed({1'b0, TB_Y0 - 10'd4 + TB_STEP * hl_row}), 7'd4, 7'd15) ||
+                    in_box(sc_pr, $signed({1'b0, TB_Y0 - 10'd4 + TB_STEP * hl_row}), 7'd4, 7'd15))
                     col = ACCENT;
             end
-            if (y >= 36 && y < 36 + 18 * 10) begin
+            if (y >= TB_Y0 && y < TB_Y0 + TB_STEP * 8) begin
                 // la riga si accende quando la palla la tocca; le cifre girano e si fermano da sinistra
-                sc_row_y = 10'd36 + 18 * row;
+                sc_row_y = TB_Y0 + TB_STEP * row;
                 sc_lit = $signed({1'b0, sc_ball_y(intro_age)}) - $signed({1'b0, sc_row_y}) - 11'sd3;
-                sc_rc = (sc_lit < 0) ? DIM : (sc_lit < SC_DONE) ? GRAY : (highlight == row) ? ACCENT : WHITE;
-                sc_lc = (sc_lit < 0) ? DIM : (sc_lit < SC_DONE) ? GRAY : (highlight == row) ? ACCENT : GRAY;
+                sc_rc = (sc_lit < 0) ? DIM : (sc_lit < SC_DONE) ? GRAY : (highlight == ri) ? ACCENT : WHITE;
+                sc_lc = (sc_lit < 0) ? DIM : (sc_lit < SC_DONE) ? GRAY : (highlight == ri) ? ACCENT : GRAY;
                 for (j = 0; j < 7; j = j + 1) begin
                     sc_t = {1'b0, sc_roll} + 3 * j;
                     sc_t = (sc_t >= 5'd20) ? sc_t - 5'd20 : (sc_t >= 5'd10) ? sc_t - 5'd10 : sc_t;
                     sc_bcd[4 * (6 - j) +: 4] = (sc_lit < 0) ? 4'd0 :
-                                               (sc_lit >= SC_LOCK0 + SC_LOCK_STEP * j) ? table_bcd[28 * row + 4 * (6 - j) +: 4]
+                                               (sc_lit >= SC_LOCK0 + SC_LOCK_STEP * j) ? table_bcd[28 * ri + 4 * (6 - j) +: 4]
                                                                                         : sc_t[3:0];
                 end
                 // riflesso: banda in diagonale larga 12 sulle lettere del posto nuovo
-                sc_glint = highlight == row && intro_age >= SC_MARK + 8'd20 && blink < 6'd30 &&
+                sc_glint = highlight == ri && intro_age >= SC_MARK + 8'd20 && blink < 6'd30 &&
                            span(x - (y - sc_row_y), TB_X - 20 + {blink, 3'b0}, 11'd0, 12);
                 // posizione: 1-10
-                if (row == 4'd9) begin
-                    put(TB_X, 10'd36 + 18 * 9, 6'd1, 2'd0, sc_rc);
-                    put(TB_X + C, 10'd36 + 18 * 9, 6'd0, 2'd0, sc_rc);
+                if (ri == 4'd9) begin
+                    put(TB_X, sc_row_y, 6'd1, 2'd0, sc_rc);
+                    put(TB_X + C, sc_row_y, 6'd0, 2'd0, sc_rc);
                 end else
-                    put(TB_X + C, 10'd36 + 18 * row, {2'd0, row} + 6'd1, 2'd0, sc_rc);
+                    put(TB_X + C, sc_row_y, {2'd0, ri} + 6'd1, 2'd0, sc_rc);
                 for (j = 0; j < 3; j = j + 1)
-                    put(TB_X + TB_NAMES + C * j, 10'd36 + 18 * row, table_names[18 * row + 6 * j +: 6], 2'd0, sc_rc);
-                digits7(TB_X + TB_SCORE, 10'd36 + 18 * row, sc_bcd, sc_rc);
-                if (table_levels[4 * row +: 4] > 4'd7) begin
+                    put(TB_X + TB_NAMES + C * j, sc_row_y, table_names[18 * ri + 6 * j +: 6], 2'd0, sc_rc);
+                digits7(TB_X + TB_SCORE, sc_row_y, sc_bcd, sc_rc);
+                if (table_levels[4 * ri +: 4] > 4'd7) begin
                     // scala finita: ALL
-                    put(TB_X + TB_LEVEL, 10'd36 + 18 * row, 6'd10, 2'd0, sc_lc);
-                    put(TB_X + TB_LEVEL + C, 10'd36 + 18 * row, G_L, 2'd0, sc_lc);
-                    put(TB_X + TB_LEVEL + 2 * C, 10'd36 + 18 * row, G_L, 2'd0, sc_lc);
+                    put(TB_X + TB_LEVEL, sc_row_y, 6'd10, 2'd0, sc_lc);
+                    put(TB_X + TB_LEVEL + C, sc_row_y, G_L, 2'd0, sc_lc);
+                    put(TB_X + TB_LEVEL + 2 * C, sc_row_y, G_L, 2'd0, sc_lc);
                 end else begin
-                    put(TB_X + TB_LEVEL, 10'd36 + 18 * row, G_L, 2'd0, sc_lc);
-                    put(TB_X + TB_LEVEL + C, 10'd36 + 18 * row, {2'd0, table_levels[4 * row +: 4]}, 2'd0, sc_lc);
+                    put(TB_X + TB_LEVEL, sc_row_y, G_L, 2'd0, sc_lc);
+                    put(TB_X + TB_LEVEL + C, sc_row_y, G_V, 2'd0, sc_lc);
+                    put(TB_X + TB_LEVEL + 2 * C, sc_row_y, {2'd0, table_levels[4 * ri +: 4]}, 2'd0, sc_lc);
                 end
             end
             if (sc_ball_y(intro_age) >= SC_BOTTOM && blink < 6'd30 &&
@@ -866,37 +890,37 @@ always @(*) begin
             // in basso dalla parte dell'avversario, lontano dai punteggi e dalla mezzeria: livello,
             // punti, moltiplicatore
             hud_x = side ? HUD_L : HUD_R;
-            put(hud_x, 10'd229, G_L, 2'd0, GRAY);
-            put(hud_x + C, 10'd229, {3'd0, level} + 6'd1, 2'd0, GRAY);
-            digits7(hud_x + 20, 10'd229, score_bcd, WHITE);
+            put(hud_x, HUD_Y, G_L, 2'd0, GRAY);
+            put(hud_x + C, HUD_Y, {3'd0, level} + 6'd1, 2'd0, GRAY);
+            digits7(hud_x + 3 * C, HUD_Y, score_bcd, WHITE);
             if (mult > 4'd1) begin
-                put(hud_x + 74, 10'd229, G_X, 2'd0, ACCENT);
-                put(hud_x + 74 + C, 10'd229, {2'd0, mult}, 2'd0, ACCENT);
+                put(hud_x + 11 * C, HUD_Y, G_X, 2'd0, ACCENT);
+                put(hud_x + 12 * C, HUD_Y, {2'd0, mult}, 2'd0, ACCENT);
             end
         end
         3'd7: begin   // ----------------------------------- HERE COMES A NEW CHALLENGER!
-            // come nei picchiaduro: banda rossa e scritta a scala 4 che lampeggia (8 frame per colore)
+            // come nei picchiaduro: banda rossa e scritta che lampeggia (8 frame per colore)
             on = 1'b1;
             if (y - NEW_BAND_Y < NEW_BAND_H) col = BAND;
             if (y - NEW_BAND_Y == 0 || y - NEW_BAND_Y == NEW_BAND_H - 1) col = ACCENT;
-            if (ch_here_lit((x - (W - 4 * CH_HERE_W) / 2) >> 2, (y - NEW_Y1) >> 2) ||
-                ch_newch_lit((x - (W - 4 * CH_NEWCH_W) / 2) >> 2, (y - NEW_Y2) >> 2))
+            if (`CENTER1(ch_here_lit, CH_HERE_W, NEW_Y1) || `CENTER1(ch_newch_lit, CH_NEWCH_W, NEW_Y2))
                 col = blink[3] ? WHITE : ACCENT;
         end
         default: ;
     endcase
-    // "n WINS": sette celle (decine, unità, spazio, W, I, N, S) a scala 1 o 2, una sola sottrazione e
-    // confronti con costanti; con una cifra la cella delle decine è vuota e la scritta si sposta di
-    // mezza cella, così resta centrata (sull'inchiostro: l'ultima colonna della cella è vuota)
+    // "n WINS": sette celle (decine, unità, spazio, W, I, N, S) a scala 1, in alto (presentazione) o in
+    // basso (fine del duello), una sola sottrazione e confronti con costanti; con una cifra la cella
+    // delle decine è vuota e la scritta si sposta di mezza cella, così resta centrata (sull'inchiostro:
+    // l'ultima colonna della cella è vuota)
     w_x = $signed({2'b0, x}) - ((wins_big ? (wins_right ? 11'sd256 : 11'sd64) : (wins_right ? 11'sd240 : 11'sd80)) -
-                                ((wins_bcd[7:4] != 4'd0 ? 11'sd24 : 11'sd27) <<< wins_big));
-    w_y = $signed({2'b0, y}) - (wins_big ? 11'sd222 : 11'sd2);
-    w_u = wins_big ? w_x >>> 1 : w_x;
-    w_k = (w_u >= 7) + (w_u >= 14) + (w_u >= 21) + (w_u >= 28) + (w_u >= 35) + (w_u >= 42);
-    if (wins_on && w_x >= 0 && w_u < 49 && w_y >= 0 && w_y < (wins_big ? 11'sd16 : 11'sd8)) begin
+                                (wins_bcd[7:4] != 4'd0 ? 11'sd28 : 11'sd32));
+    w_y = $signed({2'b0, y}) - (wins_big ? 11'sd226 : 11'sd2);
+    w_u = w_x;
+    w_k = (w_u >= 8) + (w_u >= 16) + (w_u >= 24) + (w_u >= 32) + (w_u >= 40) + (w_u >= 48);
+    if (wins_on && w_x >= 0 && w_u < 56 && w_y >= 0 && w_y < 11'sd8) begin
         g_on = 1'b1;
-        g_dx = w_u[9:0] - {4'd0, w_k, 3'b0} + {7'd0, w_k};
-        g_dy = wins_big ? w_y[10:1] : w_y[9:0];
+        g_dx = w_u[9:0] - {4'd0, w_k, 3'b0};
+        g_dy = w_y[9:0];
         g_col = ACCENT;
         sc_glint = 1'b0;
         case (w_k)
@@ -916,7 +940,6 @@ always @(*) begin
 end
 
 `undef CENTER1
-`undef CENTER2
 
 always @(posedge clk) begin
     rgb <= pal(col);

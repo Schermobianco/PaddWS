@@ -2,13 +2,16 @@
 ; rust/game/src/attract.rs), riportati a 320x200 e 50 Hz da tools/gen_c64_assets.py.
 ;
 ; L'auto-test è a caratteri; strisce, logo e titolo sono una bitmap hires gialla e nera ($E000).
-; Il titolo completo (strisce, WS, logo, copyright) è già pronto in gen/title.bin, che l'avvio
-; decomprime a TITLE_BUF (unpack.s): le strisce si disegnano frame per frame, il logo si copia da
-; lì riga per riga, e la pallina del titolo rimbalza sui pixel neri della bitmap stessa.
+; Il titolo completo (strisce, WS, logo, simbolo del copyright) è già pronto in gen/title.bin, che
+; l'avvio decomprime a TITLE_BUF (unpack.s): le strisce si disegnano frame per frame, il logo si
+; copia da lì riga per riga, e la pallina del titolo rimbalza sui pixel neri della bitmap stessa.
+; Le scritte del titolo (INSERT COIN o PRESS START, i crediti, il copyright) le scrive print_str
+; nelle celle della bitmap, con i glifi del set di caratteri (il font della ROM).
 
 .segment "RODATA"
-label_data:  .incbin "labels.bin"           ; INSERT COIN, PRESS START
-credit_data: .incbin "credits.bin"          ; FREE PLAY, CREDIT 0-9
+s_label:     .byte "INSERT COIN", 0, "PRESS START", 0   ; (FREE PLAY: s_free del menu)
+s_credit:    .byte "CREDIT ", 0, 0              ; la cifra al posto del primo 0
+s_copy:      .byte AT_COPYRIGHT_TEXT, 0
 slide_left:  .byte AT_SLIDE_LEFT
 slide_right: .byte AT_SLIDE_RIGHT
 stripe_y:    .byte AT_STRIPE_Y0, AT_STRIPE_Y1, AT_STRIPE_Y2
@@ -852,6 +855,12 @@ done:
     lda #AT_COPYRIGHT_Y
     ldx #AT_COPYRIGHT_H
     jsr copy_rows
+    lda #<s_copy
+    ldx #>s_copy
+    ldy #AT_COPYRIGHT_Y / 8
+    sty v_row
+    ldy #AT_COPYRIGHT_C0
+    jsr bm_print
     lda #0
     sta at_f
     sta at_f+1
@@ -992,40 +1001,26 @@ on:
 
 ; Scritta at_label nelle sue celle (0 = vuota).
 .proc draw_label
-    lda at_label
-    beq clear
-    sec
-    sbc #1
-    tax
-    lda #<label_data
-    sta ptr2
-    lda #>label_data
-    sta ptr2+1
-    cpx #0
-    beq :+
-    lda ptr2
-    clc
-    adc #<(AT_LABEL_W * 16)
-    sta ptr2
-    lda ptr2+1
-    adc #>(AT_LABEL_W * 16)
-    sta ptr2+1
-:   lda #AT_LABEL_R0
-    jsr cells_row
-    jsr copy_cells
-    lda #AT_LABEL_R0 + 1
-    jsr cells_row
-    jmp copy_cells
-clear:
     lda #AT_LABEL_R0
     jsr cells_row
     jsr zero_cells
-    lda #AT_LABEL_R0 + 1
-    jsr cells_row
-    jmp zero_cells
+    ldx at_label
+    beq done
+    lda #<s_label
+    cpx #1
+    beq :+
+    lda #<(s_label + 12)
+:   ldx #>s_label
+    ldy #AT_LABEL_R0
+    sty v_row
+    ldy #AT_LABEL_C0
+    jmp bm_print
+done:
+    rts
 .endproc
+.assert >s_label = >(s_label + 12), error, "INSERT COIN e PRESS START su due pagine"
 
-; ptr = cella della riga di celle A, colonna AT_LABEL_C0 (o AT_CREDIT_C0 con draw_credit).
+; ptr = cella della riga di celle A, colonna AT_LABEL_C0.
 .proc cells_row
     tay
     lda cell_row_lo,y
@@ -1038,66 +1033,69 @@ clear:
     rts
 .endproc
 
-; AT_LABEL_W celle da (ptr2) a (ptr), poi ptr2 avanti.
-.proc copy_cells
-    ldy #0
-:   lda (ptr2),y
-    sta (ptr),y
-    iny
-    cpy #AT_LABEL_W * 8
-    bne :-
-    tya
-    clc
-    adc ptr2
-    sta ptr2
-    bcc :+
-    inc ptr2+1
-:   rts
-.endproc
-
+; AT_LABEL_W celle vuote da (ptr).
 .proc zero_cells
     ldy #AT_LABEL_W * 8 - 1
     lda #0
 :   sta (ptr),y
     dey
-    bpl :-
+    bne :-
+    sta (ptr),y
     rts
 .endproc
+.assert AT_LABEL_W * 8 <= 256, error, "zero_cells: oltre 256 byte"
 
-; Riga dei crediti, variante at_credit - 1.
+; Riga dei crediti, variante at_credit - 1: FREE PLAY o CREDIT n.
 .proc draw_credit
-    lda #<credit_data
-    sta ptr2
-    lda #>credit_data
-    sta ptr2+1
-    ldx at_credit
-    dex
-skip:
-    cpx #0
-    beq go
-    clc
-    lda ptr2
-    adc #AT_CREDIT_W * 8
-    sta ptr2
-    lda ptr2+1
-    adc #0
-    sta ptr2+1
-    dex
-    jmp skip
-go:
     ldy #AT_CREDIT_R0
     lda cell_row_lo,y
     clc
-    adc #<(AT_CREDIT_C0 * 8)
+    adc #<(AT_FREE_C0 * 8)
     sta ptr
     lda cell_row_hi,y
-    adc #>(AT_CREDIT_C0 * 8)
+    adc #>(AT_FREE_C0 * 8)
     sta ptr+1
     ldy #AT_CREDIT_W * 8 - 1
-:   lda (ptr2),y
-    sta (ptr),y
+    lda #0
+:   sta (ptr),y
     dey
     bpl :-
+    ldy #AT_CREDIT_R0
+    sty v_row
+    ldx at_credit
+    dex
+    bne credit
+    lda #<s_free
+    ldx #>s_free
+    ldy #AT_FREE_C0
+    jmp bm_print
+credit:
+    dex
+    txa
+    ora #'0'
+    sta s_credit + 7
+    lda #<s_credit
+    ldx #>s_credit
+    ldy #AT_CREDIT_C0
+    jmp bm_print
+.endproc
+.assert AT_CREDIT_W * 8 <= 128 .and AT_FREE_C0 <= AT_CREDIT_C0, error, "draw_credit: celle da pulire"
+
+; Stringa A:X (byte basso e alto) nella bitmap dalla colonna Y, riga v_row, con i glifi del set
+; (print_str).
+.proc bm_print
+    pha
+    lda #$40
+    sta v_big
+    pla
+    sta ptr2
+    stx ptr2+1
+    tya
+    tax
+    ldy v_row
+    jsr print_str
+    lda #0
+    sta v_big
     rts
 .endproc
 

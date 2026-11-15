@@ -24,6 +24,7 @@ INV_RUN   = square1_lo
 IN_IMG    = $EE00
 INV_IMG   = $F200               ; poi due pagine per tipo (K_*), fino a $FFFF
 IN_DONE   = 180                 ; frame dopo l'ultima cosa delle entrate: le tabelle da rifare
+IN_LAST   = 127                 ; ultimo frame delle entrate (in_f con il segno giusto)
 IN_BANK   = PRG_BANK + (IN_IMG - $0800) / $4000
 IN_SRC    = $80 + ((IN_IMG - $0800) .mod $4000) / 256
 INV_SRC   = $80 + ((INV_IMG - $0800) .mod $4000) / 256
@@ -108,7 +109,8 @@ in_mode: .byte 0                ; IM_* (intro_hud)
     jcs tables
     cpx #2                      ; il primo frame dopo il disegno no: il file voce del primo livello
     jcc out                     ; ci copia GO, circa 14.000 cicli
-    cpx #128 + 2                ; l'entrata si ferma al frame 127 (in_f con il segno giusto)
+    cpx #IN_LAST + 3            ; l'entrata si ferma al frame IN_LAST (in_f con il segno giusto):
+                                ; motto, capsule e FIRST TO di ogni avversario arrivano prima
     jcs out
     dex
     dex
@@ -753,7 +755,7 @@ tag:
     lda #100
     ldy #7
     jsr in_caps_at
-    lda #133
+    lda #125                    ; (tutto entro IN_LAST: dopo l'entrata non c'è più)
     jmp in_first
 spr:
     lda k                       ; sprite della capsula k: 5 o 6
@@ -949,12 +951,12 @@ name:
     jsr blank_box
 tag:
     lda #95
-    ldx #3
+    ldx #2
     jsr in_tag_at
-    lda #130
-    ldy #10
+    lda #104
+    ldy #8
     jsr in_caps_at
-    lda #178
+    lda #IN_LAST
     jmp in_first
 ; v_n celle del carattere A dalla colonna Y della riga X, grigie
 ground:
@@ -1229,7 +1231,7 @@ tag:
     lda #93
     ldy #10
     jsr in_caps_at
-    lda #133
+    lda #125
     jmp in_first
 .endscope
 
@@ -1663,10 +1665,10 @@ skip:
     lda #108
     ldx #1
     jsr in_tag_at
-    lda #127
-    ldy #8
+    lda #110
+    ldy #5
     jsr in_caps_at
-    lda #158
+    lda #IN_LAST
     jmp in_first
 ; il carattere A nella colonna del muro, riga Y, giallo (Y resta)
 put:

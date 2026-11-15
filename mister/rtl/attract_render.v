@@ -30,9 +30,9 @@ localparam [23:0] YELLOW = 24'hFFD225, BLACK = 24'h000000, WHITE = 24'hFFFFFF, P
 localparam [1:0] P_BOOT = 2'd0, P_STRIPES = 2'd1, P_LOGO = 2'd2, P_TITLE = 2'd3;
 localparam integer SCREEN_W = 320;
 
-// testi centrati (scala 2 per la scritta lampeggiante)
-localparam integer IC_X = (SCREEN_W - 2 * INSERT_COIN_W) / 2;
-localparam integer PS_X = (SCREEN_W - 2 * PRESS_START_W) / 2;
+// testi centrati, tutti a scala 1
+localparam integer IC_X = (SCREEN_W - INSERT_COIN_W) / 2;
+localparam integer PS_X = (SCREEN_W - PRESS_START_W) / 2;
 localparam integer CR_X = (SCREEN_W - CREDIT_W - TEXT_W) / 2;       // "CREDIT " + una cifra
 localparam integer FP_X = (SCREEN_W - FREE_PLAY_W) / 2;
 localparam integer CP_X = (SCREEN_W - COPYRIGHT_W) / 2;
@@ -75,7 +75,7 @@ end
 
 reg        in_stripe, ws_px, logo_px, label_px, credit_px, copy_px, ball_px, boot_px, cursor_px;
 reg [9:0]  cursor_x;
-reg [4:0]  digit_row;
+reg [TEXT_W-1:0] digit_row;
 reg [23:0] color;
 
 function in_rows(input [9:0] yy, input integer row);
@@ -92,8 +92,8 @@ always @(*) begin
 
     // scritta lampeggiante del titolo
     label_px = frame > AT_LABEL_FROM && blink < AT_BLINK_ON &&
-               ((!free_play && credits == 4'd0) ? insert_coin_lit((x - IC_X) >> 1, (y - AT_LABEL_Y) >> 1)
-                                                : press_start_lit((x - PS_X) >> 1, (y - AT_LABEL_Y) >> 1));
+               ((!free_play && credits == 4'd0) ? insert_coin_lit(x - IC_X, y - AT_LABEL_Y)
+                                                : press_start_lit(x - PS_X, y - AT_LABEL_Y));
     // "CREDIT n" o "FREE PLAY"
     digit_row = text_glyph(credits, y - AT_CREDIT_Y);
     if (free_play)

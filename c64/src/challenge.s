@@ -1893,7 +1893,9 @@ HS_MARK    = 160                ; racchette (SCORES_MARK), arrivate in 30 frame 
 HS_GLINT   = 190                ; riflesso: HS_GLINT_W frame ogni HS_GLINT_P (SCORES_GLINT...)
 HS_GLINT_W = 25
 HS_GLINT_P = 80
-HS_BALL_END = 145               ; palla oltre l'ultima riga
+HS_BALL_END = 145 - 2 * 11      ; palla oltre l'ultima riga (HS_ROWS righe, una ogni HS_STEP frame)
+HS_ROWS    = 8                  ; righe mostrate (dei CH_TABLE posti), come nelle altre versioni:
+                                ; il posto nuovo più giù prende l'ultima (hs_entry)
 HS_X0      = 51                 ; la palla rimbalza tra queste x (16% e 84% dello schermo)
 HS_X1      = 269
 .assert HS_STEP = 11, error, "hs_anim: HS_STEP * i si fa come 8i + 2i + i"
@@ -1961,11 +1963,12 @@ row:
     lda hs_t
     sec
     sbc hs_d
-    bcc next
+    jcc next
     sta hs_d
     cmp #HS_COUNT + 1
     bcs next
     lda hs_i                    ; i punti della riga in cifre (ch_txt)
+    jsr hs_entry
     asl a
     asl a
     asl a
@@ -2016,10 +2019,13 @@ fixed:
     beq gray
     cmp #HS_COUNT
     bne next
+    lda hs_i
+    jsr hs_entry
+    cmp ch_hl
+    beq new
     lda #COL_WHITE
-    ldx hs_i
-    cpx ch_hl
     bne color
+new:
     lda #COL_YELLOW
     bne color
 gray:
@@ -2032,13 +2038,16 @@ color:
 next:
     ldx hs_i
     inx
-    cpx #CH_TABLE
+    cpx #HS_ROWS
     jne row
-    ; il posto nuovo
+    ; il posto nuovo (oltre l'ottavo, nell'ultima riga)
     ldx ch_hl
     cpx #CH_TABLE
     jcs done
-    stx hs_i
+    cpx #HS_ROWS
+    bcc :+
+    ldx #HS_ROWS - 1
+:   stx hs_i
     lda hs_t
     sec
     sbc #<HS_MARK
@@ -2263,6 +2272,22 @@ hs_hx:  .byte HS_X0, HS_X0, HS_X0, HS_X0  ; le ultime posizioni (la quarta solo 
 hs_hm:  .byte 0, 0, 0, 0
 hs_hy:  .byte 10, 10, 10, 10
 
+; A = posto della classifica nella riga A: le righe sono i primi HS_ROWS posti, ma nell'ultima c'è
+; il posto nuovo (ch_hl) se è più giù, come nel gioco su PC.
+.proc hs_entry
+    cmp #HS_ROWS - 1
+    bne done
+    lda ch_hl
+    cmp #HS_ROWS - 1
+    bcc row
+    cmp #CH_TABLE
+    bcc done
+row:
+    lda #HS_ROWS - 1
+done:
+    rts
+.endproc
+
 ; Quattro righe per frame (tutta la tabella non sta nel budget).
 .proc draw_scores_table
     lda pk_i
@@ -2282,22 +2307,22 @@ row:
     asl a
     adc #4
     sta pk_p                    ; riga
+    ldy pk_p
+    sty v_row
     lda pk_i
+    jsr hs_entry                ; il posto (nell'ultima riga, il nuovo se è più giù)
+    pha
     clc
     adc #'1'
     cmp #'9' + 1
     bne :+
     lda #'1'                    ; 10: "10"
     ldx #8
-    ldy pk_p
-    sty v_row
     jsr put_ascii
     lda #'0'
 :   ldx #9
-    ldy pk_p
-    sty v_row
     jsr put_ascii
-    lda pk_i
+    pla
     asl a
     asl a
     asl a
@@ -2322,7 +2347,7 @@ row:
     ldx #19
     ldy pk_p
     jsr print_tmp
-    ; livello: L1-L7, ALL a scala finita
+    ; livello: LV1-LV7, ALL a scala finita
     ldx pk_dirty
     lda ch_table+7,x
     cmp #CH_LEVELS + 1
@@ -2335,10 +2360,13 @@ row:
     ldy pk_p
     sty v_row
     jsr put_ascii
+    lda #'V'
+    ldx #30
+    jsr put_ascii
     pla
     clc
     adc #'0'
-    ldx #30
+    ldx #31
     jsr put_ascii
 color:
     lda #COL_DGRAY              ; spenta finché la palla non la tocca (hs_anim)
@@ -2346,7 +2374,7 @@ color:
     jsr color_row
     inc pk_i
     lda pk_i
-    cmp #CH_TABLE
+    cmp #HS_ROWS
     beq last
     cmp pk_ok
     jne row

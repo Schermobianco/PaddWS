@@ -23,10 +23,14 @@ CERN-OHL-S v2.
 
 | font | autore | licenza |
 |---|---|---|
-| `munro.ttf` ([Munro](https://www.fontsquirrel.com/fonts/munro)) | Ed Merritt, [Ten by Twenty](http://www.tenbytwenty.com/) | SIL Open Font License 1.1 ([testo](assets/fonts/OFL-Munro.txt)) |
+| `PressStart2P-Regular.ttf` ([Press Start 2P](https://github.com/google/fonts/tree/main/ofl/pressstart2p), Reserved Font Name "Press Start 2P") | CodeMan38, The Press Start 2P Project Authors | SIL Open Font License 1.1 ([testo](assets/fonts/OFL-PressStart2P.txt)) |
 | `pong-score.ttf` ([Pong Score](https://fontstruct.com/fontstructions/show/1158273/pong_score)) | pwnzor.ak, FontStruct | CC0 1.0 (pubblico dominio) |
+| `munro.ttf` ([Munro](https://www.fontsquirrel.com/fonts/munro)), solo nella versione Python | Ed Merritt, [Ten by Twenty](http://www.tenbytwenty.com/) | SIL Open Font License 1.1 ([testo](assets/fonts/OFL-Munro.txt)) |
 
-I due font sono anche nelle ROM del core MiSTer, come bitmap generate dai file TTF.
+Press Start 2P (le scritte) e Pong Score (il punteggio) sono usati dalla versione Rust e sono
+anche nelle ROM del core MiSTer, come bitmap generate dai file TTF. Il C64 prende da Pong Score
+solo le cifre del punteggio; le scritte le fa con il font della ROM dei caratteri della macchina,
+letto all'avvio: la cartuccia non ne contiene una copia.
 
 ## Dipendenze
 

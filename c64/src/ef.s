@@ -6,7 +6,7 @@
 ; della cartuccia (src/crt.s) la copia al suo posto prima di avviare il programma. Non costano byte
 ; del programma.
 ;
-; Copie (ef_voice, ef_pick, ef_copy): modo a 16K con $01 = $37, la ROML a $8000 e la ROMH a $A000
+; Copie (ef_voice, ef_copy): modo a 16K con $01 = $37, la ROML a $8000 e la ROMH a $A000
 ; (le pagine sorgente $80-$BF di un banco); le scritture vanno nella RAM anche sotto le ROM, e mai
 ; in $8000-$BFFF. Interrupt spenti, $01 di nuovo $35 alla fine.
 ;
@@ -34,14 +34,10 @@ HI_SCAN  = VOICE_BASE           ; all'avvio i posti si leggono qui (ef_voice, VO
 .assert HI_SLOTS * HI_SLOT = VOICE_PAGES * 256, error, "i posti della classifica non sono una voce"
 .assert HI_REC <= HI_SLOT, error, "classifica più lunga di un posto"
 
-; il set di caratteri del programma nella flash (src/crt.s: dal banco PRG_BANK, da $0800)
+; il set di caratteri del programma nella flash (src/crt.s: dal banco PRG_BANK, da $0800): lo
+; ricarica il finale
 CHARSET_BANK = PRG_BANK + (CHARSET - $0800) / $4000
 .assert (CHARSET - $0800) .mod $4000 = 0, error, "set di caratteri non all'inizio della ROML"
-; caratteri della scelta dei bonus (gen/pick_bank.bin): le metà delle lettere al posto delle
-; scritte grandi, PICK_PAGES pagine da PICK_FIRST (assets.inc)
-PICK_TOP   = PICK_FIRST - FONT_FIRST    ; codice del font + PICK_TOP: metà alta, abbassata
-PICK_BOTTOM = PICK_TOP + FONT_CHARS     ; codice del font + PICK_BOTTOM: metà bassa, in alto
-.assert PICK_BOTTOM + FONT_FIRST + FONT_CHARS <= PICK_FIRST + PICK_PAGES * 32, error, "metà delle lettere oltre le pagine copiate"
 
 .segment "EFCODE"
 ef_ram:
@@ -58,19 +54,6 @@ ef_ram:
     bne ef_copy
 .endproc
 
-; C = 0: i caratteri della scelta dei bonus (banco PICK_BANK, gen/pick_bank.bin); C = 1: di nuovo
-; quelli originali
-; (dal programma nella flash). PICK_PAGES pagine, circa 11.000 cicli.
-.proc ef_pick
-    lda #CHARSET_BANK
-    bcs :+
-    lda #PICK_BANK
-:   ldx #$80 + PICK_FIRST * 8 / 256
-    stx ef_src+2
-    ldx #PICK_PAGES
-    ldy #>(CHARSET + PICK_FIRST * 8)
-.endproc
-; (prosegue)
 ; X pagine dal banco A (ROML e ROMH), dalla pagina in ef_src+2 ($80-$BF), alla pagina Y.
 .proc ef_copy
     sta EF_BANK

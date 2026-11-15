@@ -124,9 +124,10 @@ scalata, `profile` dà i cicli per routine, `--build DIR` usa un'altra cartella 
 - **18.000 cicli per frame.** `paddws-c64 frames` fallisce se un frame li supera. Il suo modello del
   raster (58 cicli per riga) è approssimato: con frame vicini al limite conviene controllare anche
   in VICE. Il lavoro lungo si divide su più frame o aspetta il frame dopo guardando il raster.
-- **Set di caratteri e sprite finiti.** I 256 caratteri sono tutti usati (un carattere nuovo
-  ne sostituisce uno dove l'altro non serve, e `tools/gen_c64_assets.py` lo controlla) e gli 8
-  sprite pure.
+- **Set di caratteri e sprite quasi finiti.** Dei 256 caratteri ne restano liberi pochi (un
+  carattere nuovo ne sostituisce uno dove l'altro non serve, e `tools/gen_c64_assets.py` lo
+  controlla) e gli 8 sprite sono tutti usati. Le lettere non sono nella cartuccia: all'avvio si
+  copiano dalla ROM dei caratteri del C64, e da lì si fanno anche quelle grandi.
 - **BASIC e KERNAL spenti** (`$01 = $35`): sotto le loro ROM ci sono dati e variabili, e la RAM sotto
   l'I/O si legge e si scrive con `$01 = $34`.
 - **Bordo e sfondo** (`$D020`, `$D021`) si scrivono solo quando il colore cambia: ogni scrittura

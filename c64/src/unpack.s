@@ -11,6 +11,8 @@
 ;   VOICE_COUNT e i caratteri che la barra delle mosse speciali prende in NEXT.
 ; - Le routine delle mosse speciali sempre in memoria (segmento LOWCODE, src/supers.s): nel .prg
 ;   dopo INIT, vanno nella pagina 2 prima che le variabili coprano INIT.
+; - Il font del programma dalla ROM dei caratteri al set a $C800 (font_from_rom, video.s), con il
+;   vettore dell'NMI già sul programma (un RESTORE intanto troverebbe la ROM al posto dell'I/O).
 
 TITLE_BUF   = $d800
 TITLE_PAGES = 8
@@ -77,7 +79,13 @@ BOOT_RAM    = $F800
     lda #PICK_BANK
     ldx #1
     ldy #>bullet_tiles
-    jmp ef_copy
+    jsr ef_copy
+    ; il font dalla ROM dei caratteri
+    lda #<nmi_handler
+    sta $fffa
+    lda #>nmi_handler
+    sta $fffb
+    jmp font_from_rom
 .endproc
 
 .segment "CODE"

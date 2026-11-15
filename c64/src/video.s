@@ -80,6 +80,7 @@ sprite_data:  .incbin "sprites.bin"
 .segment "RODATA"
 score_tiles:  .byte SCORE_TILES
 font_map:     .byte FONT_MAP
+big2_src:     .byte BIG2_SRC        ; carattere del font di ogni lettera 2x (big_build)
 big_game_over: .byte BIG_GAME_OVER
 big_p1_wins:  .byte BIG_P1_WINS
 big_p2_wins:  .byte BIG_P2_WINS
@@ -263,9 +264,242 @@ pd_dirty:  .res 2               ; immagine da copiare nella RAM degli sprite
     sta sh_enable
     sta sh_mode
     jsr game_sprites
-    jmp clear_screen
+    jsr clear_screen
+    ; le lettere 2x dal font, che title_unpack ha già preso dalla ROM dei caratteri
+    ldy #0
+    ldx #BIG2_N
+    jmp big2_build
 .endproc
 .segment "CODE"
+
+; ------------------------------------------------------------------------------------ font
+
+; Il font del programma è quello della ROM dei caratteri della macchina, che nessun file contiene:
+; nel set di caratteri (gen/charset.bin, tools/gen_c64_assets.py) al posto dei glifi ci sono dei
+; segnaposto vuoti. font_from_rom ci copia i glifi 1x dalla ROM, big_build fa da questi le lettere
+; 2x (BIG2_FIRST, quattro caratteri per lettera); le metà delle lettere della scelta dei bonus
+; vengono anch'esse dai glifi 1x (pick_chars). Lo fanno l'avvio (video_init) e il finale, che ha il
+; suo set e alla fine ricarica dalla cartuccia quello del programma; la scelta dei bonus rifà le
+; lettere 2x, che nelle sue pagine prendono le metà delle lettere.
+
+; I glifi del font (da FONT_FIRST) dalla ROM dei caratteri (set maiuscolo a $D000): interrupt
+; spenti e $01 = $31, cioè la ROM dei caratteri a $D000 (le scritture lì vanno nella RAM sotto) e
+; la RAM al posto di BASIC e KERNAL, senza l'I/O (la cartuccia è spenta). Mai durante una voce:
+; un NMI troverebbe spento l'I/O. Circa 8.000 cicli. È una macro: una copia in INIT
+; (font_from_rom, da title_unpack), una nel finale (ending.s), ognuna con la sua tabella FONT_ROM.
+.macro font_rom_code
+    lda #<(CHARSET + 8 * FONT_FIRST)
+    sta ptr
+    lda #>(CHARSET + 8 * FONT_FIRST)
+    sta ptr+1
+    php
+    sei
+    lda #$31
+    sta $01
+    ldx #0
+char:
+    lda #>$D000 >> 3            ; ptr2 = $D000 + codice * 8
+    sta ptr2+1
+    lda rom,x
+    asl a
+    rol ptr2+1
+    asl a
+    rol ptr2+1
+    asl a
+    rol ptr2+1
+    sta ptr2
+    ldy #7
+:   lda (ptr2),y
+    sta (ptr),y
+    dey
+    bpl :-
+    lda ptr
+    clc
+    adc #8
+    sta ptr
+    bcc :+
+    inc ptr+1
+:   inx
+    cpx #FONT_CHARS
+    bne char
+    lda #$35
+    sta $01
+    plp
+    rts
+rom: .byte FONT_ROM             ; codice della ROM di ogni carattere del font
+.endmacro
+.segment "INIT"
+.proc font_from_rom
+    font_rom_code
+.endproc
+.segment "CODE"
+.assert >$D000 >> 3 << 3 = >$D000, error, "font_from_rom: indirizzo della ROM"
+
+; Lettere 2x del programma: X lettere dalla Y-esima (big2_src), nei loro caratteri da BIG2_FIRST.
+.proc big2_build
+    tya
+    asl a
+    asl a                       ; lettera * 4 caratteri * 8 byte
+    sta ptr
+    lda #0
+    asl ptr
+    rol a
+    asl ptr
+    rol a
+    asl ptr
+    rol a
+    adc #>(CHARSET + 8 * BIG2_FIRST)
+    sta ptr+1
+    lda ptr
+    clc
+    adc #<(CHARSET + 8 * BIG2_FIRST)
+    sta ptr
+    bcc :+
+    inc ptr+1
+:   lda #<big2_src
+    sta big_tab+1
+    lda #>big2_src
+    sta big_tab+2
+.endproc
+; (prosegue)
+; X lettere 2x dalla Y-esima della tabella dei caratteri del font a big_tab+1 (la scrive il
+; chiamante), da (ptr) in avanti, 32 byte per lettera: i caratteri in alto a sinistra, in alto a
+; destra, in basso a sinistra e in basso a destra, ogni pixel del glifo 1x (già nel set) 2x2.
+; Circa 670 cicli per lettera.
+.proc big_build
+    stx v_n
+letter:
+    sty v_col
+tab:
+    lda $ffff,y                 ; carattere del font: ptr2 al suo glifo
+    ldx #>(CHARSET / 8)
+    stx ptr2+1
+    asl a
+    rol ptr2+1
+    asl a
+    rol ptr2+1
+    asl a
+    rol ptr2+1
+    sta ptr2
+    ldx #7
+row:
+    txa
+    tay
+    lda (ptr2),y
+    sta m_t
+    lsr a
+    lsr a
+    lsr a
+    lsr a
+    tay
+    lda bb_dbl,y                ; metà sinistra: due righe uguali
+    ldy bb_off,x
+    sta (ptr),y
+    iny
+    sta (ptr),y
+    lda m_t
+    and #$0f
+    tay
+    lda bb_dbl,y                ; metà destra, nel carattere accanto
+    ldy bb_off8,x
+    sta (ptr),y
+    iny
+    sta (ptr),y
+    dex
+    bpl row
+    lda ptr
+    clc
+    adc #32
+    sta ptr
+    bcc :+
+    inc ptr+1
+:   ldy v_col
+    iny
+    dec v_n
+    bne letter
+    rts
+.endproc
+big_tab = big_build::tab
+.assert <(CHARSET / 8) = 0, error, "big_build: indirizzo del set"
+; quattro pixel doppi; riga del glifo -> byte della lettera 2x (alto sinistra o basso sinistra)
+bb_dbl:
+    .repeat 16, n
+    .byte (n & 8) * $18 + (n & 4) * $0c + (n & 2) * $06 + (n & 1) * $03
+    .endrepeat
+bb_off:  .byte 0, 2, 4, 6, 16, 18, 20, 22
+bb_off8: .byte 8, 10, 12, 14, 24, 26, 28, 30
+
+; Caratteri della scelta dei bonus (C = 0): da PICK_FIRST le metà alte delle lettere del font
+; abbassate di 4 pixel, da PICK_FIRST + FONT_CHARS le metà basse in cima al carattere (put_low,
+; pick.s), dai glifi 1x del set; circa 9.500 cicli. Con C = 1 di nuovo le lettere 2x, che stanno
+; nelle stesse pagine: la prima metà (A = 0) o la seconda (A = 1), circa 8.000 cicli ciascuna.
+PICK_TOP   = PICK_FIRST - FONT_FIRST    ; codice del font + PICK_TOP: metà alta, abbassata
+PICK_BOTTOM = PICK_TOP + FONT_CHARS     ; codice del font + PICK_BOTTOM: metà bassa, in alto
+.assert PICK_BOTTOM + FONT_FIRST + FONT_CHARS <= PICK_FIRST + PICK_PAGES * 32, error, "metà delle lettere oltre le pagine della scelta"
+.assert BIG2_FIRST = PICK_FIRST .and 4 * BIG2_N <= PICK_PAGES * 32, error, "lettere 2x fuori dalle pagine della scelta"
+PK_FONT = CHARSET + 8 * FONT_FIRST
+PK_TOP  = CHARSET + 8 * PICK_FIRST
+PK_BOT  = PK_TOP + 8 * FONT_CHARS
+PK_HALF = FONT_CHARS / 2 * 8            ; byte per passata (i caratteri in due passate)
+.assert PK_HALF <= 256, error, "pick_chars: passata oltre 256 byte"
+PK_REST = 8 * (PICK_FIRST + 2 * FONT_CHARS - BIG2_FIRST - 4 * BIG2_N)    ; dopo le lettere 2x
+.assert PK_REST > 0 .and PK_REST <= 256, error, "pick_chars: caratteri dopo le lettere 2x"
+.proc pick_chars
+    bcc halves
+    ldy #0
+    ldx #BIG2_N / 2
+    cmp #0
+    beq :+
+    ; (con la seconda metà di nuovo vuoti i caratteri dopo le lettere 2x, che non si usano)
+    ldy #PK_REST - 1
+    lda #0
+rest:
+    sta CHARSET + 8 * (BIG2_FIRST + 4 * BIG2_N),y
+    dey
+    cpy #$ff
+    bne rest
+    ldy #BIG2_N / 2
+    ldx #BIG2_N - BIG2_N / 2
+:   jmp big2_build
+halves:
+    .repeat 2, h
+    .scope
+    ldy #PK_HALF - 1
+byte:
+    tya
+    and #4
+    beq low
+    lda PK_FONT + h * PK_HALF - 4,y     ; righe 4-7 della metà alta: righe 0-3 del glifo
+    sta PK_TOP + h * PK_HALF,y
+    lda #0
+    sta PK_BOT + h * PK_HALF,y
+    beq next
+low:
+    lda PK_FONT + h * PK_HALF + 4,y     ; righe 0-3 della metà bassa: righe 4-7 del glifo
+    sta PK_BOT + h * PK_HALF,y
+    lda #0
+    sta PK_TOP + h * PK_HALF,y
+next:
+    dey
+    cpy #$ff
+    bne byte
+    .endscope
+    .endrepeat
+    ; il resto (con un numero dispari di caratteri l'ultimo)
+    .if ::FONT_CHARS .mod 2
+    ldy #3
+:   lda PK_FONT + 2 * PK_HALF,y
+    sta PK_TOP + 2 * PK_HALF + 4,y
+    lda PK_FONT + 2 * PK_HALF + 4,y
+    sta PK_BOT + 2 * PK_HALF,y
+    lda #0
+    sta PK_TOP + 2 * PK_HALF,y
+    sta PK_BOT + 2 * PK_HALF + 4,y
+    dey
+    bpl :-
+    .endif
+    rts
+.endproc
 
 ; Sprite della partita: palla hires bianca, bande grigie hires, racchette multicolore espanse in
 ; verticale.
@@ -356,19 +590,84 @@ pd_dirty:  .res 2               ; immagine da copiare nella RAM degli sprite
     jmp put_char
 .endproc
 
-; Stringa ASCII terminata da 0 in (ptr2), dalla colonna X alla riga Y.
+; Stringa ASCII terminata da 0 in (ptr2), dalla colonna X alla riga Y; con il bit 6 di v_big
+; nella bitmap a $E000 (i glifi del set copiati nelle celle) invece che nello schermo di testo.
+; Poi X = colonna dopo l'ultima, Y = lunghezza.
 .proc print_str
     sty v_row
+    stx p_col
+    bit v_big
+    bvs bitmap
+    lda row_lo,y
+    sta ptr
+    lda row_hi,y
+    sta ptr+1
+    ldy #0
+next:
+    lda (ptr2),y
+    beq done
+    sty v_n
+    tay
+    lda font_map - 32,y
+    ldy p_col
+    sta (ptr),y
+    inc p_col
+    ldy v_n
+    iny
+    bne next
+done:
+    ldx p_col
+    rts
+bitmap:
     ldy #0
 :   lda (ptr2),y
     beq done
     sty v_n
-    jsr put_ascii
+    tay
+    lda font_map - 32,y
+    jsr text_cell
     ldy v_n
-    inx
     iny
     bne :-
-done:
+.endproc
+
+; Il glifo del carattere A del set nella cella della bitmap alla colonna p_col, riga v_row, poi
+; p_col + 1.
+.proc text_cell
+    pha
+    ldy v_row
+    lda cell_row_lo,y
+    sta ptr
+    lda cell_row_hi,y
+    sta ptr+1
+    lda p_col
+    asl a
+    asl a
+    asl a                       ; colonna * 8 (il bit 8 nel riporto)
+    bcc :+
+    inc ptr+1
+    clc
+:   adc ptr
+    sta ptr
+    bcc :+
+    inc ptr+1
+:   pla
+    ldx #>(CHARSET / 8)         ; il glifo: CHARSET + carattere * 8
+    stx glyph+2
+    asl a
+    rol glyph+2
+    asl a
+    rol glyph+2
+    asl a
+    rol glyph+2
+    sta glyph+1
+    ldy #7
+glyph:
+    lda $ffff,y
+    sta (ptr),y
+    dey
+    bpl glyph
+    inc p_col
     rts
 .endproc
 
@@ -558,11 +857,10 @@ done:
 
 ; Il set di caratteri è pieno: in NEXT la capsula del BULLET della riserva (8 caratteri, normale e
 ; in negativo) prende il posto di caratteri che in NEXT non servono, cioè cursore e reticolo
-; dell'auto-test (solo all'accensione) e tre di INSERT COIN e PRESS START grandi (erano della
-; demo, che non c'è più); non CH_GRID_T né il muro del singolo, che le scritte animate e la
-; CHALLENGE usano anche in NEXT e dopo. Senza la demo restano così anche nelle altre partite (prima
-; lì tornavano gli originali, bullet_orig e bar_orig, che ci sono ancora: tools/gen_c64_assets.py,
-; BULLET_C0-7), come quelli di PRESS START che in NEXT fanno la barra delle mosse speciali (sm_init).
+; dell'auto-test (solo all'accensione) e tre caratteri vuoti suoi; non CH_GRID_T né il muro del
+; singolo, che le scritte animate e la CHALLENGE usano anche in NEXT e dopo. Restano così anche
+; nelle altre partite (gli originali, bullet_orig e bar_orig, ci sono ancora:
+; tools/gen_c64_assets.py, BULLET_C0-7), come quelli della barra delle mosse speciali (sm_init).
 .proc bullet_chars
     ldx m_next
     bne :+
@@ -612,6 +910,9 @@ egg_buf:      .res 3            ; il comando di SID_SONG_EGG dalla cartuccia (eg
 opt_volume:   .res 1            ; passo, da 0 (0%) a VOLUME_STEPS - 1 (100%)
 sid_vol:      .res 1            ; il suo volume del SID, 0-15 (vol_levels, sid.s)
 .assert sid_vol = VOICE_VOL, error, "VOICE_VOL fuori posto"
+; scritte (print_str, sotto): non si azzerano all'avvio, ma la pagina $FF00 della cartuccia qui ha 0
+v_big:        .res 1            ; bit 6 nella bitmap (di solito 0)
+p_col:        .res 1            ; colonna
 .segment "RODATA"
 bullet_dst_lo:
     .repeat 8, i

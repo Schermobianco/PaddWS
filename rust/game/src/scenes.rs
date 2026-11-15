@@ -1171,17 +1171,14 @@ impl Menu {
         let title = if app.next { colors.accent } else { colors.white };
 
         let title_y = 100.0 * s; // in coordinate di disegno (dall'alto)
-        draw_rectangle(
-            w / 2.0 - 150.0 * s,
-            title_y - 30.0 * s,
-            300.0 * s,
-            60.0 * s,
-            App::color(title),
-        );
+        // riquadro attorno alla scritta a 1x, con un carattere di margine ai lati
+        let half = r.text_width("MAIN MENU", &app.assets.font_text, r.text_1x()) / 2.0 + r.text_1x();
+        let half_h = r.text_1x();
+        draw_rectangle(w / 2.0 - half, title_y - half_h, 2.0 * half, 2.0 * half_h, App::color(title));
         r.text_centered(
             "MAIN MENU",
             &app.assets.font_text,
-            50.0 * s,
+            r.text_1x(),
             w / 2.0,
             title_y,
             0.0,
@@ -1198,8 +1195,8 @@ impl Menu {
         for i in order {
             let Some((y, k)) = Self::place(app, i, self.pos) else { continue };
             let d = (i as f32 - self.pos).abs();
-            // 40 al centro, 30 le vicine, 20 le altre: la Munro è nitida a multipli di 10
-            let size = ((40.0 - 10.0 * d).max(20.0) / 10.0).round() * 10.0;
+            // tutte a 1x (Press Start 2P è netto solo a multipli interi): la voce al centro si
+            // distingue per il colore, le altre si scuriscono verso i bordi del rullo
             let color = if d < 0.5 {
                 App::color(colors.accent)
             } else {
@@ -1207,14 +1204,14 @@ impl Menu {
                 Color::new(white.r * light, white.g * light, white.b * light, 1.0)
             };
             let label = Self::label(app, self.items[i]);
-            r.text_centered(&label, &app.assets.font_text, size * s, w / 2.0, y, 0.0, color);
+            r.text_centered(&label, &app.assets.font_text, r.text_1x(), w / 2.0, y, 0.0, color);
         }
         // versione in basso a destra: dice subito cosa gira sul cabinato
         let version = concat!("v", env!("CARGO_PKG_VERSION"));
         r.text_bottom_right(
             version,
             &app.assets.font_text,
-            20.0 * s,
+            r.text_1x(),
             w - 8.0 * s,
             h - 6.0 * s,
             App::color(colors.lgray),
@@ -2284,8 +2281,8 @@ impl Play {
             } else {
                 let text = &app.assets.font_text;
                 let x = w / 2.0 + 2.0 * ox;
-                r.text_centered(&format!("TOP {:02}", self.game.best), text, 32.0 * s, x, 30.0 * h / 480.0, 0.0, white);
-                r.text_centered(&format!("BALLS {}", self.lives), text, 32.0 * s, x, 30.0 * h / 480.0 + 32.0 * s, 0.0, white);
+                r.text_centered(&format!("TOP {:02}", self.game.best), text, r.text_1x(), x, 30.0 * h / 480.0, 0.0, white);
+                r.text_centered(&format!("BALLS {}", self.lives), text, r.text_1x(), x, 30.0 * h / 480.0 + 28.0 * s, 0.0, white);
             }
         } else {
             r.text_centered(
@@ -2313,7 +2310,7 @@ impl Play {
                 r.text_centered(
                     &text,
                     &app.assets.font_text,
-                    32.0 * s,
+                    r.text_1x(),
                     w / 2.0 - ox - 55.0 * s,
                     h - oy,
                     FRAC_PI_2,
@@ -2323,7 +2320,7 @@ impl Play {
                 r.text_centered(
                     &format!("BALLS {}", self.lives),
                     &app.assets.font_text,
-                    32.0 * s,
+                    r.text_1x(),
                     w / 2.0 - ox - 85.0 * s,
                     h - oy,
                     FRAC_PI_2,
@@ -2341,13 +2338,22 @@ impl Play {
             let gray = App::color(colors.lgray);
             let font = &app.assets.font_text;
             let y = h - 14.0 * s;
-            let x = |f: f32| if score.side == Side::Left { w * f } else { w * (1.0 - f) };
-            r.text_centered(&format!("{:07}", score.total), font, 26.0 * s, x(0.72), y, 0.0, white);
-            r.text_centered(&format!("L{}", level + 1), font, 22.0 * s, x(0.6), y, 0.0, gray);
+            let size = r.text_1x();
+            // il livello verso la linea centrale, il moltiplicatore verso il bordo, a due caratteri
+            // dai punti (con le misure fisse il campo 4:3 li sovrapponeva)
+            let (cx, dir) = if score.side == Side::Left { (w * 0.72, 1.0) } else { (w * 0.28, -1.0) };
+            let total = format!("{:07}", score.total);
+            let beside = |s: &str, toward: f32| {
+                let half = (r.text_width(&total, font, size) + r.text_width(s, font, size)) / 2.0;
+                cx + toward * dir * (half + r.text_1x())
+            };
+            r.text_centered(&total, font, size, cx, y, 0.0, white);
+            let level = format!("L{}", level + 1);
+            r.text_centered(&level, font, size, beside(&level, -1.0), y, 0.0, gray);
             if score.multiplier() > 1 {
                 let accent = App::color(colors.accent);
                 let mult = format!("x{}", score.multiplier());
-                r.text_centered(&mult, font, 22.0 * s, x(0.83), y, 0.0, accent);
+                r.text_centered(&mult, font, size, beside(&mult, 1.0), y, 0.0, accent);
             }
         }
         if blurred {
@@ -2376,15 +2382,16 @@ impl Play {
             r.text_centered(&digit, &app.assets.font_score, size, w / 2.0, h / 2.0, 0.0, white);
         }
         if self.paused {
-            r.text_centered("PAUSE", &app.assets.font_text, 60.0 * s, w / 2.0, h / 2.0, 0.0, white);
+            let t1 = r.text_1x();
+            r.text_centered("PAUSE", &app.assets.font_text, t1, w / 2.0, h / 2.0, 0.0, white);
             let gray = App::color(colors.lgray);
             let font = &app.assets.font_text;
             if app.touch {
-                r.text_centered("TAP TO RESUME", font, 30.0 * s, w / 2.0, h / 2.0 + 45.0 * s, 0.0, gray);
-                r.text_centered("MENU", font, 40.0 * s, w / 2.0, h / 2.0 + 90.0 * s, 0.0, white);
+                r.text_centered("TAP TO RESUME", font, t1, w / 2.0, h / 2.0 + 30.0 * s, 0.0, gray);
+                r.text_centered("MENU", font, t1, w / 2.0, h / 2.0 + 90.0 * s, 0.0, white);
             } else if app.pad_used {
-                r.text_centered("START TO RESUME", font, 30.0 * s, w / 2.0, h / 2.0 + 45.0 * s, 0.0, gray);
-                r.text_centered("B = MENU", font, 30.0 * s, w / 2.0, h / 2.0 + 80.0 * s, 0.0, gray);
+                r.text_centered("START TO RESUME", font, t1, w / 2.0, h / 2.0 + 30.0 * s, 0.0, gray);
+                r.text_centered("B = MENU", font, t1, w / 2.0, h / 2.0 + 56.0 * s, 0.0, gray);
             }
         }
         if let Some(t) = over {
@@ -2560,7 +2567,8 @@ impl Play {
     /// Simbolo della pausa in cima alla linea centrale, dentro la zona che mette in pausa
     /// (`in_pause_zone`): in partita appena visibile; durante il conto alla rovescia in grigio
     /// chiaro, con sotto TAP TO / PAUSE su due righe brevi, che restano nella zona e tra i punteggi
-    /// (nei campi stretti, dove TAP TO non ci sta, solo PAUSE).
+    /// (nei campi stretti, dove TAP TO non ci sta, solo PAUSE; dove non ci sta neanche quella, con
+    /// i punteggi rivolti ai giocatori, solo il simbolo).
     fn draw_pause_hint(&self, app: &App) {
         let r = &app.renderer;
         let (w, s) = (r.world_w, app.scale());
@@ -2572,7 +2580,7 @@ impl Play {
         pause_icon(w / 2.0, top, PAUSE_ICON_BOTTOM * s - top, s, color);
         if counting {
             let font = &app.assets.font_text;
-            let size = 18.0 * s;
+            let size = r.text_1x();
             // dove comincia, dal centro, il punteggio più vicino in cima (vedi `draw`)
             let ox = 60.0 * w / 800.0;
             let inner = if app.cfg.game.scores_upright {
@@ -2580,9 +2588,15 @@ impl Play {
             } else {
                 ox - 25.0 * s
             };
-            // nei campi stretti (4:3) TAP TO non ci sta tra i punteggi: resta solo PAUSE
-            let full = r.text_width("TAP TO", font, size) / 2.0 + 6.0 * s < inner;
-            let lines: &[&str] = if full { &["TAP TO", "PAUSE"] } else { &["PAUSE"] };
+            // nei campi stretti (4:3) TAP TO non ci sta tra i punteggi: resta solo PAUSE, o nemmeno
+            let fits = |line: &str| r.text_width(line, font, size) / 2.0 + 6.0 * s < inner;
+            let lines: &[&str] = if fits("TAP TO") {
+                &["TAP TO", "PAUSE"]
+            } else if fits("PAUSE") {
+                &["PAUSE"]
+            } else {
+                return;
+            };
             let half = lines.iter().map(|l| r.text_width(l, font, size)).fold(0.0, f32::max) / 2.0;
             let y = (PAUSE_ICON_BOTTOM + 13.0) * s;
             // fondo nero: la linea tratteggiata passa sotto la scritta
@@ -2611,14 +2625,14 @@ impl Play {
     fn draw_join_hint(&self, app: &App) {
         let Some(free) = self.join_side() else { return };
         let r = &app.renderer;
-        let (w, h, s) = (r.world_w, r.world_h, app.scale());
+        let (w, h) = (r.world_w, r.world_h);
         let gray = App::color(app.cfg.colors.lgray);
         let k = if self.countdown > 0.0 || self.join.is_some() { 1.0 } else { PAUSE_ICON_DIM };
         let color = Color::new(gray.r * k, gray.g * k, gray.b * k, 1.0);
         let half = self.join_strip() / 2.0;
         let (x, rotation) = if free == Side::Right { (w - half, -FRAC_PI_2) } else { (half, FRAC_PI_2) };
         let text = format!("P{} HOLD HERE", free as usize + 1);
-        r.text_centered(&text, &app.assets.font_text, 18.0 * s, x, h / 2.0, rotation, color);
+        r.text_centered(&text, &app.assets.font_text, r.text_1x(), x, h / 2.0, rotation, color);
     }
 
     /// Chi ha vinto, per la scritta sotto GAME OVER: in singolo nessuno; contro la CPU il

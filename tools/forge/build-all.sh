@@ -9,7 +9,7 @@ set -e
 cd /src
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' rust/Cargo.toml | head -1 | tr -d '\r')
 step() { echo; echo "== $*"; }
-licenses="LICENSE THIRD_PARTY.md assets/fonts/OFL-Munro.txt"
+licenses="LICENSE THIRD_PARTY.md assets/fonts/OFL-PressStart2P.txt"
 
 # cartella paddws-$version-$1 in /tmp/pkg con i file indicati dopo
 stage() {
@@ -107,5 +107,6 @@ zipdir "paddws-$version-web"
 
 step "C64"
 sh c64/build.sh
-stage c64 c64/build/paddws.crt $licenses
+# il C64 scrive con il font della ROM della macchina: nessun font di terzi nella cartuccia
+stage c64 c64/build/paddws.crt LICENSE THIRD_PARTY.md
 zipdir "paddws-$version-c64"

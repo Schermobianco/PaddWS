@@ -693,8 +693,9 @@ impl Pick {
         let gray = App::color(app.cfg.colors.lgray);
         let accent = App::color(app.cfg.colors.accent);
         let font = &app.assets.font_text;
+        let t1 = r.text_1x();
         r.fill(BLACK);
-        r.text_centered("PICK 3 BONUSES", font, 34.0 * s, w / 2.0, 34.0 * s, 0.0, accent);
+        r.text_centered("PICK 3 BONUSES", font, t1, w / 2.0, 34.0 * s, 0.0, accent);
         let secs = format!("{:02}", self.left.max(0.0).ceil() as u32);
         let blink = self.left < 3.0 && (get_time() * 4.0) as i64 % 2 == 1;
         r.text_centered(
@@ -719,17 +720,17 @@ impl Pick {
             let col = if side == 0 { w / 4.0 } else { 3.0 * w / 4.0 };
             let chosen = &self.chosen[side];
             let head = HEAD_Y * s;
-            r.text_centered(&self.name(side), font, 30.0 * s, col - 70.0 * s, head, 0.0, white);
+            r.text_centered(&self.name(side), font, t1, col - 70.0 * s, head, 0.0, white);
             if app.touch && chosen.len() == 3 && !self.confirmed[side] && self.fixed != Some(side) && self.ready.is_none() {
                 // touch: il pulsante con cui si chiude la scelta
                 draw_rectangle(col + 35.0 * s, head - 18.0 * s, 70.0 * s, 36.0 * s, accent);
                 let black = App::color(app.cfg.colors.black);
-                r.text_centered("OK", font, 30.0 * s, col + 70.0 * s, head, 0.0, black);
+                r.text_centered("OK", font, t1, col + 70.0 * s, head, 0.0, black);
             } else {
                 r.text_centered(
                     &format!("{}/3", chosen.len()),
                     font,
-                    30.0 * s,
+                    t1,
                     col + 70.0 * s,
                     head,
                     0.0,
@@ -742,21 +743,24 @@ impl Pick {
                 let here = self.cursor[side] == i && chosen.len() < 3 && self.ready.is_none();
                 let color = if on || here { white } else { gray };
                 if here {
-                    r.text_centered(">", font, 30.0 * s, col - 105.0 * s, cy, 0.0, accent);
+                    r.text_centered(">", font, t1, col - 105.0 * s, cy, 0.0, accent);
                 }
                 draw_capsule(b, col - 70.0 * s, cy, size, u, on, color);
-                r.text_centered(b.name(), font, 30.0 * s, col + 15.0 * s, cy, 0.0, color);
+                // il nome allineato a sinistra, a distanza fissa dalla capsula (centrato, a 1x,
+                // TELEPORT la toccava nel campo 4:3)
+                let left = col - 70.0 * s + size / 2.0 + 10.0 * s;
+                r.text_centered(b.name(), font, t1, left + r.text_width(b.name(), font, t1) / 2.0, cy, 0.0, color);
             }
         }
         if self.ready.is_some() && (get_time() * 6.0) as i64 % 2 == 0 {
-            r.text_centered("READY!", font, 40.0 * s, w / 2.0, h - 26.0 * s, 0.0, accent);
+            r.text_centered("READY!", font, t1, w / 2.0, h - 20.0 * s, 0.0, accent);
         } else if self.ready.is_none() && !app.touch {
             // tasti di ciascun giocatore, centrati sotto la sua colonna (chi non sceglie non ne ha)
             if self.fixed != Some(0) {
-                r.text_centered("W S + C", font, 20.0 * s, w / 4.0, h - 16.0 * s, 0.0, gray);
+                r.text_centered("W S + C", font, t1, w / 4.0, h - 16.0 * s, 0.0, gray);
             }
             if self.fixed != Some(1) {
-                r.text_centered("UP DOWN + -", font, 20.0 * s, 3.0 * w / 4.0, h - 16.0 * s, 0.0, gray);
+                r.text_centered("UP DOWN + -", font, t1, 3.0 * w / 4.0, h - 16.0 * s, 0.0, gray);
             }
         }
     }
@@ -1516,7 +1520,7 @@ impl NextFx {
             } else {
                 to_f32(p.capsule_margin_top) + 16.0 * s
             };
-            let size = 34.0 * s;
+            let size = r.text_1x();
             for (side, label) in self.special_label.iter().enumerate() {
                 let Some(l) = *label else { continue };
                 let cx = if side == 0 { w / 4.0 } else { 3.0 * w / 4.0 };
@@ -1603,7 +1607,7 @@ impl NextFx {
                 let band = (back.h * open as f32).max(2.0 * u);
                 let top = y - band / 2.0;
                 draw_rectangle(back.x, back.y, back.w, back.h, BLACK);
-                r.text_centered(text, font, 32.0 * s, w / 2.0, y, 0.0, accent);
+                r.text_centered(text, font, r.text_1x(), w / 2.0, y, 0.0, accent);
                 draw_rectangle(back.x, back.y, back.w, top - back.y, BLACK);
                 draw_rectangle(back.x, top + band, back.w, back.bottom() - top - band, BLACK);
                 if open < 1.0 {

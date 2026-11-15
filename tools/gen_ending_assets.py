@@ -5,11 +5,11 @@ Uso:
     python tools/gen_ending_assets.py [--preview CARTELLA]
 
 Uscite in mister/rtl/gen/:
-- ending_text.hex: righe di bitmap a 1 bit larghe 160 pixel (20 byte per riga, bit 0 = pixel a
-  sinistra), un byte per riga del file. Le scritte sono in Munro 10 px (le righe comuni di tutte le
-  scritte, la stessa linea di base), il renderer le ingrandisce 2 o 3 volte; le righe uguali si
-  tengono una volta sola. In fondo, contigue, le cifre "0123456789+" in celle larghe END_CELL e il
-  timbro DEFEATED già ruotato (64x36);
+- ending_text.hex: righe di bitmap a 1 bit larghe 320 pixel (40 byte per riga, bit 0 = pixel a
+  sinistra), un byte per riga del file. Le scritte sono in Press Start 2P a 8 px (`text_mask` di
+  tools/gen_attract_assets.py, celle di 8x8 pixel), a scala 1 o, per i titoli grandi, 2; le righe
+  uguali si tengono una volta sola. In fondo, contigue, le cifre "0123456789+" in celle larghe
+  END_CELL e il segno KO della sfilata (64x36);
 - ending_map.hex: la mappa delle righe, una parola da 32 bit per riga dello schermo di ogni parte
   (le finestre END_WIN_* delle parti fisse, poi i titoli di coda, che scorrono): riga della bitmap,
   riga del glifo, x della scritta, scala, colore, gruppo (le scritte che compaiono dopo) e numero
@@ -30,14 +30,14 @@ import argparse
 import math
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
+
+from gen_attract_assets import BIG, CELL, text_mask
 
 ROOT = Path(__file__).resolve().parent.parent
 GEN = ROOT / "mister" / "rtl" / "gen"
-FONT = ROOT / "assets" / "fonts" / "munro.ttf"
 W, H = 320, 240
-ROW_W = 160                      # larghezza di una riga della bitmap (le scritte a scala 1)
-f10 = ImageFont.truetype(str(FONT), 10)
+ROW_W = 320                      # larghezza di una riga della bitmap (le scritte a scala 1)
 
 # colori della mappa
 C_WHITE, C_YELLOW, C_RED, C_FLASH = 0, 1, 2, 3
@@ -72,7 +72,7 @@ CREDITS = [
     ("text", "TWIST   BLASTER   RUSH"),
     ("text", "AND GUARDIAN"),
     ("head", "THIRD-PARTY WORKS"),
-    ("text", "MUNRO FONT  ED MERRITT"),
+    ("text", "PRESS START 2P FONT  CODEMAN38"),
     ("text", "PONG SCORE FONT  PWNZOR.AK"),
     ("text", "MISTER FRAMEWORK  SORGELIG"),
     ("text", "SID EMULATION  DAG LEM  A. MELNIKOV"),
@@ -87,9 +87,8 @@ CREDITS = [
     ("title", "THANK YOU FOR PLAYING"),
 ]
 ADVANCE = {"title": 70.0, "head": 70.0, "text": 38.0, "gap": 60.0}
-# a 320x240 (Munro 10 px a scala n = corpo / 20 del gioco Rust): titoli a scala 3 gialli, sezioni a
-# scala 2 gialle, voci a scala 2 bianche
-CRED_STYLE = {"title": (3, C_YELLOW), "head": (2, C_YELLOW), "text": (2, C_WHITE)}
+# a 320x240, Press Start 2P a scala 1: titoli e sezioni gialli, voci bianche
+CRED_STYLE = {"title": (1, C_YELLOW), "head": (1, C_YELLOW), "text": (1, C_WHITE)}
 
 
 def frames(s: float) -> int:
@@ -116,11 +115,8 @@ CRED_SMAX = round((20.0 + 240.0 + credits_layout()[-1][2]) / 2)    # pixel di sc
 
 
 def render(text: str) -> tuple[int, Image.Image]:
-    ascent, descent = f10.getmetrics()
-    w = max(1, round(f10.getlength(text)))
-    img = Image.new("L", (w + 4, ascent + descent), 0)
-    ImageDraw.Draw(img).text((0, 0), text, font=f10, fill=255)
-    return w, img.point(lambda v: 255 if v > 127 else 0)
+    img = text_mask(text)
+    return img.width, img
 
 
 GLYPHS = "0123456789+"
@@ -133,17 +129,14 @@ def all_strings() -> list[str]:
 
 
 class Text:
-    """Le scritte a scala 1 con le righe comuni (linea di base unica) e le cifre in celle."""
+    """Le scritte a scala 1 (8 righe, le lettere nelle prime 7) e le cifre in celle di 8 pixel."""
 
     def __init__(self) -> None:
         raw = {s: render(s) for s in all_strings()}
         glyphs = [render(c) for c in GLYPHS]
-        every = list(raw.values()) + glyphs
-        height = every[0][1].height
-        rows = [y for y in range(height) if any(img.getpixel((x, y)) for _, img in every for x in range(img.width))]
-        self.top, bottom = rows[0], rows[-1]
-        self.gh = bottom - self.top + 1
-        self.cell = max(w for w, _ in glyphs) + 1
+        self.top = 0
+        self.gh = CELL
+        self.cell = CELL
         self.masks: dict[str, list[list[int]]] = {}
         self.width: dict[str, int] = {}
         for s, (w, img) in raw.items():
@@ -151,10 +144,10 @@ class Text:
                 raise SystemExit(f"scritta troppo larga per una riga di {ROW_W} pixel: {s} ({w})")
             self.width[s] = w
             self.masks[s] = [[1 if img.getpixel((x, self.top + y)) else 0 for x in range(w)] for y in range(self.gh)]
-        # cifre centrate nella cella, come il font a celle di gen_challenge_assets.py
+        # cifre nelle celle, come il font a celle di gen_challenge_assets.py
         self.strip = [[0] * (len(GLYPHS) * self.cell) for _ in range(self.gh)]
         for i, (w, img) in enumerate(glyphs):
-            ox = i * self.cell + (self.cell - 1 - w) // 2
+            ox = i * self.cell
             for y in range(self.gh):
                 for x in range(w):
                     if img.getpixel((x, self.top + y)):
@@ -162,24 +155,32 @@ class Text:
 
 
 def stamp_bitmap() -> list[list[int]]:
-    """Segno dell'avversario battuto nella sfilata del MiSTer: "K.O." rosso in Munro 10 a scala 2, a
-    pixel pieni, centrato sulla racchetta (che next_render intanto spegne). Il timbro inclinato
-    DEFEATED di ending_ui.rs, largo 55 pixel su colonne di 45, a 320x240 si sovrapponeva a quelli
-    vicini e a 1 bit non si leggeva."""
-    sw, sh, k = 64, 36, 2
-    f = ImageFont.truetype(str(FONT), 10)
-    probe = ImageDraw.Draw(Image.new("L", (1, 1)))
-    left, top, right, bottom = probe.textbbox((0, 0), "K.O.", font=f)
-    flat = Image.new("L", (right - left, bottom - top), 0)
-    ImageDraw.Draw(flat).text((-left, -top), "K.O.", font=f, fill=255)
-    fw, fh = flat.size
+    """Segno dell'avversario battuto nella sfilata del MiSTer: "KO" rosso in Press Start 2P a scala
+    STAMP_SCALE, a pixel pieni, centrato sulla racchetta (che next_render intanto spegne). Le lettere
+    sono accostate (un pixel fra l'inchiostro): il segno è largo 15 pixel a scala 1, 30 a scala 2 (con
+    i punti, "K.O.", a scala 2 i segni vicini si toccavano).
+    Il timbro inclinato DEFEATED di ending_ui.rs, largo 55 pixel su colonne di 45, a 320x240 si
+    sovrapponeva a quelli vicini e a 1 bit non si leggeva."""
+    sw, sh, k = 64, 36, STAMP_SCALE
+    parts = []
+    for c in "KO":
+        g = text_mask(c)
+        box = g.getbbox()
+        parts.append(g.crop((box[0], 0, box[2], CELL)))
+    fw = sum(p.width for p in parts) + len(parts) - 1
+    fh = 7
+    flat = Image.new("1", (fw, fh), 0)
+    xx = 0
+    for p in parts:
+        flat.paste(p.crop((0, 0, p.width, fh)), (xx, 0))
+        xx += p.width + 1
     if fw * k > sw or fh * k > sh:
-        raise SystemExit(f"K.O. troppo grande per il segno {sw}x{sh}: {fw * k}x{fh * k}")
+        raise SystemExit(f"KO troppo grande per il segno {sw}x{sh}: {fw * k}x{fh * k}")
     out = [[0] * sw for _ in range(sh)]
     x0, y0 = (sw - fw * k) // 2, (sh - fh * k) // 2
     for y in range(fh * k):
         for x in range(fw * k):
-            if flat.getpixel((x // k, y // k)) > 127:
+            if flat.getpixel((x // k, y // k)):
                 out[y0 + y][x0 + x] = 1
     return out
 
@@ -189,36 +190,45 @@ def stamp_bitmap() -> list[list[int]]:
 # parti: 0 congratulazioni, 1 sfilata, 2 punteggio, 3 campione, 4 titoli, 5 THE END
 # righe (centro della scritta a 320x240), scala, colore, gruppo, numero
 PARADE_Y = 92                     # centro delle racchette (185 a 480 righe)
-PARADE_NAME_Y = 145               # centro dei nomi
+PARADE_NAME_Y = 145               # centro dei nomi pari; i dispari PARADE_NAME_DY righe più in basso
+PARADE_NAME_DY = 12
 STAMP_W, STAMP_H = 64, 36
-STAMP_CY = PARADE_Y - 4           # centro del K.O., poco sopra il centro delle racchette
+STAMP_SCALE = 1
+STAMP_CY = PARADE_Y - 4           # centro del KO, poco sopra il centro delle racchette
+# colonne della sfilata: da PARADE_X0 a PARADE_X1, così GUARDIAN (63 pixel) sta dentro lo schermo
+# (su PC le colonne sono W * (2i + 1) / 14); i nomi vicini stanno su due righe
+PARADE_X0, PARADE_X1 = 34, 282
+SCORE_SCALE = 1                   # righe del punteggio: etichette e cifre
 
 
 def column_x(i: int) -> int:
-    return round(W * (2 * i + 1) / 14)
+    return round(PARADE_X0 + (PARADE_X1 - PARADE_X0) * i / 6)
 
 
 def score_columns(t: Text) -> tuple[int, int]:
-    """Centro delle etichette e x della prima cifra delle righe del punteggio (a scala 2)."""
-    lw = max(t.width[s] for s in ("SCORE", "CHAMPION BONUS", "TOTAL")) * 2
-    dw = 7 * t.cell * 2
-    d = max(lw // 2, dw // 2) + 6
+    """Centro delle etichette e x della prima cifra delle righe del punteggio (a SCORE_SCALE)."""
+    lw = max(t.width[s] for s in ("SCORE", "CHAMPION BONUS", "TOTAL")) * SCORE_SCALE
+    dw = 7 * t.cell * SCORE_SCALE
+    d = max(lw // 2, dw // 2) + 12
     return W // 2 - d, W // 2 + d - dw // 2
 
 
 def static_parts(t: Text) -> dict[int, list[tuple]]:
+    """Scritte delle parti fisse: alla scala delle scritte grandi della fine partita (BIG) solo YOU
+    WIN!, il resto a scala 1."""
     lx, _ = score_columns(t)
+    s = SCORE_SCALE
     return {
-        0: [("CONGRATULATIONS!", 110, 3, C_FLASH, 0, N_NONE, None),
-            ("YOU WIN!", 145, 2, C_WHITE, 1, N_NONE, None)],
-        1: [("YOUR OPPONENTS", 25, 2, C_YELLOW, 0, N_NONE, None)],
-        2: [("FINAL SCORE", 40, 2, C_YELLOW, 0, N_NONE, None),
-            ("SCORE", 80, 2, C_WHITE, 0, N_SCORE, lx),
-            ("CHAMPION BONUS", 105, 2, C_YELLOW, 1, N_BONUS, lx),
-            ("TOTAL", 145, 2, C_WHITE, 2, N_TOTAL, lx)],
-        3: [("YOU ARE THE", 180, 2, C_WHITE, 0, N_NONE, None),
-            ("PADD WS CHAMPION", 205, 3, C_YELLOW, 0, N_NONE, None)],
-        5: [("THE END", 120, 3, C_FLASH, 0, N_NONE, None)],
+        0: [("CONGRATULATIONS!", 110, 1, C_FLASH, 0, N_NONE, None),
+            ("YOU WIN!", 136, BIG, C_WHITE, 1, N_NONE, None)],
+        1: [("YOUR OPPONENTS", 25, 1, C_YELLOW, 0, N_NONE, None)],
+        2: [("FINAL SCORE", 50, 1, C_YELLOW, 0, N_NONE, None),
+            ("SCORE", 90, s, C_WHITE, 0, N_SCORE, lx),
+            ("CHAMPION BONUS", 110, s, C_YELLOW, 1, N_BONUS, lx),
+            ("TOTAL", 140, s, C_WHITE, 2, N_TOTAL, lx)],
+        3: [("YOU ARE THE", 184, 1, C_WHITE, 0, N_NONE, None),
+            ("PADD WS CHAMPION", 200, 1, C_YELLOW, 0, N_NONE, None)],
+        5: [("THE END", 120, 1, C_FLASH, 0, N_NONE, None)],
     }
 
 
@@ -511,7 +521,8 @@ def main() -> None:
          f"localparam integer END_STRIP_ROW0 = {strip_row0}, END_STAMP_ROW0 = {stamp_row0};",
          f"localparam integer END_STAMP_W = {STAMP_W}, END_STAMP_H = {STAMP_H}, END_STAMP_Y0 = {STAMP_CY - STAMP_H // 2};",
          f"localparam integer END_DIG_X0 = {dig_x0};",
-         f"localparam integer END_PARADE_Y = {PARADE_Y}, END_PARADE_NAME_Y = {PARADE_NAME_Y};",
+         f"localparam integer END_PARADE_Y = {PARADE_Y}, END_PARADE_NAME_Y = {PARADE_NAME_Y}, "
+         f"END_PARADE_NAME_DY = {PARADE_NAME_DY};",
          *[f"localparam integer END_COL{i} = {column_x(i)};" for i in range(7)],
          ]
     for part in (0, 1, 2, 3, 5):

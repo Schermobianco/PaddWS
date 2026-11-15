@@ -3,19 +3,17 @@
 Uso:
     python tools/gen_challenge_assets.py
 
-Scritte fisse in Munro a 10 px come quelle di NEXT (tools/gen_next_assets.py), con la stessa linea
-di base, più un font a celle di larghezza fissa per le parti che cambiano (punteggi, livello,
-iniziali, conto alla rovescia): codici 0-9 cifre, 10-35 lettere, 36 spazio, 37 "+", 38 ".", 39 "x",
-40 "!" (l'ultima lettera delle iniziali, aggiunta in fondo: i codici di prima non cambiano).
+Scritte fisse in Press Start 2P a 8 px come quelle di NEXT (tools/gen_next_assets.py), più lo stesso
+font in celle di 8x8 pixel per le parti che cambiano (punteggi, livello, iniziali, conto alla
+rovescia): codici 0-9 cifre, 10-35 lettere, 36 spazio, 37 "+", 38 ".", 39 "x", 40 "!" (l'ultima
+lettera delle iniziali, aggiunta in fondo: i codici di prima non cambiano).
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
-
-from gen_attract_assets import verilog_rom
+from gen_attract_assets import CELL, text_mask, verilog_rom
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "mister" / "rtl" / "gen" / "pong_challenge.vh"
@@ -49,26 +47,11 @@ STRINGS = {
 GLYPHS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ +.x!"
 
 
-def render(font: ImageFont.FreeTypeFont, text: str) -> tuple[int, Image.Image]:
-    ascent, descent = font.getmetrics()
-    w = max(1, round(font.getlength(text)))
-    img = Image.new("L", (w + 4, ascent + descent), 0)
-    ImageDraw.Draw(img).text((0, 0), text, font=font, fill=255)
-    return w, img.point(lambda v: 255 if v > 127 else 0)
-
-
 def main() -> None:
-    font = ImageFont.truetype(str(ROOT / "assets/fonts/munro.ttf"), 10)
-    raw = {name: render(font, text) for name, text in STRINGS.items()}
-    glyphs = [render(font, c) for c in GLYPHS]
-    # righe comuni a scritte e glifi (stessa linea di base)
-    every = list(raw.values()) + glyphs
-    height = every[0][1].height
-    rows = [y for y in range(height) if any(img.getpixel((x, y)) for _, img in every for x in range(img.width))]
-    top, bottom = rows[0], rows[-1]
-    masks = {name: img.crop((0, top, w, bottom + 1)).convert("1") for name, (w, img) in raw.items()}
-    cell = max(w for w, _ in glyphs) + 1
-    gh = bottom - top + 1
+    masks = {name: text_mask(text) for name, text in STRINGS.items()}
+    # celle del font: il glifo nelle prime 7 colonne, l'ottava è lo spazio fra i caratteri
+    glyphs = [text_mask(c).crop((0, 0, CELL, CELL)) for c in GLYPHS]
+    cell, gh = CELL, CELL
 
     parts = ["// Generato da tools/gen_challenge_assets.py: non modificare a mano.\n"]
     parts += [verilog_rom(name, mask) for name, mask in masks.items()]
@@ -81,18 +64,13 @@ def main() -> None:
         lines += [f"        3'd{i}: {fam}_lit = {fam}{i}_lit(dx, dy);" for i in range(LEVELS)]
         lines += [f"        default: {fam}_lit = 1'b0;", "    endcase", "endfunction"]
         parts.append("\n".join(lines) + "\n")
-    # font a celle: riga `row` del glifo `code`, centrato nella cella
+    # font a celle: riga `row` del glifo `code` (colonne 0-6, la 7 è lo spazio)
     lines = [f"localparam CH_CELL = {cell};", f"localparam CH_GLYPH_H = {gh};",
              f"function [{cell - 1}:0] glyph_row(input [5:0] code, input [3:0] row);",
              "    case ({code, row})"]
-    for code, (w, img) in enumerate(glyphs):
-        g = img.crop((0, top, w, bottom + 1))
-        ox = (cell - 1 - w) // 2
+    for code, g in enumerate(glyphs):
         for y in range(gh):
-            bits = ["0"] * cell
-            for x in range(w):
-                if g.getpixel((x, y)):
-                    bits[ox + x] = "1"
+            bits = ["1" if g.getpixel((x, y)) else "0" for x in range(cell)]
             if "1" in bits:
                 lines.append(f"        {{6'd{code}, 4'd{y}}}: glyph_row = {cell}'b{''.join(bits)};")
     lines += [f"        default: glyph_row = {cell}'d0;", "    endcase", "endfunction",

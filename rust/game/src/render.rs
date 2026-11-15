@@ -12,11 +12,20 @@ use crate::config::Crt;
 /// le scanline emulate sono ~240, quindi 720p bastano e il costo resta nel budget del frame.
 const CRT_MAX_PIXELS: f32 = 1280.0 * 720.0;
 
-/// Font di macroquad più le metriche dei glifi, per centrare sull'inchiostro visibile
-/// (la larghezza di macroquad è la somma degli avanzamenti, spazi laterali compresi).
+/// Grandezze delle scritte in pixel arcade (lo schermo 320x240 del core MiSTer): Press Start 2P
+/// è disegnato su una griglia di 8x8 pixel ed è netto solo a multipli interi di 8, quindi le
+/// scritte sono a 1x o a 2x, mai in mezzo. A 2x solo GAME OVER, YOU WIN e PERFECT (le bitmap della
+/// fine partita, `attract`, e YOU WIN! del finale); tutto il resto a 1x.
+pub const TEXT_1X: f32 = 8.0;
+pub const TEXT_2X: f32 = 16.0;
+
+/// Font delle scritte: un font TTF qualsiasi disegnato da macroquad (il punteggio) oppure un font
+/// a pixel (`PixelFont`, le scritte), con le metriche dei glifi per centrare sull'inchiostro
+/// visibile (la larghezza di macroquad è la somma degli avanzamenti, spazi laterali compresi).
 pub struct GameFont {
-    pub font: Font,
+    font: Font,
     metrics: fontdue::Font,
+    pixel: Option<PixelFont>,
 }
 
 impl GameFont {
@@ -25,7 +34,18 @@ impl GameFont {
         font.set_filter(FilterMode::Nearest);
         let metrics =
             fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default()).expect("font incluso nell'eseguibile");
-        Self { font, metrics }
+        Self {
+            font,
+            metrics,
+            pixel: None,
+        }
+    }
+
+    /// Font a pixel disegnato su una griglia di `em` pixel (8 per Press Start 2P): vedi `PixelFont`.
+    pub fn pixel_from_bytes(bytes: &'static [u8], em: u32) -> Self {
+        let mut font = Self::from_bytes(bytes);
+        font.pixel = Some(PixelFont::new(&font.metrics, em));
+        font
     }
 
     /// Estensione orizzontale dell'inchiostro (sinistra, destra) in pixel rasterizzati.
@@ -41,6 +61,133 @@ impl GameFont {
             pen += m.advance_width;
         }
         if left > right { (0.0, pen) } else { (left, right) }
+    }
+}
+
+/// Font a pixel (Press Start 2P), netto a ogni risoluzione.
+///
+/// Il metodo: i glifi si rasterizzano una volta sola alla grandezza di disegno del font (`em`
+/// pixel, 8), con la copertura portata a 0 o 1, in una texture con il filtro Nearest; a schermo
+/// ogni pixel del font diventa un quadrato di `k` x `k` pixel fisici con `k` intero (la grandezza
+/// chiesta, arrotondata al multiplo intero più vicino, per difetto a metà strada: con il campo a
+/// 4,5 pixel fisici per pixel arcade la 1x è a 4), e l'origine della scritta cade su un pixel
+/// fisico. Così i pixel del font restano quadrati e pieni, senza grigi sui bordi, anche quando la
+/// scala del campo non è intera (1080/240 = 4,5), con l'HiDPI, nel browser e sul Deck, e anche nel
+/// buffer del CRT (che ha la sua scala). Rispetto al testo di macroquad (rasterizzato a ogni
+/// grandezza) non c'è un atlante che cresce: la texture è una, piccola, fatta all'avvio, e qualunque
+/// grandezza (anche una che cambia a ogni frame) costa uguale. Il prezzo è che la scritta può
+/// venire fino a un quarto più piccola o più grande del previsto quando la scala non è intera: le
+/// schermate lasciano margine.
+struct PixelFont {
+    texture: Texture2D,
+    /// pixel del font per em (la grandezza a cui è disegnato)
+    em: f32,
+    /// glifi da ' ' a '~'; gli altri caratteri diventano '?'
+    glyphs: Vec<Glyph>,
+}
+
+/// Glifo nella texture del font a pixel; misure in pixel del font, con y verso il basso e
+/// l'origine all'inizio della linea di base.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct Glyph {
+    src: Rect,
+    left: f32,
+    top: f32,
+    advance: f32,
+}
+
+/// Primo e ultimo carattere del font a pixel.
+const PIXEL_FIRST: char = ' ';
+const PIXEL_LAST: char = '~';
+
+/// Glifi rasterizzati: l'immagine in alfa (larghezza, altezza, un byte per pixel, 0 o 255) e i
+/// glifi. A parte dalla texture per i test, che non hanno un contesto grafico.
+fn rasterize_pixel_font(metrics: &fontdue::Font, em: u32) -> (u32, u32, Vec<u8>, Vec<Glyph>) {
+    // pixel accesi di ogni glifo (copertura almeno a metà) e il loro riquadro: fontdue lascia
+    // righe e colonne vuote attorno, che non devono contare nell'inchiostro
+    let shapes: Vec<_> = (PIXEL_FIRST..=PIXEL_LAST)
+        .map(|ch| {
+            let (m, cover) = metrics.rasterize(ch, em as f32);
+            let lit: Vec<(i32, i32)> = (0..cover.len())
+                .filter(|&j| cover[j] >= 128)
+                .map(|j| ((j % m.width) as i32, (j / m.width) as i32))
+                .collect();
+            let x0 = lit.iter().map(|p| p.0).min().unwrap_or(0);
+            let y0 = lit.iter().map(|p| p.1).min().unwrap_or(0);
+            let x1 = lit.iter().map(|p| p.0 + 1).max().unwrap_or(0);
+            let y1 = lit.iter().map(|p| p.1 + 1).max().unwrap_or(0);
+            // la riga 0 della bitmap di fontdue è a ymin + height sopra la linea di base
+            let glyph = Glyph {
+                src: Rect::new(0.0, 0.0, (x1 - x0) as f32, (y1 - y0) as f32),
+                left: (m.xmin + x0) as f32,
+                top: (y0 - m.ymin - m.height as i32) as f32,
+                advance: m.advance_width,
+            };
+            (glyph, lit.into_iter().map(move |(x, y)| ((x - x0) as u32, (y - y0) as u32)))
+        })
+        .collect();
+    // celle con un pixel vuoto attorno: il filtro Nearest non prende mai i vicini
+    let cell = shapes.iter().map(|(g, _)| g.src.w.max(g.src.h)).fold(1.0, f32::max) as u32 + 2;
+    let cols = 16;
+    let rows = (shapes.len() as u32).div_ceil(cols);
+    // lati a potenze di 2: le GPU GLES2 più vecchie (il Pi 2 del Deck) le vogliono così
+    let (w, h) = ((cols * cell).next_power_of_two(), (rows * cell).next_power_of_two());
+    let mut alpha = vec![0u8; (w * h) as usize];
+    let glyphs = shapes
+        .into_iter()
+        .enumerate()
+        .map(|(i, (mut g, lit))| {
+            let (x0, y0) = ((i as u32 % cols) * cell + 1, (i as u32 / cols) * cell + 1);
+            for (x, y) in lit {
+                alpha[((y0 + y) * w + x0 + x) as usize] = 255;
+            }
+            (g.src.x, g.src.y) = (x0 as f32, y0 as f32);
+            g
+        })
+        .collect();
+    (w, h, alpha, glyphs)
+}
+
+impl PixelFont {
+    fn new(metrics: &fontdue::Font, em: u32) -> Self {
+        let (w, h, alpha, glyphs) = rasterize_pixel_font(metrics, em);
+        let rgba: Vec<u8> = alpha.iter().flat_map(|&a| [255, 255, 255, a]).collect();
+        let texture = Texture2D::from_rgba8(w as u16, h as u16, &rgba);
+        texture.set_filter(FilterMode::Nearest);
+        Self {
+            texture,
+            em: em as f32,
+            glyphs,
+        }
+    }
+
+    fn glyph(&self, ch: char) -> Glyph {
+        let ch = if (PIXEL_FIRST..=PIXEL_LAST).contains(&ch) { ch } else { '?' };
+        self.glyphs[ch as usize - PIXEL_FIRST as usize]
+    }
+
+    /// Glifi di `text` con la posizione della penna, in pixel del font.
+    fn layout<'a>(&'a self, text: &'a str) -> impl Iterator<Item = (Glyph, f32)> + 'a {
+        let mut pen = 0.0;
+        text.chars().map(move |ch| {
+            let g = self.glyph(ch);
+            let at = pen;
+            pen += g.advance;
+            (g, at)
+        })
+    }
+
+    fn advance(&self, text: &str) -> f32 {
+        self.layout(text).map(|(g, _)| g.advance).sum()
+    }
+
+    /// Riquadro dell'inchiostro (sinistra, alto, destra, basso) in pixel del font; None se il
+    /// testo non ha inchiostro (vuoto o solo spazi).
+    fn ink(&self, text: &str) -> Option<(f32, f32, f32, f32)> {
+        self.layout(text)
+            .filter(|(g, _)| g.src.w > 0.0)
+            .map(|(g, pen)| (pen + g.left, g.top, pen + g.left + g.src.w, g.top + g.src.h))
+            .reduce(|a, b| (a.0.min(b.0), a.1.min(b.1), a.2.max(b.2), a.3.max(b.3)))
     }
 }
 
@@ -407,15 +554,98 @@ impl Renderer {
         draw_rectangle(cx - w / 2.0, self.screen_y(cy) - h / 2.0, w, h, color);
     }
 
+    /// Lato di un pixel arcade (lo schermo 320x240 del core MiSTer) in unità del campo.
+    pub fn arcade_px(&self) -> f32 {
+        self.world_h / 240.0
+    }
+
+    /// Grandezza delle scritte a 1x (8 pixel arcade) in unità del campo.
+    pub fn text_1x(&self) -> f32 {
+        TEXT_1X * self.arcade_px()
+    }
+
+    /// Grandezza delle scritte a 2x (16 pixel arcade) in unità del campo.
+    pub fn text_2x(&self) -> f32 {
+        TEXT_2X * self.arcade_px()
+    }
+
+    /// Pixel fisici per unità del campo in orizzontale e in verticale, nel bersaglio in cui si
+    /// disegna il campo (lo schermo nel letterbox o il buffer del CRT).
+    fn physical_per_unit(&self) -> Vec2 {
+        match &self.crt {
+            Some(crt) => vec2(crt.out_size.x / self.world_w, crt.out_size.y / self.world_h),
+            None => vec2(
+                self.viewport_px.2 as f32 / self.world_w,
+                self.viewport_px.3 as f32 / self.world_h,
+            ),
+        }
+    }
+
+    /// Il punto del campo più vicino a `p` che cade sull'angolo di un pixel fisico: il bersaglio
+    /// del campo comincia su un pixel fisico, quindi basta arrotondare nella sua scala.
+    fn snap(&self, p: Vec2) -> Vec2 {
+        let k = self.physical_per_unit();
+        vec2((p.x * k.x).round() / k.x, (p.y * k.y).round() / k.y)
+    }
+
+    /// Font a pixel: unità del campo per pixel del font (x, y), con un pixel del font che vale
+    /// un numero intero di pixel fisici (vedi `PixelFont`). La grandezza chiesta si porta prima al
+    /// multiplo intero più vicino della grandezza di disegno in pixel arcade (1x, 2x...): le
+    /// schermate che scalano le misure a modo loro (`App::scale`) restano comunque a 1x o 2x, e
+    /// due scritte a 1x vengono sempre uguali.
+    fn pixel_unit(&self, font: &PixelFont, size: f32) -> Vec2 {
+        let k = self.physical_per_unit();
+        let times = (size / (font.em * self.arcade_px())).round().max(1.0);
+        // pixel fisici per pixel del font: il numero intero più vicino, per difetto a metà strada
+        let n = (times * self.arcade_px() * k.y - 0.5).ceil().max(1.0);
+        vec2(n / k.x, n / k.y)
+    }
+
     /// Testo centrato su (cx, cy) in coordinate di disegno, eventualmente ruotato (radianti, orario).
-    /// La dimensione è in unità del campo; la rasterizzazione avviene alla risoluzione
-    /// reale dello schermo, così il testo resta nitido a ogni scala. Niente dimensioni che cambiano
-    /// a ogni frame: ogni dimensione finisce nell'atlante di macroquad, che crescerebbe senza fine
-    /// (fino a superare le texture che un telefono regge) e, quando raddoppia, cancella la texture
-    /// già usata dai disegni del frame ("glBindTexture called with an already deleted texture").
+    /// La dimensione è in unità del campo (per il font delle scritte `text_1x` o `text_2x`). Il
+    /// font a pixel segue `PixelFont`; gli altri si rasterizzano alla risoluzione reale dello
+    /// schermo, così il testo resta nitido a ogni scala. Per questi ultimi niente dimensioni che
+    /// cambiano a ogni frame: ogni dimensione finisce nell'atlante di macroquad, che crescerebbe
+    /// senza fine (fino a superare le texture che un telefono regge) e, quando raddoppia, cancella
+    /// la texture già usata dai disegni del frame ("glBindTexture called with an already deleted
+    /// texture").
     #[allow(clippy::too_many_arguments)] // posizione, dimensione, rotazione e colore sono tutti necessari
     pub fn text_centered(&self, text: &str, font: &GameFont, size: f32, cx: f32, cy: f32, rotation: f32, color: Color) {
-        self.draw_centered(text, font, self.font_params(size), cx, cy, rotation, color);
+        match &font.pixel {
+            Some(pixel) => self.pixel_centered(text, pixel, size, cx, cy, rotation, color),
+            None => self.draw_centered(text, font, self.font_params(size), cx, cy, rotation, color),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn pixel_centered(&self, text: &str, font: &PixelFont, size: f32, cx: f32, cy: f32, rotation: f32, color: Color) {
+        let Some((l, t, r, b)) = font.ink(text) else { return };
+        let u = self.pixel_unit(font, size);
+        // centro dell'inchiostro rispetto all'origine, ruotato; poi l'origine su un pixel fisico
+        let (vx, vy) = ((l + r) / 2.0 * u.x, (t + b) / 2.0 * u.y);
+        let (sin, cos) = rotation.sin_cos();
+        let origin = self.snap(vec2(cx - (vx * cos - vy * sin), cy - (vx * sin + vy * cos)));
+        self.pixel_glyphs(text, font, u, origin, rotation, color);
+    }
+
+    /// Glifi del font a pixel con l'origine (inizio della linea di base) in `origin`, ruotati
+    /// attorno all'origine.
+    fn pixel_glyphs(&self, text: &str, font: &PixelFont, u: Vec2, origin: Vec2, rotation: f32, color: Color) {
+        for (g, pen) in font.layout(text).filter(|(g, _)| g.src.w > 0.0) {
+            draw_texture_ex(
+                &font.texture,
+                origin.x + (pen + g.left) * u.x,
+                origin.y + g.top * u.y,
+                color,
+                DrawTextureParams {
+                    dest_size: Some(vec2(g.src.w * u.x, g.src.h * u.y)),
+                    source: Some(g.src),
+                    rotation,
+                    pivot: Some(origin),
+                    ..Default::default()
+                },
+            );
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -453,8 +683,11 @@ impl Renderer {
         );
     }
 
-    /// Larghezza di un testo in coordinate di disegno.
+    /// Larghezza di un testo in coordinate di disegno (la somma degli avanzamenti).
     pub fn text_width(&self, text: &str, font: &GameFont, size: f32) -> f32 {
+        if let Some(pixel) = &font.pixel {
+            return pixel.advance(text) * self.pixel_unit(pixel, size).x;
+        }
         let (font_size, font_scale) = self.font_params(size);
         measure_text(text, Some(&font.font), font_size, font_scale).width
     }
@@ -463,6 +696,17 @@ impl Renderer {
     /// coordinate di disegno, rispetto al centro dell'inchiostro di tutto il testo: quello su cui
     /// `text_centered` lo centra. None per i caratteri senza inchiostro (gli spazi).
     pub fn ink_boxes(&self, text: &str, font: &GameFont, size: f32) -> Vec<Option<(f32, f32)>> {
+        if let Some(pixel) = &font.pixel {
+            let k = self.pixel_unit(pixel, size).x;
+            let mid = pixel.ink(text).map_or(0.0, |(l, _, r, _)| (l + r) / 2.0);
+            return pixel
+                .layout(text)
+                .map(|(g, pen)| {
+                    let x0 = pen + g.left - mid;
+                    (g.src.w > 0.0).then_some((x0 * k, (x0 + g.src.w) * k))
+                })
+                .collect();
+        }
         let (font_size, font_scale) = self.font_params(size);
         let dpi = screen_dpi_scale();
         let raster = (font_size as f32 * dpi).ceil(); // come `draw_centered`
@@ -482,12 +726,23 @@ impl Renderer {
     /// Altezza dell'inchiostro di un testo in coordinate di disegno (quella che `text_centered`
     /// centra in verticale).
     pub fn text_height(&self, text: &str, font: &GameFont, size: f32) -> f32 {
+        if let Some(pixel) = &font.pixel {
+            return pixel.ink(text).map_or(0.0, |(_, t, _, b)| (b - t) * self.pixel_unit(pixel, size).y);
+        }
         let (font_size, font_scale) = self.font_params(size);
         measure_text(text, Some(&font.font), font_size, font_scale).height
     }
 
-    /// Testo allineato in basso a destra su (x, y) in coordinate di disegno.
+    /// Testo allineato in basso a destra su (x, y) in coordinate di disegno: l'avanzamento
+    /// finisce in x, l'inchiostro in y.
     pub fn text_bottom_right(&self, text: &str, font: &GameFont, size: f32, x: f32, y: f32, color: Color) {
+        if let Some(pixel) = &font.pixel {
+            let Some((_, _, _, bottom)) = pixel.ink(text) else { return };
+            let u = self.pixel_unit(pixel, size);
+            let origin = self.snap(vec2(x - pixel.advance(text) * u.x, y - bottom * u.y));
+            self.pixel_glyphs(text, pixel, u, origin, 0.0, color);
+            return;
+        }
         let (font_size, font_scale) = self.font_params(size);
         let dims = measure_text(text, Some(&font.font), font_size, font_scale);
         draw_text_ex(
@@ -957,5 +1212,54 @@ mod swap_tests {
             assert!(f.contains(&format!("{v:.1}")), "{v}");
         }
         assert!(!f.contains("{{") && f.contains("gl_FragColor = c;"));
+    }
+}
+
+#[cfg(test)]
+mod pixel_font_tests {
+    use super::*;
+
+    fn press_start() -> fontdue::Font {
+        let bytes = include_bytes!("../../../assets/fonts/PressStart2P-Regular.ttf");
+        fontdue::Font::from_bytes(&bytes[..], fontdue::FontSettings::default()).unwrap()
+    }
+
+    #[test]
+    fn press_start_has_only_full_pixels_at_8() {
+        let font = press_start();
+        for ch in PIXEL_FIRST..=PIXEL_LAST {
+            let (m, cover) = font.rasterize(ch, 8.0);
+            assert!(cover.iter().all(|&c| c == 0 || c == 255), "{ch:?}: {cover:?}");
+            assert_eq!(m.advance_width, 8.0, "{ch:?}");
+        }
+    }
+
+    #[test]
+    fn glyphs_sit_on_the_8x8_grid() {
+        let (w, h, alpha, glyphs) = rasterize_pixel_font(&press_start(), 8);
+        assert_eq!(alpha.len(), (w * h) as usize);
+        assert_eq!(glyphs.len(), (PIXEL_LAST as usize) - (PIXEL_FIRST as usize) + 1);
+        let g = |ch: char| glyphs[ch as usize - PIXEL_FIRST as usize];
+        // tutto nella cella di 8x8 sopra la linea di base (il font non ha discendenti sotto);
+        // maiuscole e cifre alte 7, con la riga in basso vuota
+        for (i, g) in glyphs.iter().enumerate() {
+            assert!(g.left >= 0.0 && g.left + g.src.w <= 8.0, "{i} {g:?}");
+            assert!(g.src.w == 0.0 || (g.top >= -8.0 && g.top + g.src.h <= 0.0), "{i} {g:?}");
+        }
+        for ch in ['A', 'M', 'W', '0', '8'] {
+            let g = g(ch);
+            assert_eq!((g.top, g.top + g.src.h), (-8.0, -1.0), "{ch:?} {g:?}");
+        }
+        // lo spazio non ha inchiostro
+        assert_eq!(g(' ').src.w, 0.0);
+        // ogni glifo nella texture ha un pixel vuoto attorno
+        for g in &glyphs {
+            let (x0, y0) = (g.src.x as u32 - 1, g.src.y as u32 - 1);
+            for x in x0..x0 + g.src.w as u32 + 2 {
+                for y in [y0, y0 + g.src.h as u32 + 1] {
+                    assert_eq!(alpha[(y * w + x) as usize], 0, "{g:?}");
+                }
+            }
+        }
     }
 }

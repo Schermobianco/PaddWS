@@ -6,7 +6,8 @@ versioni desktop lo ingrandiscono di altezza/240 intorno al centro dello schermo
 Uscite:
   assets/attract/attract.json   tempi (in frame a 60 Hz), posizioni e colori
   assets/attract/*.png          bitmap a 1 bit (bianco su trasparente, da colorare al disegno):
-                                logo PADD, scritta WS, testi in Munro 10 px, cifre
+                                logo PADD, scritta WS, testi e cifre in Press Start 2P
+                                a 8 px (assets/fonts, SIL OFL 1.1)
   mister/rtl/gen/pong_attract.vh  le stesse bitmap come funzioni ROM Verilog
 
 Uso:  .venv\\Scripts\\python tools\\gen_attract_assets.py   (richiede Pillow)
@@ -75,23 +76,38 @@ def splash_masks() -> tuple[Image.Image, Image.Image]:
     return logo, ws
 
 
+FONT = ROOT / "assets/fonts/PressStart2P-Regular.ttf"
+CELL = 8          # Press Start 2P: celle 8x8, lettere di 7x7 pixel con la colonna e la riga di spazio
+# scala delle scritte grandi della fine partita (GAME OVER, YOU WIN, PERFECT): 1 o 2; tutte le altre
+# scritte sono a scala 1. Il core MiSTer la legge come BIG_SH (scorrimento: 0 o 1) da pong_attract.vh,
+# e la usa anche tools/gen_ending_assets.py (YOU WIN! del finale)
+BIG = 2
+_FONT = None
+
+
+def font() -> ImageFont.FreeTypeFont:
+    global _FONT
+    if _FONT is None:
+        _FONT = ImageFont.truetype(str(FONT), CELL)
+    return _FONT
+
+
+def text_mask(text: str) -> Image.Image:
+    """Scritta in Press Start 2P a 8 pixel, senza sfumature: un carattere ogni 8 pixel, alta 8 righe
+    (le maiuscole nelle prime 7, la virgola scende nell'ottava). La colonna di spazio dopo l'ultimo
+    carattere si toglie, così le scritte centrate hanno l'inchiostro al centro; resta se l'ultimo
+    carattere è uno spazio (come in "CREDIT ", dove poi viene una cifra)."""
+    img = Image.new("1", (CELL * len(text) + CELL, CELL), 0)
+    draw = ImageDraw.Draw(img)
+    draw.fontmode = "1"
+    draw.text((0, 0), text, font=font(), fill=1)
+    box = img.getbbox()
+    w = CELL * len(text) if text.endswith(" ") else max(CELL * len(text) - 1, box[2] if box else 1)
+    return img.crop((0, 0, w, CELL))
+
+
 def text_masks() -> dict[str, Image.Image]:
-    font = ImageFont.truetype(str(ROOT / "assets/fonts/munro.ttf"), 10)
-    ascent, descent = font.getmetrics()
-    raw = {}
-    for name, text in {**STRINGS, **{f"digit_{d}": str(d) for d in range(10)}}.items():
-        w = max(1, round(font.getlength(text)))
-        img = Image.new("L", (w + 4, ascent + descent), 0)
-        ImageDraw.Draw(img).text((0, 0), text, font=font, fill=255)
-        raw[name] = (w, img.point(lambda v: 255 if v > 127 else 0))
-    # righe comuni a tutti i testi: stessa linea di base per scritte e cifre
-    rows = [y for y in range(ascent + descent) if any(img.getpixel((x, y)) for _, img in raw.values() for x in range(img.width))]
-    top, bottom = rows[0], rows[-1]
-    out = {}
-    for name, (w, img) in raw.items():
-        mask = img.crop((0, top, w, bottom + 1)).convert("1")
-        out[name] = mask
-    return out
+    return {name: text_mask(text) for name, text in {**STRINGS, **{f"digit_{d}": str(d) for d in range(10)}}.items()}
 
 
 def save_mask(mask: Image.Image, path: Path) -> None:
@@ -141,9 +157,9 @@ def verilog_letters(name: str, mask: Image.Image) -> str:
             start = None
     lines = [f"localparam {name.upper()}_LETTERS = {len(spans)};"]
     for k, label in ((0, "l0"), (1, "l1")):
-        lines += [f"function [5:0] {name}_{label}(input [3:0] i);", "    case (i)"]
-        lines += [f"        4'd{i}: {name}_{label} = 6'd{s[k]};" for i, s in enumerate(spans)]
-        lines += [f"        default: {name}_{label} = 6'd{w};", "    endcase", "endfunction"]
+        lines += [f"function [6:0] {name}_{label}(input [3:0] i);", "    case (i)"]
+        lines += [f"        4'd{i}: {name}_{label} = 7'd{s[k]};" for i, s in enumerate(spans)]
+        lines += [f"        default: {name}_{label} = 7'd{w};", "    endcase", "endfunction"]
     return "\n".join(lines) + "\n"
 
 
@@ -207,7 +223,7 @@ def main() -> None:
                     "start_step": 12, "slide": ease},
         "logo": {"x": 82, "y": 94, "wipe_frames": 84, "flash_frames": 3},
         "ws": {"x": 241, "y": 136, "off": [[0, 15], [30, 45]]},
-        "title": {"label_y": 172, "label_scale": 2, "credit_y": 204, "copyright_y": 222,
+        "title": {"label_y": 172, "label_scale": 1, "credit_y": 204, "copyright_y": 222,
                   "blink_period": 60, "blink_on": 37, "label_from": 54,
                   "ball": {"x": 10, "y": 60, "vx": 1.6, "vy": 1.1667, "size": 4}},
         "demo": {"label_y": 112, "box_pad": 6, "credit_x": 8, "credit_y": 6},
@@ -217,7 +233,9 @@ def main() -> None:
     }
     (OUT / "attract.json").write_text(json.dumps(spec, indent=2) + "\n", encoding="utf-8")
 
-    parts = ["// Generato da tools/gen_attract_assets.py: non modificare a mano.\n", verilog_timing(spec, ease)]
+    parts = ["// Generato da tools/gen_attract_assets.py: non modificare a mano.\n",
+             f"// scala dei titoli grandi: 1 << BIG_SH\nlocalparam integer BIG_SH = {BIG.bit_length() - 1};\n",
+             verilog_timing(spec, ease)]
     parts += [verilog_rom(name, mask) for name, mask in images.items() if not name.startswith("digit_")]
     parts += [verilog_letters(name, images[name]) for name in LETTER_TEXTS]
     VERILOG.write_text("\n".join(parts), encoding="utf-8")

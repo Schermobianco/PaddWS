@@ -1,18 +1,18 @@
 // Finale della CHALLENGE, quando si batte l'ultimo avversario (come rust/game/src/ending_ui.rs, su uno
 // schermo 320x240), al posto della schermata CHAMPION e prima delle iniziali. Sei parti in sequenza:
 // 0 CONGRATULATIONS! (lampeggia) e, dopo un secondo, YOU WIN! (la voce la fa partire pong_top);
-// 1 la sfilata dei sette avversari, uno al secondo, con il K.O. rosso mezzo secondo dopo (su PC e
+// 1 la sfilata dei sette avversari, uno al secondo, con il KO rosso mezzo secondo dopo (su PC e
 //   C64 il timbro inclinato DEFEATED, che a 320x240 su colonne di 45 pixel non sta); le racchette e
 //   i nomi li disegna next_render (ingressi `parade`, e `parade_ko` per spegnere le battute); qui il
-//   titolo e i K.O.;
+//   titolo e i KO;
 // 2 il punteggio: SCORE che sale in 3 s, CHAMPION BONUS in 1 s, poi TOTAL;
 // 3 YOU ARE THE PADD WS CHAMPION con i fuochi d'artificio;
 // 4 i titoli di coda, che salgono dal basso; 5 THE END (lampeggia).
 // Solo bianco, giallo e rosso sul nero: le scintille si diradano invece di scurirsi.
 //
 // Grafica da tools/gen_ending_assets.py (pong_ending.vh):
-// - scritte: righe di bitmap a 1 bit in Munro 10 px (ending_text.hex, 160 pixel per riga), ingrandite
-//   2 o 3 volte qui, con le cifre "0123456789+" e il timbro già ruotato in fondo; la mappa delle righe
+// - scritte: righe di bitmap a 1 bit in Press Start 2P a 8 px (ending_text.hex, 320 pixel per riga), a
+//   scala 1 o 2 (i titoli grandi), con le cifre "0123456789+" e il segno KO in fondo; la mappa delle righe
 //   (ending_map.hex), letta una volta per riga nella cancellazione orizzontale, dice per ogni riga
 //   dello schermo quale riga di bitmap, dove, a che scala, di che colore e se è una riga del
 //   punteggio. Le parti fisse hanno una finestra di righe nella mappa, i titoli di coda una finestra
@@ -21,8 +21,7 @@
 //   celle 2x2 pixel (ending_fw.hex). Un disegnatore li scrive in un framebuffer 160x120 a 2 bit con
 //   due pagine: a ogni frame dei fuochi (4 frame video) cancella la pagina nascosta e la ridisegna
 //   (circa 21.000 cicli), poi le pagine si scambiano all'inizio del vblank.
-// Nessuna divisione: scala 3 con il reciproco (d * 171) >> 9, esatto fino a 511; i conteggi a tempo
-// con contatori. Pipeline di due cicli come howto_render: indirizzi delle memorie dai contatori video,
+// Nessuna divisione (scala 1 o 2: uno scorrimento); i conteggi a tempo con contatori. Pipeline di due cicli come howto_render: indirizzi delle memorie dai contatori video,
 // poi i colori (un pixel dura 3 cicli).
 
 `timescale 1ns / 1ps
@@ -41,10 +40,10 @@ module ending_render #(
     input  wire [23:0] score,          // punti prima del premio del campione
     input  wire [23:0] bonus,          // premio del campione (vittoria e partita perfetta dell'ultimo livello)
     output reg  [23:0] rgb,
-    output reg         top,            // pixel del K.O.: sopra le racchette di next_render
+    output reg         top,            // pixel del KO: sopra le racchette di next_render
     output wire        parade,         // sfilata in corso: racchette e nomi di next_render
     output wire [2:0]  parade_n,       // avversari già entrati nella sfilata (0-7)
-    output wire [2:0]  parade_ko,      // ... e quanti hanno già il K.O. (racchetta spenta)
+    output wire [2:0]  parade_ko,      // ... e quanti hanno già il KO (racchetta spenta)
     output reg         say,            // impulso: la voce "YOU WIN!"
     output reg  [1:0]  beat,           // impulso della sfilata: bit 0 entra un avversario, bit 1 un timbro
     output wire        skip_ok,        // Start può saltare il finale
@@ -56,7 +55,7 @@ module ending_render #(
 localparam [23:0] BLACK = 24'h000000, WHITE = 24'hFFFFFF, YELLOW = 24'hFFD225, RED = 24'hE62828;
 localparam [2:0]  P_CONGRATS = 3'd0, P_PARADE = 3'd1, P_SCORE = 3'd2, P_CHAMPION = 3'd3, P_CREDITS = 3'd4,
                   P_THE_END = 3'd5;
-localparam integer ROW_BYTES = 20;                   // 160 pixel per riga di bitmap
+localparam integer ROW_BYTES = 40;                   // 320 pixel per riga di bitmap
 localparam integer FB_CELLS = 160 * 120;             // una pagina del framebuffer
 
 // ------------------------------------------------------------------ parti e tempi (una volta per frame)
@@ -281,13 +280,9 @@ wire [1:0] e_num = ent[29:28];
 
 // ------------------------------------------------------------------ pixel, primo ciclo: indirizzi
 
-// d / scala (1, 2 o 3), senza divisioni
+// d / scala (1 o 2)
 function [8:0] unscale(input [8:0] d, input [1:0] s);
-    reg [17:0] m;
-    begin
-        m = {9'd0, d} * 18'd171;
-        unscale = (s == 2'd1) ? d : (s == 2'd2) ? {1'b0, d[8:1]} : m[17:9];
-    end
+    unscale = (s == 2'd2) ? {1'b0, d[8:1]} : d;
 endfunction
 
 // cifra j (0 = la più a sinistra) di un numero BCD a 7 cifre
@@ -312,12 +307,12 @@ wire [8:0] y = vc;
 
 reg        t_on;                     // pixel di una scritta o di una cifra (prima del bit della bitmap)
 reg [8:0]  t_row;
-reg [7:0]  t_col;
+reg [8:0]  t_col;
 reg        digits;                   // pixel nella zona delle cifre di una riga del punteggio
 reg [8:0]  u;
 reg [2:0]  dj;
 reg [3:0]  dv;
-reg [7:0]  dx;
+reg [8:0]  dx;
 // timbri: quello della colonna (porta A) e il vicino dalla parte del pixel (porta B)
 reg        s_rows, sa_on, sb_on;
 reg [2:0]  sk, sn;
@@ -328,7 +323,7 @@ always @(*) begin
     t_col = 8'd0;
     dj = 3'd0;
     dv = 4'd0;
-    dx = 8'd0;
+    dx = 9'd0;
     // una sola divisione per la scala: dalla x della scritta o da quella della prima cifra
     digits = e_num != 2'd0 && x >= END_DIG_X0;
     u = unscale(x - (digits ? END_DIG_X0 : e_x), e_scale);
@@ -345,7 +340,7 @@ always @(*) begin
             t_col = dv * END_CELL + dx;
         end else begin
             t_on = x >= e_x && u < ROW_BYTES * 8;
-            t_col = u[7:0];
+            t_col = u;
         end
     end
     // colonna del timbro sotto il pixel e il vicino verso cui sta il pixel
@@ -359,13 +354,13 @@ always @(*) begin
     sb_on = s_rows && sn != 3'd7 && sn < beats[3:1] && sb_x < END_STAMP_W;
     if (s_rows) begin
         t_row = END_STAMP_ROW0 + (y - END_STAMP_Y0);
-        t_col = sa_x[7:0];
+        t_col = sa_x;
     end
 end
 
-// bitmap: porta A per scritte, cifre e timbro della colonna, porta B per il timbro vicino
-wire [13:0] ta = {t_row, 4'd0} + {t_row, 2'd0} + t_col[7:3];
-wire [13:0] tb = {t_row, 4'd0} + {t_row, 2'd0} + sb_x[7:3];
+// bitmap: porta A per scritte, cifre e timbro della colonna, porta B per il timbro vicino (riga * 40)
+wire [14:0] ta = {t_row, 5'd0} + {t_row, 3'd0} + t_col[8:3];
+wire [14:0] tb = {t_row, 5'd0} + {t_row, 3'd0} + sb_x[8:3];
 reg  [7:0]  tqa = 8'd0, tqb = 8'd0;
 // fuochi: la pagina mostrata, cella (x / 2, y / 2)
 wire [15:0] fa = (front ? FB_CELLS : 0) + {y[8:1], 7'd0} + {2'd0, y[8:1], 5'd0} + {8'd0, x[8:1]};

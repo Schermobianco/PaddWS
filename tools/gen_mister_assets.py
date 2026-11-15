@@ -19,7 +19,7 @@ OUT = ROOT / "mister" / "rtl" / "gen"
 # (nome Verilog, file, dimensione in pixel, caratteri)
 FONT_SPECS = [
     ("SCORE", "pong-score.ttf", 22, "0123456789"),      # punteggi: cifre a segmenti
-    ("TEXT", "munro.ttf", 10, "0123456789TOP "),         # scritta TOP: Munro alla sua dimensione nativa
+    ("TEXT", "PressStart2P-Regular.ttf", 8, "0123456789TOP "),   # TOP e cifre piccole: celle 8x8 intere
 ]
 
 
@@ -31,10 +31,16 @@ def rasterize(path: Path, size: int, chars: str) -> tuple[int, list[list[str]]]:
     cells = []
     for c in chars:
         im = Image.new("L", (width, ascent + descent), 0)
-        ImageDraw.Draw(im).text((0, 0), c, font=font, fill=255)
+        draw = ImageDraw.Draw(im)
+        if path.name.startswith("PressStart2P"):
+            draw.fontmode = "1"      # senza sfumature: solo 0 e 255
+        draw.text((0, 0), c, font=font, fill=255)
         cells.append([[im.getpixel((x, y)) > 127 for x in range(width)] for y in range(ascent + descent)])
     rows = [y for y in range(ascent + descent) if any(any(cell[y]) for cell in cells)]
     top, bottom = rows[0], rows[-1]
+    if path.name.startswith("PressStart2P"):
+        # come le scritte di gen_attract_assets.py: la cella intera, 8 righe dalla cima
+        top, bottom = 0, size - 1
     glyphs = [["".join("1" if p else "0" for p in cell[y]) for y in range(top, bottom + 1)] for cell in cells]
     return width, glyphs
 

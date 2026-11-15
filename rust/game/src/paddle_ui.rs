@@ -386,8 +386,9 @@ impl PaddlePick {
         let dim = Color { a: 0.35, ..gray };
         let font = &app.assets.font_text;
         let p = &app.params;
+        let t1 = r.text_1x();
         r.fill(BLACK);
-        r.text_centered("PICK YOUR PADDLE", font, 34.0 * s, w / 2.0, 34.0 * s, 0.0, accent);
+        r.text_centered("PICK YOUR PADDLE", font, t1, w / 2.0, 34.0 * s, 0.0, accent);
         let secs = format!("{:02}", self.left.max(0.0).ceil() as u32);
         let blink = self.left < 3.0 && (get_time() * 4.0) as i64 % 2 == 1;
         r.text_centered(
@@ -414,14 +415,14 @@ impl PaddlePick {
         for side in 0..2 {
             let x0 = side as f32 * half;
             let front = if side == 0 { 1.0 } else { -1.0 };
-            r.text_centered(&self.name(side), font, 30.0 * s, x0 + half * 0.19, 132.0 * s, 0.0, white);
+            r.text_centered(&self.name(side), font, t1, x0 + half * 0.19, 132.0 * s, 0.0, white);
             if self.chosen[side] {
-                r.text_centered("OK", font, 30.0 * s, x0 + half * 0.68, 132.0 * s, 0.0, accent);
+                r.text_centered("OK", font, t1, x0 + half * 0.68, 132.0 * s, 0.0, accent);
             } else if app.touch && self.fixed != Some(side) && self.ready.is_none() {
                 // touch: il pulsante con cui si conferma, come nella scelta dei bonus
                 let cx = x0 + half * 0.68;
                 draw_rectangle(cx - 35.0 * s, 132.0 * s - 18.0 * s, 70.0 * s, 36.0 * s, accent);
-                r.text_centered("OK", font, 30.0 * s, cx, 132.0 * s, 0.0, App::color(app.cfg.colors.black));
+                r.text_centered("OK", font, t1, cx, 132.0 * s, 0.0, App::color(app.cfg.colors.black));
             }
             // anteprima a grandezza reale della racchetta sotto il cursore
             let sel = PaddleKind::ALL[self.cursor[side]];
@@ -453,7 +454,7 @@ impl PaddlePick {
                 let (cy, row_h) = Self::row(app, i);
                 let on = i == self.cursor[side];
                 if on && !self.chosen[side] && self.ready.is_none() {
-                    r.text_centered(">", font, 30.0 * s, x0 + half * 0.36, cy, 0.0, accent);
+                    r.text_centered(">", font, t1, x0 + half * 0.36, cy, 0.0, accent);
                 }
                 // miniatura: la stessa racchetta in piccolo
                 let k = &p.kinds[kind as usize];
@@ -488,25 +489,25 @@ impl PaddlePick {
                     (true, false) => white,
                     _ => gray,
                 };
-                r.text_centered(kind.name(), font, 30.0 * s, x0 + half * 0.7, cy, 0.0, color);
+                r.text_centered(kind.name(), font, t1, x0 + half * 0.7, cy, 0.0, color);
             }
-            r.text_centered(tagline(sel), font, 22.0 * s, x0 + half / 2.0, h - 50.0 * s, 0.0, gray);
+            r.text_centered(tagline(sel), font, t1, x0 + half / 2.0, h - 50.0 * s, 0.0, gray);
         }
         if self.ready.is_some() && (get_time() * 6.0) as i64 % 2 == 0 {
-            r.text_centered("READY!", font, 40.0 * s, w / 2.0, h - 18.0 * s, 0.0, accent);
+            r.text_centered("READY!", font, t1, w / 2.0, h - 16.0 * s, 0.0, accent);
         } else if self.ready.is_none() && app.touch {
             for side in 0..2 {
                 if self.fixed != Some(side) && !self.chosen[side] {
                     let x = if side == 0 { w / 4.0 } else { 3.0 * w / 4.0 };
-                    r.text_centered("TAP OK TO CHOOSE", font, 20.0 * s, x, h - 16.0 * s, 0.0, gray);
+                    r.text_centered("TAP OK TO CHOOSE", font, t1, x, h - 16.0 * s, 0.0, gray);
                 }
             }
         } else if self.ready.is_none() {
             if self.fixed != Some(0) {
-                r.text_centered("W S + C", font, 20.0 * s, w / 4.0, h - 16.0 * s, 0.0, gray);
+                r.text_centered("W S + C", font, t1, w / 4.0, h - 16.0 * s, 0.0, gray);
             }
             if self.fixed != Some(1) {
-                r.text_centered("UP DOWN + -", font, 20.0 * s, 3.0 * w / 4.0, h - 16.0 * s, 0.0, gray);
+                r.text_centered("UP DOWN + -", font, t1, 3.0 * w / 4.0, h - 16.0 * s, 0.0, gray);
             }
         }
     }

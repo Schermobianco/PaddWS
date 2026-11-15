@@ -1,26 +1,30 @@
 """Grafica della versione C64: set di caratteri, sprite e tabelle per c64/src.
 
+Le scritte usano il font della ROM dei caratteri della macchina (set maiuscolo, $D000): i suoi
+glifi non stanno in nessun file generato. Nel set di caratteri al loro posto ci sono dei
+segnaposto vuoti, e assets.inc dice al programma dove vanno: all'avvio (video_init) il programma
+li legge dalla ROM e li copia nel suo set, 1x (un carattere per lettera, FONT_ROM) e 2x (quattro
+caratteri per lettera, ogni pixel 2x2: BIG2_SRC, fatti dai glifi 1x già nel set).
+
 Uscite in c64/gen/ (vanno nel repository, così l'assemblaggio non richiede Python):
   charset.bin   256 caratteri 8x8 (2 KB): vuoto, mezzeria, muro del singolo, cifre del punteggio
-                (celle di 3x3 caratteri), font Munro monospazio, scritte grandi a scala 2
-  pick_bank.bin il banco PICK_BANK della cartuccia (tools/make_crt.py): il set di caratteri per la
-                scelta dei bonus, con al posto delle scritte grandi le metà delle lettere abbassate
-                di 4 pixel (alta e bassa), come il centro della capsula accanto (il programma ne
-                copia le pagine PICK_PAGES da PICK_FIRST); poi la pagina $FF00, che l'avvio copia
-                sotto il KERNAL: a $FF40 i caratteri della capsula del BULLET e quelli che
-                sostituisce (bullet_chars), a $FFC0 l'RTS di VOICE_COUNT, a $FFC3 i caratteri di
-                PRESS START che in NEXT fanno la barra delle mosse speciali; poi title.bin (8
-                pagine), che l'avvio copia sotto l'I/O
+                (celle di 3x3 caratteri), segnaposto del font 1x e delle lettere 2x
+  pick_bank.bin il banco PICK_BANK della cartuccia (tools/make_crt.py): 2 KB vuoti (lì c'era il
+                set della scelta dei bonus, che ora il programma si fa da solo), poi la pagina
+                $FF00, che l'avvio copia sotto il KERNAL: a $FF40 i caratteri della capsula del
+                BULLET e quelli che sostituisce (bullet_chars), a $FFC0 l'RTS di VOICE_COUNT, a
+                $FFC3 gli originali (vuoti) dei caratteri della barra delle mosse speciali; poi
+                title.bin (8 pagine), che l'avvio copia sotto l'I/O
   sprites.bin   sprite (64 byte ciascuno): palla normale (4x4) e con il boost (6x6), posti delle
                 racchette, linee del raster dell'attract, bande grigie EVO di 1-10 righe
   title.bin     del titolo dell'attract in bitmap hires solo le righe di caratteri che l'attract
-                copia (logo con WS, copyright): due blocchi di righe intere, 320 byte ciascuna
-  labels.bin    INSERT COIN e PRESS START a scala 2, nelle celle della bitmap
-  credits.bin   FREE PLAY e CREDIT 0-9, nelle celle della bitmap
+                copia (logo con WS, il simbolo del copyright): due blocchi di righe intere, 320
+                byte ciascuna; le scritte le disegna il programma con i glifi del set
   (in assets.inc anche gli effetti della palla di NEXT come elenco di quadrati: il programma li
   disegna a inizio partita a $E000; e per le mosse speciali i caratteri della barra, le icone
   della mossa armata e le tracce degli effetti MOVE e SPECIAL dalla ROM della musica del MiSTer)
-  assets.inc    codici dei caratteri, posizioni e tempi dell'attract per l'assembler
+  assets.inc    codici dei caratteri, tabelle dei glifi della ROM, posizioni e tempi dell'attract,
+                scritte della HOW TO PLAY per l'assembler
   voiceN.bin    campioni del nome dell'avversario di CHALLENGE per il tipo di racchetta N (ordine
                 di `PaddleKind`), dai .raw4 di assets/sounds/voice (tools/gen_voices.py): src/voice.s
                 li mette con il player nei file voce della cartuccia
@@ -30,19 +34,17 @@ Uscite in c64/gen/ (vanno nel repository, così l'assemblaggio non richiede Pyth
                 GAME OVER contro la CPU e il finale di CHALLENGE
   perfect.bin   "PERFECT!": nello stesso banco, per il GAME OVER vinto da un giocatore con
                 l'avversario a 0 punti
-  perfect_chars.bin  la pagina del set di caratteri con la scritta PERFECT del GAME OVER al posto
-                di caratteri di INSERT COIN e PRESS START (src/play.s, ov_enter)
-  ending_chars.bin, ending.inc  set di caratteri del finale di CHALLENGE (src/ending.s): il font
-                monospazio ai suoi codici, le lettere a scala 2, il timbro DEFEATED e i punti
-                multicolore dei fuochi d'artificio
+  ending_chars.bin, ending.inc  set di caratteri del finale di CHALLENGE (src/ending.s): i
+                segnaposto del font ai suoi codici e delle lettere 2x, il timbro DEFEATED e i
+                punti multicolore dei fuochi d'artificio
   howto.bin     la schermata HOW TO PLAY delle mosse speciali in bitmap hires (banchi HOWTO_BANK
                 della cartuccia, tools/make_crt.py): 31 pagine di bitmap ($E000-$FEFF) e una
                 vuota, poi i colori (1.000 byte, 4 pagine) e gli stessi con giallo e rosso
-                scambiati per l'easter egg; disegnata con le figure di tools/gen_howto_assets.py
+                scambiati per l'easter egg; disegnata con le figure di tools/gen_howto_assets.py,
+                con le celle delle scritte vuote (le scrive il programma, HT_TEXTS)
 
-Le cifre del punteggio vengono da assets/fonts/pong-score.ttf a 22 px come sul MiSTer; le scritte
-grandi sono le bitmap dell'attract (assets/attract/*.png, Munro 10 px) ingrandite a scala 2, come
-le scritte sovrapposte del MiSTer.
+Le cifre del punteggio vengono da assets/fonts/pong-score.ttf a 22 px come sul MiSTer. Delle
+bitmap dell'attract (assets/attract) servono solo la grafica (logo e WS) e i tempi.
 
 Uso:  .venv\\Scripts\\python tools\\gen_c64_assets.py   (richiede Pillow)
 """
@@ -66,16 +68,31 @@ VOICES = ROOT / "assets" / "sounds" / "voice"
 
 # caratteri del font monospazio (codici ASCII 32-95, come la tabella in assets.inc)
 FONT_CHARS = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_"
-FONT_DRAWN = "!+-./0123456789:>?ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+FONT_DRAWN = "!+-./0123456789:=>?ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-# scelta dei bonus: caratteri sostituiti dalle metà delle lettere (pagine intere)
+# scelta dei bonus: caratteri sostituiti dalle metà delle lettere (pagine intere). Sono le stesse
+# pagine delle lettere 2x, che nella scelta non si vedono
 PICK_FIRST = 64
 PICK_PAGES = 3
 
-# scritte grandi (bitmap dell'attract a scala 2): nome dell'asset
-BIG_TEXTS = ["game_over", "p1_wins", "p2_wins", "you_win", "cpu_wins", "insert_coin", "press_start"]
+# scritte a 2x del programma (fuori dal finale, che ha il suo set): solo le grandi del GAME OVER.
+# Le loro lettere hanno quattro caratteri ciascuna da PICK_FIRST; tutto il resto è a 1x
+BIG2_TEXTS = ["GAME OVER", "YOU WIN", "PERFECT"]
+# le scritte del GAME OVER come elenchi di codici su due righe (nome per assets.inc: testo, 2x);
+# quelle a 1x hanno la riga sotto vuota
+BIG2_LISTS = {"GAME_OVER": ("GAME OVER", True), "P1_WINS": ("P1 WINS", False), "P2_WINS": ("P2 WINS", False),
+              "YOU_WIN": ("YOU WIN", True), "CPU_WINS": ("CPU WINS", False), "PERFECT": ("PERFECT", True)}
+BLANK: tuple[int, ...] = (0,) * 8   # segnaposto di un glifo della ROM
 
 Tile = tuple[int, ...]   # 8 byte, bit 7 = pixel a sinistra
+
+
+def rom_code(ch: str) -> int:
+    """Codice del carattere ASCII `ch` (32-95) nel set maiuscolo della ROM dei caratteri: le
+    lettere da 1 (A), la punteggiatura e le cifre al loro codice ASCII."""
+    o = ord(ch)
+    assert 32 <= o < 96, ch
+    return o - 64 if o >= 64 else o
 
 
 class Charset:
@@ -145,90 +162,33 @@ def score_digits(cs: Charset) -> list[list[int]]:
 
 
 def text_font(cs: Charset) -> list[int]:
-    """Font Munro 10 px monospazio: ogni lettera centrata in un carattere, riga 7 vuota."""
-    font = ImageFont.truetype(str(FONTS / "munro.ttf"), 10)
-    # righe dell'inchiostro di lettere e cifre (la barra sporge di una riga e viene tagliata)
-    top, bottom = ink_rows(font, "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ", 24)
-    assert bottom - top + 1 <= 7, (top, bottom)
-    codes = []
-    for c in FONT_CHARS:
-        if c == " ":
-            codes.append(0)
+    """Font 1x della ROM dei caratteri: un carattere per lettera di FONT_DRAWN, contigui, con un
+    segnaposto vuoto (il glifo lo copia il programma dalla ROM, FONT_ROM). Codici per ASCII 32-95
+    (0 = vuoto)."""
+    codes = {c: cs.add(BLANK, unique=True) for c in FONT_DRAWN}
+    return [codes.get(c, 0) for c in FONT_CHARS]
+
+
+def big2_letters() -> str:
+    """Lettere delle scritte a 2x (BIG2_TEXTS), in ordine alfabetico."""
+    letters = "".join(sorted(set("".join(BIG2_TEXTS)) - {" "}))
+    assert all(c in FONT_DRAWN for c in letters), letters
+    return letters
+
+
+def big2_codes(first: int, letters: str, text: str) -> list[int]:
+    """Codici di `text` a 2x (lettere di quattro caratteri da `first`, nell'ordine di `letters`):
+    la riga alta (alto sinistra, alto destra per lettera), poi la bassa; lo spazio è vuoto."""
+    top, bottom = [], []
+    for ch in text:
+        if ch == " ":
+            top += [0, 0]
+            bottom += [0, 0]
             continue
-        if c not in FONT_DRAWN:
-            codes.append(0)
-            continue
-        w = round(font.getlength(c))
-        px = render(font, c, (8, 24), ((8 - w) // 2, -top))
-        codes.append(cs.add(tiles_of(px[:8], 1, 1)[0][0]))
-    return codes
-
-
-def big_text(cs: Charset, name: str) -> tuple[int, list[int]]:
-    """Bitmap dell'attract a scala 2, centrata in una fascia di caratteri alta 2: (larghezza, codici)."""
-    w_chars, tiles = big_tiles(name)
-    return w_chars, [cs.add(t) for t in tiles]
-
-
-def big_tiles(name: str) -> tuple[int, list[Tile]]:
-    """Come big_text, senza il set di caratteri: (larghezza, caratteri della riga alta e della bassa)."""
-    im = Image.open(ATTRACT / f"{name}.png").convert("RGBA")
-    w, h = im.size
-    w_chars = (2 * w + 2 + 7) // 8
-    ox = (w_chars * 8 - 2 * w) // 2
-    oy = (16 - 2 * h) // 2
-    pixels = [[False] * (w_chars * 8) for _ in range(16)]
-    for y in range(h):
-        for x in range(w):
-            if im.getpixel((x, y))[3] > 127:
-                for dy in range(2):
-                    for dx in range(2):
-                        pixels[oy + 2 * y + dy][ox + 2 * x + dx] = True
-    rows = tiles_of(pixels, w_chars, 2)
-    return w_chars, [t for row in rows for t in row]
-
-
-def perfect_text(cs: Charset, lines: list[str], stable: set[int], free: list[int],
-                 in_next: dict[int, Tile], changing: set[int]) -> bytes:
-    """PERFECT (assets/attract/perfect.png) del GAME OVER, che nel set di caratteri pieno non c'è.
-
-    I caratteri uguali a uno di `stable` (quelli che nel GAME OVER sono sempre gli originali)
-    restano quelli; gli altri prendono, nell'ordine, i codici `free`, che non si vedono più (erano
-    della demo, tolta). Contigui e in una pagina sola del set: il GAME OVER (play.s, ov_stamp) ci
-    copia dalla cartuccia la pagina restituita qui (perfect_chars.bin), con PERFECT, i caratteri
-    della demo che in NEXT diventano altro (`in_next`: lì si vedono solo in NEXT) già come in NEXT
-    e gli altri originali; poi la pagina resta così. Nella pagina non ci devono essere altri caratteri che cambiano (`changing`)."""
-    w, tiles = big_tiles("perfect")
-    reuse = {cs.tiles[c]: c for c in sorted(stable, reverse=True)}
-    new: list[Tile] = []
-    codes = []
-    for t in tiles:
-        if t in reuse:
-            codes.append(reuse[t])
-            continue
-        if t not in new:
-            new.append(t)
-        codes.append(free[new.index(t)])
-    assert len(new) <= len(free), f"PERFECT: {len(new)} caratteri nuovi, liberi {len(free)}"
-    used = free[: len(new)]
-    assert used == list(range(used[0], used[0] + len(used))), f"PERFECT: caratteri non contigui {used}"
-    first = used[0] // 32 * 32
-    assert used[-1] < first + 32, f"PERFECT: caratteri su due pagine del set {used}"
-    assert not set(used) & stable and not set(used) & set(in_next)
-    page_codes = range(first, first + 32)
-    assert not set(page_codes) & (changing - set(in_next)), "PERFECT: nella pagina un carattere che cambia"
-    page = bytearray()
-    for c in page_codes:
-        t = new[c - used[0]] if c in used else in_next.get(c, cs.tiles[c])
-        page += bytes(t)
-    assert all(bytes(page[8 * (c - first) : 8 * (c - first) + 8]) == bytes(cs.tiles[c]) for c in codes if c not in used and c in page_codes)
-    lines.append("; PERFECT del GAME OVER: i caratteri PERFECT_C0... (di INSERT COIN e PRESS START) con PERFECT")
-    lines.append("; dal primo PERFECT del GAME OVER (ov_stamp, gen/perfect_chars.bin): gli originali non si vedono più")
-    lines.append(f"BIG_PERFECT_W = {w}")
-    lines.append(".define BIG_PERFECT " + ", ".join(str(c) for c in codes))
-    lines.append(f"PERFECT_C0 = {used[0]}")
-    lines.append(f"PERFECT_CHARS = {len(used)}")
-    return bytes(page)
+        c = first + 4 * letters.index(ch)
+        top += [c, c + 1]
+        bottom += [c + 2, c + 3]
+    return top + bottom
 
 
 SPRITE_BANDS = 10  # altezze della banda grigia EVO (la più alta: area di 8 pixel, 9 righe)
@@ -522,20 +482,16 @@ def bar_glyph(px: int) -> bytes:
     return bytes((0xFF, fill, fill, fill, 0xFF, 0, 0, 0))
 
 
-def supers_assets(lines: list[str], charset: bytes, demo_only: set[int], pick_range: range) -> tuple[bytes, list[int]]:
+def supers_assets(lines: list[str], bar: list[int]) -> None:
     """Barra, icone e tracce degli effetti delle mosse speciali (definizioni in assets.inc).
 
-    Il set di caratteri è pieno: la barra prende in NEXT il posto di BAR_CHARS caratteri di PRESS
-    START grande, che si vedeva solo nella demo (tolta), contigui e fuori dalle pagine della scelta
-    dei bonus; supers.s li scrive a inizio partita e restano (gli originali, restituiti qui per la
-    pagina $FF00, non si rimettono più). Le tracce MOVE e SPECIAL sono quelle della ROM della musica
-    (tools/gen_sid_music.py le mette in fondo, dopo i temi, fuori da sid_music.bin): qui si
-    prendono da sid_music.hex, con gli indirizzi di sid_music.vh (SID_GEN). Restituisce anche i
-    codici della barra."""
-    free = sorted(c for c in demo_only if c >= pick_range.stop)
-    bar = free[:BAR_CHARS]
+    Il set di caratteri è pieno: la barra ha BAR_CHARS caratteri suoi (`bar`, contigui, vuoti nel
+    set, che si vedono solo in NEXT); supers.s li scrive a inizio partita e restano. Le tracce MOVE
+    e SPECIAL sono quelle della ROM della musica (tools/gen_sid_music.py le mette in fondo, dopo i
+    temi, fuori da sid_music.bin): qui si prendono da sid_music.hex, con gli indirizzi di
+    sid_music.vh (SID_GEN)."""
     assert bar == list(range(bar[0], bar[0] + BAR_CHARS)), f"caratteri della barra non contigui: {bar}"
-    lines.append("; NEXT, mosse speciali: barra al posto di caratteri di PRESS START (supers.s, bullet_chars)")
+    lines.append("; NEXT, mosse speciali: caratteri della barra (supers.s, bullet_chars)")
     lines.append(f"BAR_C0 = {bar[0]}")
     lines.append(f"BAR_CHARS = {BAR_CHARS}")
     glyphs = b"".join(bar_glyph(2 * i) for i in range(BAR_CHARS))
@@ -566,7 +522,6 @@ def supers_assets(lines: list[str], charset: bytes, demo_only: set[int], pick_ra
         track = rom[start:end]
         assert track and start >= param("SID_ROM_BASE_SIZE"), name
         lines.append(f".define SID_TRACK_{name} " + ", ".join(f"${b:02X}" for b in track))
-    return bytes(charset[8 * bar[0] : 8 * (bar[0] + BAR_CHARS)]), bar
 
 
 def sprite(w: int, h: int) -> bytes:
@@ -587,9 +542,16 @@ def sprite(w: int, h: int) -> bytes:
 SPEC = json.loads((ATTRACT / "attract.json").read_text(encoding="utf-8"))
 W64, H64 = 320, 200
 Y_SHIFT = 20
-LABEL_Y = 153          # INSERT COIN / PRESS START a scala 2 (righe di caratteri 19-20)
-CREDIT_Y = 176         # CREDIT n / FREE PLAY (riga 22)
-COPYRIGHT_Y = 190
+# scritte del titolo nella bitmap, nelle celle (il programma ci copia i glifi del set): INSERT COIN
+# / PRESS START (riga 19), CREDIT n / FREE PLAY (riga 22), il
+# copyright (riga 24: il simbolo è nel titolo, il resto lo scrive il programma)
+LABEL_ROW = 19
+LABEL_LEN = 11         # INSERT COIN e PRESS START
+CREDIT_ROW = 22
+COPYRIGHT_ROW = 24
+COPYRIGHT_TEXT = "2026 SCHERMOBIANCO"
+# simbolo del copyright, disegnato qui (non è nel set maiuscolo della ROM)
+COPYRIGHT_SIGN = (0x3C, 0x42, 0x99, 0xA1, 0xA1, 0x99, 0x42, 0x3C)
 
 
 def f50(frames60: float) -> int:
@@ -657,39 +619,11 @@ def attract_assets(lines: list[str]) -> dict[str, bytes]:
         title.rect(right_start, r, W64 - right_start, height)
     title.put(ws_px, wx, wy, value=False)
     title.put(logo_px, lx, ly)
-    cp = png_pixels("copyright")
-    title.put(cp, centered(len(cp[0])), COPYRIGHT_Y)
-    # scritte che cambiano: tutte le varianti nelle stesse celle, così la nuova copre la vecchia
-    def strip(variants: list[list[tuple[list[list[bool]], int]]], y: int, scale: int, cell_rows: int):
-        x0 = min(x for parts in variants for _, x in parts)
-        x1 = max(x + scale * len(p[0]) for parts in variants for p, x in parts)
-        c0, c1 = x0 // 8, (x1 - 1) // 8
-        r0 = y // 8
-        data = bytearray()
-        for parts in variants:
-            bm = Bitmap()
-            for p, x in parts:
-                bm.put(p, x, y, scale=scale)
-            data += bm.cells(c0, c1, r0, r0 + cell_rows - 1)
-        return c0, c1 - c0 + 1, r0, bytes(data)
-
-    def label(name: str) -> list[tuple[list[list[bool]], int]]:
-        p = png_pixels(name)
-        return [(p, centered(2 * len(p[0])))]
-
-    lab_c0, lab_w, lab_r0, labels = strip([label("insert_coin"), label("press_start")], LABEL_Y, 2, 2)
-
-    def credit(parts: list[str]) -> list[tuple[list[list[bool]], int]]:
-        pix = [png_pixels(n) for n in parts]
-        x = centered(sum(len(p[0]) for p in pix))
-        out = []
-        for p in pix:
-            out.append((p, x))
-            x += len(p[0])
-        return out
-
-    credit_variants = [credit(["free_play"])] + [credit(["credit", f"digit_{n}"]) for n in range(10)]
-    cr_c0, cr_w, cr_r0, credits = strip(credit_variants, CREDIT_Y, 1, 1)
+    # copyright: il simbolo, poi uno spazio e il testo (riga COPYRIGHT_ROW, centrati)
+    cp_col = (40 - 2 - len(COPYRIGHT_TEXT)) // 2
+    title.put([[bool(r & 0x80 >> x) for x in range(8)] for r in COPYRIGHT_SIGN], 8 * cp_col, 8 * COPYRIGHT_ROW)
+    # 1x: il 2x è solo per i titoli grandi (attract.json ha label_scale per le altre versioni)
+    scale = 1
     # bordi delle strisce a 50 Hz (la tabella dell'attract è a 60 Hz, in millesimi)
     slide60 = st["slide"]
     n50 = f50(len(slide60) - 1) + 1
@@ -728,20 +662,23 @@ def attract_assets(lines: list[str]) -> dict[str, bytes]:
         "AT_BLINK_PERIOD": f50(t["blink_period"]),
         "AT_BLINK_ON": f50(t["blink_on"]),
         "AT_LABEL_FROM": f50(t["label_from"]),
-        "AT_LABEL_C0": lab_c0,
-        "AT_LABEL_W": lab_w,
-        "AT_LABEL_R0": lab_r0,
-        "AT_CREDIT_C0": cr_c0,
-        "AT_CREDIT_W": cr_w,
-        "AT_CREDIT_R0": cr_r0,
+        "AT_LABEL_C0": (40 - scale * LABEL_LEN) // 2,
+        "AT_LABEL_W": scale * LABEL_LEN,
+        "AT_LABEL_R0": LABEL_ROW,
+        "AT_LABEL_2X": scale - 1,
+        "AT_FREE_C0": (40 - len("FREE PLAY")) // 2,     # FREE PLAY
+        "AT_CREDIT_C0": (40 - len("CREDIT 0")) // 2,    # CREDIT n
+        "AT_CREDIT_W": len("FREE PLAY") + 1,            # celle da pulire dalla prima delle due
+        "AT_CREDIT_R0": CREDIT_ROW,
         # pallina del titolo: posizione e velocità in pixel * 64, a 50 Hz
         "AT_BALL_X": int(t["ball"]["x"]) * 64,
         "AT_BALL_Y": (int(t["ball"]["y"]) - Y_SHIFT) * 64,
         "AT_BALL_VX": round(t["ball"]["vx"] * 60 / 50 * 64),
         "AT_BALL_VY": round(t["ball"]["vy"] * 60 / 50 * 64),
         "AT_BALL_SIZE": int(t["ball"]["size"]),
-        "AT_COPYRIGHT_Y": COPYRIGHT_Y,
-        "AT_COPYRIGHT_H": len(cp),
+        "AT_COPYRIGHT_Y": 8 * COPYRIGHT_ROW,
+        "AT_COPYRIGHT_H": 8,
+        "AT_COPYRIGHT_C0": cp_col + 2,                  # il testo, dopo il simbolo e uno spazio
     }
     lines.append("")
     lines.append("; attract (attract.json riportato a 320x200 e 50 Hz)")
@@ -758,7 +695,7 @@ def attract_assets(lines: list[str]) -> dict[str, bytes]:
     # del blocco A solo le colonne del logo e di WS
     full = title.c64()
     a0, a1 = min(ly, wy) // 8, (max(ly + len(logo_px), wy + len(ws_px)) - 1) // 8 + 1
-    b0, b1 = COPYRIGHT_Y // 8, (COPYRIGHT_Y + len(cp) - 1) // 8 + 1
+    b0, b1 = COPYRIGHT_ROW, COPYRIGHT_ROW + 1
     c0, c1 = lx // 8, (wx + len(ws_px[0]) - 1) // 8 + 1
     assert a1 <= b0 and c0 <= wx // 8
     lines.append(f"TITLE_A_ROW = {a0}    ; righe di caratteri del blocco A in title.bin, poi il B")
@@ -771,15 +708,20 @@ def attract_assets(lines: list[str]) -> dict[str, bytes]:
     slim += full[b0 * 320:b1 * 320]
     # nella cartuccia (pick_bank.bin): l'avvio lo copia sotto l'I/O
     lines.append(f"TITLE_SIZE = {len(slim)}    ; byte di title.bin")
-    return {"title.bin": slim, "labels.bin": labels, "credits.bin": credits}
+    lines.append(f'.define AT_COPYRIGHT_TEXT "{COPYRIGHT_TEXT}"')
+    return {"title.bin": slim}
 
 
 # Finale di CHALLENGE (src/ending.s): un set di caratteri suo, che il finale copia sopra quello del
-# programma (e alla fine rimette): il font monospazio resta ai suoi codici (le routine del
-# programma scrivono con FONT_MAP), il resto è del finale
+# programma (e alla fine rimette): il font resta ai suoi codici (le routine del programma scrivono
+# con FONT_MAP), il resto è del finale. I glifi del font e delle lettere 2x sono segnaposto, come
+# nel set del programma: il finale li prende dalla ROM (font_from_rom, big_build)
 END_FW_BASE = 192      # fuochi d'artificio, multicolore: codice = base + colore * 16 + quadranti
 END_FW_COLORS = 3      # %01 bianco ($D022), %10 giallo ($D023), %11 rosso (colore del carattere)
-END_BIG = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ!"     # scala 2: 2x2 caratteri per lettera
+END_BIG_BASE = 64      # lettere 2x (2x2 caratteri per lettera, quattro codici di fila)
+# scritte a 2x del finale (big_print di src/ending.s): solo YOU WIN!, come nel GAME OVER; il resto,
+# titoli di coda compresi, è a 1x
+END_BIG_TEXTS = ["YOU WIN!"]
 END_STAMP_W, END_STAMP_H = 5, 3                     # timbro DEFEATED: caratteri
 # lettere 3x5 del timbro
 STAMP_FONT = {
@@ -840,8 +782,12 @@ def fw_glyph(color: int, mask: int) -> Tile:
     return tuple(rows)
 
 
-# Titoli di coda, come CREDITS di rust/game/src/ending_ui.rs: titolo grande (2 righe), titolo di
-# sezione, voce; GAP lascia due righe in più. Il titolo finale va su due righe grandi.
+# Titoli di coda, come CREDITS di rust/game/src/ending_ui.rs: titolo grande (a 1x e giallo come i
+# titoli di sezione, ma con le sue due righe: la seconda vuota), titolo di sezione, voce; ogni GAP
+# lascia due righe in più. Il titolo finale va su due righe "grandi". Il C64
+# non usa font di terzi per le scritte: niente riga del font, e al suo posto (una voce: due righe)
+# un GAP in più prima di THANK YOU, così l'ultima riga arriva al centro nello stesso frame di prima
+# (la durata va con la musica).
 END_CREDITS = [
     ("big", "PADD WS"),
     ("head", "GAME DESIGN AND PROGRAMMING"),
@@ -859,7 +805,6 @@ END_CREDITS = [
     ("text", "TWIST   BLASTER   RUSH"),
     ("text", "AND GUARDIAN"),
     ("head", "THIRD-PARTY WORKS"),
-    ("text", "MUNRO FONT  ED MERRITT"),
     ("text", "PONG SCORE FONT  PWNZOR.AK"),
     ("text", "MISTER FRAMEWORK  SORGELIG"),
     ("text", "SID EMULATION  DAG LEM  A. MELNIKOV"),
@@ -871,10 +816,11 @@ END_CREDITS = [
     ("text", "THE MISTER FPGA COMMUNITY"),
     ("text", "THE COMMODORE 64 SCENE"),
     ("gap", ""),
+    ("gap", ""),
     ("big", "THANK YOU"),
     ("big", "FOR PLAYING"),
 ]
-CRED_STYLE = {"text": 0, "head": 1, "big": 2}
+CRED_STYLE = {"text": 0, "head": 1, "big": 1}
 CRED_BLANK = {"text": 1, "head": 2, "big": 2}       # righe vuote prima della riga
 
 
@@ -888,11 +834,11 @@ def credits_tables() -> list[str]:
     off = 0
     for kind, text in END_CREDITS:
         if kind == "gap":
-            extra = 2
+            extra += 2
             continue
         assert all(c in FONT_DRAWN + " " for c in text), text
         big = kind == "big"
-        width = len(text) * (2 if big else 1)
+        width = len(text)
         assert width <= 40, text
         if rows:
             rows += [0] * (CRED_BLANK[kind] + extra)
@@ -900,7 +846,7 @@ def credits_tables() -> list[str]:
         n = len(cols) + 1
         rows.append(n)
         if big:
-            rows.append(n | 0x80)
+            rows.append(0)          # la seconda riga del titolo grande (tempi come prima)
         cols.append((40 - width) // 2)
         styles.append(CRED_STYLE[kind])
         lens.append(len(text))
@@ -1044,15 +990,25 @@ def ending_assets(charset: bytes, font: list[int]) -> tuple[bytes, list[str]]:
 
     lines = ["; Generato da tools/gen_c64_assets.py: non modificare a mano.", "",
              "; finale di CHALLENGE (src/ending.s): set di caratteri ending_chars.bin", ""]
-    # scala 2: ogni pixel del font monospazio diventa 2x2, quattro caratteri per lettera
-    font_map = {ch: font[i] for i, ch in enumerate(FONT_CHARS)}
+    # lettere 2x: quattro segnaposto di fila per lettera (alto sinistra, alto destra, basso
+    # sinistra, basso destra) da END_BIG_BASE
+    end_big = "".join(sorted(set("".join(END_BIG_TEXTS)) - {" "}))
+    assert all(c in FONT_DRAWN for c in end_big), end_big
     big = []
-    for ch in END_BIG:
-        t = tiles[font_map[ch]]
-        px = [[bool(t[y // 2] & 0x80 >> (x // 2)) for x in range(16)] for y in range(16)]
-        big.append([add(tile) for row in tiles_of(px, 2, 2) for tile in row])
+    for k in range(len(end_big)):
+        quarter = [END_BIG_BASE + 4 * k + q for q in range(4)]
+        assert all(c in free for c in quarter), "finale: lettere 2x sopra altri caratteri"
+        for c in quarter:
+            free.remove(c)
+            tiles[c] = BLANK
+        big.append(quarter)
     # indice della lettera grande per ASCII 32-95 (0 = spazio)
-    idx = [END_BIG.index(ch) + 1 if ch in END_BIG else 0 for ch in FONT_CHARS]
+    idx = [end_big.index(ch) + 1 if ch in end_big else 0 for ch in FONT_CHARS]
+    font_map = {ch: font[i] for i, ch in enumerate(FONT_CHARS)}
+    lines.append(f"END_BIG_BASE = {END_BIG_BASE}    ; lettere 2x: quattro caratteri per lettera da qui")
+    lines.append(f"END_BIG_N = {len(end_big)}")
+    lines.append("; lettere 2x: il carattere del font da cui si fanno (big_build)")
+    lines.append(".define END_BIG_SRC " + ", ".join(str(font_map[ch]) for ch in end_big))
     lines.append("; scala 2: indice (da 1) per ASCII 32-95, poi i caratteri in alto a sinistra, in alto")
     lines.append("; a destra, in basso a sinistra, in basso a destra (indice 0 = spazio)")
     lines.append(".define END_BIG_IDX " + ", ".join(str(i) for i in idx))
@@ -1097,12 +1053,32 @@ C64_RGB = [(0, 0, 0), (255, 255, 255), (104, 55, 43), (112, 164, 178), (111, 61,
            (108, 108, 108), (154, 210, 132), (108, 94, 181), (149, 149, 149)]
 C_BLACK, C_WHITE, C_RED, C_YELLOW, C_BROWN, C_LRED, C_DGRAY, C_GRAY, C_LGRAY = 0, 1, 2, 7, 9, 10, 11, 12, 15
 # disposizione a 320x200 (quella del MiSTer è a 240 righe): riquadri delle mosse da y0 - 4 a
-# y0 + 58, comando sulla riga y0 + 42
-HT_BOX_Y0 = [34, 98]
-HT_BARS_Y = 166
-HT_LEGEND_Y = 181
-HT_SKIP_Y = 193
-HT_SHOT_X = 214                  # riquadro del tiro, fino a x = 300
+# y0 + 58, comando sulla riga y0 + 42. Le scritte stanno nelle celle (riga, colonna), con il font
+# della ROM: le scrive il programma (HT_TEXTS), qui le loro celle restano vuote, con i colori
+HT_BOX_Y0 = [32, 96]
+HT_BARS_Y = 161
+HT_SHOT_X = 234                  # riquadro del tiro, fino a x = HT_SHOT_X1 (il bordo e la racchetta in celle diverse)
+HT_SHOT_X1 = 306
+HT_PLUS_X = 124                  # centro del "+" fra i joystick e il pulsante (disegnato)
+HT_LABEL_COL = 20                # FIRE accanto al pulsante
+# scritte: (colonna, riga, 2x, colore del C64, testo); un gruppo per frame del programma (al più
+# una quarantina di lettere: circa 180 cicli l'una)
+HT_TEXTS = [
+    [(14, 0, False, C_YELLOW, "HOW TO PLAY"),
+     (9, 2, False, C_GRAY, "SUPER MOVES - JOYSTICK")],
+    [(2, 4, False, C_YELLOW, "STRAIGHT SHOT"),
+     (2, 6, False, C_WHITE, "NEXT SHOT FLAT AND FAST")],
+    [(HT_LABEL_COL, 9, False, C_GRAY, "FIRE"),
+     (2, 12, False, C_YELLOW, "RISING STRIKE"),
+     (HT_LABEL_COL, 17, False, C_GRAY, "FIRE")],
+    [(2, 14, False, C_WHITE, "FLAT SHOT WITH A LATE BREAK")],
+    [(2, 20, False, C_WHITE, "HALF"),
+     (13, 20, False, C_WHITE, "= MOVE"),
+     (20, 20, False, C_WHITE, "FULL"),
+     (30, 20, False, C_YELLOW, "= MAX")],
+    [(1, 22, False, C_GRAY, "FIRE: USE THE BONUS     FORWARD: DASH")],
+    [(11, 24, False, C_GRAY, "PRESS FIRE TO SKIP")],
+]
 
 
 def c64_stick(img: Image.Image, cx: int, cy: int, way: str) -> None:
@@ -1131,22 +1107,31 @@ def c64_button(img: Image.Image, cx: int, cy: int) -> None:
     d.rectangle((cx - 8, row + 2, cx + 8, row + 7), fill=howto.S_RED)
 
 
+def howto_text_cells() -> dict[tuple[int, int], int]:
+    """Celle (riga, colonna) delle scritte di HT_TEXTS e il loro colore."""
+    cells = {}
+    for group in HT_TEXTS:
+        for col, row, big, color, text in group:
+            k = 2 if big else 1
+            assert all(c == " " or c in FONT_DRAWN for c in text) and col + k * len(text) <= 40, text
+            for i in range(k * len(text)):
+                for r in range(k):
+                    assert (row + r, col + i) not in cells, f"HOW TO PLAY: scritte sovrapposte ({text})"
+                    cells[(row + r, col + i)] = color
+    return cells
+
+
 def howto_image() -> list[list[int]]:
-    """La schermata a 320x200 in colori del C64 (un indice per pixel), prima della conversione."""
+    """La schermata a 320x200 in colori del C64 (un indice per pixel), prima della conversione,
+    senza le scritte (le loro celle sono vuote: howto_text_cells)."""
     w, h = 320, 200
-    text = Image.new("L", (w, h), 0)      # codici howto.T_*
     figs = Image.new("L", (w, h), 0)      # codici howto.S_*
     lines = Image.new("L", (w, h), 0)     # colori del C64 + 1 (0 = niente)
     dl = ImageDraw.Draw(lines)
-    howto.paint_text(text, (w // 2, 11), "HOW TO PLAY", howto.f20, howto.T_ACCENT, "mm")
-    howto.paint_text(text, (w // 2, 24), "SUPER MOVES - JOYSTICK", howto.f10, howto.T_GRAY, "mm")
-    steps, plus_x, fire_x, label_x = howto.command_x(True)
-    for i, ((move, effect), y0) in enumerate(zip(howto.MOVES, HT_BOX_Y0)):
+    steps, _, fire_x, _ = howto.command_x(True)
+    for i, y0 in enumerate(HT_BOX_Y0):
         cy = y0 + 42
         dl.rectangle((8, y0 - 4, 311, y0 + 58), outline=C_GRAY + 1)
-        howto.paint_text(text, (16, y0), move, howto.f20, howto.T_ACCENT)
-        # (4 pixel più giù del MiSTer: nella riga di celle dopo l'ultima del titolo, che è giallo)
-        howto.paint_text(text, (16, y0 + 22), effect, howto.f10, howto.T_WHITE)
         for k, (x, way) in enumerate(zip(steps, howto.JOY_STEPS[i])):
             c64_stick(figs, x, cy, way)
             if k < len(steps) - 1:
@@ -1155,11 +1140,13 @@ def howto_image() -> list[list[int]]:
                 ax = ((x + 12) // 8 + 1) * 8
                 ay = cy // 8 * 8 + 4
                 dl.polygon([(ax, ay - 3), (ax + 4, ay), (ax, ay + 3)], fill=C_YELLOW + 1)
-        howto.paint_text(text, (plus_x, cy), "+", howto.f20, howto.T_WHITE, "mm")
+        # il "+" (7x7) nella cella di HT_PLUS_X, nella riga di celle di cy
+        py = cy // 8 * 8 + 4
+        dl.line((HT_PLUS_X - 3, py, HT_PLUS_X + 3, py), fill=C_WHITE + 1)
+        dl.line((HT_PLUS_X, py - 3, HT_PLUS_X, py + 3), fill=C_WHITE + 1)
         c64_button(figs, fire_x, cy)
-        howto.paint_text(text, (label_x, cy + 1), "FIRE", howto.f10, howto.T_GRAY, "lm")
         # il tiro: racchetta, palla gialla e la sua strada (dritta e veloce, o che poi s'impenna)
-        x0, x1 = HT_SHOT_X, 300
+        x0, x1 = HT_SHOT_X, HT_SHOT_X1
         dl.rectangle((x0, y0 + 6, x1, y0 + 54), outline=C_GRAY + 1)
         py = y0 + 30
         dl.rectangle((x0 + 6, py - 8, x0 + 7, py + 8), fill=C_WHITE + 1)
@@ -1173,19 +1160,12 @@ def howto_image() -> list[list[int]]:
             for k in range(1, 4):
                 dl.point((x0 + 50 + 4 * k, py - 4 * k), fill=C_YELLOW + 1)
             dl.rectangle((x0 + 64, py - 15, x0 + 67, py - 12), fill=C_YELLOW + 1)
-    # costo: mezza barra = mossa, barra piena = MAX
+    # costo: mezza barra = mossa, barra piena = MAX (le scritte accanto in HT_TEXTS)
     y = HT_BARS_Y
-    for label_x2, x, fill, what, what_code in ((52, 58, 18, "= MOVE", howto.T_WHITE),
-                                                (190, 196, 36, "= MAX", howto.T_ACCENT)):
-        howto.paint_text(text, (label_x2, y + 3), "HALF" if fill < 36 else "FULL", howto.f10, howto.T_WHITE, "rm")
+    for x, fill in ((58, 18), (196, 36)):
         dl.rectangle((x, y, x + 37, y + 5), outline=C_YELLOW + 1)
         dl.rectangle((x + 1, y + 1, x + fill, y + 4), fill=C_YELLOW + 1)
         dl.line((x + 19, y - 1, x + 19, y + 6), fill=C_YELLOW + 1)
-        howto.paint_text(text, (x + 42, y + 3), what, howto.f10, what_code, "lm")
-    howto.paint_text(text, (w // 2, HT_LEGEND_Y), "FIRE: USE THE BONUS     FORWARD: DASH", howto.f10,
-                     howto.T_GRAY, "mm")
-    howto.paint_text(text, (w // 2, HT_SKIP_Y), "PRESS FIRE TO SKIP", howto.f10, howto.T_GRAY, "mm")
-    tcol = {howto.T_WHITE: C_WHITE, howto.T_GRAY: C_GRAY, howto.T_ACCENT: C_YELLOW}
     # joystick: base e asta in un grigio solo (con il nero, due colori per cella); l'asta rossa
     # nelle celle della pallina
     scol = {howto.S_DARK: C_GRAY, howto.S_HOLE: C_BLACK, howto.S_SHAFT: C_GRAY, howto.S_BALL: C_RED,
@@ -1194,9 +1174,7 @@ def howto_image() -> list[list[int]]:
     out = [[0] * w for _ in range(h)]
     for yy in range(h):
         for xx in range(w):
-            if v := text.getpixel((xx, yy)):
-                out[yy][xx] = tcol[v]
-            elif v := figs.getpixel((xx, yy)):
+            if v := figs.getpixel((xx, yy)):
                 out[yy][xx] = scol[v]
             elif v := lines.getpixel((xx, yy)):
                 out[yy][xx] = v - 1
@@ -1207,13 +1185,33 @@ def howto_image() -> list[list[int]]:
                 for x, y in cell:
                     if figs.getpixel((x, y)) == howto.S_SHAFT:
                         out[y][x] = C_RED
+    # le celle delle scritte devono essere vuote: le riempie il programma
+    for (row, col) in howto_text_cells():
+        assert not any(out[row * 8 + y][col * 8 + x] for y in range(8) for x in range(8)), \
+            f"HOW TO PLAY: disegno nella cella di una scritta ({row}, {col})"
     return out
+
+
+def howto_texts() -> list[str]:
+    """HT_TEXTS per assets.inc: per scritta colonna (bit 7: 2x), riga, testo, 0; $FE alla fine di
+    ogni gruppo (un frame), $FF alla fine."""
+    out = []
+    for group in HT_TEXTS:
+        for col, row, big, _, text in group:
+            out.append(f'{col | (0x80 if big else 0)}, {row}, "{text}", 0')
+        out.append("$FE")
+    out[-1] = "$FF"
+    return ["; HOW TO PLAY: scritte nella bitmap (colonna, con il bit 7 a 2x; riga; testo; 0), $FE",
+            "; alla fine di ogni frame di disegno, $FF alla fine (i colori sono già in howto.bin)",
+            f"HT_GROUPS = {len(HT_TEXTS)}",
+            ".define HT_TEXTS " + ", ".join(out)]
 
 
 def howto_bitmap() -> tuple[bytes, bytes, list[list[int]]]:
     """Bitmap hires (8.000 byte) e colori (1.000): per ogni cella 8x8 i due colori che rendono
     meglio i suoi pixel (il nero compreso), ogni pixel al più vicino. Anche l'immagine risultante."""
     img = howto_image()
+    text_cells = howto_text_cells()
 
     def dist(a: int, b: int) -> int:
         return sum((p - q) ** 2 for p, q in zip(C64_RGB[a], C64_RGB[b]))
@@ -1223,6 +1221,10 @@ def howto_bitmap() -> tuple[bytes, bytes, list[list[int]]]:
     for cy in range(25):
         for cx in range(40):
             px = [img[cy * 8 + y][cx * 8 + x] for y in range(8) for x in range(8)]
+            if (cy, cx) in text_cells:
+                # scritta: il suo colore sul nero, i pixel li mette il programma
+                colors[cy * 40 + cx] = text_cells[(cy, cx)] << 4 | C_BLACK
+                continue
             used = sorted(set(px) | {C_BLACK})
             best = None
             for i, a in enumerate(used):
@@ -1281,33 +1283,48 @@ def main() -> None:
     digits = score_digits(cs)
     lines.append("; cifre del punteggio: 9 caratteri per cifra (3 righe di 3)")
     lines.append(".define SCORE_TILES " + ", ".join(str(c) for d in digits for c in d))
+    # font 1x: segnaposto, poi i glifi della ROM (FONT_ROM: codice della ROM per carattere del
+    # font, da FONT_FIRST)
     font = text_font(cs)
     lines.append("; font monospazio: codice del carattere per ASCII 32-95")
     lines.append(".define FONT_MAP " + ", ".join(str(c) for c in font))
     font_first, font_last = min(c for c in font if c), max(font)
-    assert font_last - font_first + 1 == len(set(font) - {0}), "font non contiguo"
+    assert font_last - font_first + 1 == len(set(font) - {0}) == len(FONT_DRAWN), "font non contiguo"
     lines.append(f"FONT_FIRST = {font_first}")
     lines.append(f"FONT_CHARS = {font_last - font_first + 1}")
-    # caratteri di INSERT COIN e PRESS START grandi: si vedevano solo nella demo, tolta; restano nel
-    # set (le loro mappe non sono più nel programma) per dare il posto a BULLET, barra e PERFECT
-    demo_only: set[int] = set()
-    assert BIG_TEXTS[-2:] == ["insert_coin", "press_start"]
-    big_from = 0
-    big_given = len(cs.given)
-    big_tiles = len(cs.tiles)
-    for name in BIG_TEXTS:
-        first = len(cs.tiles)
-        if name == "insert_coin":
-            big_from = len(cs.given)
-        w, codes = big_text(cs, name)
-        if name in ("insert_coin", "press_start"):
-            demo_only |= {c for c in codes if c >= first}
-        lines.append(f"BIG_{name.upper()}_W = {w}")
-        lines.append(f".define BIG_{name.upper()} " + ", ".join(str(c) for c in codes))
-    after_big = len(cs.given)
-    big_end = len(cs.tiles)
+    lines.append("; font: codice nella ROM dei caratteri (set maiuscolo) dei caratteri da FONT_FIRST")
+    by_code = {c: FONT_CHARS[i] for i, c in enumerate(font) if c}
+    lines.append(".define FONT_ROM " + ", ".join(str(rom_code(by_code[c])) for c in range(font_first, font_last + 1)))
+    # lettere 2x: quattro caratteri per lettera da PICK_FIRST (le pagine della scelta dei bonus:
+    # lì le lettere 2x non si vedono), segnaposto riempiti da big_build con i glifi 1x già nel set
+    assert len(cs.tiles) == PICK_FIRST, (len(cs.tiles), PICK_FIRST)
+    letters = big2_letters()
+    pick_range = range(PICK_FIRST, PICK_FIRST + PICK_PAGES * 32)
+    assert 4 * len(letters) <= len(pick_range), f"lettere 2x: {len(letters)}, ne stanno {len(pick_range) // 4}"
+    for _ in pick_range:
+        cs.add(BLANK, unique=True)
+    font_of = {ch: font[i] for i, ch in enumerate(FONT_CHARS)}
+    lines.append("; lettere 2x (GAME OVER, YOU WIN, PERFECT): quattro caratteri per lettera da BIG2_FIRST (alto")
+    lines.append("; sinistra, alto destra, basso sinistra, basso destra), ogni pixel 2x2 del carattere del")
+    lines.append("; font BIG2_SRC; il resto delle pagine della scelta resta vuoto")
+    lines.append(f"BIG2_FIRST = {PICK_FIRST}")
+    lines.append(f"BIG2_N = {len(letters)}    ; {letters}")
+    lines.append(".define BIG2_SRC " + ", ".join(str(font_of[ch]) for ch in letters))
+    lines.append("; scritte del GAME OVER: larghezza (celle), celle per lettera (BIG_*_K), codici delle due righe")
+    for name, (text, big) in BIG2_LISTS.items():
+        if big:
+            codes = big2_codes(PICK_FIRST, letters, text)
+        else:
+            codes = [font_of[ch] for ch in text] + [0] * len(text)
+        lines.append(f"BIG_{name}_W = {len(codes) // 2}")
+        lines.append(f"BIG_{name}_K = {2 if big else 1}")
+        lines.append(f".define BIG_{name} " + ", ".join(str(c) for c in codes))
+    # nella scelta dei bonus le metà delle lettere del font (codice + PICK_TOP la alta, abbassata di 4
+    # pixel; + PICK_BOTTOM la bassa, in cima al carattere: pick_chars) nelle stesse pagine
+    assert PICK_FIRST + 2 * len(FONT_DRAWN) <= pick_range.stop
     # auto-test: cursore a blocco e reticolo (righe ogni 16 pixel, l'ultima in fondo allo schermo)
     cursor = cs.add((0xF8,) * 8, unique=True)
+    lines.append(f"CH_CURSOR = {cursor}")
     top, left_line = 0xFF, 0x80
     grid = {
         "GRID_TL": (top,) + (left_line,) * 7,
@@ -1316,7 +1333,6 @@ def main() -> None:
         "GRID_TLB": (top,) + (left_line,) * 6 + (top,),
         "GRID_TB": (top,) + (0,) * 6 + (top,),
     }
-    lines.append(f"CH_CURSOR = {cursor}")
     spare = [cursor]
     for name, tile in grid.items():
         code = cs.add(tile)
@@ -1326,25 +1342,24 @@ def main() -> None:
             spare.append(code)
         lines.append(f"CH_{name} = {code}")
     # caratteri per la capsula del BULLET in NEXT: cursore e reticolo (solo l'auto-test
-    # dell'accensione) e tre di INSERT COIN / PRESS START della demo: due dopo la scelta e la barra
-    # delle mosse (supers_assets), poi il primo, nelle pagine della scelta. Non CH_GRID_T e il muro
-    # del singolo: le scritte animate (riga del televisore, trattini, pavimento) e le entrate della
+    # dell'accensione) e tre caratteri suoi, vuoti fuori da NEXT. Non CH_GRID_T e il muro del
+    # singolo: le scritte animate (riga del televisore, trattini, pavimento) e le entrate della
     # CHALLENGE li usano anche in partita NEXT e dopo
-    pick_range = range(PICK_FIRST, PICK_FIRST + PICK_PAGES * 32)
-    after_pick = sorted(c for c in demo_only if c >= pick_range.stop)
-    spare += after_pick[BAR_CHARS : BAR_CHARS + 2]
-    spare.append(min(demo_only))
-    self_test = spare[:5]
+    self_test = list(spare)
+    spare += [cs.add(BLANK, unique=True) for _ in range(3)]
     bullet_bytes = next_chars(cs, lines, spare)
     # CHALLENGE: bande della schermata del nuovo sfidante (HERE COMES A NEW CHALLENGER!)
     lines.append(f"CH_SOLID = {cs.add((0xFF,) * 8, unique=True)}")
+    # NEXT, mosse speciali: la barra, caratteri suoi (vuoti fuori da NEXT)
+    bar = [cs.add(BLANK, unique=True) for _ in range(BAR_CHARS)]
+    supers_assets(lines, bar)
     files = attract_assets(lines)
-    # i caratteri presi dal BULLET non servono ad altro: quelli dell'auto-test dati una volta sola,
-    # quelli della demo solo a INSERT COIN e PRESS START
+    # i caratteri presi dal BULLET e dalla barra non servono ad altro: quelli dell'auto-test dati una
+    # volta sola, gli altri mai
     for c in self_test:
         assert cs.given.count(c) == 1, c
-    for c in spare[5:]:
-        assert c in demo_only and c not in cs.given[:big_from] + cs.given[after_big:], c
+    for c in spare[len(self_test):] + bar:
+        assert cs.given.count(c) == 1 and c not in pick_range, c
     assert grid_t not in spare and wall not in spare
     lines.append(f"CHARSET_USED = {len(cs.tiles)}")
     OUT.mkdir(parents=True, exist_ok=True)
@@ -1355,38 +1370,17 @@ def main() -> None:
     end_chars, end_lines = ending_assets(bytes(charset), font)
     (OUT / "ending_chars.bin").write_bytes(end_chars)
     (OUT / "ending.inc").write_text("\n".join(end_lines) + "\n", encoding="utf-8", newline="\n")
-    # scelta dei bonus: le metà delle lettere del font (codice + PICK_TOP la alta, abbassata di 4
-    # pixel; + PICK_BOTTOM la bassa, in cima al carattere) al posto delle scritte grandi, che nella
-    # scelta non ci sono (né altri usi di quei caratteri: il BULLET ne prende uno solo in partita)
-    assert not set(spare[5:-1]) & set(pick_range)
-    assert big_tiles <= pick_range.start and pick_range.stop <= big_end, (big_tiles, big_end)
-    assert not any(c in pick_range for c in cs.given[:big_given] + cs.given[after_big:] if c != spare[-1])
-    n = font_last - font_first + 1
-    assert PICK_FIRST + 2 * n <= pick_range.stop
-    pick = bytearray(charset)
-    for i in range(n):
-        t = cs.tiles[font_first + i]
-        pick[8 * (PICK_FIRST + i) : 8 * (PICK_FIRST + i) + 8] = bytes(4) + bytes(t[:4])
-        pick[8 * (PICK_FIRST + n + i) : 8 * (PICK_FIRST + n + i) + 8] = bytes(t[4:]) + bytes(4)
     # pagina $FF00: bitmap (vuota), caratteri del BULLET a $FF40, RTS a $FFC0 (VOICE_COUNT), poi
-    # gli originali dei caratteri della barra delle mosse speciali (supers_assets)
+    # gli originali dei caratteri della barra delle mosse speciali (vuoti)
     page = bytearray(256)
     page[0x40:0xC0] = bullet_bytes
     page[0xC0] = 0x60
-    bar_orig, bar = supers_assets(lines, charset, demo_only, pick_range)
-    page[BAR_ORIG : BAR_ORIG + 8 * BAR_CHARS] = bar_orig
-    # PERFECT del GAME OVER: sui caratteri della demo dentro le pagine della scelta (non quelli
-    # della barra delle mosse, che stanno dopo, né quello preso dal BULLET), riusando quelli che
-    # nel GAME OVER sono sempre gli originali (non della demo né presi dal BULLET in NEXT); nella
-    # sua pagina il carattere del BULLET (e quelli della barra, se ci fossero) come in NEXT
-    stable = set(range(len(cs.tiles))) - demo_only - set(spare)
-    perfect_free = sorted(c for c in demo_only if c in pick_range and c != spare[-1] and c not in bar)
-    in_next = {spare[-1]: cap_tiles(B_BULLET)[len(spare) - 1]}
-    in_next |= {c: tuple(bar_glyph(2 * i)) for i, c in enumerate(bar)}
-    files["perfect_chars.bin"] = perfect_text(cs, lines, stable, perfect_free, in_next, set(spare) | set(bar))
+    page[BAR_ORIG : BAR_ORIG + 8 * BAR_CHARS] = bytes(charset[8 * bar[0] : 8 * (bar[0] + BAR_CHARS)])
     title = files["title.bin"]
     assert len(title) <= 0x800
-    (OUT / "pick_bank.bin").write_bytes(bytes(pick) + bytes(page) + title + bytes(0x800 - len(title)))
+    # nessun glifo della ROM nei file: i segnaposto sono vuoti
+    assert not any(charset[8 * PICK_FIRST : 8 * pick_range.stop]) and not any(charset[8 * font_first : 8 * (font_last + 1)])
+    (OUT / "pick_bank.bin").write_bytes(bytes(0x800) + bytes(page) + title + bytes(0x800 - len(title)))
     lines.append(f"PICK_FIRST = {PICK_FIRST}    ; scelta dei bonus: caratteri sostituiti (pagine intere)")
     lines.append(f"PICK_PAGES = {PICK_PAGES}")
     # sprite: palla 4x4, palla 6x6, due posti per le racchette (rifatte a ogni frame), linea di
@@ -1406,10 +1400,14 @@ def main() -> None:
     _, fx_lines = next_fx_sprites()
     lines += fx_lines
     lines += fx_squares()
+    lines += howto_texts()
     files |= voice_files()
     files["howto.bin"] = howto_file()
     for name, data in files.items():
         (OUT / name).write_bytes(data)
+    # file che non si usano più
+    for name in ("labels.bin", "credits.bin", "perfect_chars.bin"):
+        (OUT / name).unlink(missing_ok=True)
     (OUT / "assets.inc").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     print(f"c64/gen: {len(cs.tiles)} caratteri su 256, {len(sprites) // 64} sprite, attract")
 

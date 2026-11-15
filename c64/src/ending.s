@@ -32,7 +32,10 @@
 ; resto), ENDB, ENDC, ENDCH e i campioni, E_LOAD_PAGES pagine per frame (circa 11.500 cicli).
 ;
 ; Schermo: caratteri, con il set del finale (il font del programma ai suoi codici: le routine del
-; programma scrivono come sempre). Le lettere grandi sono il font a scala 2 (2x2 caratteri). I
+; programma scrivono come sempre). Le lettere grandi sono il font a scala 2 (2x2 caratteri). Il
+; font è quello della ROM dei caratteri: nel set della cartuccia ci sono dei segnaposto, e finita
+; la copia il finale ci mette i glifi della ROM (e_font_rom) e ne fa le lettere 2x (e_glyphs, un
+; pezzo per frame); alla fine lo stesso con il set del programma (close_frame). I
 ; fuochi usano il modo multicolore: i caratteri dei punti hanno i colori nei bit ($D022 bianco,
 ; $D023 giallo, rosso dal colore del carattere, uguale per tutto il cielo), quindi si disegnano in
 ; un secondo schermo ($C400) mentre si vede il primo, e si scambiano (doppio buffer) senza toccare
@@ -114,7 +117,13 @@ end_run:
     lda e_part
     beq :+
     jmp end_frame
-:   jsr load_step               ; EP_LOAD: copia, poi CONGRATULATIONS!
+:   lda e_fix
+    bne fix
+    jsr load_step               ; EP_LOAD: copia, poi i glifi della ROM, poi CONGRATULATIONS!
+    rol e_fix
+    rts
+fix:
+    jsr e_glyphs
     bcc :+
     jsr next_part
     jmp e_tick
@@ -192,6 +201,7 @@ e_chunk:  .byte 0               ; copia: pezzo (indice in load_tab), pagine già
 e_pg:     .byte 0
 e_bank:   .byte 0
 e_n:      .byte 0
+e_fix:    .byte 0               ; copiato: 1 il font dalla ROM, poi le lettere 2x
 .assert * <= end_run + $100, error, "finale: la pagina 0 (copiata da end_enter) è piena"
 
 ; (dalla pagina 1: si usano solo dopo la copia)
@@ -451,8 +461,8 @@ e_bcol:  .byte COL_WHITE
 
 .proc congrats_enter
     jsr fresh_screen
-    jsr big_print
-    .byte 4, 10, "CONGRATULATIONS!", 0
+    jsr print_at
+    .byte 12, 10, "CONGRATULATIONS!", 0
     lda #SID_SONG_ENDING
     jmp sid_song
 .endproc
@@ -489,8 +499,8 @@ e_bcol:  .byte COL_WHITE
     sta e_blink
     lda #COL_WHITE
     sta e_bcol
-    jsr big_print
-    .byte 13, 11, "THE END", 0
+    jsr print_at
+    .byte 16, 11, "THE END", 0
     rts
 .endproc
 
@@ -535,7 +545,20 @@ e_bcol:  .byte COL_WHITE
 .proc close_frame
     lda e_pg
     cmp #8
-    bcs done
+    bcc copy
+    ; il set del programma copiato: il font dalla ROM, nel frame dopo le sue lettere 2x
+    cmp #10
+    bcs :+
+    jsr e_font_rom
+    inc e_pg
+    rts
+:   bne done
+    ldy #0
+    ldx #BIG2_N
+    jsr big2_build
+    inc e_pg
+    rts
+copy:
     ora #$80
     sta ef_src+2
     lda e_pg
@@ -618,8 +641,8 @@ e_line:  .byte 0
     bne :-
     jsr print_at
     .byte 14, 19, "YOU ARE THE", 0
-    jsr big_print
-    .byte 4, 21, "PADD WS CHAMPION", 0
+    jsr print_at
+    .byte 12, 21, "PADD WS CHAMPION", 0
     lda #COL_YELLOW
     ldy #21
     jsr color_rows2
@@ -666,8 +689,8 @@ STAMP_ROW  = 9
 
 .proc parade_enter
     jsr fresh_screen
-    jsr big_print
-    .byte 6, 2, "YOUR OPPONENTS", 0
+    jsr print_at
+    .byte 13, 2, "YOUR OPPONENTS", 0
     lda #COL_YELLOW
     ldy #2
     jsr color_rows2
@@ -914,19 +937,17 @@ total:
     ldx #0
     jsr at_time
     bcc later
-    jsr big_print
-    .byte 6, 15, "TOTAL", 0
+    jsr print_at
+    .byte 11, 15, "TOTAL", 0
     ldx #3
 :   lda ch_score,x
     sta ch_tmp,x
     dex
     bpl :-
     jsr e_digits
-    lda #0
-    sta e_scr
-    ldx #20
+    ldx #24
     ldy #15
-    jsr big_at
+    jsr print_str
 later:
     lda #<E_SCORE
     ldx #>E_SCORE
@@ -1011,12 +1032,56 @@ p_c  = p_vy + FW_PARTS
 ; ------------------------------------------------------------------------------------ punteggio
 
 .segment "ENDB"
+; Dopo la copia (e_fix da 1): il font dalla ROM, poi le lettere 2x, al più E_BSTEP per frame. C = 1
+; quando è tutto pronto.
+E_BSTEP = 11
+.proc e_glyphs
+    lda e_fix
+    cmp #2
+    bcs big
+    jsr e_font_rom
+    inc e_fix
+    clc
+    rts
+big:
+    lda e_bp
+    sta ptr
+    lda e_bp+1
+    sta ptr+1
+    lda #<end_big_src
+    sta big_tab+1
+    lda #>end_big_src
+    sta big_tab+2
+    lda #END_BIG_N
+    sec
+    sbc e_bk
+    cmp #E_BSTEP
+    bcc :+
+    lda #E_BSTEP
+:   tax
+    ldy e_bk
+    clc
+    adc e_bk
+    sta e_bk
+    jsr big_build
+    lda ptr
+    sta e_bp
+    lda ptr+1
+    sta e_bp+1
+    lda e_bk
+    cmp #END_BIG_N
+    rts
+.endproc
+end_big_src: .byte END_BIG_SRC
+e_bk: .byte 0                   ; lettere 2x già fatte
+e_bp: .word CHARSET + 8 * END_BIG_BASE
+
 end_arp: .incbin "ending.bin", SID_ENDING_ARP, SID_ENDING_SIZE - SID_ENDING_ARP
 
 .proc score_enter
     jsr fresh_screen
-    jsr big_print
-    .byte 9, 4, "FINAL SCORE", 0
+    jsr print_at
+    .byte 14, 4, "FINAL SCORE", 0
     lda #COL_YELLOW
     ldy #4
     jsr color_rows2
@@ -1112,6 +1177,11 @@ end_lead: .incbin "ending.bin", SID_ENDING_LEAD, SID_ENDING_ARP - SID_ENDING_LEA
     .incbin "ending_chars.bin"
 
 .segment "ENDA"
+; Il font del finale e del programma dalla ROM dei caratteri (font_rom_code, video.s).
+.proc e_font_rom
+    font_rom_code
+.endproc
+
 ; ------------------------------------------------------------------------------------ fuochi
 
 ; Dopo la voce (ENDD ed ENDE). Un passo dei fuochi ogni FW_FRAMES frame, diviso nei tre frame:

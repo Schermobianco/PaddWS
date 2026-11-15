@@ -1613,7 +1613,7 @@ yes:
 ;   come un televisore e resta nero per AT_GAME_OVER_BLACK frame;
 ; - PERFECT: un timbro di blocchi pieni che si stringe in tre passi, la scritta con una scossa
 ;   (scroll fine), poi ogni secondo un riflesso in diagonale nei colori;
-; - YOU WIN: la palla parte dalla racchetta di chi ha vinto, salta da una cella all'altra e le
+; - YOU WIN: la palla parte dalla racchetta di chi ha vinto, salta da una lettera all'altra e le
 ;   accende, poi se ne va; alla fine la scritta lampeggia;
 ; - CPU WINS da sola (livello perso di CHALLENGE): si scrive con il cursore, subito.
 ; In NEXT chi ha vinto è giallo, come sul PC.
@@ -1628,22 +1628,16 @@ OV_PERFECT   = 5                ; la mappa è nel codice del GAME OVER: solo da 
 ; partita NEXT è libero (l'attract ci rifà i colori della bitmap, la scala della CHALLENGE ci
 ; ricopia le mosse alla fine di ogni presentazione, intro_scene). enter_over ne copia la prima
 ; pagina (circa 3.800 cicli) e ci salta; le altre le copia la scena nei frame dopo, una per frame.
-; Nel programma restano enter_over e over_big. La pagina del set di caratteri con PERFECT
-; (OVCHARS, gen/perfect_chars.bin) sta nel .prg da OVCH_IMG.
+; Nel programma restano enter_over e over_big. Le scritte sono le lettere 2x del set (BIG_*).
 OV_RUN   = SCREEN2              ; dove gira (paddws.cfg, OVRAM)
 OV_IMG   = $E000                ; dove sta nel .prg (OVIMG), poi nella flash
-OVCH_IMG = $DF00                ; i caratteri di PERFECT (OVCHIMG)
 OV_BANK  = PRG_BANK + (OV_IMG - $0800) / $4000
 OV_SRC   = $80 + ((OV_IMG - $0800) .mod $4000) / 256
-OVCH_SRC = $80 + ((OVCH_IMG - $0800) .mod $4000) / 256
 OV_PAGES = >(__OVCODE_SIZE__ + 255)
-.import __OVCODE_LOAD__, __OVCODE_RUN__, __OVCODE_SIZE__, __OVCHARS_LOAD__
+.import __OVCODE_LOAD__, __OVCODE_RUN__, __OVCODE_SIZE__
 .assert __OVCODE_LOAD__ = OV_IMG .and __OVCODE_RUN__ = OV_RUN, lderror, "GAME OVER fuori posto"
-.assert __OVCODE_SIZE__ <= $400 .and __OVCHARS_LOAD__ = OVCH_IMG, lderror, "GAME OVER oltre il secondo schermo"
-.assert ((OV_IMG - $0800) .mod $4000) + $0400 <= $2000 .and (OV_IMG - $0800) / $4000 = (OVCH_IMG - $0800) / $4000, error, "GAME OVER oltre la ROML del banco"
-; pagina del set di caratteri con i caratteri di PERFECT (gen/perfect_chars.bin)
-PERFECT_PAGE = PERFECT_C0 * 8 / 256
-.assert (PERFECT_C0 + PERFECT_CHARS - 1) * 8 / 256 = PERFECT_PAGE, error, "PERFECT: caratteri su due pagine"
+.assert __OVCODE_SIZE__ <= $400, lderror, "GAME OVER oltre il secondo schermo"
+.assert ((OV_IMG - $0800) .mod $4000) + $0400 <= $2000, error, "GAME OVER oltre la ROML del banco"
 .proc enter_over
     jsr shots_erase             ; le scritte vanno sul campo pulito
     lda #ST_OVER
@@ -1681,15 +1675,17 @@ PERFECT_PAGE = PERFECT_C0 * 8 / 256
 over_lo:  .lobytes big_game_over, big_you_win, big_p1_wins, big_p2_wins, big_cpu_wins, ov_big_perfect
 over_hi:  .hibytes big_game_over, big_you_win, big_p1_wins, big_p2_wins, big_cpu_wins, ov_big_perfect
 over_w:   .byte BIG_GAME_OVER_W, BIG_YOU_WIN_W, BIG_P1_WINS_W, BIG_P2_WINS_W, BIG_CPU_WINS_W, BIG_PERFECT_W
+; celle per lettera: 2 le scritte a 2x (GAME OVER, YOU WIN, PERFECT), 1 le altre (la riga sotto vuota)
+over_k:   .byte BIG_GAME_OVER_K, BIG_YOU_WIN_K, BIG_P1_WINS_K, BIG_P2_WINS_K, BIG_CPU_WINS_K, BIG_PERFECT_K
 over_col: .byte (40 - BIG_GAME_OVER_W) / 2, (40 - BIG_YOU_WIN_W) / 2, (40 - BIG_P1_WINS_W) / 2
           .byte (40 - BIG_P2_WINS_W) / 2, (40 - BIG_CPU_WINS_W) / 2, (40 - BIG_PERFECT_W) / 2
 
 ; Tempi delle animazioni (attract.rs, a 50 Hz), in frame da quando il codice è tutto copiato.
 OA_NET     = 40                 ; mezzeria spenta dall'alto (NET_OFF)
 OA_PADS    = 10                 ; poi le racchette si accorciano (PADS_OFF)
-OA_TYPE    = 47                 ; GAME OVER si scrive da qui (TYPE_AT), una cella ogni OA_STEP
-OA_STEP    = 3
-OA_GAP     = 8                  ; chi ha vinto OA_GAP dopo (WIN_GAP), una cella ogni OA_WSTEP
+OA_TYPE    = 47                 ; GAME OVER si scrive da qui (TYPE_AT), una lettera (due celle)
+OA_STEP    = 3                  ; ogni OA_STEP
+OA_GAP     = 8                  ; chi ha vinto OA_GAP dopo (WIN_GAP), una lettera ogni OA_WSTEP
 OA_WSTEP   = 2
 OA_TYPE1   = 10                 ; CPU WINS da sola: subito
 OA_BLINK   = 25                 ; cursore a scritte finite: acceso OA_BLINK / 2 frame su OA_BLINK
@@ -1701,15 +1697,19 @@ OA_SHAKE   = 8                  ; frame della scossa dopo il timbro (STAMP_SHAKE
 OA_WIN     = 23                 ; chi ha vinto sotto PERFECT (STAMP_WIN)
 OA_GLINT   = 40                 ; riflesso da qui, ogni OA_GLINT_P frame (GLINT_AT, GLINT_PERIOD)
 OA_GLINT_P = 50
-OA_FIRST   = 16                 ; YOU WIN: la palla sulla prima cella (HOP_FIRST), poi una cella
-OA_HOP     = 3                  ; ogni OA_HOP frame (HOP)
-OA_LAST    = OA_FIRST + OA_HOP * (BIG_YOU_WIN_W - 1)  ; sull'ultima cella
+OA_FIRST   = 16                 ; YOU WIN: la palla sulla prima lettera (HOP_FIRST), poi una
+OA_HOP     = 3                  ; lettera ogni OA_HOP frame (HOP)
+HOP_N      = BIG_YOU_WIN_W / 2  ; lettere (di due celle) di YOU WIN, lo spazio compreso
+OA_LAST    = OA_FIRST + OA_HOP * (HOP_N - 1)  ; sull'ultima lettera
 .assert AT_GAME_OVER_FRAMES + AT_GAME_OVER_BLACK < 256, error, "GAME OVER: il tempo sta in un byte"
 .assert OA_NET + OA_PADS + 4 < AT_GAME_OVER_FRAMES - OA_CLOSE, error, "GAME OVER: la chiusura arriva prima della fine del campo"
 OV_ROW   = 10                   ; righe delle scritte: in alto e sotto
 OV_ROW2  = 13
+OV_BOX_W  = BIG_GAME_OVER_W + 2 ; riquadro nero delle scritte, attorno alla più larga
+OV_BOX_C0 = (40 - OV_BOX_W) / 2
+.assert BIG_GAME_OVER_W >= BIG_CPU_WINS_W .and BIG_GAME_OVER_W >= BIG_YOU_WIN_W .and BIG_GAME_OVER_W >= BIG_PERFECT_W, error, "GAME OVER: il riquadro attorno alla scritta più larga"
 HOP_COL  = (40 - BIG_YOU_WIN_W) / 2
-HOP_X    = SPR_X0 + HOP_COL * 8 + 2         ; palla (4x4) sulla prima cella di YOU WIN
+HOP_X    = SPR_X0 + HOP_COL * 8 + 6         ; palla (4x4) sulla prima lettera di YOU WIN
 HOP_Y    = SPR_Y0 + OV_ROW * 8 - 5
 GLINT_COL = $d800 + OV_ROW * 40 + (40 - BIG_PERFECT_W) / 2
 HOP_COLOR = $d800 + OV_ROW * 40 + HOP_COL
@@ -1825,15 +1825,16 @@ ov_cx:    .byte 0
 ov_c0:    .byte 0
 ov_cy:    .byte 0
 ov_full:  .byte 0
-; Il riquadro nero (4 righe con una scritta, 7 con due) e i colori delle scritte.
+; Il riquadro nero (4 righe con una scritta, 7 con due, colonne OV_BOX_C0 per OV_BOX_W) e i
+; colori delle scritte.
 .proc ov_box
     lda #4
     ldx bottom
     bmi :+
     lda #7
 :   sta v_n
-    lda #16
-    ldx #12
+    lda #OV_BOX_W
+    ldx #OV_BOX_C0
     ldy #9
     jsr blank_box
     lda ov_tcol
@@ -1847,17 +1848,17 @@ ov_full:  .byte 0
 :   rts
 .endproc
 
-; Colore A per le righe X e X + 1, colonne 12-27.
+; Colore A per le righe X e X + 1, colonne del riquadro.
 .proc ov_colors
     sta ov_n
     stx ov_row
-    lda #16
+    lda #OV_BOX_W
     sta v_n
     jsr one
     inc ov_row
 one:
     lda ov_n
-    ldy #12
+    ldy #OV_BOX_C0
     ldx ov_row
     jmp color_span_raw
 .endproc
@@ -2235,14 +2236,15 @@ ov_clw: .byte 20, 17, 14, 11, 8, 5, 2
     rts
 .endproc
 
-; Scritte che si scrivono con il cursore dal frame A: top nella riga OV_ROW, una cella ogni
-; OA_STEP frame, poi (se c'è) bottom nella riga OV_ROW2, OA_GAP frame dopo, una cella ogni
+; Scritte che si scrivono con il cursore dal frame A: top nella riga OV_ROW, una lettera ogni
+; OA_STEP frame, poi (se c'è) bottom nella riga OV_ROW2, OA_GAP frame dopo, una lettera ogni
 ; OA_WSTEP; il cursore pieno mentre scrive, poi lampeggia.
+ov_kc: .byte 0                  ; celle per lettera della scritta del cursore (ov_part)
 .proc ov_type
     eor #$ff
     sec
     adc ov_f
-    bcc done                    ; non ancora
+    jcc done                    ; non ancora
     sta ov_t
     bne :+
     jsr ov_box                  ; il primo frame: il riquadro
@@ -2258,10 +2260,14 @@ ov_clw: .byte 20, 17, 14, 11, 8, 5, 2
     bpl solid
     ldx bottom
     bmi blink
-    ; chi ha vinto, OA_GAP frame dopo l'ultima cella in alto
+    ; chi ha vinto, OA_GAP frame dopo l'ultima lettera in alto
     ldx top
     lda over_w,x
-    sta ov_n
+    ldy over_k,x
+    dey
+    beq :+
+    lsr a                       ; lettere
+:   sta ov_n
     asl a
     adc ov_n                    ; (OA_STEP = 3)
     adc #OA_GAP
@@ -2296,6 +2302,9 @@ cursor:
     pha
     jsr put_char
     pla
+    ldy ov_kc
+    dey
+    beq done
     ldy ov_row
     iny
     jmp put_char
@@ -2304,8 +2313,8 @@ done:
 .assert OA_STEP = 3, error, "ov_type: il passo in alto è 3"
 .endproc
 
-; Celle della scritta X da scrivere al frame A (da 0), una ogni Y frame: A = A / Y + 1, al più la
-; larghezza; C = 1 se è tutta.
+; Celle della scritta X da scrivere al frame A (da 0), una lettera (due celle a 2x) ogni Y
+; frame: A = (A / Y + 1) * over_k, al più la larghezza; C = 1 se è tutta.
 .proc ov_cells
     sty ov_n
     ldy #0
@@ -2314,7 +2323,11 @@ done:
     sbc ov_n
     bcs :-
     tya
-    cmp over_w,x
+    ldy over_k,x
+    dey
+    beq :+
+    asl a
+:   cmp over_w,x
     bcc :+
     lda over_w,x
 :   rts
@@ -2326,6 +2339,8 @@ done:
     sta ov_n
     sty ov_cy
     sty ov_row
+    lda over_k,x                ; il cursore alto come le lettere
+    sta ov_kc
     lda over_lo,x
     sta ptr2
     lda over_hi,x
@@ -2489,7 +2504,7 @@ hops:
     bcs :-
     adc #OA_HOP
     sta ov_t
-    cpy #BIG_YOU_WIN_W - 1
+    cpy #HOP_N - 1
     bcs last
     ; sulla cella Y: accesa al primo frame; la palla verso la dopo
     tya
@@ -2519,10 +2534,10 @@ last:
     bne fly
     ldx ov_t
     bne fly
-    ; l'ultima cella: accesa, poi la palla vola via
+    ; l'ultima lettera: accesa, poi la palla vola via
     tya
     jsr light
-    lda #BIG_YOU_WIN_W - 1
+    lda #HOP_N - 1
     jsr cell_x
     sta ov_bx
     lda #0
@@ -2606,17 +2621,21 @@ ball:
     ora ov_bx+1
     sta sh_msb
     rts
-; cella Y nell'ordine del salto (da destra se ha vinto il destro): accesa
+; lettera A nell'ordine del salto (da destra se ha vinto il destro): accesa (due celle)
 light:
     jsr order
+    asl a
     tax
     lda ov_tcol
     sta HOP_COLOR,x
+    sta HOP_COLOR + 1,x
     sta HOP_COLOR + 40,x
+    sta HOP_COLOR + 41,x
     rts
-; A = x della palla sulla cella A nell'ordine del salto (C = 0)
+; A = x della palla sulla lettera A nell'ordine del salto (C = 0)
 cell_x:
     jsr order
+    asl a
     asl a
     asl a
     asl a
@@ -2627,11 +2646,11 @@ order:
     beq :+
     eor #$ff
     clc
-    adc #BIG_YOU_WIN_W
+    adc #HOP_N
 :   rts
 .endproc
 ov_arc: .byte 0, 5, 9, 12, 15, 17, 19, 20, 20, 20, 19, 17, 15, 12, 9, 5   ; 80 u (1 - u)
-ov_hdx:  .byte 0, 3, 5          ; dentro un salto: verso la cella dopo
+ov_hdx:  .byte 0, 5, 11         ; dentro un salto: verso la lettera dopo
 ov_hup:  .byte 0, 16, 16        ; 72 u (1 - u)
 .assert OA_FIRST = 16 .and OA_HOP = 3, error, "YOU WIN: tabelle dei salti"
 ov_box_code
@@ -2657,17 +2676,7 @@ ov_win_tick
 ; con la scossa, chi ha vinto sotto da OA_WIN, il riflesso da OA_GLINT.
 .proc ov_stamp
     lda ov_f
-    bne :+
-    ; i caratteri di PERFECT al posto di alcuni di INSERT COIN e PRESS START grandi, che erano
-    ; della demo e non si vedono più: la loro pagina dalla cartuccia (poi restano così)
-    lda #OVCH_SRC
-    sta ef_src+2
-    lda #OV_BANK
-    ldx #1
-    ldy #>CHARSET + PERFECT_PAGE
-    jsr ef_copy
-    lda ov_f
-:   cmp #3 * OA_HOLD
+    cmp #3 * OA_HOLD
     bcs stamped
     ldx #$ff                    ; X = f / OA_HOLD, solo al primo frame di ogni grandezza
 :   inx
@@ -2776,8 +2785,8 @@ shade:
 ov_shx: .byte 6, 0, 6, 1, 5, 2, 4, 3           ; STAMP_SHAKE + 3 (lo scroll non va sotto 0)
 ov_shy: .byte 3, 5, 1, 4, 2, 3, 3, 3
 ; grandezze del timbro (6, 4,5 e 3 volte le lettere): colonna, larghezza, riga, altezza
-ov_stcol: .byte 8, 11, 14
-ov_stw:   .byte 24, 18, 12
+ov_stcol: .byte 1, 6, 11
+ov_stw:   .byte 38, 28, 18
 ov_strow: .byte 8, 9, 9
 ov_sth:   .byte 6, 4, 3
 
@@ -2827,7 +2836,4 @@ big_perfect: .byte BIG_PERFECT
 ; (per over_lo e over_hi, che stanno prima: il ca65 di Debian non accetta ovc::big_perfect in avanti)
 ov_big_perfect = ovc::big_perfect
 
-
-.segment "OVCHARS"
-    .incbin "perfect_chars.bin"
 .segment "CODE"

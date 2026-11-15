@@ -30,7 +30,7 @@
 ; non ci sta.
 ;
 ; A schermo (sm_hud): la barra di ciascun giocatore accanto alle riserve (riga BAR_ROW, caratteri
-; di PRESS START presi in prestito: gialla per settore pieno, cioè quando la mossa è pronta),
+; suoi, vuoti fuori da NEXT: gialla per settore pieno, cioè quando la mossa è pronta),
 ; l'icona gialla della mossa armata accanto alla racchetta (sprite dell'icona del bonus, sm_icon),
 ; la racchetta gialla con la mossa di livello 2, la scritta della mossa nella metà di chi la fa
 ; (sm_labels: trattini da armata, la scritta al colpo), la palla gialla con la coda nel tiro della mossa e a lampi quando RISING STRIKE
@@ -188,7 +188,8 @@ min_tab: .dword T_SM_MIN_STRAIGHT, T_SM_MIN_RISE
 .endproc
 
 ; Inizio della partita NEXT con le mosse accese (next_init, stato già a zero): gesti dimenticati,
-; caratteri della barra al posto di quelli di PRESS START (restano: si vedevano solo nella demo). Le icone si preparano nei primi frame (sm_hud).
+; i caratteri della barra (restano: fuori da NEXT non si vedono). Le icone si preparano nei primi
+; frame (sm_hud).
 .proc sm_init
     lda #$ff
     ldx #7

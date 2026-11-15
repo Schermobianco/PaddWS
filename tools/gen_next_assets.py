@@ -4,8 +4,8 @@ Uso:
     python tools/gen_next_assets.py
 
 Le icone 9x9 sono le stesse di rust/game/src/next_ui.rs (stesso ordine dei codici dei bonus:
-0 TELEPORT, 1 SMASH, 2 SLOW, 3 CURVE, 4 GHOST, 5 SUPER, 6 STEER, 7 BULLET); le scritte usano il font Munro a 10 px
-come quelle dell'attract (tools/gen_attract_assets.py), con una linea di base comune. Per le mosse
+0 TELEPORT, 1 SMASH, 2 SLOW, 3 CURVE, 4 GHOST, 5 SUPER, 6 STEER, 7 BULLET); le scritte usano Press Start 2P
+a 8 px come quelle dell'attract (`text_mask` di tools/gen_attract_assets.py), celle di 8x8 pixel. Per le mosse
 speciali: i loro nomi, "MAX" davanti al nome della mossa di livello 2 e i segni 9x9 della mossa
 armata accanto alla racchetta (SPECIAL_ICONS di next_ui.rs, per il giocatore di sinistra: quello di
 destra li specchia). La schermata HOW TO PLAY ha un generatore suo, tools/gen_howto_assets.py.
@@ -16,9 +16,9 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 
-from gen_attract_assets import verilog_rom
+from gen_attract_assets import text_mask, verilog_rom
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "mister" / "rtl" / "gen" / "pong_next.vh"
@@ -68,19 +68,7 @@ STRINGS = {
 
 
 def text_masks() -> dict[str, Image.Image]:
-    font = ImageFont.truetype(str(ROOT / "assets/fonts/munro.ttf"), 10)
-    ascent, descent = font.getmetrics()
-    raw = {}
-    for name, text in STRINGS.items():
-        w = max(1, round(font.getlength(text)))
-        img = Image.new("L", (w + 4, ascent + descent), 0)
-        ImageDraw.Draw(img).text((0, 0), text, font=font, fill=255)
-        raw[name] = (w, img.point(lambda v: 255 if v > 127 else 0))
-    # righe comuni a tutte le scritte (stessa linea di base), come nell'attract
-    rows = [y for y in range(ascent + descent)
-            if any(img.getpixel((x, y)) for _, img in raw.values() for x in range(img.width))]
-    top, bottom = rows[0], rows[-1]
-    return {name: img.crop((0, top, w, bottom + 1)).convert("1") for name, (w, img) in raw.items()}
+    return {name: text_mask(text) for name, text in STRINGS.items()}
 
 
 def icon_rom() -> str:

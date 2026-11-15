@@ -14,6 +14,28 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+### Modificato
+- **Font arcade per tutte le scritte** (PC, web, Deck e MiSTer): Press Start 2P al posto di Munro,
+  in pixel interi e senza sfumature. Il font del punteggio non cambia. Tutto è a grandezza normale
+  (8 pixel del campo), tranne GAME OVER, YOU WIN e PERFECT, che sono al doppio; anche il nome
+  dell'avversario, HERE COMES / A NEW CHALLENGER!, HIGH SCORES, P1/P2 WINS e CPU WINS sono più
+  piccoli di prima. Le disposizioni sono state rifatte perché nessuna scritta sia tagliata, si
+  sovrapponga o esca dal campo, anche nel campo largo, nella modalità da tavolo e nei titoli di coda.
+- **C64**: le scritte usano il font della ROM dei caratteri della macchina, letto all'avvio (la
+  cartuccia non ne contiene una copia); anche le lettere grandi si costruiscono da lì.
+- **Classifica a 8 righe** con colonne più distanziate e "LV7" al posto di "L7"; si salvano sempre
+  10 posti, e chi entra al 9° o 10° si vede nell'ultima riga con il suo numero.
+- Titoli di coda: "PRESS START 2P FONT  CODEMAN38" al posto della riga di Munro (sul C64 la riga
+  è tolta). Munro resta solo nella versione Python.
+- Pacchetti: accanto al gioco c'è `OFL-PressStart2P.txt` al posto di `OFL-Munro.txt`; quello del
+  C64 non ha più testi di font.
+- MiSTer: un po' meno logica occupata (30.885 ALM, 74%, prima 31.532) e tempi con più margine.
+  Il timbro di PERFECT è più piccolo, e nella modalità da tavolo non c'è più: copriva il punteggio.
+  Le scritte ruotate sono più vicine a chi legge.
+- Le presentazioni degli avversari sul C64 mostrano per intero motto, bonus e FIRST TO prima di
+  finire (prima alcune si interrompevano).
+- Comandi touch nella scelta dei bonus: "TAP BONUS = USE".
+
 ## [4.2.0] - 2026-11-14
 
 ### Aggiunto

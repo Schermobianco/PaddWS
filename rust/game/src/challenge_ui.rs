@@ -25,6 +25,7 @@ use crate::input::{self, PadKeys};
 use crate::next_ui::{draw_capsule, unit};
 use crate::paddle_ui::{Look, PaddlePick, Shape, TWIST_MAX_TILT, draw_paddle, tagline};
 use crate::platform;
+use crate::render::TEXT_1X;
 use crate::scenes::{App, Menu, Play, START_KEYS, Scene};
 use crate::touch;
 
@@ -49,7 +50,15 @@ const SCORES_GLINT: f64 = 0.5;
 const SCORES_GLINT_PERIOD: f64 = 1.6;
 /// prima riga della classifica (centro) e passo, in unità
 const SCORES_ROW_Y: f32 = 110.0;
-const SCORES_ROW_STEP: f32 = 31.0;
+const SCORES_ROW_STEP: f32 = 36.0;
+/// Righe della classifica a schermo (la tabella ne tiene `TABLE_SIZE`): un posto nuovo più in
+/// basso prende il posto dell'ultima.
+const SCORES_ROWS: usize = 8;
+/// Centri delle colonne (posto, iniziali, punti, livello) dal centro dello schermo, in unità a 480
+/// righe: con le scritte a 1x restano almeno due caratteri fra una colonna e l'altra.
+const SCORES_COLS: [f32; 4] = [-165.0, -90.0, 20.0, 145.0];
+/// Dal centro dello schermo al lato esterno delle racchette del posto nuovo, in unità.
+const SCORES_REACH: f32 = 215.0;
 const CHALLENGER_SECONDS: f64 = 3.0;
 /// touch: tocco prolungato nella metà libera con cui entra uno sfidante
 pub(crate) const HOLD_SECONDS: f64 = 1.0;
@@ -150,16 +159,16 @@ pub(crate) fn draw_wins(app: &App, wins: u16, x: f32, y: f32, rotation: f32) {
     let r = &app.renderer;
     let sc = scale(app);
     let font = &app.assets.font_text;
-    let size = WINS_SIZE * sc;
+    let size = T1 * sc;
     let label = format!("{wins} WINS");
-    let (half_w, half_h) = (r.text_width(&label, font, size) / 2.0 + 4.0 * sc, size * 0.45);
+    let (half_w, half_h) = (
+        r.text_width(&label, font, size) / 2.0 + 4.0 * sc,
+        r.text_height(&label, font, size) / 2.0 + 4.0 * sc,
+    );
     let (bw, bh) = if rotation == 0.0 { (half_w, half_h) } else { (half_h, half_w) };
     draw_rectangle(x - bw, y - bh, 2.0 * bw, 2.0 * bh, BLACK);
     r.text_centered(&label, font, size, x, y, rotation, App::color(app.cfg.colors.accent));
 }
-
-/// Altezza della scritta dei duelli vinti (unità a 480 righe, `scale`).
-const WINS_SIZE: f32 = 30.0;
 
 /// Start in questo frame: tasti, tocco o click di un encoder.
 fn start_pressed(app: &App) -> bool {
@@ -302,9 +311,16 @@ fn draw_join_hint(app: &App, free: Side) {
     let prompt = format!("P{} {action}", free as usize + 1);
     let r = &app.renderer;
     let sc = scale(app);
-    let x = if free == Side::Left { r.world_w * 0.15 } else { r.world_w * 0.85 };
+    let font = &app.assets.font_text;
+    // a un sesto dal bordo, ma mai fuori dallo schermo (il campo 4:3 è stretto)
+    let half = r.text_width(&prompt, font, T1 * sc) / 2.0 + 8.0 * sc;
+    let x = if free == Side::Left {
+        (r.world_w * 0.15).max(half)
+    } else {
+        (r.world_w * 0.85).min(r.world_w - half)
+    };
     let gray = App::color(app.cfg.colors.lgray);
-    r.text_centered(&prompt, &app.assets.font_text, 20.0 * sc, x, 20.0 * sc, 0.0, gray);
+    r.text_centered(&prompt, font, T1 * sc, x, 20.0 * sc, 0.0, gray);
 }
 
 /// "HERE COMES A NEW CHALLENGER!": la CHALLENGE si ferma, poi lo sfidante sceglie bonus e
@@ -350,17 +366,17 @@ impl Challenger {
         // lampeggio: le scritte si scambiano accento e bianco, le bande accento e grigio
         let on = (get_time() * 4.0) as i64 % 2 == 0;
         let (main, other) = if on { (accent, white) } else { (white, accent) };
-        let band = 12.0 * sc;
-        for (i, y) in [h / 2.0 - 125.0 * sc, h / 2.0 + 125.0 * sc - band].into_iter().enumerate() {
+        let band = 8.0 * sc;
+        for (i, y) in [h / 2.0 - 80.0 * sc, h / 2.0 + 80.0 * sc - band].into_iter().enumerate() {
             draw_rectangle(0.0, y, w, band, if on == (i == 0) { accent } else { gray });
         }
         let mid = h / sc / 2.0;
-        text(app, "HERE COMES", 50.0, mid - 50.0, other);
-        text(app, "A NEW CHALLENGER!", 62.0, mid + 15.0, main);
+        text(app, "HERE COMES", T1, mid - 34.0, other);
+        text(app, "A NEW CHALLENGER!", T1, mid - 6.0, main);
         if let Some(run) = &app.run {
             let who = if run.side == Side::Left { "P2" } else { "P1" };
             let line = format!("{who} VS CHAMPION   FIRST TO {}", RUNGS[run.level].points);
-            text(app, &line, 24.0, mid + 80.0, white);
+            text(app, &line, T1, mid + 38.0, white);
         }
     }
 }
@@ -395,7 +411,11 @@ pub(crate) fn scale(app: &App) -> f32 {
     app.scale().min(app.renderer.world_h / 480.0)
 }
 
-/// Testo centrato su `y` (coordinate di disegno), nel font dei testi.
+/// Scritte a 1x (8 pixel arcade, `render::TEXT_1X`) nelle unità a 480 righe di `scale`: il
+/// disegno le porta comunque alla grandezza esatta.
+pub(crate) const T1: f32 = 2.0 * TEXT_1X;
+
+/// Testo centrato su `y` (unità a 480 righe), nel font dei testi, alto `size` (`T1`).
 fn text(app: &App, s: &str, size: f32, y: f32, color: Color) {
     let sc = scale(app);
     app.renderer.text_centered(
@@ -510,7 +530,7 @@ impl Intro {
         text(
             app,
             &format!("SCORE {}    HI {}", pad(run.score), pad(app.scores.entries[0].score)),
-            28.0,
+            T1,
             r.world_h / scale(app) - 30.0,
             App::color(app.cfg.colors.white),
         );
@@ -524,12 +544,13 @@ impl Intro {
 }
 
 // Presentazione: righe (unità a 480 righe) della scala, del livello, del centro della racchetta,
-// del nome, del motto, delle capsule e dei loro nomi, dei punti da fare.
-const LADDER_Y: f32 = 14.0;
-const LEVEL_Y: f32 = 52.0;
+// del nome, del motto, delle capsule e dei loro nomi, dei punti da fare. La riga in cima resta
+// all'invito per lo sfidante e ai duelli vinti (a 1x "P2 PRESS START" toccava la scala).
+const LADDER_Y: f32 = 38.0;
+const LEVEL_Y: f32 = 68.0;
 const PAD_Y: f32 = 163.0;
-const NAME_Y: f32 = 254.0;
-const TAG_Y: f32 = 294.0;
+const NAME_Y: f32 = 258.0;
+const TAG_Y: f32 = 286.0;
 const CAP_Y: f32 = 338.0;
 const CAP_NAME_Y: f32 = 366.0;
 const FIRST_Y: f32 = 404.0;
@@ -684,19 +705,19 @@ impl<'a> Stage<'a> {
             } else {
                 format!("LEVEL {} OF {LEVELS}", self.level + 1)
             };
-            self.text_at(&title, 34.0, self.x(0.0), self.y(LEVEL_Y), self.accent);
+            self.text_at(&title, T1, self.x(0.0), self.y(LEVEL_Y), self.accent);
         }
     }
 
     fn name(&self, x: f32, y: f32, color: Color) {
-        self.text_at(self.rung.kind.name(), 52.0, x, y, color);
+        self.text_at(self.rung.kind.name(), T1, x, y, color);
     }
 
     /// Lettere del nome: centro x di disegno di ciascuna (il nome centrato nello schermo).
     fn name_letters(&self) -> Vec<f32> {
         let r = &self.app.renderer;
         let cx = r.world_w / 2.0 + self.shake.0;
-        r.ink_boxes(self.rung.kind.name(), self.font(), 52.0 * self.sc)
+        r.ink_boxes(self.rung.kind.name(), self.font(), T1 * self.sc)
             .into_iter()
             .flatten()
             .map(|(x0, x1)| cx + (x0 + x1) / 2.0)
@@ -706,7 +727,7 @@ impl<'a> Stage<'a> {
     /// Una lettera del nome, centrata in (x, y) di disegno.
     fn letter(&self, i: usize, x: f32, y: f32, color: Color) {
         if let Some(ch) = self.rung.kind.name().chars().nth(i) {
-            self.text_at(&ch.to_string(), 52.0, x, y, color);
+            self.text_at(&ch.to_string(), T1, x, y, color);
         }
     }
 
@@ -719,11 +740,11 @@ impl<'a> Stage<'a> {
         let n = (((self.f - t0) / per) as usize + 1).min(tag.len());
         // la parte scritta, allineata dove starà il motto intero
         let r = &self.app.renderer;
-        let size = 26.0 * self.sc;
+        let size = T1 * self.sc;
         let full = r.text_width(tag, self.font(), size);
         let part = r.text_width(&tag[..n], self.font(), size);
         let cx = r.world_w / 2.0 + self.shake.0 - full / 2.0 + part / 2.0;
-        self.text_at(&tag[..n], 26.0, cx, self.y(TAG_Y), self.gray);
+        self.text_at(&tag[..n], T1, cx, self.y(TAG_Y), self.gray);
     }
 
     fn cap_x(&self, i: usize) -> f32 {
@@ -735,7 +756,7 @@ impl<'a> Stage<'a> {
     }
 
     fn cap_name(&self, i: usize) {
-        self.text_at(self.rung.loadout[i].name(), 22.0, self.cap_x(i), self.y(CAP_NAME_Y), self.accent);
+        self.text_at(self.rung.loadout[i].name(), T1, self.cap_x(i), self.y(CAP_NAME_Y), self.accent);
     }
 
     /// Capsule che arrivano dalla metà campo dell'avversario, una ogni `gap` frame da `t0`, a `sp`
@@ -773,7 +794,7 @@ impl<'a> Stage<'a> {
     fn first_to(&self, at: f32) {
         if self.f >= at {
             let s = format!("FIRST TO {}", self.rung.points);
-            self.text_at(&s, 26.0, self.x(0.0), self.y(FIRST_Y), self.gray);
+            self.text_at(&s, T1, self.x(0.0), self.y(FIRST_Y), self.gray);
         }
     }
 
@@ -812,7 +833,7 @@ impl<'a> Stage<'a> {
         let body = if flash { self.accent } else { self.white };
         self.paddle(self.x(0.0), self.y(PAD_Y + dy), self.pad_height(), 0.0, None, body, false);
         if caught > 0 && f < 96.0 {
-            self.text_at(&format!("+{caught}"), 26.0, self.x(30.0), self.y(PAD_Y + dy - 10.0), self.accent);
+            self.text_at(&format!("+{caught}"), T1, self.x(30.0), self.y(PAD_Y + dy - 10.0), self.accent);
         }
         if f >= 84.0 && (f >= 108.0 || ((f - 84.0) / 4.0) as i64 % 2 == 0) {
             self.name(self.x(0.0), self.y(NAME_Y), self.white);
@@ -862,7 +883,7 @@ impl<'a> Stage<'a> {
             let t = f - 66.0;
             let rot = if t < 24.0 { 0.25 * (t * 0.6).cos() * (1.0 - t / 24.0) } else { 0.0 };
             let r = &self.app.renderer;
-            r.text_centered(self.rung.kind.name(), self.font(), 52.0 * self.sc, self.x(0.0), self.y(NAME_Y), rot, self.white);
+            r.text_centered(self.rung.kind.name(), self.font(), T1 * self.sc, self.x(0.0), self.y(NAME_Y), rot, self.white);
         }
         self.tag_typed(92.0, 1.0);
         self.caps_slide(112.0, 12.0, 60.0);
@@ -902,7 +923,7 @@ impl<'a> Stage<'a> {
         if (72.0..82.0).contains(&f) {
             let t = f - 72.0;
             let r = &self.app.renderer;
-            let half = r.text_width(self.rung.kind.name(), self.font(), 52.0 * self.sc) / 2.0;
+            let half = r.text_width(self.rung.kind.name(), self.font(), T1 * self.sc) / 2.0;
             let cx = r.world_w / 2.0 + self.shake.0;
             for (sp, up) in [(6.0, 5.0), (10.0, 3.0)] {
                 let dy = self.y(NAME_Y + 20.0 - up * t + 0.8 * t * t);
@@ -944,14 +965,14 @@ impl<'a> Stage<'a> {
         if f >= 84.0 {
             // sale da sotto il pavimento: quello che è ancora sotto resta coperto
             let r = &self.app.renderer;
-            let th = r.text_height(self.rung.kind.name(), self.font(), 52.0 * self.sc);
+            let th = r.text_height(self.rung.kind.name(), self.font(), T1 * self.sc);
             let ground = self.y(NAME_Y) + th / 2.0 + self.u;
             let y = (NAME_Y + 50.0 - (f - 84.0) * 2.0).max(NAME_Y);
             self.name(self.x(0.0), self.y(y), self.white);
             let w = r.world_w;
             draw_rectangle(0.0, ground, w, 60.0 * self.sc, BLACK);
             if f < 112.0 {
-                let half = r.text_width(self.rung.kind.name(), self.font(), 52.0 * self.sc) / 2.0 + 16.0 * self.sc;
+                let half = r.text_width(self.rung.kind.name(), self.font(), T1 * self.sc) / 2.0 + 16.0 * self.sc;
                 draw_rectangle(w / 2.0 - half + self.shake.0, ground, 2.0 * half, 2.0 * self.sc, self.gray);
             }
         }
@@ -1045,14 +1066,14 @@ impl<'a> Stage<'a> {
                 self.name(gx, self.y(NAME_Y), Color { a, ..self.accent });
             }
             let color = if (34.0..36.0).contains(&f) { self.accent } else { self.white };
-            self.text_at(name, 52.0, x, self.y(NAME_Y), color);
+            self.text_at(name, T1, x, self.y(NAME_Y), color);
         }
         let tag = tagline(self.rung.kind);
         if let Some((x, fade)) = dash(44.0, self.x(340.0), self.x(0.0), 3.0) {
             for (gx, a) in ghosts(self.x(340.0), x, fade) {
-                self.text_at(tag, 26.0, gx, self.y(TAG_Y), Color { a, ..self.accent });
+                self.text_at(tag, T1, gx, self.y(TAG_Y), Color { a, ..self.accent });
             }
-            self.text_at(tag, 26.0, x, self.y(TAG_Y), self.gray);
+            self.text_at(tag, T1, x, self.y(TAG_Y), self.gray);
         }
         for i in 0..3 {
             let t0 = 58.0 + 6.0 * i as f32;
@@ -1210,17 +1231,17 @@ impl Clear {
         } else {
             format!("LEVEL {} CLEAR", self.level + 1)
         };
-        text(app, &title, 56.0, 120.0, accent);
+        text(app, &title, T1, 140.0, accent);
         if last {
-            text(app, "YOU BEAT EVERY PADDLE", 30.0, 175.0, white);
+            text(app, "YOU BEAT EVERY PADDLE", T1, 172.0, white);
         }
-        text(app, &format!("WIN BONUS  +{}", self.win), 32.0, 250.0, white);
+        text(app, &format!("WIN BONUS  +{}", self.win), T1, 232.0, white);
         if self.perfect > 0 {
-            text(app, &format!("PERFECT  +{}", self.perfect), 32.0, 295.0, accent);
+            text(app, &format!("PERFECT  +{}", self.perfect), T1, 264.0, accent);
         }
         let score = app.run.as_ref().map_or(0, |r| r.score);
-        text(app, &format!("SCORE {}", pad(score)), 36.0, 360.0, white);
-        text(app, "PRESS START", 22.0, 430.0, gray);
+        text(app, &format!("SCORE {}", pad(score)), T1, 324.0, white);
+        text(app, "PRESS START", T1, 430.0, gray);
         if let Some(run) = app.run.as_ref().filter(|_| !last) {
             draw_join_hint(app, run.side.opponent());
         }
@@ -1317,7 +1338,7 @@ impl Continue {
             crate::attract::draw_crt_close(r, t, total);
             return;
         }
-        text(app, "CONTINUE?", 56.0, 120.0, accent);
+        text(app, "CONTINUE?", T1, 140.0, accent);
         let sc = scale(app);
         let r = &app.renderer;
         let digit = format!("{}", (self.left.ceil() as u32).min(9));
@@ -1347,13 +1368,13 @@ impl Continue {
             "INSERT COIN"
         };
         if blink {
-            text(app, prompt, 32.0, 370.0, white);
+            text(app, prompt, T1, 370.0, white);
         }
         if let Some(run) = &app.run {
             text(
                 app,
                 &format!("LEVEL {}   SCORE RESETS TO 0", run.level + 1),
-                22.0,
+                T1,
                 420.0,
                 gray,
             );
@@ -1513,13 +1534,13 @@ impl Initials {
             App::color(colors.accent),
         );
         app.renderer.fill(BLACK);
-        text(app, "NEW RECORD!", 56.0, 100.0, accent);
-        text(app, &format!("SCORE {}", pad(self.best.0)), 34.0, 160.0, white);
+        text(app, "NEW RECORD!", T1, 120.0, accent);
+        text(app, &format!("SCORE {}", pad(self.best.0)), T1, 160.0, white);
         let prompt = match self.loser {
             Some(side) => format!("P{} ENTER YOUR INITIALS", side as usize + 1),
             None => "ENTER YOUR INITIALS".to_string(),
         };
-        text(app, &prompt, 28.0, 215.0, gray);
+        text(app, &prompt, T1, 215.0, gray);
         let sc = scale(app);
         let r = &app.renderer;
         let blink = (get_time() * 4.0) as i64 % 2 == 0;
@@ -1527,24 +1548,27 @@ impl Initials {
             let c = match i.cmp(&self.pos) {
                 std::cmp::Ordering::Less => self.name[i],
                 std::cmp::Ordering::Equal => LETTERS[self.letter],
-                std::cmp::Ordering::Greater => b'.',
+                std::cmp::Ordering::Greater => b' ',
             };
-            let x = r.world_w / 2.0 + (i as f32 - 1.0) * 70.0 * sc;
+            let x = r.world_w / 2.0 + (i as f32 - 1.0) * 32.0 * sc;
             let color = if i == self.pos { accent } else { white };
+            // una lineetta sotto ogni posto: a 1x i puntini dei posti vuoti quasi non si vedevano
+            let (lw, u) = (r.text_1x(), unit(app));
+            draw_rectangle(x - lw / 2.0, 290.0 * sc + lw * 0.75, lw, u, if i == self.pos { accent } else { gray });
             if i != self.pos || blink {
                 r.text_centered(
                     &(c as char).to_string(),
                     &app.assets.font_text,
-                    90.0 * sc,
+                    T1 * sc,
                     x,
-                    310.0 * sc,
+                    290.0 * sc,
                     0.0,
                     color,
                 );
             }
         }
         if !app.touch {
-            text(app, "UP DOWN TO CHOOSE, FORWARD TO CONFIRM", 20.0, 420.0, gray);
+            text(app, "UP DOWN TO CHOOSE, FORWARD TO CONFIRM", T1, 420.0, gray);
         }
     }
 }
@@ -1614,21 +1638,30 @@ impl Scores {
         );
         let dim = Color::from_rgba(0x3A, 0x3A, 0x3A, 255);
         app.renderer.fill(BLACK);
-        text(app, "HIGH SCORES", 40.0, 55.0, accent);
+        text(app, "HIGH SCORES", T1, 64.0, accent);
         let t = SCORES_SECONDS - self.left;
         let sc = scale(app);
         let r = &app.renderer;
         let font = &app.assets.font_text;
         let w = r.world_w;
         let ball_y = |t: f64| SCORES_BALL_Y + SCORES_BALL_VY * t as f32;
-        let rows = app.scores.entries.len().min(TABLE_SIZE);
+        let w2 = w / 2.0;
+        // posti a schermo: i primi `SCORES_ROWS`, con il posto nuovo al posto dell'ultimo se è più giù
+        let shown: Vec<usize> = (0..SCORES_ROWS.min(TABLE_SIZE))
+            .map(|k| match self.highlight {
+                Some(h) if k + 1 == SCORES_ROWS && h >= k => h,
+                _ => k,
+            })
+            .collect();
+        let rows = shown.len();
         // posto nuovo: racchette in arrivo (0..1) e riflesso (posizione 0..1 sulla riga, se c'è)
         let mark = (t - SCORES_MARK).max(0.0);
         let glint = (mark > SCORES_MARK_IN)
             .then(|| ((mark - SCORES_MARK_IN) % SCORES_GLINT_PERIOD) / SCORES_GLINT)
             .filter(|&g| g < 1.0);
-        for (i, e) in app.scores.entries.iter().enumerate().take(TABLE_SIZE) {
-            let row_y = SCORES_ROW_Y + i as f32 * SCORES_ROW_STEP;
+        for (k, &i) in shown.iter().enumerate() {
+            let e = &app.scores.entries[i];
+            let row_y = SCORES_ROW_Y + k as f32 * SCORES_ROW_STEP;
             let y = row_y * sc;
             // secondi da quando la palla ha toccato la riga
             let lit = t - ((row_y - SCORES_BALL_Y) / SCORES_BALL_VY) as f64;
@@ -1647,24 +1680,24 @@ impl Scores {
             let level = if e.level as usize > LEVELS {
                 "ALL".to_string()
             } else {
-                format!("L{}", e.level)
+                format!("LV{}", e.level)
             };
             let name = String::from_utf8_lossy(&e.name).to_string();
             for (s, x) in [
-                (format!("{}", i + 1), 0.24),
-                (name, 0.36),
-                (pad(shown), 0.56),
-                (level, 0.76),
+                (format!("{}", i + 1), SCORES_COLS[0]),
+                (name, SCORES_COLS[1]),
+                (pad(shown), SCORES_COLS[2]),
+                (level, SCORES_COLS[3]),
             ] {
-                let (size, cx) = (30.0 * sc, w * x);
+                let (size, cx) = (T1 * sc, w2 + x * sc);
                 r.text_centered(&s, font, size, cx, y, 0.0, color);
                 // riflesso: le lettere sotto la banda che attraversa la riga diventano bianche
                 if let (true, Some(g)) = (new, glint) {
-                    let band = w * (0.18 + 0.66 * g as f32);
+                    let band = w2 + SCORES_REACH * sc * (2.0 * g as f32 - 1.0);
                     for (ch, ink) in s.chars().zip(r.ink_boxes(&s, font, size)) {
                         if let Some((x0, x1)) = ink
-                            && cx + x1 > band - 0.02 * w
-                            && cx + x0 < band + 0.02 * w
+                            && cx + x1 > band - 14.0 * sc
+                            && cx + x0 < band + 14.0 * sc
                         {
                             r.text_centered(&ch.to_string(), font, size, cx + (x0 + x1) / 2.0, y, 0.0, white);
                         }
@@ -1675,8 +1708,9 @@ impl Scores {
             if new && mark > 0.0 {
                 let p = 1.0 - (1.0 - (mark / SCORES_MARK_IN).min(1.0) as f32).powi(3);
                 let (pw, ph) = (8.0 * sc, 30.0 * sc);
-                let left = -pw + p * (w * 0.17 + pw);
-                let right = w - p * (w - w * 0.83);
+                let reach = SCORES_REACH * sc;
+                let left = -pw + p * (w2 - reach + pw);
+                let right = w - p * (w2 - reach);
                 draw_rectangle(left, y - ph / 2.0, pw, ph, accent);
                 draw_rectangle(right - pw, y - ph / 2.0, pw, ph, accent);
             }
@@ -1684,7 +1718,7 @@ impl Scores {
         // la palla, con una scia, finché non ha passato l'ultima riga
         let bottom = SCORES_ROW_Y + rows as f32 * SCORES_ROW_STEP;
         if ball_y(t) < bottom + 20.0 {
-            let (x0, x1) = (w * 0.16, w * 0.84);
+            let (x0, x1) = (w2 - (SCORES_REACH + 12.0) * sc, w2 + (SCORES_REACH + 12.0) * sc);
             let span = x1 - x0;
             let ball_x = |t: f64| {
                 let p = (t as f32 * SCORES_BALL_VX * w) % (2.0 * span);
@@ -1703,7 +1737,7 @@ impl Scores {
             "INSERT COIN"
         };
         if ball_y(t) >= bottom + 20.0 && (get_time() * 2.0) as i64 % 2 == 0 {
-            text(app, prompt, 24.0, r.world_h / sc - 25.0, gray);
+            text(app, prompt, T1, r.world_h / sc - 25.0, gray);
         }
     }
 }

@@ -17,7 +17,7 @@ use crate::challenge_ui::Intro;
 use crate::gesture::Dir;
 use crate::input;
 use crate::next_ui::{draw_meter, unit};
-use crate::render::{GameFont, Renderer};
+use crate::render::{GameFont, Renderer, TEXT_1X};
 use crate::scenes::{App, Menu, Play, START_KEYS, Scene};
 use crate::touch;
 
@@ -229,7 +229,7 @@ fn legend(device: Device, two_players: bool) -> Vec<(Icon, &'static str)> {
             (Icon::Mouse(Button::Middle), "USE"),
         ],
         Device::Keyboard => vec![(key(2), "DASH"), (key(3), "SELECT"), (key(4), "USE")],
-        Device::Touch => vec![(Icon::Tap, "2ND FINGER = DASH"), (Icon::Capsule, "TAP A BONUS = USE")],
+        Device::Touch => vec![(Icon::Tap, "2ND FINGER = DASH"), (Icon::Capsule, "TAP BONUS = USE")],
     }
 }
 
@@ -431,7 +431,7 @@ impl Px<'_> {
         self.shape((cx - rad, cy - rad, cx + rad, cy + rad), inside, Some(c), None);
     }
 
-    /// Testo della Munro alto `size` pixel arcade (10 o 20), centrato in verticale su `cy`.
+    /// Testo alto `size` pixel arcade (`TEXT_1X`), centrato in verticale su `cy`.
     fn text(&self, text: &str, size: f32, x: i32, cy: f32, align: Align, c: Color) {
         let size = size * self.u;
         let w = self.r.text_width(text, self.font, size);
@@ -444,7 +444,7 @@ impl Px<'_> {
         self.r.text_centered(text, self.font, size, cx, cy * self.u, 0.0, c);
     }
 
-    /// Larghezza di un testo della Munro in pixel arcade.
+    /// Larghezza di un testo in pixel arcade.
     fn text_width(&self, text: &str, size: f32) -> i32 {
         (self.r.text_width(text, self.font, size * self.u) / self.u).round() as i32
     }
@@ -523,7 +523,7 @@ fn arcade(px: &Px, (cx, cy): (i32, i32), label: &str, pressed: bool, small: bool
         Some(if pressed { RED_LIGHT } else { RED }),
         pressed.then_some(ink.white),
     );
-    px.text(label, 10.0, cx, top as f32 + 0.5, Align::Center, ink.white);
+    px.text(label, TEXT_1X, cx, top as f32 + 0.5, Align::Center, ink.white);
 }
 
 /// Freccia di pixel di un tasto, centrata in (cx, cy), verso (dx, dy).
@@ -557,7 +557,7 @@ fn key(px: &Px, (cx, cy): (i32, i32), cap: Cap, pressed: bool, ink: Ink) {
     px.frame(cx - 8, cy - 7 + off, cx + 8, cy + 6 + off, CAP_EDGE);
     px.rect(cx - 7, cy - 6 + off, cx + 7, cy - 6 + off, ink.white);
     match cap {
-        Cap::Text(t) => px.text(t, 10.0, cx, (cy + off) as f32 + 0.5, Align::Center, BLACK),
+        Cap::Text(t) => px.text(t, TEXT_1X, cx, (cy + off) as f32 + 0.5, Align::Center, BLACK),
         Cap::Arrow(dx, dy) => cap_arrow(px, (cx, cy + off), (dx, dy), BLACK),
     }
 }
@@ -701,10 +701,10 @@ fn draw_command(
     }
     let last = x - pitch;
     let (plus, fin) = if pitch >= 30 { (28, 48) } else { (15, 30) };
-    px.text("+", 20.0, last + plus, cy as f32 - 0.5, Align::Center, ink.white);
+    px.text("+", TEXT_1X, last + plus, cy as f32 + 0.5, Align::Center, ink.white);
     draw_step(px, dash[0], (last + fin, cy), phase.step == Some(moves.len()), ink);
     if let Some(label) = label {
-        px.text(label, 10.0, last + fin + 16, cy as f32 + 1.5, Align::Left, ink.gray);
+        px.text(label, TEXT_1X, last + fin + 16, cy as f32 + 1.5, Align::Left, ink.gray);
     }
 }
 
@@ -747,36 +747,33 @@ fn draw_shot(px: &Px, special: Special, cy: i32, phase: Phase, ink: Ink) {
     }
 }
 
+/// Larghezza che un simbolo della legenda occupa a destra del suo centro, margine compreso.
+fn icon_right(icon: Icon) -> i32 {
+    match icon {
+        Icon::Arcade(_) => 10,
+        Icon::Key(_) | Icon::Capsule => 11,
+        Icon::Keys(..) => 30,
+        Icon::Mouse(_) | Icon::Tap => 9,
+    }
+}
+
 /// Simbolo della legenda centrato in (x, y); restituisce la larghezza occupata a destra del centro.
 fn draw_icon(px: &Px, icon: Icon, (x, y): (i32, i32), ink: Ink) -> i32 {
     match icon {
-        Icon::Arcade(label) => {
-            arcade(px, (x, y - 3), label, false, true, ink);
-            10
-        }
-        Icon::Key(cap) => {
-            key(px, (x, y - 1), cap, false, ink);
-            11
-        }
+        Icon::Arcade(label) => arcade(px, (x, y - 3), label, false, true, ink),
+        Icon::Key(cap) => key(px, (x, y - 1), cap, false, ink),
         Icon::Keys(p1, p2) => {
             key(px, (x, y - 1), p1, false, ink);
             key(px, (x + 19, y - 1), p2, false, ink);
-            30
         }
-        Icon::Mouse(button) => {
-            mouse(px, (x, y), Some(button), true, ink);
-            9
-        }
-        Icon::Tap => {
-            tap(px, (x, y), false, ink);
-            9
-        }
+        Icon::Mouse(button) => mouse(px, (x, y), Some(button), true, ink),
+        Icon::Tap => tap(px, (x, y), false, ink),
         Icon::Capsule => {
             px.rounded((x - 7, y - 7, x + 7, y + 7), 2, Some(BLACK), Some(ink.white));
-            px.text("+", 10.0, x, y as f32 + 0.5, Align::Center, ink.white);
-            11
+            px.text("+", TEXT_1X, x, y as f32 + 0.5, Align::Center, ink.white);
         }
     }
+    icon_right(icon)
 }
 
 /// La presentazione.
@@ -856,34 +853,34 @@ impl HowTo {
         let device = self.device.unwrap_or_else(|| Device::of(app));
         // in due sulla tastiera: i tasti di tutti e due
         let two_players = device == Device::Keyboard && (self.duel || (!app.vs_cpu() && app.players == 2));
-        px.text("HOW TO PLAY", 20.0, W / 2, 12.0, Align::Center, ink.accent);
+        px.text("HOW TO PLAY", TEXT_1X, W / 2, 12.0, Align::Center, ink.accent);
         px.text(
             &format!("SUPER MOVES - {}", device.name()),
-            10.0,
+            TEXT_1X,
             W / 2,
-            28.0,
+            25.0,
             Align::Center,
             ink.gray,
         );
         for (row, special) in Special::ALL.into_iter().enumerate() {
             let y0 = 42 + 70 * row as i32;
             px.frame(8, y0 - 4, W - 9, y0 + 62, FRAME);
-            px.text(special.name(), 20.0, 16, y0 as f32 + 8.0, Align::Left, ink.accent);
-            px.text(effect(special), 10.0, 16, y0 as f32 + 22.5, Align::Left, ink.white);
+            px.text(special.name(), TEXT_1X, 16, y0 as f32 + 8.5, Align::Left, ink.accent);
+            px.text(effect(special), TEXT_1X, 16, y0 as f32 + 20.5, Align::Left, ink.white);
             let cy = y0 + 44;
             let p1 = steps(device, special, 0);
             let phase = Phase::at(self.t, p1.len() - 1);
             if two_players {
-                for (player, x) in [(0, 16), (1, 106)] {
+                for (player, x) in [(0, 16), (1, 110)] {
                     px.text(
                         &format!("P{}", player + 1),
-                        10.0,
+                        TEXT_1X,
                         x,
                         cy as f32 + 1.5,
                         Align::Left,
                         ink.gray,
                     );
-                    draw_command(&px, &steps(device, special, player), (x + 18, cy), 26, None, phase, ink);
+                    draw_command(&px, &steps(device, special, player), (x + 26, cy), 26, None, phase, ink);
                 }
             } else {
                 let label = if device == Device::Touch { "TAP" } else { "DASH" };
@@ -892,15 +889,22 @@ impl HowTo {
             draw_shot(&px, special, cy, phase, ink);
         }
         self.draw_costs(app, &px, ink);
-        // legenda dei comandi dei bonus
-        let (mut x, y) = (22, 208);
-        for (icon, label) in legend(device, two_players) {
+        // legenda dei comandi dei bonus, centrata: ogni simbolo sporge di `ICON_LEFT` a sinistra del
+        // suo centro e di `icon_right` a destra, poi la scritta
+        const ICON_LEFT: i32 = 8;
+        const GAP: i32 = 10;
+        let items = legend(device, two_players);
+        let item_w = |&(icon, label): &(Icon, &str)| ICON_LEFT + icon_right(icon) + 3 + px.text_width(label, TEXT_1X);
+        let total = items.iter().map(item_w).sum::<i32>() + GAP * (items.len() as i32 - 1);
+        let (mut x, y) = ((W - total) / 2 + ICON_LEFT, 208);
+        for item in &items {
+            let (icon, label) = *item;
             let w = draw_icon(&px, icon, (x, y), ink);
-            px.text(label, 10.0, x + w + 3, y as f32 + 0.5, Align::Left, ink.gray);
-            x += w + 13 + px.text_width(label, 10.0) + 10;
+            px.text(label, TEXT_1X, x + w + 3, y as f32 + 0.5, Align::Left, ink.gray);
+            x += item_w(item) + GAP;
         }
         if (get_time() * 2.0) as i64 % 2 == 0 {
-            px.text(device.skip(), 10.0, W / 2, 232.0, Align::Center, ink.gray);
+            px.text(device.skip(), TEXT_1X, W / 2, 232.0, Align::Center, ink.gray);
         }
     }
 
@@ -910,15 +914,15 @@ impl HowTo {
         let max = (p.super_meter_max / p.super_cost.max(1)).min(MAX_SPECIAL_LEVEL) >= MAX_SPECIAL_LEVEL;
         let costs: &[(i32, &str, u8, &str)] = if max {
             &[
-                (58, "HALF", p.super_cost, "= MOVE"),
-                (196, "FULL", p.super_meter_max, "= MAX"),
+                (62, "HALF", p.super_cost, "= MOVE"),
+                (214, "FULL", p.super_meter_max, "= MAX"),
             ]
         } else {
-            &[(127, "COST", p.super_cost, "= MOVE")]
+            &[(134, "COST", p.super_cost, "= MOVE")]
         };
         let y = 186;
         for &(x, name, fill, what) in costs {
-            px.text(name, 10.0, x - 6, y as f32 + 3.5, Align::Right, ink.white);
+            px.text(name, TEXT_1X, x - 6, y as f32 + 3.5, Align::Right, ink.white);
             let u = px.u;
             draw_meter(
                 (px.ox + x as f32 * u, y as f32 * u, 38.0 * u, 6.0 * u),
@@ -935,7 +939,7 @@ impl HowTo {
             } else {
                 ink.white
             };
-            px.text(what, 10.0, x + 42, y as f32 + 3.5, Align::Left, c);
+            px.text(what, TEXT_1X, x + 42, y as f32 + 3.5, Align::Left, c);
         }
     }
 }
