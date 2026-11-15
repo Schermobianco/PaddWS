@@ -13,7 +13,7 @@ avversari, con bonus e mosse speciali, in cui un amico può entrare a sfidarti q
 PC, nel browser, su un cabinato Raspberry Pi, sul MiSTer FPGA e sul Commodore 64, e ovunque si gioca
 la stessa identica partita.
 
-<p align="center"><img src="docs/badges/powered-by-sid.svg" alt="Powered by SID 6581 / 8580" width="222"></p>
+<p align="center"><img src="docs/badges/powered-by-sid.svg" alt="Powered by SID 6581 / 8580" width="250"></p>
 
 Musica, effetti e voci escono da un SID, il chip sonoro del Commodore 64: quello vero sul C64,
 quello del core C64 sul MiSTer e un SID scritto in Rust su PC, Raspberry e web.
