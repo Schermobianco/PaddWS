@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="454" height="126" viewBox="0 0 454 126" shape-rendering="crispEdges" role="img" aria-label="Powered by SID 6581 / 8580">
+<svg xmlns="http://www.w3.org/2000/svg" width="454" height="138" viewBox="0 0 454 138" shape-rendering="geometricPrecision" role="img" aria-label="Powered by SID 6581 / 8580">
 <title>Powered by SID 6581 / 8580</title>
 <!-- un adesivo: angoli arrotondati, ombra morbida e l'angolo in basso a destra che si stacca -->
 <defs>
@@ -12,7 +12,7 @@
 <stop offset="0" stop-color="#000" stop-opacity=".38"/><stop offset=".5" stop-color="#000" stop-opacity=".12"/><stop offset="1" stop-color="#000" stop-opacity="0"/>
 </linearGradient>
 </defs>
-<g transform="translate(6,4)">
+<g transform="translate(6,10) rotate(-1.5 220.0 56.0)">
 <path d="M 6,0 H 434 Q 440,0 440,6 V 80 L 408,112 H 6 Q 0,112 0,106 V 6 Q 0,0 6,0 Z" transform="translate(2,3)" fill="#000" fill-opacity=".35" filter="url(#blur)" shape-rendering="geometricPrecision"/>
 <path d="M 407,112 L 440,79 L 442,82 L 442,114 L 410,114 Z" fill="url(#gap)" filter="url(#soft)" shape-rendering="geometricPrecision"/>
 <g clip-path="url(#sticker)">
