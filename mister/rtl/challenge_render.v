@@ -280,6 +280,20 @@ endfunction
 // continue: y della pallina (parabola di 60 frame, alta 30 pixel: s (60 - s) * 17 / 512) e GAME OVER
 // che si scrive (una lettera ogni 5 frame dal 12, cursore) e si chiude (dal frame 158)
 localparam integer CONT_Y = 84;                  // continue: riga della cifra
+localparam integer CONT_W = 3 * C, CONT_H = 3 * CH_GLYPH_H;   // la cifra a scala 3 (24 x 24)
+// v / 3 per v < 24 (la cifra a scala 3), con una tabella: niente moltiplicatori
+function [9:0] div3(input [4:0] v);
+    case (v)
+        5'd0, 5'd1, 5'd2:    div3 = 10'd0;
+        5'd3, 5'd4, 5'd5:    div3 = 10'd1;
+        5'd6, 5'd7, 5'd8:    div3 = 10'd2;
+        5'd9, 5'd10, 5'd11:  div3 = 10'd3;
+        5'd12, 5'd13, 5'd14: div3 = 10'd4;
+        5'd15, 5'd16, 5'd17: div3 = 10'd5;
+        5'd18, 5'd19, 5'd20: div3 = 10'd6;
+        default:             div3 = 10'd7;
+    endcase
+endfunction
 localparam integer CL_X = 80, CL_V = 184;        // livello superato: etichette e numeri
 reg signed [10:0] cont_ball_y;
 reg [6:0]  go_cols;
@@ -291,7 +305,7 @@ reg [7:0]  go_a;
 reg [3:0]  go_n;
 always @(posedge clk) begin
     cb_m = {6'd0, cont_sub} * (12'd60 - {6'd0, cont_sub});
-    cont_ball_y <= CONT_Y + CH_GLYPH_H - 6 - ((cb_m * 17) >> 9);
+    cont_ball_y <= CONT_Y + CONT_H - 6 - ((cb_m * 17) >> 9);
     go_a = intro_age - 8'd12;
     go_n = (intro_age < 8'd12) ? 4'd0 : (go_a >= 8'd40) ? GAME_OVER_LETTERS : ((go_a * 13) >> 6) + 4'd1;
     go_cols <= (go_n == 4'd0) ? 7'd0 : game_over_l1(go_n - 4'd1);
@@ -892,11 +906,15 @@ always @(*) begin
                     col = BLACK;
             end else begin
                 if (`CENTER1(ch_cont_lit, CH_CONT_W, 40)) col = ACCENT;
-                put(W / 2 - C / 2, CONT_Y, {2'd0, cont_digit}, 2'd0, WHITE);
+                // la cifra a scala 3: come put, con la divisione per 3 della tabella
+                if (span(x, W / 2 - CONT_W / 2, 11'd0, CONT_W) && span(y, CONT_Y, 11'd0, CONT_H)) begin
+                    g_on = 1'b1; g_code = {2'd0, cont_digit}; g_col = WHITE;
+                    g_dx = div3(x - (W / 2 - CONT_W / 2)); g_dy = div3(y - CONT_Y);
+                end
                 // pallina che rimbalza a destra del numero: tocca terra a ogni secondo, quando il
                 // numero cambia; negli ultimi tre secondi diventa gialla
-                if (in_box(W / 2 + C / 2 + 12, cont_ball_y, 7'd6, 7'd6)) col = (cont_digit <= 4'd2) ? ACCENT : WHITE;
-                if (in_box(W / 2 + C / 2 + 9, CONT_Y + CH_GLYPH_H, 7'd12, 7'd1)) col = GRAY;
+                if (in_box(W / 2 + CONT_W / 2 + 12, cont_ball_y, 7'd6, 7'd6)) col = (cont_digit <= 4'd2) ? ACCENT : WHITE;
+                if (in_box(W / 2 + CONT_W / 2 + 9, CONT_Y + CONT_H, 7'd12, 7'd1)) col = GRAY;
                 if (blink < 6'd30 &&
                     (coin_prompt ? `CENTER1(ch_coin_lit, CH_COIN_W, 160) : `CENTER1(ch_press_lit, CH_PRESS_W, 160)))
                     col = WHITE;
