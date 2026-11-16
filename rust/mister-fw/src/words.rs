@@ -270,7 +270,10 @@ pub fn encode_state<S: Sink>(m: &Match, events: u16, w: &mut S) {
         }
     }
     // Paddle::motion (serve a TWIST), in tutte le modalità
-    w.put_all(KINDS_AT + KIND_WORDS - 2, &[m.paddles[0].motion as u32, m.paddles[1].motion as u32]);
+    w.put_all(
+        KINDS_AT + KIND_WORDS - 2,
+        &[m.paddles[0].motion as u32, m.paddles[1].motion as u32],
+    );
 
     w.put_all(
         W_BOOST_H0,

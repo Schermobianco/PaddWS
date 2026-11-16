@@ -32,7 +32,14 @@
 	input signed [21:0] voice3,
 	input signed [21:0] ext_in,
 
-	output       [17:0] audio
+	output       [17:0] audio,
+
+	// PaddWS: uscita di ogni voce per gli oscilloscopi (rete di OMEGA, JUKEBOX), come take_voice_out
+	// del SID Rust (rust/sid/src/chip.rs): l'uscita del filtro se è l'unica voce che ci passa, se no
+	// la voce diretta, nella scala della via diretta (16 bit); aggiornata una volta per campione
+	output reg signed [15:0] scope1 = 0,
+	output reg signed [15:0] scope2 = 0,
+	output reg signed [15:0] scope3 = 0
 );
 
 localparam signed [23:0] MIXER_DC_6581 = 24'((-1 << 20)/18);
@@ -198,6 +205,10 @@ always @(posedge clk) begin
 				tmix_c_r <= tmix_c;
 			end
 		7: begin
+				// PaddWS: oscilloscopi delle voci (vedi le porte)
+				scope1 <= (Res_Filt[2:0] == 3'b001) ? tmix_c_r : 16'(voice1 >>> 7);
+				scope2 <= (Res_Filt[2:0] == 3'b010) ? tmix_c_r : 16'(voice2 >>> 7);
+				scope3 <= (Res_Filt[2:0] == 3'b100) ? tmix_c_r : 16'(voice3 >>> 7);
 				// Audio output: aout = vol*amix; result ready at state 8.
 				// In the real SID, the signal is inverted first in the mixer
 				// op-amp, and then again in the volume control op-amp.

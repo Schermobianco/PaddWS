@@ -35,12 +35,14 @@ db_url = https://raw.githubusercontent.com/Schermobianco/PaddWS/db/db.json.zip
 
 ## Classifica sulla SD
 
-La classifica della scalata di NEXT, insieme allo sblocco dell'allenamento, si salva nella NVRAM,
+La classifica della scalata di NEXT, insieme agli sblocchi (allenamento, OMEGA, jukebox), si salva
+nella NVRAM,
 come nei core arcade:
 `/media/fat/config/nvram/PaddWS.nvm`. Con *Autosave scores: On* (il default), dopo ogni modifica il
 MiSTer la salva la prossima volta che si apre l'OSD; con *Off* solo con *Save settings* del menu di
 sistema. Funziona solo avviando il core dal `.mra`: dal `.rbf` la classifica dura finché il core
-resta acceso. Un file guasto viene ignorato e resta la classifica iniziale.
+resta acceso. Un file guasto viene ignorato e resta la classifica iniziale. I core fino alla 4.3.0
+scartano un file con un posto ALL+ (OMEGA battuto).
 
 ## Comandi e opzioni
 
@@ -52,7 +54,9 @@ manopola, più **A**.
 
 Nell'OSD (F12) ci sono la modalità (*Game type*: NEXT, EVO, Classic), i giocatori (*Players*, solo
 in Classic ed EVO), l'avversario dell'allenamento (*Opponent*, solo in NEXT e dopo averlo
-sbloccato arrivando al finale), Free Play, la difficoltà, i punteggi
+sbloccato arrivando al finale; *Secret* è OMEGA, e finché non è sbloccato non cambia niente), il
+jukebox (*Jukebox*, nascosto finché non è sbloccato; con *On* il core mostra solo il jukebox),
+Free Play, la difficoltà, i punteggi
 dritti o rivolti ai giocatori per il tavolo, i suoni dell'attract, il SID 8580 o 6581, i volumi di
 musica ed effetti, il salvataggio della classifica, la luminosità del bianco, il comando delle
 racchette (joystick, paddle o spinner) e la velocità dello spinner. Scanline e filtri sono quelli
@@ -85,10 +89,9 @@ Python. Non si modificano a mano: si cambia il generatore e si rilancia.
 | `pong_fonts.vh` | `tools/gen_mister_assets.py` |
 | `pong_attract.vh` | `tools/gen_attract_assets.py` |
 | `pong_next.vh` | `tools/gen_next_assets.py` |
-| `pong_challenge.vh` | `tools/gen_challenge_assets.py` |
 | `howto_*.hex`, `pong_howto.vh` | `tools/gen_howto_assets.py` |
 | `ending_*.hex`, `pong_ending.vh` | `tools/gen_ending_assets.py` |
-| `title_*.hex`, `pong_titles.vh` | `tools/gen_mister_titles.py` (da `assets/titles`, `tools/gen_title_assets.py`) |
+| `ui_font.hex`, `ui_gfx.hex`, `ui_gfx.vh` (e `rust/mister-ui/src/assets.rs`) | `tools/gen_mister_ui.py` (da `assets/titles`, `pong_*.vh`, `howto_*`, `ending_*`) |
 | `sid_music.hex`, `sid_music.vh` | `tools/gen_sid_music.py` |
 | `sid_voices.hex`, `sid_voices.vh` | `tools/gen_voices.py --mister` |
 
@@ -102,8 +105,8 @@ Il firmware richiede Rust con il target `riscv32im-unknown-none-elf` (l'ambiente
 .\mister\sim\run.ps1
 ```
 
-Rigenera con `paddws-trace` le 29 tracce di riferimento del core Rust (Classic, EVO, NEXT, tipi di
-racchetta, mosse speciali, CPU, spinner) e le fa giocare al firmware su un emulatore RV32IM
+Rigenera con `paddws-trace` le 31 tracce di riferimento del core Rust (Classic, EVO, NEXT, tipi di
+racchetta, mosse speciali, CPU, spinner, OMEGA) e le fa giocare al firmware su un emulatore RV32IM
 (`paddws-fw-sim`): lo stato deve coincidere bit per bit a ogni tick. Controlla anche, con
 `gen_mister_fw.py --check`, che il firmware in `rtl/gen` sia allineato ai sorgenti. Su Linux, nella
 CI e su forge si usa `sim/run.sh`.
@@ -130,9 +133,14 @@ esecuzioni seguenti; `-f` lo ignora, `-u` mette le scritte dritte. Gli scenari p
   finale (con lo sblocco dell'allenamento);
 - `wins`, `train`: il contatore delle sfide vinte di fila e l'allenamento;
 - `nvram`: la classifica e lo sblocco sulla SD con un `hps_io` finto;
+- `omega`, `jukebox`: OMEGA dal GAME OVER del GUARDIAN a HARD fino al finale, e il jukebox;
 - `win`, `perfect`, `paddle`, `spin`, `mute`, `music`: fine partita, paddle e spinner, audio.
 
 L'elenco completo, con quello che ogni scenario controlla, è in testa a `sim/frames/frames.cpp`.
+Le simulazioni lunghe si possono interrompere: con `PONG_SAVE_EVERY=N` lo stato si salva ogni N
+frame e con `PONG_RESUME=1` si riparte dall'ultimo salvataggio. Le schermate del firmware si
+provano anche senza Verilator, sulle foto dello stato registrate con `PONG_UILOG`:
+`cargo run -p paddws-mister-ui --bin paddws-ui-sim -- LOG ...`.
 
 Altri banchi di prova, più lenti o più specifici:
 
@@ -151,17 +159,23 @@ indicata da `PADDWS_COMPILERS`.
 - `PaddWS.sv`: collegamento al framework `sys/` di Template_MiSTer (OSD, joystick, PLL, video, audio).
 - `rtl/pong_top.v`: sequenza attract, partite, gettoni, scalata e allenamento; i 4 tick a 240 Hz di ogni frame.
 - `rtl/pong_logic_rv.v`: il processore (`rtl/vexriscv/`), la RAM del firmware e i registri.
-- `rtl/*_render.v`: campo, attract, NEXT, HOW TO PLAY, scalata e finale.
+- `rtl/pong_render.v`, `rtl/next_render.v`: il campo di gioco e le aggiunte di NEXT;
+  `rtl/ending_render.v`: i fuochi d'artificio del finale.
+- `rtl/ui_render.v` e `rust/mister-ui`: lo schermo a oggetti (rettangoli, scritte e immagini su
+  un buffer di riga) e le schermate che il firmware ci scrive ogni frame.
+- `rtl/sid_scope.v`: le voci del SID per la rete di OMEGA e gli oscilloscopi del jukebox.
 - `rtl/pong_sid.v` e `rtl/sid/`: player musicale e voci, con il SID del core C64 del MiSTer.
 - `rtl/ch_nvram.v`: la classifica sulla SD.
 - `sim/`: tracce, simulatore dei frame, banchi di prova del processore e del SID.
 
 ## Da sapere
 
-- Il margine di timing è sottile e i DSP sono tutti occupati: niente divisioni né moduli nell'RTL,
-  e i renderer calcolano posizioni e limiti una volta per frame, poi solo confronti.
+- Niente divisioni né moduli nell'RTL: i renderer calcolano posizioni e limiti una volta per
+  frame, poi solo confronti.
 - I 4 tick di un frame partono all'inizio del vblank e devono finire prima della fotografia della
-  riga 261, che i renderer usano per tutto il frame successivo.
+  riga 261, che i renderer usano per tutto il frame successivo. Dopo i tick il firmware costruisce
+  le schermate da una foto dello stato: un ingresso fuori partita che arriva dopo la foto si vede
+  un frame dopo.
 - I bit 24, 25 e 26 dello status dell'OSD sono liberi, ma nei CFG vecchi possono valere 1: non
   vanno riusati.
 - `sim/tb_pong_top.v` (Icarus) non è più allineato alle porte di `pong_top`: al suo posto si usa il

@@ -18,7 +18,10 @@
 //! traccia, $D417 e $D418 sono nei byte 6 e 7 degli strumenti nel filtro, che il generatore mette
 //! solo nelle voci 1 e 2: la voce 3, degli effetti, non passa mai dal filtro. Il taglio è a 16 bit
 //! con 5 bit di frazione. Il player tiene una copia di $D417 e $D418 e li riscrive, con il taglio,
-//! solo quando cambiano; all'inizio di ogni canzone $D418 = $0F e $D417 = 0.
+//! solo quando cambiano; all'inizio di ogni canzone $D418 = $0F e $D417 = 0. Il wobble (0xC0) riporta
+//! il taglio al valore di partenza ogni P passi serviti, al posto della scivolata di quel passo.
+//!
+//! La ROM arriva a 8 KB: indirizzi a 13 bit.
 
 use crate::rom::Rom;
 
@@ -30,7 +33,11 @@ const CUTOFF: u8 = 0xA0;
 /// scivolata del taglio: i due byte dopo (16 bit con segno) si sommano al taglio a 16 bit a ogni
 /// passo della canzone
 const SWEEP: u8 = 0xB0;
+/// wobble: 0xC0 + i 3 bit bassi del taglio di partenza, gli 8 alti, il periodo in passi (0 = spento)
+const WOBBLE: u8 = 0xC0;
 const RESTART: u8 = 0xFE;
+/// indirizzi della ROM (13 bit)
+const ADDR: u16 = 0x1FFF;
 
 #[derive(Clone, Copy, Debug, Default)]
 struct Chan {
@@ -106,6 +113,10 @@ pub struct Player {
     /// copia di $D417 e $D418 come sono nel SID
     cutoff: u16,
     sweep: u16,
+    /// wobble: taglio di partenza, periodo (0 = spento) e passi che mancano al ritorno
+    wob_start: u16,
+    wob_period: u8,
+    wob_count: u8,
     res_filt: u8,
     vol_mode: u8,
 }
@@ -140,6 +151,9 @@ impl Player {
             retune: false,
             cutoff: 0,
             sweep: 0,
+            wob_start: 0,
+            wob_period: 0,
+            wob_count: 0,
             res_filt: 0,
             vol_mode: 0x0F,
         }
@@ -270,6 +284,7 @@ impl Player {
             self.res_filt = 0;
             self.vol_mode = 0x0F;
             self.sweep = 0;
+            self.wob_period = 0;
         }
         // musica appena rallentata o tornata normale: le note in corso cambiano ottava subito
         if song && self.retune {
@@ -300,10 +315,21 @@ impl Player {
             }
         }
         if serve_song {
-            // la scivolata del taglio, prima dei canali (un taglio letto in questo passo vale subito,
-            // la scivolata dal passo dopo), senza saturazione (il generatore controlla i limiti);
-            // il taglio si scrive sempre
-            if self.sweep != 0 {
+            // il wobble e la scivolata del taglio, prima dei canali (un taglio letto in questo passo
+            // vale subito, la scivolata dal passo dopo), senza saturazione (il generatore controlla
+            // i limiti); il taglio si scrive sempre. Quando il wobble torna al taglio di partenza la
+            // scivolata di questo passo salta
+            let mut back = false;
+            if self.wob_period != 0 {
+                self.wob_count -= 1;
+                if self.wob_count == 0 {
+                    self.wob_count = self.wob_period;
+                    self.cutoff = self.wob_start;
+                    back = true;
+                    self.write_cutoff(w);
+                }
+            }
+            if self.sweep != 0 && !back {
                 self.cutoff = self.cutoff.wrapping_add(self.sweep);
                 self.write_cutoff(w);
             }
@@ -347,7 +373,7 @@ impl Player {
                 let dur = self.rom.byte(ptr.wrapping_add(1));
                 let ch = &mut self.ch[c];
                 ch.cnt = dur;
-                ch.ptr = ptr.wrapping_add(2) & 0xFFF;
+                ch.ptr = ptr.wrapping_add(2) & ADDR;
                 if cmd == PAUSE {
                     let wave = ch.wave;
                     self.wr(c, 4, wave, w); // pausa: gate chiuso
@@ -358,21 +384,30 @@ impl Player {
                 return;
             } else if cmd >> 4 == 7 {
                 self.ch[c].ins = cmd & 0x0F;
-                self.ch[c].ptr = ptr.wrapping_add(1) & 0xFFF;
+                self.ch[c].ptr = ptr.wrapping_add(1) & ADDR;
             } else if cmd == SLIDE {
                 self.ch[c].slide = self.rom.byte(ptr.wrapping_add(1));
-                self.ch[c].ptr = ptr.wrapping_add(2) & 0xFFF;
+                self.ch[c].ptr = ptr.wrapping_add(2) & ADDR;
             } else if cmd >> 4 == 9 {
                 self.ch[c].arp = cmd & 0x03;
-                self.ch[c].ptr = ptr.wrapping_add(1) & 0xFFF;
+                self.ch[c].ptr = ptr.wrapping_add(1) & ADDR;
             } else if cmd >> 4 == CUTOFF >> 4 {
                 self.cutoff = (self.rom.byte(ptr.wrapping_add(1)) as u16) << 8 | ((cmd & 7) as u16) << 5;
-                self.ch[c].ptr = ptr.wrapping_add(2) & 0xFFF;
+                self.ch[c].ptr = ptr.wrapping_add(2) & ADDR;
                 self.write_cutoff(w);
             } else if cmd == SWEEP {
                 self.sweep =
                     self.rom.byte(ptr.wrapping_add(1)) as u16 | (self.rom.byte(ptr.wrapping_add(2)) as u16) << 8;
-                self.ch[c].ptr = ptr.wrapping_add(3) & 0xFFF;
+                self.ch[c].ptr = ptr.wrapping_add(3) & ADDR;
+            } else if cmd >> 4 == WOBBLE >> 4 {
+                self.wob_start = (self.rom.byte(ptr.wrapping_add(1)) as u16) << 8 | ((cmd & 7) as u16) << 5;
+                self.wob_period = self.rom.byte(ptr.wrapping_add(2));
+                self.wob_count = self.wob_period;
+                self.ch[c].ptr = ptr.wrapping_add(3) & ADDR;
+                if self.wob_period != 0 {
+                    self.cutoff = self.wob_start;
+                    self.write_cutoff(w);
+                }
             } else if cmd == RESTART {
                 self.ch[c].ptr = self.ch[c].start;
             } else {

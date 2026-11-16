@@ -1,34 +1,24 @@
 // Finale della CHALLENGE, quando si batte l'ultimo avversario (come rust/game/src/ending_ui.rs, su uno
 // schermo 320x240), al posto della schermata CHAMPION e prima delle iniziali. Sei parti in sequenza:
 // 0 CONGRATULATIONS! (lampeggia) e, dopo un secondo, YOU WIN! (la voce la fa partire pong_top);
-// 1 la sfilata dei sette avversari, uno al secondo, con il KO rosso mezzo secondo dopo (su PC e
-//   C64 il timbro inclinato DEFEATED, che a 320x240 su colonne di 45 pixel non sta); le racchette e
-//   i nomi li disegna next_render (ingressi `parade`, e `parade_ko` per spegnere le battute); qui il
-//   titolo e i KO;
+// 1 la sfilata dei sette avversari, uno al secondo, con il KO rosso mezzo secondo dopo;
 // 2 il punteggio: SCORE che sale in 3 s, CHAMPION BONUS in 1 s, poi TOTAL;
 // 3 YOU ARE THE PADD WS CHAMPION con i fuochi d'artificio;
 // 4 i titoli di coda, che salgono dal basso; 5 THE END (lampeggia).
-// Solo bianco, giallo e rosso sul nero: le scintille si diradano invece di scurirsi.
 //
-// Grafica da tools/gen_ending_assets.py (pong_ending.vh):
-// - scritte: righe di bitmap a 1 bit in Press Start 2P a 8 px (ending_text.hex, 320 pixel per riga), a
-//   scala 1 o 2 (i titoli grandi), con le cifre "0123456789+" e il segno KO in fondo; la mappa delle righe
-//   (ending_map.hex), letta una volta per riga nella cancellazione orizzontale, dice per ogni riga
-//   dello schermo quale riga di bitmap, dove, a che scala, di che colore e se è una riga del
-//   punteggio. Le parti fisse hanno una finestra di righe nella mappa, i titoli di coda una finestra
-//   che scorre;
-// - fuochi d'artificio: i punti di ending_ui.rs per ogni fuoco e frame a 15 Hz, già sulla griglia di
-//   celle 2x2 pixel (ending_fw.hex). Un disegnatore li scrive in un framebuffer 160x120 a 2 bit con
-//   due pagine: a ogni frame dei fuochi (4 frame video) cancella la pagina nascosta e la ridisegna
-//   (circa 21.000 cicli), poi le pagine si scambiano all'inizio del vblank.
-// Nessuna divisione (scala 1 o 2: uno scorrimento); i conteggi a tempo con contatori. Pipeline di due cicli come howto_render: indirizzi delle memorie dai contatori video,
-// poi i colori (un pixel dura 3 cicli).
+// Qui restano i tempi (parti, battute della sfilata, conteggi, scorrimento dei titoli: pong_top ne usa
+// gli impulsi per voce, suoni e cambio di modo) e i fuochi d'artificio; scritte, cifre, KO e racchette
+// della sfilata le disegna lo schermo a oggetti (rust/mister-ui, ending.rs) dallo stato `st_*`.
+//
+// Fuochi d'artificio (tools/gen_ending_assets.py, ending_fw.hex): i punti di ending_ui.rs per ogni fuoco
+// e frame a 15 Hz, già sulla griglia di celle 2x2 pixel. Un disegnatore li scrive in un framebuffer
+// 160x120 a 2 bit con due pagine: a ogni frame dei fuochi (4 frame video) cancella la pagina nascosta e
+// la ridisegna (circa 21.000 cicli), poi le pagine si scambiano all'inizio del vblank. L'uscita (due
+// cicli di ritardo, un pixel dura 3 cicli) è il colore dei fuochi o il nero.
 
 `timescale 1ns / 1ps
 
 module ending_render #(
-    parameter TEXT_ROM = "rtl/gen/ending_text.hex",
-    parameter MAP_ROM = "rtl/gen/ending_map.hex",
     parameter FW_ROM = "rtl/gen/ending_fw.hex"
 ) (
     input  wire        clk,
@@ -39,15 +29,17 @@ module ending_render #(
     input  wire [8:0]  vc,
     input  wire [23:0] score,          // punti prima del premio del campione
     input  wire [23:0] bonus,          // premio del campione (vittoria e partita perfetta dell'ultimo livello)
-    output reg  [23:0] rgb,
-    output reg         top,            // pixel del KO: sopra le racchette di next_render
-    output wire        parade,         // sfilata in corso: racchette e nomi di next_render
-    output wire [2:0]  parade_n,       // avversari già entrati nella sfilata (0-7)
-    output wire [2:0]  parade_ko,      // ... e quanti hanno già il KO (racchetta spenta)
+    output reg  [23:0] rgb,            // fuochi d'artificio (o nero)
     output reg         say,            // impulso: la voce "YOU WIN!"
     output reg  [1:0]  beat,           // impulso della sfilata: bit 0 entra un avversario, bit 1 un timbro
     output wire        skip_ok,        // Start può saltare il finale
-    output reg         done            // impulso: finale concluso
+    output reg         done,           // impulso: finale concluso
+    // stato per lo schermo a oggetti: parte, frame della parte, battute, scritte a comparsa, lampeggio,
+    // SCORE e premio che salgono, scorrimento dei titoli
+    output wire [31:0] st_seq,
+    output wire [23:0] st_score,
+    output wire [23:0] st_bonus,
+    output wire [9:0]  st_scroll
 );
 
 `include "pong_ending.vh"
@@ -55,7 +47,6 @@ module ending_render #(
 localparam [23:0] BLACK = 24'h000000, WHITE = 24'hFFFFFF, YELLOW = 24'hFFD225, RED = 24'hE62828;
 localparam [2:0]  P_CONGRATS = 3'd0, P_PARADE = 3'd1, P_SCORE = 3'd2, P_CHAMPION = 3'd3, P_CREDITS = 3'd4,
                   P_THE_END = 3'd5;
-localparam integer ROW_BYTES = 40;                   // 320 pixel per riga di bitmap
 localparam integer FB_CELLS = 160 * 120;             // una pagina del framebuffer
 
 // ------------------------------------------------------------------ parti e tempi (una volta per frame)
@@ -92,9 +83,6 @@ wire [10:0] pf_n = last_f ? 11'd0 : pf + 11'd1;
 wire [23:0] step_s = (score >> 8) + (score >> 9) - (score >> 12);
 wire [23:0] step_b = (bonus >> 6) + (bonus >> 10);
 
-assign parade = active && part == P_PARADE;
-assign parade_n = (beats + 4'd1) >> 1;
-assign parade_ko = beats[3:1];
 assign skip_ok = part != P_CONGRATS || pf >= END_SKIP_AFTER;
 
 always @(posedge clk) begin
@@ -185,217 +173,30 @@ always @(posedge clk) begin
     end
 end
 
-// ------------------------------------------------------------------ cifre del punteggio (BCD)
+assign st_seq = {11'd0, fl, stage, beats, part, pf};
+assign st_score = disp_s;
+assign st_bonus = disp_b;
+assign st_scroll = scroll;
 
-// doppio dabble a turno su SCORE, premio e totale, un bit per ciclo (come bin_to_bcd di
-// challenge_render): ogni valore si aggiorna ogni 75 cicli
-reg  [1:0]  bsel = 2'd0;
-reg  [23:0] bsh = 24'd0;
-reg  [27:0] bacc = 28'd0;
-reg  [4:0]  bcount = 5'd0;
-reg  [27:0] bcd_s = 28'd0, bcd_b = 28'd0, bcd_t = 28'd0;
-reg  [27:0] badj;
-wire [23:0] total = score + bonus;
-integer     bd;
-always @(*) begin
-    badj = bacc;
-    for (bd = 0; bd < 7; bd = bd + 1)
-        if (bacc[4 * bd +: 4] >= 4'd5) badj[4 * bd +: 4] = bacc[4 * bd +: 4] + 4'd3;
-end
-always @(posedge clk) begin
-    if (bcount == 5'd0) begin
-        bsh <= (bsel == 2'd0) ? disp_s : (bsel == 2'd1) ? disp_b : total;
-        bacc <= 28'd0;
-        bcount <= 5'd24;
-    end else begin
-        {bacc, bsh} <= {badj[26:0], bsh, 1'b0};
-        bcount <= bcount - 5'd1;
-        if (bcount == 5'd1) begin
-            case (bsel)
-                2'd0: bcd_s <= {badj[26:0], bsh[23]};
-                2'd1: bcd_b <= {badj[26:0], bsh[23]};
-                default: bcd_t <= {badj[26:0], bsh[23]};
-            endcase
-            bsel <= (bsel == 2'd2) ? 2'd0 : bsel + 2'd1;
-        end
-    end
-end
+// ------------------------------------------------------------------ fuochi a schermo
 
-// ------------------------------------------------------------------ memorie
-
-reg [7:0]  trom [0:END_TEXT_BYTES-1];
-reg [31:0] mrom [0:END_MAP_SIZE-1];
 reg [15:0] from [0:END_FW_SIZE-1];
-initial begin
-    $readmemh(TEXT_ROM, trom);
-    $readmemh(MAP_ROM, mrom);
-    $readmemh(FW_ROM, from);
-end
+initial $readmemh(FW_ROM, from);
 // framebuffer dei fuochi: due pagine da 160x120 celle, 0 niente, 1 bianco, 2 giallo, 3 rosso
 reg [1:0]  fb [0:2*FB_CELLS-1];
 
-// ------------------------------------------------------------------ mappa delle righe
-
-// la riga dopo questa (le righe fuori dallo schermo non contano)
-wire [8:0] vn = (vc == 9'd261) ? 9'd0 : vc + 9'd1;
-
-// riga della mappa per la riga dello schermo dopo (vn) nella parte in corso (valid = 0: riga vuota)
-reg        m_valid;
-reg [10:0] m_idx;
-reg [10:0] m_c;
-always @(*) begin
-    m_valid = 1'b0;
-    m_idx = 11'd0;
-    m_c = {2'd0, vn} + {1'b0, scroll} - END_CRED_C0;
-    case (part)
-        P_CONGRATS: begin m_valid = vn - END_WIN0_TOP < END_WIN0_H; m_idx = END_WIN0_BASE + vn - END_WIN0_TOP; end
-        P_PARADE:   begin m_valid = vn - END_WIN1_TOP < END_WIN1_H; m_idx = END_WIN1_BASE + vn - END_WIN1_TOP; end
-        P_SCORE:    begin m_valid = vn - END_WIN2_TOP < END_WIN2_H; m_idx = END_WIN2_BASE + vn - END_WIN2_TOP; end
-        P_CHAMPION: begin m_valid = vn - END_WIN3_TOP < END_WIN3_H; m_idx = END_WIN3_BASE + vn - END_WIN3_TOP; end
-        P_CREDITS:  begin m_valid = m_c < END_CRED_LEN; m_idx = END_CRED_BASE + m_c; end
-        default:    begin m_valid = vn - END_WIN5_TOP < END_WIN5_H; m_idx = END_WIN5_BASE + vn - END_WIN5_TOP; end
-    endcase
-end
-reg [10:0] maddr = 11'd0;
-reg [31:0] mdata = 32'd0;
-reg        mval = 1'b0;
-reg [31:0] ent = 32'd0;              // parola della mappa della riga in corso
-always @(posedge clk) begin
-    mdata <= mrom[maddr];
-    // nella cancellazione orizzontale: indirizzo per la riga dopo, poi la parola (tre cicli dopo)
-    if (hc == 9'd340) begin
-        maddr <= m_idx;
-        mval <= m_valid;
-    end
-    if (hc == 9'd350) ent <= mval ? mdata : 32'd0;
-end
-
-wire [8:0] e_row = ent[8:0];
-wire [3:0] e_g = ent[12:9];
-wire [8:0] e_x = ent[21:13];
-wire [1:0] e_scale = ent[23:22];
-wire [1:0] e_color = ent[25:24];
-wire [1:0] e_group = ent[27:26];
-wire [1:0] e_num = ent[29:28];
-
-// ------------------------------------------------------------------ pixel, primo ciclo: indirizzi
-
-// d / scala (1 o 2)
-function [8:0] unscale(input [8:0] d, input [1:0] s);
-    unscale = (s == 2'd2) ? {1'b0, d[8:1]} : d;
-endfunction
-
-// cifra j (0 = la più a sinistra) di un numero BCD a 7 cifre
-function [3:0] bcd_digit(input [27:0] v, input [2:0] j);
-    bcd_digit = v[4 * (6 - j) +: 4];
-endfunction
-
-function [8:0] col_x(input [2:0] k);
-    case (k)
-        3'd0: col_x = END_COL0;
-        3'd1: col_x = END_COL1;
-        3'd2: col_x = END_COL2;
-        3'd3: col_x = END_COL3;
-        3'd4: col_x = END_COL4;
-        3'd5: col_x = END_COL5;
-        default: col_x = END_COL6;
-    endcase
-endfunction
-
 wire [8:0] x = hc;
 wire [8:0] y = vc;
-
-reg        t_on;                     // pixel di una scritta o di una cifra (prima del bit della bitmap)
-reg [8:0]  t_row;
-reg [8:0]  t_col;
-reg        digits;                   // pixel nella zona delle cifre di una riga del punteggio
-reg [8:0]  u;
-reg [2:0]  dj;
-reg [3:0]  dv;
-reg [8:0]  dx;
-// timbri: quello della colonna (porta A) e il vicino dalla parte del pixel (porta B)
-reg        s_rows, sa_on, sb_on;
-reg [2:0]  sk, sn;
-reg [8:0]  sa_x, sb_x;
-always @(*) begin
-    t_on = 1'b0;
-    t_row = e_row;
-    t_col = 8'd0;
-    dj = 3'd0;
-    dv = 4'd0;
-    dx = 9'd0;
-    // una sola divisione per la scala: dalla x della scritta o da quella della prima cifra
-    digits = e_num != 2'd0 && x >= END_DIG_X0;
-    u = unscale(x - (digits ? END_DIG_X0 : e_x), e_scale);
-    if (e_scale != 2'd0 && e_group <= stage) begin
-        if (digits) begin
-            // riga del punteggio: sette celle di cifre (il premio con il "+" davanti)
-            dj = (u >= END_CELL) + (u >= 2 * END_CELL) + (u >= 3 * END_CELL) + (u >= 4 * END_CELL) +
-                 (u >= 5 * END_CELL) + (u >= 6 * END_CELL);
-            dx = u - dj * END_CELL;
-            dv = (e_num == 2'd1) ? bcd_digit(bcd_s, dj) : (e_num == 2'd2) ? bcd_digit(bcd_b, dj) : bcd_digit(bcd_t, dj);
-            if (e_num == 2'd2 && dj == 3'd0) dv = 4'd10;
-            t_on = u < 7 * END_CELL;
-            t_row = END_STRIP_ROW0 + e_g;
-            t_col = dv * END_CELL + dx;
-        end else begin
-            t_on = x >= e_x && u < ROW_BYTES * 8;
-            t_col = u;
-        end
-    end
-    // colonna del timbro sotto il pixel e il vicino verso cui sta il pixel
-    sk = (x >= (END_COL0 + END_COL1) / 2) + (x >= (END_COL1 + END_COL2) / 2) + (x >= (END_COL2 + END_COL3) / 2) +
-         (x >= (END_COL3 + END_COL4) / 2) + (x >= (END_COL4 + END_COL5) / 2) + (x >= (END_COL5 + END_COL6) / 2);
-    sn = (x >= col_x(sk)) ? sk + 3'd1 : sk - 3'd1;      // 7 o "-1" (7) = nessuno
-    s_rows = part == P_PARADE && y - END_STAMP_Y0 < END_STAMP_H;
-    sa_x = x - (col_x(sk) - 9'd1 - END_STAMP_W / 2);
-    sb_x = x - (col_x(sn) - 9'd1 - END_STAMP_W / 2);
-    sa_on = s_rows && sk < beats[3:1] && sa_x < END_STAMP_W;
-    sb_on = s_rows && sn != 3'd7 && sn < beats[3:1] && sb_x < END_STAMP_W;
-    if (s_rows) begin
-        t_row = END_STAMP_ROW0 + (y - END_STAMP_Y0);
-        t_col = sa_x;
-    end
-end
-
-// bitmap: porta A per scritte, cifre e timbro della colonna, porta B per il timbro vicino (riga * 40)
-wire [14:0] ta = {t_row, 5'd0} + {t_row, 3'd0} + t_col[8:3];
-wire [14:0] tb = {t_row, 5'd0} + {t_row, 3'd0} + sb_x[8:3];
-reg  [7:0]  tqa = 8'd0, tqb = 8'd0;
-// fuochi: la pagina mostrata, cella (x / 2, y / 2)
+// la pagina mostrata, cella (x / 2, y / 2)
 wire [15:0] fa = (front ? FB_CELLS : 0) + {y[8:1], 7'd0} + {2'd0, y[8:1], 5'd0} + {8'd0, x[8:1]};
 reg  [1:0]  fq = 2'd0;
-reg  [2:0]  ca = 3'd0, cb = 3'd0;
-reg         q_text = 1'b0, q_sa = 1'b0, q_sb = 1'b0, q_fw = 1'b0;
-reg  [1:0]  q_color = 2'd0;
+reg         q_fw = 1'b0;
 always @(posedge clk) begin
-    tqa <= trom[ta];
-    tqb <= trom[tb];
     fq <= fb[fa];
-    ca <= t_col[2:0];
-    cb <= sb_x[2:0];
-    q_text <= active && t_on && !s_rows;
-    q_sa <= active && sa_on;
-    q_sb <= active && sb_on;
     q_fw <= active && part == P_CHAMPION && x < 9'd320 && y < 9'd240;
-    q_color <= e_color;
 end
-
-// ------------------------------------------------------------------ pixel, secondo ciclo: colori
-
-wire text_px = q_text && tqa[ca];
-wire stamp_px = (q_sa && tqa[ca]) || (q_sb && tqb[cb]);
-always @(posedge clk) begin
-    top <= stamp_px;
-    if (text_px)
-        rgb <= (q_color == 2'd0) ? WHITE : (q_color == 2'd1) ? YELLOW : (q_color == 2'd2) ? RED : (fl ? WHITE : YELLOW);
-    else if (stamp_px)
-        rgb <= RED;
-    else if (q_fw && fq != 2'd0)
-        rgb <= (fq == 2'd1) ? WHITE : (fq == 2'd2) ? YELLOW : RED;
-    else
-        rgb <= BLACK;
-end
+always @(posedge clk)
+    rgb <= (q_fw && fq != 2'd0) ? ((fq == 2'd1) ? WHITE : (fq == 2'd2) ? YELLOW : RED) : BLACK;
 
 // ------------------------------------------------------------------ disegnatore dei fuochi
 

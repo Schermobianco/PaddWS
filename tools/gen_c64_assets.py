@@ -27,7 +27,8 @@ Uscite in c64/gen/ (vanno nel repository, così l'assemblaggio non richiede Pyth
                 scritte della HOW TO PLAY per l'assembler
   voiceN.bin    campioni del nome dell'avversario di CHALLENGE per il tipo di racchetta N (ordine
                 di `PaddleKind`), dai .raw4 di assets/sounds/voice (tools/gen_voices.py): src/voice.s
-                li mette con il player nei file voce della cartuccia
+                li mette con il player nei file voce della cartuccia; voice7.bin è il nome di
+                OMEGA (omega.raw4, senza parte della coda quasi muta: OMEGA_VOICE_MAX)
   ready.bin, go.bin  "READY?" e "GO!" del conto alla rovescia di CHALLENGE, dagli stessi .raw4: nel
                 file voce dell'avversario del primo livello
   you_win.bin   "YOU WIN!": il banco della vittoria della cartuccia (tools/make_crt.py), per il
@@ -55,6 +56,7 @@ Uso:  .venv\\Scripts\\python tools\\gen_c64_assets.py   (richiede Pillow)
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -514,12 +516,17 @@ def supers_assets(lines: list[str], bar: list[int]) -> None:
                 return int(line.split("=")[1].split(";")[0])
         raise SystemExit(f"{SID_VH}: manca {name}")
 
-    starts = sorted(int(line.split("12'd")[1].rstrip(";")) for line in vh.splitlines() if "12'd" in line)
+    # indirizzi della ROM: "sid_song_start = 13'd320;" (la larghezza segue la ROM)
+    def addr(line: str) -> int | None:
+        m = re.search(r"sid_(?:song|fx)_start = \d+'d(\d+);", line)
+        return int(m.group(1)) if m else None
+
+    starts = sorted(a for a in map(addr, vh.splitlines()) if a is not None)
     assert param("SID_ROM_SIZE") == len(rom), "sid_music.hex e sid_music.vh non vanno insieme"
     fx = {}
     for line in vh.splitlines():
-        if "sid_fx_start =" in line and "3'd" in line:
-            fx[int(line.split("3'd")[1].split(":")[0])] = int(line.split("12'd")[1].rstrip(";"))
+        if "sid_fx_start =" in line and line.strip().startswith("3'd"):
+            fx[int(line.split("3'd")[1].split(":")[0])] = addr(line)
     for name in ("MOVE", "SPECIAL"):
         start = fx[param(f"SID_FX_{name}")]
         end = min([s for s in starts if s > start] + [len(rom)])
@@ -1032,20 +1039,44 @@ def ending_assets(charset: bytes, font: list[int]) -> tuple[bytes, list[str]]:
     return bytes(out), lines
 
 
+OMEGA_VOICE_MAX = 2760   # campioni del nome di OMEGA nel suo file voce (fino a VOL_TAB: src/voice.s)
+
+
 def voice_files() -> dict[str, bytes]:
     """Campioni delle voci di CHALLENGE, uno per tipo di racchetta: i .raw4 come sono (16 livelli in
     due nibble, 8 = silenzio), controllati perché il player li suona fino all'ultimo byte."""
     files = {}
+    # coda quasi muta: campioni a 7-9, cioè al più un passo dal silenzio
+    quiet = lambda b: 7 <= b >> 4 <= 9 and 7 <= b & 15 <= 9
+
+    def trimmed(raw: bytes) -> bytes:
+        end = len(raw)
+        while end > 1 and quiet(raw[end - 1]):
+            end -= 1
+        return raw[:end]
+
+    # i nomi senza la coda quasi muta: con il player che scala i campioni al VOLUME del menu
+    # (VOL_TAB di src/voice.s) il file del primo livello non ci sta più nelle sue 16 pagine
     for kind, name in enumerate(VOICE_NAMES):
         raw = (VOICES / f"{name.lower()}.raw4").read_bytes()
         assert raw, name    # (che con il player stia in VOICE_PAGES pagine lo controlla voice.s)
-        files[f"voice{kind}.bin"] = raw
+        files[f"voice{kind}.bin"] = trimmed(raw)
+    # OMEGA (il file voce in più, VOICE_KIND = 7 di src/voice.s): il suo nome è lungo (1,13 s) e
+    # fra VOICE_BASE e la tabella del volume (VOL_TAB) ci sta solo senza la coda quasi muta,
+    # tolta fino a OMEGA_VOICE_MAX byte
+    raw = (VOICES / "omega.raw4").read_bytes()
+    end = len(raw)
+    while end > OMEGA_VOICE_MAX and quiet(raw[end - 1]):
+        end -= 1
+    assert end <= OMEGA_VOICE_MAX, f"omega.raw4: {end} byte oltre la coda muta, più di {OMEGA_VOICE_MAX}"
+    files[f"voice{len(VOICE_NAMES)}.bin"] = raw[:end]
     # READY e GO del conto alla rovescia, uguali per tutti: solo nel file del primo livello; YOU
-    # WIN e PERFECT nel banco della vittoria (tools/make_crt.py), per il GAME OVER e il finale
+    # WIN e PERFECT nel banco della vittoria (tools/make_crt.py), per il GAME OVER e il finale.
+    # READY e GO senza la coda quasi muta, come i nomi
     for name in ("ready", "go", "you_win", "perfect"):
         raw = (VOICES / f"{name}.raw4").read_bytes()
         assert raw, name
-        files[f"{name}.bin"] = raw
+        files[f"{name}.bin"] = trimmed(raw) if name in ("ready", "go") else raw
     return files
 
 
@@ -1374,6 +1405,13 @@ def title_name(kind: str) -> tuple[list[Point], int, int, int, list[int]]:
     if kind == "RUSH":
         # le scie grigie solo dove non ci sono lettere
         return title_points(px, wy | {R_GRAY: C_GRAY, R_DGRAY: C_DGRAY}, ox=2), 7, 2, 12, [C_WHITE, C_GRAY, C_DGRAY]
+    if kind == "OMEGA":
+        # senza le ombre (rosso scuro): il sigillo giallo con le gambe rosse e le due barre rosse
+        # nelle prime due righe di celle, OMEGA bianco nelle due sotto (le righe vuote tolte)
+        def rows(y: int) -> list[int]:
+            return [y] if y < 14 else [] if y < 18 else [y - 2] if y < 32 else []
+        pts = title_points(px, {R_WHITE: C_WHITE, R_YELLOW: C_YELLOW, R_RED: C_RED}, rows=rows)
+        return pts, 10, 4, 11, [C_WHITE, C_YELLOW, C_RED]
     assert kind == "GUARDIAN", kind
     # la malta nera nelle righe dei corsi di mattoni, piena (gialla) nei giunti: le lettere si
     # leggono meglio
@@ -1422,6 +1460,24 @@ def title_plate() -> list[Point]:
             for y in range(17, 31) for x in range(3, w - 3) if px[y][x] in (R_WHITE, R_YELLOW)]
     assert {y + 1 for y in range(17, 31) for x in range(3, w - 3) if px[y][x] == R_YELLOW} == set(range(24, 32)), \
         "targa: la parte gialla di A NEW CHALLENGER! non è una riga di celle"
+    return pts
+
+
+def title_warning() -> list[Point]:
+    """WARNING! (l'allarme prima di OMEGA) in 24 x 5 celle come la targa del nuovo sfidante, con il
+    suo bordo: le lettere grandi bianche nelle righe di celle 1 e 2 e gialle nella 3 (sul PC la metà
+    è più in alto: qui sta su una riga di celle), le ombre tolte."""
+    px = title_roles("warning")
+    w = len(px[0])
+    ring = (R_YELLOW, R_DYELLOW)
+    pts = []
+    for y0, dy in ((0, 3), (34, -1)):       # angoli e bordo in alto e in basso, come la targa
+        for y in range(y0, y0 + 4):
+            pts += [(x, y + dy, C_YELLOW) for x in range(w) if px[y][x] in ring]
+    for y in range(7, 33):
+        pts += [(x, y, C_YELLOW) for x in list(range(3)) + list(range(w - 3, w)) if px[10][x] in ring]
+    pts += [(x, y + 1, C_WHITE if y + 1 < 24 else C_YELLOW)
+            for y in range(7, 31) for x in range(3, w - 3) if px[y][x] in (R_WHITE, R_YELLOW)]
     return pts
 
 
@@ -1529,8 +1585,34 @@ def title_assets(lines: list[str]) -> tuple[bytes, list[tuple[str, list[list[int
     assert len(chars) == 512
     pages += chars
     shown.append(("challenger", plate))
-    lines += ["; titles.bin: pagina del nome k (TTL_NAMES + k), di PERFECT, della targa (due)",
+    # OMEGA: il nome (come quelli degli avversari) e WARNING! (come la targa, con lo stesso rosso)
+    pts, w, h, row, prio = title_name("OMEGA")
+    cells = title_cells(pts, w, h, prio)
+    tiles, codes, colors = title_codes(cells, w, h, TN_FIRST)
+    assert len(tiles) <= TN_CHARS, f"OMEGA: {len(tiles)} caratteri"
+    ys = [y for _, y, _ in pts]
+    lines += [f"TN_7_W = {w}    ; OMEGA, {len(tiles)} caratteri", f"TN_7_H = {h}", f"TN_7_ROW = {row}",
+              f"TN_7_COL = {(40 - w) // 2}", f"TN_7_CY = {8 * row + (min(ys) + max(ys) + 1) // 2}",
+              ".define TN_7_MAP " + ", ".join(map(str, codes)),
+              ".define TN_7_CLR " + ", ".join(map(str, colors))]
+    ttl_omega = len(pages) // 256
+    pages += bytes(v for t in tiles for v in t).ljust(256, b"\0")
+    shown.append(("name_omega", image(cells, w, h)))
+    cells = title_cells(title_warning(), TC_W, TC_H, [C_WHITE])
+    tiles, codes, colors = title_codes(cells, TC_W, TC_H, TC_FIRST, order=[C_WHITE, C_YELLOW])
+    assert TC_FIRST + len(tiles) <= TC_SPRITE, f"WARNING: {len(tiles)} caratteri"
+    yellow0 = min(c for c, col in zip(codes, colors) if col == C_YELLOW)
+    assert all((c >= yellow0) == (col == C_YELLOW) for c, col in zip(codes, colors) if c)
+    plate = image(cells, TC_W, TC_H, red)
+    lines += ["; WARNING! prima di OMEGA: come la targa (stessi sprite del rosso), da TW_YEL0 gialli",
+              f"TW_YEL0 = {yellow0}    ; {len(tiles)} caratteri", ".define TW_MAP " + ", ".join(map(str, codes))]
+    ttl_warn = len(pages) // 256
+    pages += bytes(bytes(v for t in tiles for v in t).ljust(8 * (TC_SPRITE - TC_FIRST), b"\0")) + sprite
+    shown.append(("warning", plate))
+    lines += ["; titles.bin: pagina del nome k (TTL_NAMES + k), di PERFECT, della targa (due), del nome di",
+              "; OMEGA, di WARNING! (due)",
               "TTL_NAMES = 0", f"TTL_PERFECT = {len(VOICE_NAMES)}", f"TTL_PLATE = {len(VOICE_NAMES) + 1}",
+              f"TTL_OMEGA = {ttl_omega}", f"TTL_WARN = {ttl_warn}",
               f"TTL_PAGES = {len(pages) // 256}"]
     return bytes(pages), shown
 

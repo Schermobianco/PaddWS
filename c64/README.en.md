@@ -6,8 +6,9 @@ PADD WS for the PAL C64, on an EasyFlash cartridge. It plays the same match as t
 ([`rust/core`](../rust/core)) bit for bit: a 320×200 field, one tick per frame at 50 Hz, 32-bit
 Q16.16 arithmetic in 6502 identical to `fixed.rs`, and the same parameters as the other versions
 (`Tuning::c64()`). It has Classic, EVO, NEXT with the special moves and the ladder (challengers,
-WINS, training, high scores and unlock saved in flash), single player, the CPU, the attract mode
-(without a demo) and the SID music.
+WINS, training, high scores and unlocks saved in flash), the secret boss OMEGA, the jukebox,
+single player, the CPU, the attract mode (without a demo) and the SID music. The logo in the NEXT
+menu is not there: MAIN MENU stays.
 
 PAL only (no NTSC for now). So far it has been tested in VICE, not yet on a real C64.
 
@@ -35,7 +36,8 @@ x64sc -easyflashcrtwrite -cartcrt paddws.crt
   attract mode from the menu), **Q** back to the menu.
 
 The menu (joystick or cursor keys) has GAME, PLAYERS (only in CLASSIC and EVO; in NEXT, once
-unlocked, OPPONENT for training), DIFFICULTY, CONTROL, FREE PLAY, ATTRACT SOUND, VOLUME and BORDER. The rules are in [docs/en/how-to-play.md](../docs/en/how-to-play.md).
+unlocked, OPPONENT for training), DIFFICULTY, CONTROL, FREE PLAY, ATTRACT SOUND, VOLUME (voices
+included) and BORDER, plus JUKEBOX once unlocked. The rules are in [docs/en/how-to-play.md](../docs/en/how-to-play.md).
 
 ## Building
 
@@ -51,7 +53,8 @@ present) for `tools/make_crt.py`. VICE, in `C:\DEV\@Compiler\vice`, is only need
 On Linux: `sh c64/build.sh` (ca65, ld65 and python3 on the PATH).
 
 Besides the cartridge, `c64\build` holds `paddws.prg` with its labels (`paddws.lbl`) and memory
-map (`paddws.map`), the ladder ending (`paddws.prg.end`) and the voice files `voice0-6.prg`.
+map (`paddws.map`), the ladder ending (`paddws.prg.end`), the OMEGA bank (`paddws.prg.omega`) and the voice files
+`voice0-7.prg` (7 is OMEGA).
 The test bench needs them: the `.prg` does not start on its own, it only runs from the cartridge.
 
 The files in `c64/gen/` are generated and committed: `tools/gen_c64_assets.py` makes the graphics,
@@ -61,7 +64,10 @@ For screenshots there are builds that go straight into a match:
 
 ```powershell
 .\c64\build.ps1 -Name autostart -Define AUTOSTART     # EVO against the CPU; with AUTONEXT NEXT, with AUTOCHALLENGE the ladder (TRAINTEST=n training)
-.\c64\build.ps1 -Name autoend -Define ENDTEST         # the ladder ending
+.\c64\build.ps1 -Name autoend -Define ENDTEST         # the ladder ending (ENDOMEGA: after beating OMEGA)
+.\c64\build.ps1 -Name warning -Define WARNTEST       # ladder on HARD, right after the GUARDIAN the alarm and OMEGA (OMFORM=n: from form n)
+.\c64\build.ps1 -Name unlock -Define UNLOCKTEST,OMEGATEST  # training, OMEGA and jukebox unlocked
+.\c64\build.ps1 -Name juke -Define JUKETEST,JUKETRACK=8 # straight to the jukebox, with track n (from 0)
 .\c64\build.ps1 -Name menu3 -Define MENUTEST=3        # the menu with OPPONENT at 3 (UNLOCKTEST: training unlocked)
 .\c64\build.ps1 -Name intro3 -Define INTROTEST=3      # the level 3 introduction (also CONTTEST: the continue)
 .\c64\build.ps1 -Name ft -Define AUTOSTART,FRAMETEST  # frames over time, red digit bottom right (FRAMESTOP: stops at the first)
@@ -100,6 +106,8 @@ ending, `profile` gives cycles per routine, `--build DIR` uses another build fol
 - `src/next.s`, `src/supers.s`, `src/pick.s` — NEXT, the special moves, the choices before the
   match and the HOW TO PLAY screen.
 - `src/cpu.s` — the CPU player (`cpu.rs`).
+- `src/omega.s`, `src/jukebox.s` — OMEGA in the match (net, form name, music in sections) and the
+  jukebox, in the OMEGA bank of the cartridge.
 - `src/challenge.s`, `src/intro.s`, `src/ending.s` — CHALLENGE with the high score table, the
   opponents' entrances in the introduction, and the ending.
 - `src/play.s` — frame loop, scenes, menu, coins.

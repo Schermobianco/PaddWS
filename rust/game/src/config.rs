@@ -75,6 +75,11 @@ pub struct Game {
     /// allenamento sbloccato: arrivati una volta al finale della scalata, in NEXT il menu ha la
     /// voce OPPONENT per giocare contro un solo avversario
     pub training: bool,
+    /// OMEGA nell'allenamento: battuto una volta il boss segreto, OPPONENT lo propone dopo il
+    /// GUARDIAN
+    pub training_omega: bool,
+    /// JUKEBOX sbloccato (battendo OMEGA o con le iniziali BAS): la voce del menu con i temi
+    pub jukebox: bool,
 }
 
 impl Default for Game {
@@ -101,6 +106,8 @@ impl Default for Game {
             game_type: "next".into(),
             players: "two".into(),
             training: false,
+            training_omega: false,
+            jukebox: false,
         }
     }
 }
@@ -787,6 +794,8 @@ pub fn save_preferences(path: &Path, cfg: &Config) {
     set(&mut data, "game", "game_type", cfg.game.game_type.as_str());
     set(&mut data, "game", "players", cfg.game.players.as_str());
     set(&mut data, "game", "training", cfg.game.training);
+    set(&mut data, "game", "training_omega", cfg.game.training_omega);
+    set(&mut data, "game", "jukebox", cfg.game.jukebox);
     set(&mut data, "crt_effects", "enabled", cfg.crt_effects.enabled);
     set(&mut data, "mouse", "spinner", cfg.mouse.spinner);
     write_json(path, &data);
@@ -1007,6 +1016,24 @@ mod tests {
         let g = Game::default();
         assert_eq!((g.game_type.as_str(), g.players.as_str()), ("next", "two"));
         assert!(!g.training);
+        assert!(!g.training_omega && !g.jukebox);
+    }
+
+    #[test]
+    fn the_omega_and_jukebox_unlocks_are_saved_and_read_back() {
+        let path = std::env::temp_dir().join(format!("paddws_unlocks_{}.json", std::process::id()));
+        fs::write(&path, r#"{"game": {"training": true}}"#).unwrap();
+        let mut cfg = load(&path);
+        assert!(cfg.game.training && !cfg.game.training_omega && !cfg.game.jukebox);
+        cfg.game.jukebox = true;
+        save_preferences(&path, &cfg);
+        let back = load(&path);
+        assert!(back.game.training && back.game.jukebox && !back.game.training_omega);
+        cfg.game.training_omega = true;
+        save_preferences(&path, &cfg);
+        let data: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!((data["game"]["training_omega"].as_bool(), data["game"]["jukebox"].as_bool()), (Some(true), Some(true)));
+        let _ = fs::remove_file(path);
     }
 
     #[test]

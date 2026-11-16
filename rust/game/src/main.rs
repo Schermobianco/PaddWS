@@ -10,6 +10,7 @@ mod ending_ui;
 mod gamepad;
 mod gesture;
 mod input;
+mod jukebox;
 mod mouse;
 mod moves_ui;
 mod music;
@@ -18,6 +19,7 @@ mod paddle_ui;
 mod platform;
 mod render;
 mod scenes;
+mod scope;
 mod titles;
 mod touch;
 
@@ -60,7 +62,12 @@ Uso: paddws [opzioni]
 Verifica:
   --screenshot-tour DIR   salva una schermata di ogni scena ed esce
   --bench SECONDI         gioca da solo per N secondi e stampa le statistiche dei frame
-  --paddle-gallery DIR    salva un'immagine di ogni tipo di racchetta (per il README) ed esce";
+  --paddle-gallery DIR    salva un'immagine di ogni tipo di racchetta (per il README) ed esce
+Scorciatoie di prova (la configurazione non cambia):
+  --level N               la scalata NEXT dal livello N (1-7), come se fosse fatta tutta da lì
+                          (battuto il GUARDIAN a HARD o EXPERT arriva OMEGA)
+  --omega                 dritto all'allarme di OMEGA, come dopo il GUARDIAN
+  --jukebox               dritto al JUKEBOX";
 
 #[derive(Default)]
 struct Args {
@@ -72,6 +79,10 @@ struct Args {
     screenshot_tour: Option<PathBuf>,
     bench: Option<f64>,
     paddle_gallery: Option<PathBuf>,
+    /// scorciatoie di prova: scalata da un livello (da 1), OMEGA, JUKEBOX
+    level: Option<usize>,
+    omega: bool,
+    jukebox: bool,
 }
 
 fn parse_args() -> Args {
@@ -93,6 +104,15 @@ fn parse_args() -> Args {
             "--screenshot-tour" => args.screenshot_tour = Some(value().into()),
             "--bench" => args.bench = value().parse().ok(),
             "--paddle-gallery" => args.paddle_gallery = Some(value().into()),
+            "--level" => {
+                let n: usize = value().parse().unwrap_or(0);
+                if !(1..=paddws_core::challenge::LEVELS).contains(&n) {
+                    exit_with("--level: da 1 a 7");
+                }
+                args.level = Some(n);
+            }
+            "--omega" => args.omega = true,
+            "--jukebox" => args.jukebox = true,
             "--version" => {
                 println!("paddws {}", env!("CARGO_PKG_VERSION"));
                 std::process::exit(0);
@@ -287,6 +307,26 @@ async fn run(args: Args, mut cfg: Config, config_path: PathBuf) {
     let mut pacer = Pacer::new(app.cfg.game.vsync, app.cfg.game.fps);
     let mut bench: Option<(Instant, f64, Vec<f64>)> = None;
     let mut first_frame = true;
+    // scorciatoie di prova
+    if let Some(n) = args.level {
+        // la scalata da quel livello, come fatta tutta da lì: si sceglie la racchetta
+        app.next = true;
+        let mut run = challenge_ui::Run::new();
+        run.level = n - 1;
+        app.run = Some(run);
+        scene = Scene::Paddles(PaddlePick::new(&app));
+    } else if args.omega {
+        // l'allarme come dopo il GUARDIAN battuto 5 a 2, con la racchetta ARCADE
+        app.next = true;
+        app.paddles = [Some(paddws_core::PaddleKind::Arcade), None];
+        let mut run = challenge_ui::Run::new();
+        run.level = paddws_core::challenge::LEVELS - 1;
+        run.score = 100_000;
+        app.run = Some(run);
+        scene = Scene::Warning(challenge_ui::Warning::new(&mut app, 2));
+    } else if args.jukebox {
+        scene = Scene::Jukebox(jukebox::Jukebox::new());
+    }
     if let Some(secs) = args.bench {
         app.evo = true;
         let mut play = Play::new(&mut app);
@@ -350,6 +390,7 @@ async fn run(args: Args, mut cfg: Config, config_path: PathBuf) {
         let music = scene.music(&app);
         app.set_music(music);
         app.set_tempo(scene.tempo(&app));
+        app.sid_music.set_scope(scene.uses_scope());
         if app.quit {
             break;
         }
@@ -530,6 +571,44 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         play.show_game_over_at(app, at - 0.5);
         Scene::Game(Box::new(play))
     }
+    // OMEGA: la scalata arrivata a lui (`level`: OMEGA_LEVEL), a destra la CPU
+    fn omega_run(app: &mut App) {
+        challenge(app, paddws_core::challenge::OMEGA_LEVEL);
+        if let Some(run) = &mut app.run {
+            run.score = 486_210;
+            run.guardian = 2;
+        }
+    }
+    // partita contro OMEGA nella forma `form`, con il lampo della trasformazione a `flash` secondi;
+    // la musica suona (la rete segue il basso), quindi il ciclo qui sotto la fa partire
+    fn omega_game(app: &mut App, form: usize, flash: Option<f64>) -> Scene {
+        omega_run(app);
+        let mut play = Play::challenge(app);
+        play.skip_countdown();
+        // la verifica scatta 30 frame dopo: lì il lampo è a `flash`
+        play.fill_omega_demo(form, flash.map(|t| t - 0.5));
+        Scene::Game(Box::new(play))
+    }
+    // finale dopo OMEGA battuto, alla parte `part` più `at` secondi dopo i 30 frame del ciclo
+    fn omega_ending(app: &mut App, part: ending_ui::Part, at: f64) -> Scene {
+        omega_run(app);
+        if let Some(run) = &mut app.run {
+            run.omega_won = true;
+        }
+        let mut e = ending_ui::Ending::new(app, 2);
+        e.skip_to(part, at - 0.5);
+        Scene::Ending(e)
+    }
+    // menu NEXT con gli sblocchi di OMEGA, la ruota sulla voce `item`
+    fn unlocked_menu(app: &mut App, opponent: Option<usize>, item: &str) -> Scene {
+        app.cfg.game.jukebox = true;
+        app.cfg.game.training_omega = true;
+        let mut scene = menu_at(app, (false, true, true), opponent, 0);
+        if let Scene::Menu(menu) = &mut scene {
+            menu.show_item(app, item);
+        }
+        scene
+    }
     use ending_ui::Part as E;
     use paddws_core::PaddleKind as K;
     // easter egg acceso (iniziali "RED"): giallo e rosso scambiati
@@ -537,7 +616,7 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         app.set_egg(true);
         scene
     }
-    let shots: [(&str, MakeScene); 107] = [
+    let shots: [(&str, MakeScene); 129] = [
         ("1_demo_classic", |app| demo_at(app, DemoMode::Classic)),
         ("1_demo_evo", |app| demo_at(app, DemoMode::Evo)),
         ("1_demo_next", |app| demo_at(app, DemoMode::Next)),
@@ -930,6 +1009,93 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
             app.next = false;
             Scene::Game(Box::new(play))
         }),
+        // OMEGA: allarme (targa accesa e spenta), presentazione, partita in due forme con la rete che
+        // segue il basso, lampo della trasformazione, racchetta viola con l'easter egg
+        ("c_omega_1_warning", |app| {
+            challenge(app, paddws_core::challenge::LEVELS - 1);
+            let mut w = challenge_ui::Warning::new(app, 2);
+            w.skip_to(0.1 - 0.5);
+            Scene::Warning(w)
+        }),
+        ("c_omega_1_warning_off", |app| {
+            challenge(app, paddws_core::challenge::LEVELS - 1);
+            let mut w = challenge_ui::Warning::new(app, 2);
+            w.skip_to(1.3 - 0.5);
+            Scene::Warning(w)
+        }),
+        ("c_omega_2_intro_forms", |app| {
+            omega_run(app);
+            let mut intro = challenge_ui::Intro::new(app);
+            intro.skip_to(0.62 - 0.5);
+            Scene::Intro(intro)
+        }),
+        ("c_omega_2_intro", |app| {
+            omega_run(app);
+            let mut intro = challenge_ui::Intro::new(app);
+            intro.skip_to(3.4 - 0.5);
+            Scene::Intro(intro)
+        }),
+        ("c_omega_3_game_arcade", |app| omega_game(app, 0, None)),
+        ("c_omega_3_game_titan", |app| omega_game(app, 3, None)),
+        ("c_omega_3_game_guardian", |app| omega_game(app, 6, None)),
+        ("c_omega_4_morph_flash", |app| omega_game(app, 4, Some(0.05))),
+        // il nome della forma nuova, poco dopo il lampo; con i punteggi rivolti ai giocatori girato
+        ("c_omega_4_morph_name", |app| omega_game(app, 6, Some(0.4))),
+        ("c_omega_4_morph_name_facing", |app| {
+            app.cfg.game.scores_upright = false;
+            // la schermata dopo rimette l'opzione com'è nel file
+            omega_game(app, 2, Some(0.4))
+        }),
+        ("c_omega_5_game_egg", |app| {
+            app.cfg.game.scores_upright = config::load(&app.config_path).game.scores_upright;
+            let scene = omega_game(app, 5, None);
+            egg(app, scene)
+        }),
+        ("c_omega_6_clear", |app| {
+            omega_run(app);
+            Scene::Clear(challenge_ui::Clear::new(app, 0))
+        }),
+        ("c_omega_7_shatter", |app| omega_ending(app, E::Shatter, 0.9)),
+        ("c_omega_7_shatter_split", |app| omega_ending(app, E::Shatter, 1.8)),
+        ("c_omega_8_the_end", |app| omega_ending(app, E::TheEnd, 0.2)),
+        ("c_omega_9_training", |app| {
+            challenge(app, 0);
+            app.run = Some(challenge_ui::Run::training(paddws_core::challenge::OMEGA_LEVEL));
+            let mut intro = challenge_ui::Intro::new(app);
+            intro.skip_to(3.5 - 0.5);
+            Scene::Intro(intro)
+        }),
+        // menu NEXT con il logo e gli sblocchi: OPPONENT su OMEGA, la voce JUKEBOX
+        ("d_menu_next_logo", |app| unlocked_menu(app, None, "PLAY")),
+        ("d_menu_opponent_omega", |app| unlocked_menu(app, Some(paddws_core::challenge::OMEGA_LEVEL), "OPPONENT")),
+        ("d_menu_jukebox", |app| unlocked_menu(app, None, "JUKEBOX")),
+        // JUKEBOX: il tema di HAMMER (basso nel filtro) e OMEGA, con i tre oscilloscopi
+        ("d_jukebox_hammer", |_| {
+            let mut j = jukebox::Jukebox::new();
+            j.show(2, 0.0);
+            Scene::Jukebox(j)
+        }),
+        ("d_jukebox_omega", |_| {
+            let mut j = jukebox::Jukebox::new();
+            j.show(paddws_core::challenge::LEVELS + 1, 30.0);
+            Scene::Jukebox(j)
+        }),
+        // classifica con OMEGA battuto (ALL+): per ultima, perché cambia la classifica in memoria
+        ("e_scores_omega", |app| {
+            app.run = None;
+            app.cfg.game.jukebox = false;
+            let rank = app.scores.insert(paddws_core::challenge::Entry {
+                name: *b"BAS",
+                score: 612_340,
+                level: paddws_core::challenge::SCORE_LEVEL_OMEGA,
+            });
+            app.scores.insert(paddws_core::challenge::Entry {
+                name: *b"ALL",
+                score: 300_000,
+                level: paddws_core::challenge::LEVELS as u8 + 1,
+            });
+            Scene::Scores(challenge_ui::Scores::at(rank, 6.0))
+        }),
     ];
     // le schermate che accendono il touch o il gamepad non cambiano le altre
     let touch = app.touch;
@@ -937,9 +1103,22 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         (app.touch, app.pad_used) = (touch, false);
         app.set_egg(false);
         let mut scene = make(app);
+        // la musica suona solo dove si vedono le voci del SID (la rete di OMEGA, il JUKEBOX)
+        let scope = scene.uses_scope();
+        app.sid_music.set_scope(scope);
+        app.set_music(if scope { scene.music(app) } else { None });
         for _ in 0..30 {
             scene.update(app, 1.0 / 60.0);
             app.renderer.update_layout(&app.cfg.crt_effects);
+            app.renderer.begin();
+            scene.draw(app);
+            app.renderer.end(app.cfg.game.white_level);
+            next_frame().await;
+        }
+        // le voci del SID arrivano con l'audio, in tempo reale: senza vsync i 30 frame passano
+        // prima che suoni qualcosa, quindi si aspetta (la scena resta ferma)
+        let t0 = get_time();
+        while scope && get_time() - t0 < 0.8 {
             app.renderer.begin();
             scene.draw(app);
             app.renderer.end(app.cfg.game.white_level);
@@ -953,6 +1132,7 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         println!("{}", path.display());
         next_frame().await;
     }
+    app.set_music(None);
 }
 
 fn print_frame_stats(frames: &[f64], refresh: Option<f64>) {

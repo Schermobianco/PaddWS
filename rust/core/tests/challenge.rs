@@ -153,3 +153,79 @@ fn a_human_on_the_right_scores_on_the_right() {
     point.add(Event::Score);
     assert_eq!(score.on_tick(&m, before, point), POINT_POINTS);
 }
+
+#[test]
+fn omega_changes_form_at_every_point_it_concedes() {
+    // OMEGA a destra contro una CPU forte a sinistra: a ogni punto del sinistro la racchetta di
+    // destra prende la forma e i bonus dell'avversario successivo della scala; i punti di OMEGA
+    // non la cambiano
+    use paddws_core::challenge::{OMEGA, omega_form};
+    let params = Params::new(&Tuning {
+        difficulty: OMEGA.speed,
+        ..Tuning::default()
+    });
+    let mut m = Match::new_next_paddles(
+        params.clone(),
+        [RUNGS[6].loadout, OMEGA.loadout],
+        [None, Some(OMEGA.kind)],
+        11,
+    );
+    m.set_morph(Side::Right);
+    assert_eq!(m.morph(), Some(Side::Right));
+    let mut cpus = [
+        paddws_core::Cpu::new(&params, paddws_core::CPU_LEVELS - 1, Side::Left, 3),
+        paddws_core::Cpu::new(&params, 4, Side::Right, 4),
+    ];
+    let mut forms = vec![m.paddle_kind(Side::Right).unwrap()];
+    for _ in 0..paddws_core::TICK_HZ * 60 * 20 {
+        let mut input = Input::default();
+        for c in &mut cpus {
+            input.players[c.side() as usize] = c.input(&m);
+        }
+        let before = m.score;
+        m.step(&input);
+        let form = omega_form(m.score[0]);
+        assert_eq!(m.paddle_kind(Side::Right), Some(form.kind), "punteggio {:?}", m.score);
+        if m.score[0] > before[0] {
+            let n = m.next.as_ref().unwrap();
+            let pl = &n.players[1];
+            assert_eq!(pl.loadout, form.loadout);
+            assert!(pl.shots.iter().all(Option::is_none));
+            assert_eq!(pl.ammo, if form.kind == PaddleKind::Blaster { params.blaster_shots } else { 0 });
+            assert_eq!(pl.barrier != 0, form.kind == PaddleKind::Guardian);
+            assert_eq!(m.paddles[1].height, params.kinds[form.kind as usize].height);
+            assert!(m.paddles[1].at_home());
+            forms.push(form.kind);
+        }
+        if m.score.iter().any(|&s| s >= OMEGA.points) {
+            break;
+        }
+    }
+    assert!(m.score.iter().any(|&s| s >= OMEGA.points));
+    assert!(forms.len() >= 4, "troppo pochi punti del sinistro: {:?}", m.score);
+    // le forme seguono la scala
+    for (i, k) in forms.iter().enumerate() {
+        assert_eq!(*k, RUNGS[i.min(LEVELS - 1)].kind);
+    }
+}
+
+#[test]
+fn a_match_without_morph_keeps_its_paddle() {
+    let rung = RUNGS[2];
+    let params = Params::new(&Tuning::default());
+    let mut m = Match::new_next_paddles(params.clone(), [rung.loadout; 2], [None, Some(rung.kind)], 5);
+    assert_eq!(m.morph(), None);
+    let mut cpus = [
+        paddws_core::Cpu::new(&params, paddws_core::CPU_LEVELS - 1, Side::Left, 3),
+        paddws_core::Cpu::new(&params, 4, Side::Right, 4),
+    ];
+    for _ in 0..paddws_core::TICK_HZ * 60 * 5 {
+        let mut input = Input::default();
+        for c in &mut cpus {
+            input.players[c.side() as usize] = c.input(&m);
+        }
+        m.step(&input);
+        assert_eq!(m.paddle_kind(Side::Right), Some(rung.kind));
+    }
+    assert!(m.score[0] > 0);
+}

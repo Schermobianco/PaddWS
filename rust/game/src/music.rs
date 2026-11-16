@@ -10,8 +10,17 @@
 //! - Web: il plugin JavaScript `rust/web/sid_audio.js` chiede i campioni con uno ScriptProcessor
 //!   nello stesso AudioContext di quad-snd (blocchi da 2048, circa 45 ms); l'audio parte al primo
 //!   gesto dell'utente, come gli effetti. Lo ScriptProcessor funziona anche fuori da https.
+//!
+//! Oscilloscopi (la rete di OMEGA, il JUKEBOX): con `set_scope` acceso il SID tiene l'uscita di
+//! ogni voce (`paddws_sid::Scope`) e, dopo ogni blocco suonato, i campioni nuovi passano in
+//! `SCOPE`, da dove il gioco legge la finestra che si sta ascoltando (`SidMusic::scope_window`).
 
-use paddws_sid::{Call, Music};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use paddws_sid::{Call, Music, SCOPE_LEN};
+
+use crate::platform::Instant;
 
 /// Volume della musica rispetto agli effetti (come i vecchi OGG suonati a 0,8), con MUSIC VOLUME
 /// al 100%.
@@ -39,6 +48,52 @@ enum Cmd {
     CallName(u8),
     /// effetto per i bit degli eventi del frame, rallentato o no
     Effect(u8, bool),
+}
+
+/// Ritardo stimato fra il campione appena prodotto e quello che si sente (il buffer del mixer,
+/// circa 90 ms, vedi sopra).
+const LATENCY: f64 = 0.09;
+
+/// Oscilloscopi richiesti dal gioco (letto dal thread audio).
+static SCOPE_ON: AtomicBool = AtomicBool::new(false);
+/// Ultimi campioni di ogni voce, copiati dal thread audio dopo ogni blocco.
+static SCOPE: Mutex<Option<Shared>> = Mutex::new(None);
+
+/// Campioni delle voci condivisi con il gioco: un buffer circolare per voce come quello del SID,
+/// con l'istante dell'ultima copia per sapere quale campione si sente adesso.
+struct Shared {
+    voices: [Vec<f32>; 3],
+    written: u64,
+    rate: u32,
+    at: Instant,
+}
+
+/// Dopo un blocco suonato: accende o spegne gli oscilloscopi del SID come chiede il gioco e copia
+/// i campioni nuovi (al più un buffer) in `SCOPE`.
+fn share_scope(m: &mut Music) {
+    let on = SCOPE_ON.load(Ordering::Relaxed);
+    m.set_scope(on);
+    let Ok(mut shared) = SCOPE.lock() else { return };
+    let Some(scope) = m.scope() else {
+        *shared = None;
+        return;
+    };
+    let rate = m.rate();
+    let sh = shared.get_or_insert_with(|| Shared {
+        voices: std::array::from_fn(|_| vec![0.0; SCOPE_LEN]),
+        written: 0,
+        rate,
+        at: Instant::now(),
+    });
+    let end = scope.written();
+    let from = sh.written.max(end.saturating_sub(SCOPE_LEN as u64));
+    for i in from..end {
+        let k = (i % SCOPE_LEN as u64) as usize;
+        for (v, voice) in sh.voices.iter_mut().enumerate() {
+            voice[k] = scope.sample(v, i);
+        }
+    }
+    (sh.written, sh.rate, sh.at) = (end, rate, Instant::now());
 }
 
 fn apply(m: &mut Music, cmd: Cmd) {
@@ -82,6 +137,7 @@ impl SidMusic {
                     apply(&mut music, cmd);
                 }
                 music.mix_stereo(buffer);
+                share_scope(&mut music);
             })));
             tx
         };
@@ -114,7 +170,8 @@ impl SidMusic {
         }
     }
 
-    /// CHALLENGE: il SID dice il nome dell'avversario (`PaddleKind`), se non sta già parlando.
+    /// CHALLENGE: il SID dice il nome dell'avversario (la voce `PaddleKind`, o quella di OMEGA), se
+    /// non sta già parlando.
     pub fn say(&self, kind: u8) {
         self.send(Cmd::Say(kind));
     }
@@ -139,6 +196,37 @@ impl SidMusic {
     /// non si ferma; interrompe la voce in corso.
     pub fn call_name(&self, kind: u8) {
         self.send(Cmd::CallName(kind));
+    }
+
+    /// Oscilloscopi delle voci per la scena (la rete di OMEGA, il JUKEBOX): costano poco, ma solo
+    /// quando servono.
+    pub fn set_scope(&self, on: bool) {
+        SCOPE_ON.store(on, Ordering::Relaxed);
+    }
+
+    /// Frequenza dei campioni degli oscilloscopi (0 senza audio o con gli oscilloscopi spenti).
+    pub fn scope_rate(&self) -> u32 {
+        SCOPE.lock().ok().and_then(|s| s.as_ref().map(|s| s.rate)).unwrap_or(0)
+    }
+
+    /// `out.len()` campioni della voce `voice` (0-2) da `start` (in campioni rispetto a quello che
+    /// si sente adesso: negativo nel passato) a scala piena 1 per l'uscita intera; dove non ci sono
+    /// campioni restano 0. Il futuro si può chiedere fino al buffer del mixer (`LATENCY`).
+    pub fn scope_window(&self, voice: usize, start: i64, out: &mut [f32]) {
+        out.fill(0.0);
+        let Ok(shared) = SCOPE.lock() else { return };
+        let Some(sh) = shared.as_ref() else { return };
+        let since = Instant::now().checked_duration_since(sh.at).map_or(0.0, |d| d.as_secs_f64());
+        let now = sh.written as i64 + ((since - LATENCY) * sh.rate as f64) as i64;
+        // si legge solo quello che c'è: la finestra non va oltre l'ultimo campione scritto
+        let first = (now + start).min(sh.written as i64 - out.len() as i64);
+        let oldest = sh.written as i64 - SCOPE_LEN as i64;
+        for (k, o) in out.iter_mut().enumerate() {
+            let i = first + k as i64;
+            if i >= oldest.max(0) && i < sh.written as i64 {
+                *o = sh.voices[voice][(i as u64 % SCOPE_LEN as u64) as usize];
+            }
+        }
     }
 
     fn send(&self, cmd: Cmd) {
@@ -174,7 +262,7 @@ impl SidMusic {
 mod web {
     use std::cell::RefCell;
 
-    use super::{Cmd, Music, apply};
+    use super::{Cmd, Music, apply, share_scope};
 
     unsafe extern "C" {
         /// Crea lo ScriptProcessor (`rust/web/sid_audio.js`) e restituisce la frequenza del
@@ -212,6 +300,7 @@ mod web {
             Some((music, buf)) => {
                 buf.resize(frames as usize, 0.0);
                 music.render(buf);
+                share_scope(music);
                 buf.as_ptr()
             }
             None => std::ptr::null(),

@@ -47,7 +47,9 @@ More screenshots in [How to play](docs/en/how-to-play.md#screenshots).
   carries on up the ladder, and duels won in a row are counted;
 - 7 paddle types, 6 power-ups that arrive in capsules to be collected and two special moves
   performed with a sequence of inputs;
-- finishing the ladder unlocks training against the opponent of your choice.
+- finishing the ladder unlocks training against the opponent of your choice;
+- finish it on HARD or EXPERT without continues and you meet OMEGA, the secret boss that becomes
+  all the others; beating it unlocks the jukebox with the game's themes.
 
 There are also **CLASSIC**, good old Pong (two players, against the CPU or alone against a wall),
 and **EVO**, for two players or against the CPU, where a ball hit with the centre of the paddle

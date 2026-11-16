@@ -1,0 +1,18 @@
+[package]
+name = "paddws-mister-ui"
+description = "Schermate e scritte del core MiSTer di PADD WS: il firmware RISC-V le scrive come oggetti per lo schermo a oggetti (ui_render.v)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# La libreria (no_std) è il codice delle schermate, usato dal firmware (paddws-mister-fw); il banco
+# di prova paddws-ui-sim (solo sul PC) la esegue con un modello del motore e confronta i frame.
+[lib]
+name = "paddws_mister_ui"
+
+[[bin]]
+name = "paddws-ui-sim"
+path = "src/bin/ui_sim.rs"
+test = false
+bench = false

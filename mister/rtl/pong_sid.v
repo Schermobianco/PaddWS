@@ -20,7 +20,11 @@
 // strumenti nel filtro, che il generatore mette solo nelle voci 1 e 2 (la voce 3, degli effetti,
 // non passa mai dal filtro). Il player tiene una copia di $D417 e $D418 (`fres`, `fvm`) e li
 // riscrive, con il taglio, solo quando cambiano; a ogni canzone nuova $D418 = $0F e $D417 = 0. Le
-// scritture del filtro (S_FW) non tacciono mai per la voce 3.
+// scritture del filtro (S_FW) non tacciono mai per la voce 3. Il wobble (0xC0+l, h, periodo) riporta
+// il taglio al valore di partenza ogni `periodo` passi della canzone, al posto della scivolata di
+// quel passo (S_SW).
+//
+// ROM fino a 8 KB (indirizzi a 13 bit), canzoni da 1 a 31 (5 bit).
 //
 // Formato delle tracce: vedi tools/gen_sid_music.py. Priorità degli effetti: gettone > punto >
 // colpo della mossa speciale > boost > mossa attivata > colpo > muro. Con `slow` (bullet time di
@@ -62,7 +66,7 @@ module pong_sid #(
     input  wire        clk,           // 20 MHz
     input  wire        reset,
     input  wire        mode_8580,     // 0 = 6581, 1 = 8580
-    input  wire [3:0]  song,          // canzone (0 = silenzio): quando cambia riparte da capo
+    input  wire [4:0]  song,          // canzone (0 = silenzio): quando cambia riparte da capo
     input  wire        trigger,       // impulso: eventi del frame in `events`
     input  wire [7:0]  events,        // bit 0 muro, 1 colpo, 2 boost, 3 punto, 4 gettone, 5 mossa, 6 colpo della mossa
     input  wire        slow,          // con `trigger`: l'effetto suona a metà velocità
@@ -70,7 +74,7 @@ module pong_sid #(
     input  wire        music_slow,    // bullet time: la canzone a metà velocità, un'ottava sotto
     // voce: impulso di partenza con il nome (codice di PaddleKind), arresto (livello) e stato
     input  wire        voice_go,
-    input  wire [2:0]  voice_id,
+    input  wire [3:0]  voice_id,
     input  wire        voice_stop,
     output wire        voice_on,      // la voce ha il SID (anche durante attacco e rilascio)
     // voce di partita: impulso di partenza con il numero (VOICE_* di sid_voices.vh) e campione in
@@ -83,7 +87,8 @@ module pong_sid #(
     input  wire [3:0]  music_vol,
     input  wire [3:0]  fx_vol,
     output reg  [6:0]  fx_gain,
-    output wire signed [15:0] sample
+    output wire signed [15:0] sample,
+    output wire [47:0] scope          // oscilloscopi delle tre voci (sid_filter), {3, 2, 1}, 16 bit con segno
 );
 
 `include "sid_music.vh"
@@ -93,7 +98,7 @@ module pong_sid #(
 
 reg [7:0]  rom [0:SID_ROM_SIZE-1];
 initial $readmemh(ROM_FILE, rom);
-reg [11:0] raddr = 12'd0;
+reg [12:0] raddr = 13'd0;
 reg [7:0]  rdata = 8'd0;
 always @(posedge clk) rdata <= rom[raddr];      // lettura sincrona: un ciclo di attesa
 
@@ -120,8 +125,8 @@ end
 
 // ------------------------------------------------------------------ canali
 
-reg [11:0] ptr   [0:3];
-reg [11:0] start [0:3];
+reg [12:0] ptr   [0:3];
+reg [12:0] start [0:3];
 reg [7:0]  cnt   [0:3];
 reg [6:0]  note  [0:3];
 reg [3:0]  ins   [0:3];   // strumento: 16, indice a 4 bit
@@ -166,7 +171,7 @@ localparam S_IDLE = 5'd0, S_CH = 5'd1, S_FETCH = 5'd2, S_CMD = 5'd3, S_ARG = 5'd
            S_FRQ = 5'd11, S_FRQ2 = 5'd12, S_GATE = 5'd13, S_RUN = 5'd14, S_NEXT = 5'd15,
            S_WAIT = 5'd16, S_FXOFF = 5'd17, S_SLIDE = 5'd18, S_SILENCE = 5'd19, S_FRQ3 = 5'd20,
            S_RT = 5'd21, S_RT2 = 5'd22, S_INS7 = 5'd23, S_INS8 = 5'd24, S_FLT = 5'd25, S_FW = 5'd26,
-           S_FRD = 5'd27, S_FOFF = 5'd28, S_SW = 5'd29, S_ARG2 = 5'd30;
+           S_FRD = 5'd27, S_FOFF = 5'd28, S_SW = 5'd29, S_ARG2 = 5'd30, S_ARG3 = 5'd31;
 
 reg [4:0]  state = S_IDLE;
 reg [4:0]  after = S_IDLE;        // stato dopo l'attesa della ROM
@@ -177,7 +182,7 @@ reg [1:0]  fx_phase = 2'd0;       // e degli effetti (uguali fuori dal match poi
 reg [7:0]  cmd = 8'd0;
 reg [7:0]  pw_lo = 8'd0;
 reg        freq_write = 1'b0;     // dopo la frequenza: gate (nota nuova) o fine
-reg [3:0]  song_q = 4'd0;
+reg [4:0]  song_q = 5'd0;
 reg        song_new = 1'b0;
 reg [2:0]  fx_req = 3'd0;
 reg        tick_pending = 1'b0;      // passo degli effetti da fare
@@ -195,6 +200,9 @@ reg        silent_new = 1'b0;     // canzone nuova: è il silenzio
 // canzone, copia di $D417 e $D418 come sono nel SID; byte 6 e 7 dello strumento della nota
 reg [15:0] fcut = 16'd0;
 reg [15:0] fsweep = 16'd0;
+// wobble: taglio di partenza, periodo in passi (0 = spento), passi che mancano al ritorno
+reg [15:0] wob_start = 16'd0;
+reg [7:0]  wob_period = 8'd0, wob_count = 8'd0;
 reg [7:0]  fres = 8'd0;
 reg [7:0]  fvm = 8'h0F;
 reg [7:0]  ins_filt = 8'd0, ins_vm = 8'd0;
@@ -254,7 +262,7 @@ task fw(input [4:0] a, input [7:0] value);
 endtask
 
 // lettura dalla ROM: il dato è in `rdata` nello stato `next`
-task rd(input [11:0] a, input [4:0] next);
+task rd(input [12:0] a, input [4:0] next);
     begin
         raddr <= a;
         after <= next;
@@ -326,7 +334,7 @@ always @(posedge clk) begin
                         arp[c] <= 2'd0;
                         slide[c] <= 8'd0;
                     end
-                    active[2:0] <= song != 4'd0 ? 3'b111 : 3'b000;
+                    active[2:0] <= song != 5'd0 ? 3'b111 : 3'b000;
                     // volume al massimo, senza filtro (con la voce lo rimette lei alla fine): modo
                     // spento e nessuna voce nel filtro (S_FOFF); la scivolata del taglio si ferma,
                     // il taglio resta
@@ -334,7 +342,8 @@ always @(posedge clk) begin
                     fres <= 8'd0;
                     fvm <= 8'h0F;
                     fsweep <= 16'd0;
-                    silent_new <= song == 4'd0;
+                    wob_period <= 8'd0;
+                    silent_new <= song == 5'd0;
                 end
                 ch <= 2'd0;
                 // l'effetto e la canzone rallentati avanzano un passo su due
@@ -351,17 +360,28 @@ always @(posedge clk) begin
             state <= silent_new ? S_SILENCE : S_SW;
         end
 
-        // scivolata del taglio, nei passi in cui la canzone avanza, prima dei canali, senza
-        // saturazione (il generatore controlla i limiti): il taglio si scrive sempre
+        // wobble e scivolata del taglio, nei passi in cui la canzone avanza, prima dei canali, senza
+        // saturazione (il generatore controlla i limiti): il taglio si scrive sempre. Quando il
+        // wobble torna al taglio di partenza la scivolata di questo passo salta
         S_SW: begin
-            if (mask[0] && fsweep != 16'd0) begin
+            if (mask[0] && wob_period != 8'd0 && wob_count == 8'd1) begin
+                wob_count <= wob_period;
+                fcut <= wob_start;
+                fstep <= 2'd0;
+                flast <= 2'd1;
+                fafter <= S_CH;
+                state <= S_FW;
+            end else if (mask[0] && fsweep != 16'd0) begin
+                if (wob_period != 8'd0) wob_count <= wob_count - 8'd1;
                 fcut <= fcut + fsweep;
                 fstep <= 2'd0;
                 flast <= 2'd1;
                 fafter <= S_CH;
                 state <= S_FW;
-            end else
+            end else begin
+                if (mask[0] && wob_period != 8'd0) wob_count <= wob_count - 8'd1;
                 state <= S_CH;
+            end
         end
 
         // registri del filtro, da $D415 a $D415 + flast: taglio, poi $D417 e $D418
@@ -422,19 +442,19 @@ always @(posedge clk) begin
         S_CMD: begin
             cmd <= rdata;
             if (rdata < 8'h70) begin
-                rd(ptr[ch] + 12'd1, S_ARG);              // nota o pausa: durata
+                rd(ptr[ch] + 13'd1, S_ARG);              // nota o pausa: durata
             end else if (rdata[7:4] == 4'h7) begin
                 ins[ch] <= rdata[3:0];
-                ptr[ch] <= ptr[ch] + 12'd1;
-                rd(ptr[ch] + 12'd1, S_CMD);
+                ptr[ch] <= ptr[ch] + 13'd1;
+                rd(ptr[ch] + 13'd1, S_CMD);
             end else if (rdata == 8'h80) begin
-                rd(ptr[ch] + 12'd1, S_ARG);              // scivolata: il valore
+                rd(ptr[ch] + 13'd1, S_ARG);              // scivolata: il valore
             end else if (rdata[7:4] == 4'h9) begin
                 arp[ch] <= rdata[1:0];
-                ptr[ch] <= ptr[ch] + 12'd1;
-                rd(ptr[ch] + 12'd1, S_CMD);
-            end else if (rdata[7:4] == 4'hA || rdata == 8'hB0) begin
-                rd(ptr[ch] + 12'd1, S_ARG);              // taglio (8 bit alti) o sua scivolata
+                ptr[ch] <= ptr[ch] + 13'd1;
+                rd(ptr[ch] + 13'd1, S_CMD);
+            end else if (rdata[7:4] == 4'hA || rdata == 8'hB0 || rdata[7:4] == 4'hC) begin
+                rd(ptr[ch] + 13'd1, S_ARG);              // taglio (8 bit alti), sua scivolata o wobble
             end else if (rdata == 8'hFE) begin
                 ptr[ch] <= start[ch];
                 rd(start[ch], S_CMD);
@@ -449,55 +469,73 @@ always @(posedge clk) begin
         S_ARG: begin
             if (cmd == 8'h80) begin
                 slide[ch] <= rdata;
-                ptr[ch] <= ptr[ch] + 12'd2;
-                rd(ptr[ch] + 12'd2, S_CMD);
+                ptr[ch] <= ptr[ch] + 13'd2;
+                rd(ptr[ch] + 13'd2, S_CMD);
             end else if (cmd[7:4] == 4'hA) begin
                 // taglio: si scrive subito, poi il comando dopo
                 fcut <= {rdata, cmd[2:0], 5'd0};
-                ptr[ch] <= ptr[ch] + 12'd2;
+                ptr[ch] <= ptr[ch] + 13'd2;
                 fstep <= 2'd0;
                 flast <= 2'd1;
                 fafter <= S_FRD;
                 state <= S_FW;
             end else if (cmd == 8'hB0) begin
                 fsweep[7:0] <= rdata;                    // scivolata del taglio: basso, poi alto
-                rd(ptr[ch] + 12'd2, S_ARG2);
+                rd(ptr[ch] + 13'd2, S_ARG2);
+            end else if (cmd[7:4] == 4'hC) begin
+                wob_start <= {rdata, cmd[2:0], 5'd0};    // wobble: taglio di partenza, poi periodo
+                rd(ptr[ch] + 13'd2, S_ARG3);
             end else begin
                 cnt[ch] <= rdata;
-                ptr[ch] <= ptr[ch] + 12'd2;
+                ptr[ch] <= ptr[ch] + 13'd2;
                 if (cmd == 8'h60) begin
                     wr(3'd4, wave[ch]);                  // pausa: gate chiuso
                     state <= S_NEXT;
                 end else begin
                     note[ch] <= cmd[6:0];
-                    rd(SID_INSTR_BASE + {5'd0, ins[ch], 3'd0}, S_INS);
+                    rd(SID_INSTR_BASE + {6'd0, ins[ch], 3'd0}, S_INS);
                 end
             end
         end
 
         S_ARG2: begin
             fsweep[15:8] <= rdata;
-            ptr[ch] <= ptr[ch] + 12'd3;
-            rd(ptr[ch] + 12'd3, S_CMD);
+            ptr[ch] <= ptr[ch] + 13'd3;
+            rd(ptr[ch] + 13'd3, S_CMD);
+        end
+
+        // wobble: il periodo; acceso, il taglio va subito al valore di partenza (come 0xA0)
+        S_ARG3: begin
+            wob_period <= rdata;
+            wob_count <= rdata;
+            ptr[ch] <= ptr[ch] + 13'd3;
+            if (rdata != 8'd0) begin
+                fcut <= wob_start;
+                fstep <= 2'd0;
+                flast <= 2'd1;
+                fafter <= S_FRD;
+                state <= S_FW;
+            end else
+                rd(ptr[ch] + 13'd3, S_CMD);
         end
 
         // strumento: forma d'onda, attacco/decadimento, sostegno/rilascio, impulso, rilascio,
         // filtro e $D418
-        S_INS:  begin wave[ch] <= rdata; rd(SID_INSTR_BASE + {5'd0, ins[ch], 3'd1}, S_INS2); end
-        S_INS2: begin wr(3'd5, rdata);   rd(SID_INSTR_BASE + {5'd0, ins[ch], 3'd2}, S_INS3); end
-        S_INS3: begin wr(3'd6, rdata);   rd(SID_INSTR_BASE + {5'd0, ins[ch], 3'd3}, S_INS4); end
-        S_INS4: begin pw_lo <= rdata;    rd(SID_INSTR_BASE + {5'd0, ins[ch], 3'd4}, S_INS5); end
-        S_INS5: begin wr(3'd3, rdata);   rd(SID_INSTR_BASE + {5'd0, ins[ch], 3'd5}, S_INS6); end
+        S_INS:  begin wave[ch] <= rdata; rd(SID_INSTR_BASE + {6'd0, ins[ch], 3'd1}, S_INS2); end
+        S_INS2: begin wr(3'd5, rdata);   rd(SID_INSTR_BASE + {6'd0, ins[ch], 3'd2}, S_INS3); end
+        S_INS3: begin wr(3'd6, rdata);   rd(SID_INSTR_BASE + {6'd0, ins[ch], 3'd3}, S_INS4); end
+        S_INS4: begin pw_lo <= rdata;    rd(SID_INSTR_BASE + {6'd0, ins[ch], 3'd4}, S_INS5); end
+        S_INS5: begin wr(3'd3, rdata);   rd(SID_INSTR_BASE + {6'd0, ins[ch], 3'd5}, S_INS6); end
         S_INS6: begin
             wr(3'd2, pw_lo);
             rel[ch] <= rdata;
-            rd(SID_INSTR_BASE + {5'd0, ins[ch], 3'd6}, S_INS7);
+            rd(SID_INSTR_BASE + {6'd0, ins[ch], 3'd6}, S_INS7);
         end
-        S_INS7: begin ins_filt <= rdata; rd(SID_INSTR_BASE + {5'd0, ins[ch], 3'd7}, S_INS8); end
+        S_INS7: begin ins_filt <= rdata; rd(SID_INSTR_BASE + {6'd0, ins[ch], 3'd7}, S_INS8); end
         S_INS8: begin
             ins_vm <= rdata;
             freq_write <= 1'b1;
-            rd(SID_FREQ_BASE + {4'd0, note[ch], 1'b0}, S_FRQ);
+            rd(SID_FREQ_BASE + {5'd0, note[ch], 1'b0}, S_FRQ);
         end
 
         // frequenza della nota (tabella: byte basso, byte alto)
@@ -505,7 +543,7 @@ always @(posedge clk) begin
         S_FRQ: begin
             freq[ch][7:0] <= rdata;
             if (!half) wr(3'd0, rdata);
-            rd(raddr + 12'd1, S_FRQ2);
+            rd(raddr + 13'd1, S_FRQ2);
         end
         S_FRQ2: begin
             freq[ch][15:8] <= rdata;
@@ -539,7 +577,7 @@ always @(posedge clk) begin
         // nota in corso: arpeggio o scivolata
         S_RUN: begin
             if (arp[ch] != 2'd0)
-                rd(SID_FREQ_BASE + {4'd0, note[ch] + arp_ofs(arp[ch], ch == 2'd3 ? fx_phase : phase), 1'b0}, S_FRQ);
+                rd(SID_FREQ_BASE + {5'd0, note[ch] + arp_ofs(arp[ch], ch == 2'd3 ? fx_phase : phase), 1'b0}, S_FRQ);
             else if (slide[ch] != 8'd0) begin
                 // dimezzata come sempre: prima il byte alto, poi il basso
                 freq[ch] <= slid;
@@ -569,9 +607,9 @@ always @(posedge clk) begin
     if (reset) begin
         vstate <= V_IDLE;
     end else case (vstate)
-        V_IDLE: if (voice_go && voice_len({1'b0, voice_id}) != 12'd0) begin
-            vaddr <= voice_start({1'b0, voice_id});
-            vleft <= {voice_len({1'b0, voice_id}), 1'b0};
+        V_IDLE: if (voice_go && voice_len(voice_id) != 12'd0) begin
+            vaddr <= voice_start(voice_id);
+            vleft <= {voice_len(voice_id), 1'b0};
             vlo <= 1'b0;
             vstep <= 4'd0;
             vstate <= V_SETUP;
@@ -767,6 +805,7 @@ sid_top #(.MULTI_FILTERS(0), .DUAL(0)) sid (
     .pot_y_r(8'd0),
     .ext_in_r(18'd0),
     .audio_r(),
+    .scope(scope),
     .filter_en(1'b1),
     .mode(mode_8580),
     .cfg(2'd0),

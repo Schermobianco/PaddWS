@@ -118,9 +118,9 @@ impl Rom {
         })
     }
 
-    /// Byte all'indirizzo `a` (12 bit come nel player Verilog); fuori dalla ROM 0.
+    /// Byte all'indirizzo `a` (13 bit come nel player Verilog); fuori dalla ROM 0.
     pub fn byte(&self, a: u16) -> u8 {
-        self.data.get((a & 0xFFF) as usize).copied().unwrap_or(0)
+        self.data.get((a & 0x1FFF) as usize).copied().unwrap_or(0)
     }
 
     /// Numero della canzone (da 1) dal nome (`title`, `theme_hammer`...) o dal numero.

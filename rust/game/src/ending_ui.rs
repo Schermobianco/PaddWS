@@ -3,12 +3,16 @@
 //! sale, "YOU ARE THE PADD WS CHAMPION" con i fuochi d'artificio, i titoli di coda e THE END; poi
 //! le iniziali della classifica. Start salta tutto e va dritto alle iniziali.
 //!
+//! Dopo OMEGA (`Run::omega_won`) prima di tutto il finale speciale (`Part::Shatter`): la racchetta
+//! rossa di OMEGA trema e si spezza nelle sette racchette degli avversari, che si allontanano; in
+//! fondo, sotto THE END, OMEGA DEFEATED. Il premio del campione è sempre quello del GUARDIAN.
+//!
 //! Colori: solo bianco, giallo (l'accento) e rosso, senza sfumature: le scintille dei fuochi si
 //! diradano invece di scurirsi. Tempi e disegni come le anteprime approvate (`ending.py`,
 //! `fireworks.py`), con le misure di uno schermo alto 480 scalate con `App::scale`.
 
 use macroquad::prelude::*;
-use paddws_core::challenge::{LEVELS, Score};
+use paddws_core::challenge::{LEVELS, RUNGS, SCORE_LEVEL_OMEGA, Score};
 use paddws_core::fixed::to_f32;
 use paddws_core::{Event, PaddleKind, Rng};
 
@@ -26,6 +30,11 @@ const PARADE: f64 = 9.0;
 const SCORE: f64 = 9.0;
 const CHAMPION: f64 = 7.0;
 const THE_END: f64 = 3.0;
+/// Finale speciale dopo OMEGA: la racchetta trema per `SHATTER_AT`, lampeggia bianca per 8 frame,
+/// poi i pezzi si allontanano fino alla fine della parte.
+const SHATTER: f64 = 4.0;
+const SHATTER_AT: f64 = 1.2;
+const SHATTER_FLASH: f64 = 8.0 / 60.0;
 /// "YOU WIN!" (e la sua voce) un secondo dopo CONGRATULATIONS.
 const YOU_WIN_AT: f64 = 1.0;
 /// Sfilata: un avversario al secondo, il timbro mezzo secondo dopo.
@@ -120,6 +129,8 @@ fn credits_seconds() -> f64 {
 /// Parti del finale, in ordine.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Part {
+    /// solo dopo OMEGA: la sua racchetta che si spezza
+    Shatter,
     Congrats,
     Parade,
     Score,
@@ -128,11 +139,14 @@ pub enum Part {
     TheEnd,
 }
 
-/// Inizio di ogni parte (s) e fine del finale.
-fn schedule() -> [(Part, f64); 7] {
+/// Inizio di ogni parte (s) e, nell'ultima posizione, fine del finale; con `omega` prima di tutto
+/// la racchetta di OMEGA che si spezza (altrimenti la parte dura 0).
+fn schedule(omega: bool) -> [(Part, f64); 8] {
     let credits = credits_seconds() + CREDITS_HOLD;
-    let starts = [CONGRATS, PARADE, SCORE, CHAMPION, credits, THE_END];
+    let shatter = if omega { SHATTER } else { 0.0 };
+    let starts = [shatter, CONGRATS, PARADE, SCORE, CHAMPION, credits, THE_END];
     let parts = [
+        Part::Shatter,
         Part::Congrats,
         Part::Parade,
         Part::Score,
@@ -140,21 +154,21 @@ fn schedule() -> [(Part, f64); 7] {
         Part::Credits,
         Part::TheEnd,
     ];
-    let mut out = [(Part::TheEnd, 0.0); 7];
+    let mut out = [(Part::TheEnd, 0.0); 8];
     let mut t = 0.0;
     for (i, (part, len)) in parts.into_iter().zip(starts).enumerate() {
         out[i] = (part, t);
         t += len;
     }
-    out[6] = (Part::TheEnd, t); // fine
+    out[7] = (Part::TheEnd, t); // fine
     out
 }
 
 /// Parte al tempo `t` e da quanto è cominciata; None a finale concluso.
-fn part_at(t: f64) -> Option<(Part, f64)> {
-    let s = schedule();
-    (t < s[6].1).then(|| {
-        let i = s[..6].iter().rposition(|&(_, start)| t >= start).unwrap_or(0);
+fn part_at(t: f64, omega: bool) -> Option<(Part, f64)> {
+    let s = schedule(omega);
+    (t < s[7].1).then(|| {
+        let i = s[..7].iter().rposition(|&(_, start)| t >= start).unwrap_or(0);
         (s[i].0, t - s[i].1)
     })
 }
@@ -357,18 +371,22 @@ pub struct Ending {
     /// voce "YOU WIN!" detta, timbri e avversari già annunciati con il loro suono
     voiced: bool,
     sounds: usize,
+    /// dopo OMEGA battuto: il finale speciale, e il botto della racchetta già suonato
+    omega: bool,
+    shattered: bool,
 }
 
 impl Ending {
-    /// Il giocatore ha battuto l'ultimo avversario, che ha fatto `opponent_points` punti: il
-    /// premio del livello come a ogni livello vinto (`Score::win_bonus`), qui il premio del
-    /// campione.
-    pub fn new(app: &mut App, opponent_points: u16) -> Self {
+    /// Il giocatore ha battuto l'ultimo avversario, il GUARDIAN, che ha fatto `guardian_points`
+    /// punti: il premio del livello come a ogni livello vinto (`Score::win_bonus`), qui il premio
+    /// del campione. Anche dopo OMEGA, vinto o perso: con OMEGA battuto il finale speciale e ALL+.
+    pub fn new(app: &mut App, guardian_points: u16) -> Self {
         let run = app.run.as_mut().expect("finale senza CHALLENGE");
-        let (win, perfect) = Score::win_bonus(run.level, opponent_points);
+        let (win, perfect) = Score::win_bonus(LEVELS - 1, guardian_points);
         let score = run.score;
         run.score = run.score.saturating_add(win + perfect);
-        run.remember(LEVELS as u8 + 1);
+        let omega = run.omega_won;
+        run.remember(if omega { SCORE_LEVEL_OMEGA } else { LEVELS as u8 + 1 });
         let total = run.score;
         // arrivati al finale l'allenamento (OPPONENT nel menu di NEXT) è sbloccato per sempre
         if !app.cfg.game.training {
@@ -384,14 +402,22 @@ impl Ending {
             credits: credits_layout(),
             voiced: false,
             sounds: 0,
+            omega,
+            shattered: false,
         }
+    }
+
+    /// Inizio di CONGRATULATIONS.
+    fn congrats_at(&self) -> f64 {
+        schedule(self.omega)[1].1
     }
 
     /// Per la verifica automatica: porta il finale all'inizio della parte `part`, più `after` s.
     pub fn skip_to(&mut self, part: Part, after: f64) {
-        let start = schedule().iter().find(|(p, _)| *p == part).map_or(0.0, |&(_, s)| s);
+        let start = schedule(self.omega).iter().find(|(p, _)| *p == part).map_or(0.0, |&(_, s)| s);
         self.t = start + after;
-        self.voiced = self.t > YOU_WIN_AT;
+        self.voiced = self.t > self.congrats_at() + YOU_WIN_AT;
+        self.shattered = self.t > SHATTER_AT;
         self.sounds = usize::MAX;
     }
 
@@ -402,12 +428,17 @@ impl Ending {
         if input::pressed(KeyCode::Escape) || skip {
             return Some(challenge_ui::finish(app));
         }
-        if !self.voiced && self.t >= YOU_WIN_AT {
+        if !self.voiced && self.t >= self.congrats_at() + YOU_WIN_AT {
             self.voiced = true;
             app.say(paddws_sid::Call::YouWin);
         }
+        // OMEGA: il botto quando la racchetta si spezza
+        if self.omega && !self.shattered && self.t >= SHATTER_AT {
+            self.shattered = true;
+            app.play(Event::Super);
+        }
         // sfilata: un colpo per ogni avversario che entra e per ogni timbro
-        if let Some((Part::Parade, at)) = part_at(self.t) {
+        if let Some((Part::Parade, at)) = part_at(self.t, self.omega) {
             let due = (0..PaddleKind::COUNT)
                 .map(|i| i as f64 * PARADE_STEP)
                 .flat_map(|s| [s, s + STAMP_AFTER])
@@ -418,16 +449,17 @@ impl Ending {
                 self.sounds += 1;
             }
         }
-        part_at(self.t).is_none().then(|| challenge_ui::finish(app))
+        part_at(self.t, self.omega).is_none().then(|| challenge_ui::finish(app))
     }
 
     pub fn draw(&self, app: &App) {
         app.renderer.fill(BLACK);
-        let Some((part, at)) = part_at(self.t) else { return };
+        let Some((part, at)) = part_at(self.t, self.omega) else { return };
         let colors = &app.cfg.colors;
         let (white, yellow) = (App::color(colors.white), App::color(colors.accent));
         let flash = |period: f64| if (at / period) as i64 % 2 == 0 { yellow } else { white };
         match part {
+            Part::Shatter => draw_shatter(app, at, white, yellow),
             Part::Congrats => {
                 text(app, "CONGRATULATIONS!", T1, 216.0, flash(0.5));
                 if at >= YOU_WIN_AT {
@@ -447,7 +479,12 @@ impl Ending {
                 text(app, "PADD WS CHAMPION", T1, 408.0, yellow);
             }
             Part::Credits => self.draw_credits(app, at, white, yellow),
-            Part::TheEnd => text(app, "THE END", T1, 240.0, flash(0.66)),
+            Part::TheEnd => {
+                text(app, "THE END", T1, 240.0, flash(0.66));
+                if self.omega {
+                    text(app, "OMEGA DEFEATED", T1, 280.0, RED);
+                }
+            }
         }
     }
 
@@ -538,6 +575,69 @@ impl Ending {
                 Line::Text(s) => text(app, s, T1, y, white),
                 Line::Gap => {}
             }
+        }
+    }
+}
+
+/// La racchetta rossa di OMEGA (ARCADE, grande come nella sfilata) trema sempre di più con dei
+/// lampi bianchi, a `SHATTER_AT` diventa bianca per 8 frame e si spezza: le sette racchette della
+/// scala, ognuna con il suo tipo e la sua misura, si allontanano dal centro in tutte le direzioni,
+/// con qualche scheggia rossa e bianca.
+fn draw_shatter(app: &App, at: f64, white: Color, yellow: Color) {
+    let r = &app.renderer;
+    let (sc, u) = (app.scale(), unit(app));
+    let p = &app.params;
+    let zoom = 1.6;
+    let (cx, cy) = (r.world_w / 2.0, r.world_h / 2.0);
+    let paddle = |kind: PaddleKind, x: f32, y: f32, body: Color| {
+        let shape = Shape {
+            kind: Some(kind),
+            x,
+            y: r.world_h - y, // y del core, verso l'alto
+            w: to_f32(p.pad_width) * zoom,
+            h: to_f32(p.kinds[kind as usize].height) * zoom,
+            front: -1.0,
+            tilt: 0.0,
+            dash: None,
+            preview: false,
+        };
+        let look = Look {
+            body,
+            mark: yellow,
+            detail: yellow,
+        };
+        draw_paddle(r, &shape, u * zoom, look);
+    };
+    let frame = (at * 60.0) as i32;
+    if at < SHATTER_AT + SHATTER_FLASH {
+        let k = (at / SHATTER_AT).min(1.0) as f32;
+        // trema avanti e indietro, di più verso la fine, con lampi sempre più fitti
+        let dx = if frame % 4 < 2 { 1.0 } else { -1.0 } * 3.0 * k * u;
+        let every = (16.0 - 12.0 * k) as i32;
+        let lit = at >= SHATTER_AT || (at > 0.4 && frame % every.max(2) == 0);
+        let body = if lit { white } else { crate::next_ui::omega_color(app) };
+        paddle(PaddleKind::Arcade, cx + dx, cy, body);
+        return;
+    }
+    let k = ((at - SHATTER_AT - SHATTER_FLASH) / (SHATTER - SHATTER_AT - SHATTER_FLASH)).min(1.0) as f32;
+    // escono in fretta e rallentano
+    let d = 1.0 - (1.0 - k) * (1.0 - k);
+    let reach = r.world_w.max(r.world_h) * 0.75;
+    for (i, rung) in RUNGS.iter().enumerate() {
+        let angle = -std::f32::consts::FRAC_PI_2 + i as f32 * std::f32::consts::TAU / LEVELS as f32;
+        let (x, y) = (cx + angle.cos() * reach * d, cy + angle.sin() * reach * d * 0.8);
+        paddle(rung.kind, x, y, white);
+    }
+    // schegge: quadratini più veloci, che si diradano
+    let mut rng = Rng::new(0x0E6A_0001);
+    for i in 0..24 {
+        let angle = rng.below(6283) as f32 / 1000.0;
+        let speed = 0.6 + rng.below(800) as f32 / 1000.0;
+        let dist = reach * 1.3 * speed * d;
+        if alive(1.0 - k, i, frame) {
+            let c = if i % 3 == 0 { white } else { RED };
+            let s = 3.0 * sc;
+            draw_rectangle(cx + angle.cos() * dist - s / 2.0, cy + angle.sin() * dist - s / 2.0, s, s, c);
         }
     }
 }
@@ -639,15 +739,26 @@ mod tests {
 
     #[test]
     fn the_parts_follow_each_other_and_the_ending_lasts_about_a_minute() {
-        assert_eq!(part_at(0.0), Some((Part::Congrats, 0.0)));
-        assert_eq!(part_at(CONGRATS + 0.5).map(|p| p.0), Some(Part::Parade));
-        assert_eq!(part_at(CONGRATS + PARADE).map(|p| p.0), Some(Part::Score));
-        assert_eq!(part_at(CONGRATS + PARADE + SCORE + 1.0).map(|p| p.0), Some(Part::Champion));
-        let end = schedule()[6].1;
-        assert_eq!(part_at(end - 0.1).map(|p| p.0), Some(Part::TheEnd));
-        assert_eq!(part_at(end), None);
+        assert_eq!(part_at(0.0, false), Some((Part::Congrats, 0.0)));
+        assert_eq!(part_at(CONGRATS + 0.5, false).map(|p| p.0), Some(Part::Parade));
+        assert_eq!(part_at(CONGRATS + PARADE, false).map(|p| p.0), Some(Part::Score));
+        assert_eq!(part_at(CONGRATS + PARADE + SCORE + 1.0, false).map(|p| p.0), Some(Part::Champion));
+        let end = schedule(false)[7].1;
+        assert_eq!(part_at(end - 0.1, false).map(|p| p.0), Some(Part::TheEnd));
+        assert_eq!(part_at(end, false), None);
         // titoli lenti: un paio di righe al secondo, il finale tra i 45 s e il minuto
         assert!((45.0..62.0).contains(&end), "{end}");
+    }
+
+    #[test]
+    fn after_omega_the_paddle_shatters_first() {
+        assert_eq!(part_at(0.0, true), Some((Part::Shatter, 0.0)));
+        assert_eq!(part_at(SHATTER + 0.5, true), Some((Part::Congrats, 0.5)));
+        // il resto è il finale normale, spostato della parte in più
+        assert_eq!(schedule(true)[7].1, schedule(false)[7].1 + SHATTER);
+        for (a, b) in schedule(true)[1..].iter().zip(&schedule(false)[1..]) {
+            assert_eq!((a.0, a.1), (b.0, b.1 + SHATTER));
+        }
     }
 
     /// Sfilata nel campo 16:9 e 4:3 (480 righe, 1x = 16 unità): timbri che non si toccano (i

@@ -134,6 +134,7 @@ int main(int argc, char** argv) {
         top.loadout0 = uint32_t(cfg("P_LOADOUT0"));
         top.loadout1 = uint32_t(cfg("P_LOADOUT1"));
         top.kinds = uint32_t(cfg("P_KINDS"));
+        top.morph = uint32_t(cfg("P_MORPH")) & 3;
         top.difficulty = uint32_t(cfg("P_DIFFICULTY")) & 3;
         top.super_moves = cfg("P_SUPERS") != 0;
         top.seed = uint32_t(cfg("P_SEED"));

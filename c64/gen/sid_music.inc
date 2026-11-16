@@ -26,3 +26,5 @@ SID_SONG_ENDING = 8
 SID_ENDING_LEAD = 514
 SID_ENDING_ARP = 939
 SID_ENDING_SIZE = 1595
+; canzone di OMEGA (omegaK_V.bin, una sezione per forma, come i temi): nel player è la canzone del tema
+SID_OMEGA_SECTIONS = 7

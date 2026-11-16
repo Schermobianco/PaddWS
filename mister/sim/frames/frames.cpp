@@ -11,7 +11,9 @@
 // fino alla 4.1), 2 NEXT libera contro la CPU, che l'OSD non ha: la usano gli scenari "next", "warp",
 // "steer", "kinds", "supers", "bullet", "ghost" e "howto". Players non conta in NEXT.
 // Argomento "next": NEXT contro la CPU; il giocatore sceglie TELEPORT, SMASH e SLOW con il joystick.
-// Argomento "warp": come "next" ma più lunga, salva i frame dei primi salti del TELEPORT.
+// Argomento "warp": come "next" ma più lunga, salva i frame dei primi salti del TELEPORT. Con
+// PONG_WARP_MORPH=1 la racchetta del giocatore cambia forma a ogni punto della CPU come OMEGA e i salti
+// arrivano dopo la seconda trasformazione (racchetta e portale devono essere della forma attuale).
 // Argomento "steer": come "warp", ma il giocatore sceglie STEER, TELEPORT e SMASH (salva la scelta
 // in pick_*.ppm) e la CPU riceve STEER armato a ogni palla in arrivo: salva i primi due tiri guidati.
 // Argomento "kinds": come "next", poi nella scelta della racchetta i tipi dei due lati vengono da
@@ -73,7 +75,23 @@
 // lunghe si accorciano portando avanti il contatore del finale (e lo scorrimento dei titoli). In THE END
 // Start salta alle iniziali. Stampa le voci "YOU WIN!" (attesa 1, il finale), la canzone del SID e i punti, e alla
 // fine lo sblocco dell'allenamento e la richiesta di salvarlo (attesi 1 e 1).
-// Argomento "train": l'allenamento di NEXT (sblocco forzato al frame 2, Opponent da PONG_TRAIN, 3 se
+// Argomento "omega": OMEGA, il boss segreto (4.4.0), a difficoltà HARD. Per fare presto la scala non si
+// gioca: al frame 32 (scelta dei bonus) il core passa al GAME OVER del GUARDIAN vinto 5-0 (scala fatta
+// senza continue), poi da solo l'allarme (om_warn_*, saltato con A dopo un secondo), la presentazione
+// di OMEGA (om_intro_*, saltata con A al frame 290), la partita: ogni 90 frame il giocatore segna (la
+// palla portata oltre la CPU con PATCH_BALL_X: il core conta il punto e OMEGA si trasforma davvero),
+// om_morph<punti>_<frame dalla trasformazione> (0: l'ultimo frame prima; 1: il lampo bianco del punto;
+// 2: il primo con la forma nuova, il lampo della racchetta e il nome, che devono arrivare insieme; 8:
+// finito il lampo). Dopo il secondo punto (OMEGA è HAMMER, che ha il
+// TELEPORT) OMEGA riceve TELEPORT armato con la palla in arrivo: il salto (om_warp_*, un frame ogni 2)
+// deve avere la racchetta e il portale della forma attuale. Poi i punti riprendono, fino a 7: OMEGA
+// CLEAR! (om_clear), la racchetta che si
+// spezza (om_shatter_*), il finale accorciato (om_p*) con OMEGA DEFEATED in THE END, le iniziali.
+// Stampa forma, canzone del SID e alla fine gli sblocchi (attesi 1 e 1).
+// Argomento "jukebox": il JUKEBOX (sblocco forzato al frame 2, voce dell'OSD accesa): i brani con giù
+// (jb_<brano>), OMEGA, fermo con A (jb_stop). Stampa brano e canzone del SID.
+// Argomento "train": l'allenamento di NEXT (sblocco forzato al frame 2, con PONG_TRAIN_OMEGA=1 anche
+// quello di OMEGA; Opponent da PONG_TRAIN, 3 se
 // manca: HAMMER). Due giri: scelta, presentazione (tr_intro*), partita senza punti arcade (tr_game*)
 // in cui gettone e Start del joystick 2 non devono portare uno sfidante, vinta dal giocatore (YOU WIN,
 // tr_over1) e poi persa (GAME OVER con CPU WINS, tr_over2); dopo ciascuna si torna all'attract. Stampa
@@ -97,8 +115,11 @@
 // Checkpoint: al primo frame di partita (modo M_GAME, dopo la scelta dei bonus in NEXT) lo stato
 // del modello e di questo programma va in ckpt_<scenario>.bin. Le esecuzioni seguenti ripartono da
 // lì se tutti i frame richiesti vengono dopo. La chiave in ckpt_<scenario>.txt è l'hash
-// dell'eseguibile, della ROM della musica del SID e dello scenario: cambia a ogni ricompilazione del modello,
-// cioè quando cambiano l'RTL o questo file, e allora il checkpoint si rigenera da capo.
+// dell'eseguibile, della ROM della musica del SID, del firmware, delle ROM dello schermo a oggetti e dello
+// scenario: cambia a ogni ricompilazione del modello (RTL o questo file) e a ogni firmware nuovo, e
+// allora il checkpoint si rigenera da capo.
+// PONG_UILOG=file: le foto dello stato delle schermate per paddws-ui-sim (rust/mister-ui), con il
+// tempo di ogni frame del firmware (righe "#").
 //
 // Compilazione ed esecuzione: frames.ps1 (da mister/sim/frames, ~3,5 frame al secondo).
 // public.vlt rende pubblici solo i segnali usati qui sotto.
@@ -134,18 +155,27 @@ static constexpr int W = 320, H = 240;
 
 // campi delle modifiche di prova (rust/mister-fw/src/map.rs) e parole di stato (words.rs)
 enum { PATCH_SCORE = 1, PATCH_ARMED, PATCH_RESERVE, PATCH_SELECTED, PATCH_COOLDOWN, PATCH_METER, PATCH_CAPSULE,
-       PATCH_CAPSULE_X, PATCH_CAPSULE_Y, PATCH_CAPSULE_VX, PATCH_CAPSULE_VY };
+       PATCH_CAPSULE_X, PATCH_CAPSULE_Y, PATCH_CAPSULE_VX, PATCH_CAPSULE_VY, PATCH_BALL_X };
 enum { W_SCORES = 14, W_PLAYER0 = 23, W_CAPS = 25, W_SUPER0 = 75 };
 
 // parola di stato i della logica
 static uint32_t& word(Vpong_top___024root* r, int i) { return r->pong_top__DOT__logic_core__DOT__w[i]; }
 
-// una modifica di prova per il firmware (al prossimo tick)
+// una modifica di prova per il firmware (al prossimo tick). Senza tick (GAME OVER, schermate) le
+// modifiche restano in coda: una dello stesso campo prende il posto della precedente e oltre le
+// PATCH_MAX voci di pong_logic_rv non se ne aggiungono (si scriverebbe fuori dall'array del modello)
 static void patch(Vpong_top___024root* r, int field, int index, uint32_t value) {
+    constexpr int patch_max = sizeof(r->pong_top__DOT__logic_core__DOT__patch) /
+                              sizeof(r->pong_top__DOT__logic_core__DOT__patch[0]) / 2;
     auto& n = r->pong_top__DOT__logic_core__DOT__patch_n;
-    r->pong_top__DOT__logic_core__DOT__patch[2 * n] = uint32_t(field | index << 8);
-    r->pong_top__DOT__logic_core__DOT__patch[2 * n + 1] = value;
-    n++;
+    auto& p = r->pong_top__DOT__logic_core__DOT__patch;
+    const uint32_t key = uint32_t(field | index << 8);
+    int i = 0;
+    while (i < n && p[2 * i] != key) i++;
+    if (i >= patch_max) return;
+    p[2 * i] = key;
+    p[2 * i + 1] = value;
+    if (i == n) n++;
 }
 
 // punteggio di un lato, nel firmware e nella parola visibile
@@ -251,7 +281,12 @@ int main(int argc, char** argv) {
     const bool howto_test = arg == "howto";
     const bool chal_test = arg == "challenger";
     const bool bul_test = arg == "bullet";
-    const bool end_test = arg == "ending";
+    const bool omega_test = arg == "omega";
+    const bool jb_test = arg == "jukebox";
+    const bool end_test = arg == "ending" || omega_test;
+    const std::string end_pre = omega_test ? "om_" : "end_";   // nomi delle immagini del finale
+    int om_intro_at = -1, om_points = 0;                       // "omega": inizio della presentazione, punti
+    int om_next = -1, om_warp = 0, om_warp_f = 0, om_prev_warp = 0;   // prossimo punto, TELEPORT di OMEGA
     const bool egg_test = arg == "egg";
     const bool train_test = arg == "train";
     const bool wins_test = arg == "wins";
@@ -281,6 +316,8 @@ int main(int argc, char** argv) {
     const bool nv_test = arg == "nvram";
     int howto_phase = 0, howto_from = 2;          // "howto": 0 joystick, 1 spinner, 2 paddle; inizio del giro
     int over_frames = 0;
+    int an_from = -1;          // "anim": frame da cui partono le fine partita forzate
+    int chal_bonus_at = -1;    // "challenger": inizio della schermata del premio
     std::set<int> wanted = (mute_test || countdown_only) ? std::set<int>{1650}
                                : (warp_test || steer_test || ghost_test || kinds_test || ch_test || sup_test || chal_test || bul_test || nv_test ||
                                   howto_test || music_test || end_test || egg_test || train_test || wins_test) ? std::set<int>{}
@@ -291,7 +328,7 @@ int main(int argc, char** argv) {
                               sup_test || chal_test || bul_test || music_test || end_test || train_test || wins_test;
     const int coin_at = egg_test ? -1 : skip_attract ? 10 : 620,
               start_at = egg_test ? -1 : skip_attract ? 30 : next_test ? 1100 : demo_test ? -1 : 1600;
-    int last = (mute_test || countdown_only) ? 1660 : (win_test || music_test) ? 4000 : (warp_test || steer_test || ghost_test || kinds_test || ch_test || sup_test || chal_test || bul_test || end_test || train_test || wins_test) ? 6000
+    int last = omega_test ? 9000 : jb_test ? 900 : (mute_test || countdown_only) ? 1660 : (win_test || music_test) ? 4000 : (warp_test || steer_test || ghost_test || kinds_test || ch_test || sup_test || chal_test || bul_test || end_test || train_test || wins_test) ? 6000
              : demo_test ? 9400 : nv_test ? 60 : egg_test ? 3000 : howto_test ? 400 : next_test ? 3720 : (paddle_test || spin_test) ? start_at + 380 : 2900;
     if (!requested.empty()) {
         wanted = requested;
@@ -311,7 +348,8 @@ int main(int argc, char** argv) {
     top.game_type = ladder ? 3 : (next_test || howto_test) ? 2 : 0;
     top.train_level = train_test ? train_level : 0;
     top.free_play = 0;
-    top.difficulty = 1;
+    top.difficulty = omega_test ? 2 : 1;      // OMEGA solo a HARD o EXPERT
+    top.jukebox = jb_test;
     top.upright = upright || arg == "up" || arg == "cdup" || arg == "winup" || arg == "perfectup";
     top.joy0 = top.joy1 = 0;
     top.ps2_key = 0;
@@ -350,10 +388,14 @@ int main(int argc, char** argv) {
     };
     int frames = 0, prev_mode = -1;
     long long cycle = 0;
+    // registro PONG_UILOG: ultima foto vista (ui_seq), suo ciclo e richiesta di scambio del frame prima
+    int ui_seq = -1, ui_req = 0;
+    long long ui_at = 0;
 
     // variabili di questo programma salvate nel checkpoint insieme al modello
     const auto host_vars = [&](auto&& io) {
         io(&cycle, sizeof cycle); io(&frames, sizeof frames); io(&prev_mode, sizeof prev_mode);
+        io(&ui_seq, sizeof ui_seq); io(&ui_req, sizeof ui_req); io(&ui_at, sizeof ui_at);
         io(&warps, sizeof warps); io(&prev_warp, sizeof prev_warp); io(&warp_f, sizeof warp_f);
         io(&over_frames, sizeof over_frames);
         io(&loud_muted, sizeof loud_muted); io(&loud_coin, sizeof loud_coin);
@@ -368,6 +410,11 @@ int main(int argc, char** argv) {
         io(&end_part, sizeof end_part); io(&end_at, sizeof end_at); io(&you_wins, sizeof you_wins);
         io(&egg_round, sizeof egg_round); io(&egg_paddle, sizeof egg_paddle); io(&egg_errors, sizeof egg_errors);
         io(&tr_round, sizeof tr_round); io(&w_duels, sizeof w_duels); io(&w_errors, sizeof w_errors);
+        io(&howto_phase, sizeof howto_phase); io(&howto_from, sizeof howto_from);
+        io(&ghosts, sizeof ghosts); io(&prev_ghost, sizeof prev_ghost); io(&ghost_frames, sizeof ghost_frames);
+        io(&ghost_px, sizeof ghost_px); io(&post_px, sizeof post_px); io(&post_frames, sizeof post_frames);
+        io(&nv_on, sizeof nv_on); io(&nv_up, sizeof nv_up); io(&nv_i, sizeof nv_i); io(&nv_sub, sizeof nv_sub);
+        io(&nv_errors, sizeof nv_errors); io(&an_from, sizeof an_from); io(&chal_bonus_at, sizeof chal_bonus_at);
         io(frame.data(), frame.size());
     };
     const std::string ckpt = "ckpt_" + (arg.empty() ? std::string("base") : arg) +
@@ -376,6 +423,11 @@ int main(int argc, char** argv) {
     uint64_t key = hash_file(argv[0], 0xcbf29ce484222325ULL);
     if (!key) key = hash_file(std::string(argv[0]) + ".exe", 0xcbf29ce484222325ULL);
     key = key ? hash_file("../../rtl/gen/sid_music.hex", key) : 0;
+    // anche il firmware (le schermate sono sue) e le ROM dello schermo a oggetti: si leggono
+    // all'avvio del modello, quindi cambiano senza ricompilare
+    for (const char* f : {"../../rtl/gen/pong_fw_b0.hex", "../../rtl/gen/pong_fw_b1.hex", "../../rtl/gen/pong_fw_b2.hex",
+                          "../../rtl/gen/pong_fw_b3.hex", "../../rtl/gen/ui_font.hex", "../../rtl/gen/ui_gfx.hex"})
+        key = key ? hash_file(f, key) : 0;
     for (const char c : arg + (kinds_test ? kinds_arg : std::string()))
         key = (key ^ static_cast<unsigned char>(c)) * 0x100000001b3ULL;
     if (!key) std::printf("checkpoint disattivato: eseguibile o ROM della musica illeggibili\n");
@@ -400,7 +452,87 @@ int main(int argc, char** argv) {
         std::printf("ripresa dal checkpoint %s.bin al frame %d\n", ckpt.c_str(), frames);
     }
 
+    // Simulazione lunga interrompibile: con PONG_SAVE_EVERY=N ogni N frame lo stato completo va in
+    // run_<scenario>_<frame>.bin, e run_<scenario>.txt (chiave dell'eseguibile e frame) indica l'ultimo
+    // scritto per intero (il .bin prima, poi il .txt; quello vecchio si cancella dopo). Con PONG_RESUME=1
+    // si riparte dall'ultimo, e il registro PONG_HASHLOG tiene le righe dei frame prima della ripresa.
+    const int save_every = std::getenv("PONG_SAVE_EVERY") ? std::atoi(std::getenv("PONG_SAVE_EVERY")) : 0;
+    const std::string run_ckpt = "run_" + ckpt.substr(5);
+    bool run_due = false, resumed = false;
+    if (key && std::getenv("PONG_RESUME")) {
+        if (FILE* f = std::fopen((run_ckpt + ".txt").c_str(), "r")) {
+            unsigned long long k;
+            int n;
+            const bool ok = std::fscanf(f, "%llx %d", &k, &n) == 2 && k == key;
+            std::fclose(f);
+            if (ok) {
+                VerilatedRestore is;
+                is.open(run_ckpt + "_" + std::to_string(n) + ".bin");
+                is >> top;
+                host_vars([&](void* p, size_t n) { is.read(p, n); });
+                is.close();
+                resumed = true;
+                ckpt_done = true;
+                std::printf("ripresa da %s al frame %d\n", run_ckpt.c_str(), frames);
+            }
+        }
+    }
+    FILE* hash_log = nullptr;
+    if (const char* hp = std::getenv("PONG_HASHLOG")) {
+        if (resumed) {
+            std::string keep;
+            if (FILE* f = std::fopen(hp, "r")) {
+                char line[128];
+                while (std::fgets(line, sizeof line, f))
+                    if (std::atoi(line) < frames) keep += line;
+                std::fclose(f);
+            }
+            hash_log = std::fopen(hp, "w");
+            if (hash_log) std::fputs(keep.c_str(), hash_log);
+        } else {
+            hash_log = std::fopen(hp, "w");
+        }
+    }
+    // registro PONG_UILOG: alla ripresa restano le foto dei frame fino a quello della ripresa (le righe
+    // "#" vanno con la foto prima)
+    FILE* ui_log = nullptr;
+    if (const char* up = std::getenv("PONG_UILOG")) {
+        std::string keep;
+        if (resumed) {
+            if (FILE* f = std::fopen(up, "r")) {
+                static char line[4096];
+                bool on = true;
+                while (on && std::fgets(line, sizeof line, f)) {
+                    if (line[0] != '#' && std::atoi(line) > frames)
+                        on = false;
+                    else
+                        keep += line;
+                }
+                std::fclose(f);
+            }
+        }
+        ui_log = std::fopen(up, "w");
+        if (ui_log) std::fputs(keep.c_str(), ui_log);
+    }
+    int run_saved = resumed ? frames : -1;   // salvataggio da cancellare al prossimo
+
     while (frames < last) {
+        // salvataggio periodico (vedi sopra), allo stesso punto del checkpoint
+        if (run_due) {
+            run_due = false;
+            {
+                VerilatedSave os;
+                os.open(run_ckpt + "_" + std::to_string(frames) + ".bin");
+                os << top;
+                host_vars([&](void* p, size_t n) { os.write(p, n); });
+            }
+            if (FILE* f = std::fopen((run_ckpt + ".txt").c_str(), "w")) {
+                std::fprintf(f, "%016llx %d\n", static_cast<unsigned long long>(key), frames);
+                std::fclose(f);
+            }
+            if (run_saved >= 0) std::remove((run_ckpt + "_" + std::to_string(run_saved) + ".bin").c_str());
+            run_saved = frames;
+        }
         // al primo frame di partita: si salva qui, a fine ciclo di clock e prima delle righe visibili
         if (ckpt_due) {
             ckpt_due = false;
@@ -466,17 +598,50 @@ int main(int argc, char** argv) {
             (r->pong_top__DOT__call_id == 12 || r->pong_top__DOT__call_id == 11))
             std::printf("frame %d: voce %s nel modo %d\n", frames,
                         r->pong_top__DOT__call_id == 12 ? "PERFECT!" : "YOU WIN!", int(r->pong_top__DOT__mode));
+        // PONG_UILOG=file: a ogni foto dello stato delle schermate (pong_top, `uis`) il numero del frame
+        // che il firmware ne costruisce (il prossimo) e i registri, per paddws-ui-sim
+        {
+            // fine del frame del firmware (richiesta di scambio): cicli dalla foto e riga del video
+            if (ui_log && r->pong_top__DOT__ui__DOT__flip_req && !ui_req)
+                std::fprintf(ui_log, "# %d cicli dalla foto, riga %d\n", int(cycle - ui_at), vc);
+            if (ui_log) ui_req = r->pong_top__DOT__ui__DOT__flip_req;
+            if (ui_log && int(r->pong_top__DOT__ui_seq) != ui_seq) {
+                ui_seq = r->pong_top__DOT__ui_seq;
+                ui_at = cycle;
+                std::fprintf(ui_log, "%d", frames + 1);
+                const auto& uis = r->pong_top__DOT__uis;
+                for (size_t i = 0; i < sizeof(uis) / sizeof(uint32_t); i++)
+                    std::fprintf(ui_log, " %08x", uint32_t(uis[i]));
+                std::fprintf(ui_log, "\n");
+                std::fflush(ui_log);
+            }
+        }
         if (music_test) {
             if ((sid_active & 7) != 0 || r->pong_top__DOT__sid__DOT__song_q != 0) music_cycles++;
             if (sid_active & 8) fx_cycles++;
         }
         if (ce && hc == 0 && vc == 261) {
+            // PONG_HASHLOG=file: per ogni frame finito numero, modo e impronta FNV-1a dell'immagine, per
+            // confrontare due versioni del core frame per frame (usare -f: dal checkpoint mancano i primi)
+            if (hash_log) {
+                uint64_t h = 0xcbf29ce484222325ULL;
+                for (const uint8_t b : frame) h = (h ^ b) * 0x100000001b3ULL;
+                std::fprintf(hash_log, "%d %d %016llx\n", frames, int(r->pong_top__DOT__mode),
+                             static_cast<unsigned long long>(h));
+                std::fflush(hash_log);
+            }
             frames++;
+            if (save_every > 0 && frames % save_every == 0) run_due = true;
             top.attract_mute = mute_test && frames >= 300;
             // "warp": a ogni palla in arrivo, non ancora oltre la mezzeria (anche alla battuta), riceve
             // TELEPORT armato, così salta alla mezzeria (la logica è ferma in questa riga del frame)
+            // PONG_WARP_MORPH=1: la racchetta del giocatore (sinistra) cambia forma a ogni punto della CPU
+            // come OMEGA (Match::set_morph), così i salti del TELEPORT arrivano dopo le trasformazioni
+            const bool warp_morph = warp_test && std::getenv("PONG_WARP_MORPH");
+            if (warp_morph && r->pong_top__DOT__mode == 7) r->pong_top__DOT__match_morph = 1;
             if (warp_test && r->pong_top__DOT__mode == 5 && armed(r, 0) == 8 &&
-                int32_t(r->pong_top__DOT__ball_vx) < 0 && int32_t(r->pong_top__DOT__ball_x) >= (W / 2) * 65536)
+                int32_t(r->pong_top__DOT__ball_vx) < 0 && int32_t(r->pong_top__DOT__ball_x) >= (W / 2) * 65536 &&
+                (!warp_morph || (word(r, W_SCORES) >> 16) >= 2))   // con le trasformazioni: dopo la seconda
                 set_armed(r, 0, 0);
             // "steer": la CPU di destra riceve STEER armato a ogni palla verso di sé
             const int steer = (r->pong_top__DOT__next_flags >> 5) & 1;
@@ -656,6 +821,9 @@ int main(int argc, char** argv) {
             if (warp_test && warp && !prev_warp) {
                 warps++;
                 warp_f = 0;
+                if (warp_morph)
+                    std::printf("frame %d: salto %d del TELEPORT, racchetta sinistra di tipo %d (punti della CPU %d)\n", frames,
+                                warps, int(word(r, 45) & 7), int(word(r, W_SCORES) >> 16));
             }
             const bool warp_end = warp_test && !warp && prev_warp;
             prev_warp = warp;
@@ -726,7 +894,6 @@ int main(int argc, char** argv) {
                 }
                 if (m == 5 && t == 1) r->pong_top__DOT__mframe = 179;  // niente conto alla rovescia
                 if ((m == 5 || m == 6) && ch_games == 1 && frames - ch_at >= 0) {
-                    static int an_from = -1;
                     if (an_from < 0 && m == 5 && t == 60) an_from = frames;
                     if (an_from >= 0) {
                         const int k = frames - an_from, i = k / 2;
@@ -992,7 +1159,6 @@ int main(int argc, char** argv) {
                     // scelta dello sfidante col joystick 2 (il joystick 1 prova a cambiare quella del
                     // campione): prima la racchetta, poi i bonus, con i tempi dall'inizio dei bonus
                     if (!r->pong_top__DOT__pick_paddle) {
-                        static int chal_bonus_at = -1;
                         if (chal_bonus_at < 0) chal_bonus_at = frames;
                         const int bt = frames - chal_bonus_at;
                         if (bt == 10 || bt == 30 || bt == 50) chal_joy1 = 0x04;
@@ -1066,10 +1232,93 @@ int main(int argc, char** argv) {
                     r->pong_top__DOT__ch_score = 123456;
                 }
                 if (m == 5 && t == 1) r->pong_top__DOT__mframe = 179;          // niente conto alla rovescia
-                if (m == 5 && t == 70) set_score(r, 0, 7);                      // vinto, senza punti della CPU
+                const bool vs_omega = omega_test && r->pong_top__DOT__ch_level == 7;
+                if (m == 5 && t == 70 && !vs_omega) set_score(r, 0, 7);         // vinto, senza punti della CPU
                 if (m == 6 && t == 5) r->pong_top__DOT__mframe = 175;          // GAME OVER breve
-                if (m == 6 && t == 4) { end_shot = true; end_name = "end_gameover" + std::to_string(ch_games); }
-                if (m == 15) {
+                if (m == 6 && t == 4) { end_shot = true; end_name = end_pre + "gameover" + std::to_string(ch_games); }
+                if (omega_test && frames == 32) {
+                    r->pong_top__DOT__ch_level = 6;
+                    // solo la parola visibile: una modifica per il firmware arriverebbe al primo tick
+                    // della partita contro OMEGA
+                    word(r, W_SCORES) = 5;
+                    r->pong_top__DOT__mode = 6;      // M_GAME_OVER
+                    r->pong_top__DOT__mframe = 170;
+                }
+                if (omega_test && m == 8 && om_intro_at >= 0 && frames - om_intro_at == 290) end_joy = 0x10;
+                if (omega_test && m == 8) {
+                    // allarme (lampeggia 30 frame acceso e 15 spento), poi la presentazione
+                    if (r->pong_top__DOT__omega_warn && (t == 10 || t == 35 || t == 60)) {
+                        end_shot = true;
+                        end_name = "om_warn_" + std::to_string(t);
+                    }
+                    if (r->pong_top__DOT__ch_level == 7 && !r->pong_top__DOT__omega_warn && om_intro_at < 0) {
+                        om_intro_at = frames;
+                        std::printf("frame %d: presentazione di OMEGA (scala senza continue %d)\n", frames,
+                                    int(r->pong_top__DOT__ch_clean));
+                    }
+                    const int ia = om_intro_at < 0 ? -1 : frames - om_intro_at;
+                    if (ia == 20 || ia == 60 || ia == 150 || ia == 190 || ia == 240 || ia == 280) {
+                        end_shot = true;
+                        end_name = "om_intro_" + std::to_string(ia);
+                    }
+                }
+                if (vs_omega && m == 5) {
+                    // il giocatore (a sinistra) segna: la palla oltre la racchetta di OMEGA, a destra
+                    // un punto ogni 90 frame; dopo il secondo si aspetta il TELEPORT di OMEGA (al più 600 frame)
+                    if (om_next < 0) om_next = frames + 60;
+                    const int warp_now = r->pong_top__DOT__warp_on;
+                    // (al posto del bonus che OMEGA ha armato, se ne ha uno)
+                    if (om_points == 2 && om_warp == 0 && armed(r, 1) != 0 && int32_t(r->pong_top__DOT__ball_vx) > 0 &&
+                        int32_t(r->pong_top__DOT__ball_x) < (W / 2) * 65536) {
+                        set_armed(r, 1, 0);            // TELEPORT armato a OMEGA, a destra
+                        om_warp = 1;
+                        om_next = frames + 600;
+                    }
+                    if (om_warp == 1 && warp_now && !om_prev_warp) {
+                        om_warp = 2;
+                        om_warp_f = 0;
+                        std::printf("frame %d: TELEPORT di OMEGA (forma %d)\n", frames, int(r->pong_top__DOT__omega_kind_q));
+                    }
+                    if (om_warp == 2) {
+                        if (om_warp_f % 2 == 0 && om_warp_f <= 24) {
+                            end_shot = true;
+                            end_name = "om_warp_" + std::to_string(om_warp_f);
+                        }
+                        if (++om_warp_f > 30) {
+                            om_warp = 3;
+                            om_next = frames + 30;
+                            if (std::getenv("PONG_OMEGA_WARP")) break;   // solo fino al TELEPORT
+                        }
+                    }
+                    om_prev_warp = warp_now;
+                    if (om_points == 2 && ((om_warp == 0 && frames > om_next + 600) || (om_warp == 1 && frames > om_next)))
+                        om_warp = 3;                   // il TELEPORT non è arrivato: si va avanti
+                    // i punti veri del giocatore (la palla portata oltre può cadere in una pausa del
+                    // gioco, per esempio alla battuta: allora si riprova)
+                    om_points = int(word(r, W_SCORES) & 0xFFFF);
+                    if (frames >= om_next && om_points < 7 && (om_points != 2 || om_warp == 3)) {
+                        patch(r, PATCH_BALL_X, 0, uint32_t((W + 20) << 16));
+                        om_next = frames + 90;
+                    }
+                    const int age = r->pong_top__DOT__morph_age;
+                    const int form = int(r->pong_top__DOT__omega_kind_q);
+                    if (age <= 3 || age == 8 || age == 30 || age == 54) {
+                        end_shot = true;
+                        end_name = "om_morph" + std::to_string(om_points) + "_" + std::to_string(age);
+                        if (age == 1)
+                            std::printf("frame %d: OMEGA diventa la forma %d dopo %d punti, canzone %d\n", frames, form,
+                                        om_points, int(r->pong_top__DOT__sid__DOT__song_q));
+                    }
+                }
+                if (omega_test && m == 9 && t == 30) { end_shot = true; end_name = "om_clear"; }
+                if (omega_test && m == 15) {
+                    const int sf = r->pong_top__DOT__shat_f;
+                    if (sf == 30 || sf == 70 || sf == 76 || sf == 120 || sf == 200) {
+                        end_shot = true;
+                        end_name = "om_shatter_" + std::to_string(sf);
+                    }
+                }
+                if (m == 15 && (!omega_test || !r->pong_top__DOT__omega_won || r->pong_top__DOT__shat_f == 240)) {
                     auto& e = *r;
                     const int part = e.pong_top__DOT__ending_draw__DOT__part, pf = e.pong_top__DOT__ending_draw__DOT__pf;
                     if (part != end_part) {
@@ -1085,19 +1334,40 @@ int main(int argc, char** argv) {
                     for (const auto& sh : shots)
                         if (sh[0] == part && sh[1] == pf) {
                             end_shot = true;
-                            end_name = "end_p" + std::to_string(part) + "_" + std::to_string(pf);
+                            end_name = end_pre + "p" + std::to_string(part) + "_" + std::to_string(pf);
                         }
                     // parti accorciate: il contatore a due frame dalla fine (i fuochi si disegnano
                     // nell'ultimo frame del punteggio); i titoli a scorrimento fissato
                     static const int cut[6] = {80, 432, 302, 332, 64, -1};
                     static const int len[6] = {210, 540, 540, 420, 1526, 180};
-                    if (cut[part] >= 0 && pf == cut[part]) e.pong_top__DOT__ending_draw__DOT__pf = len[part] - 2;
+                    static const int cut_omega[6] = {22, 40, 40, 40, 64, -1};
+                    const int c = omega_test ? cut_omega[part] : cut[part];
+                    if (c >= 0 && pf == c) e.pong_top__DOT__ending_draw__DOT__pf = len[part] - 2;
                     if (part == 4 && (pf == 40 || pf == 50 || pf == 60))
                         e.pong_top__DOT__ending_draw__DOT__scroll = pf == 40 ? 250 : pf == 50 ? 500 : 820;
                     if (part == 5 && pf == 60) end_joy = 0x100;                    // Start salta alle iniziali
                 }
-                if (m == 11 && t == 20) { end_shot = true; end_name = "end_initials"; }
+                if (m == 11 && t == 20) { end_shot = true; end_name = end_pre + "initials"; }
                 if (m == 11 && t == 21) break;
+            }
+            // "jukebox": sblocco forzato, poi i brani con giù e lo stop con A
+            bool jb_shot = false;
+            std::string jb_name;
+            int jb_joy = 0;
+            if (jb_test) {
+                if (frames == 2) r->pong_top__DOT__juke_unlock_r = 1;
+                const int f = frames - 60;
+                // un brano ogni 60 frame (giù), fino a OMEGA (8), poi A: fermo
+                if (f >= 0 && f % 60 == 0 && f / 60 < 8) jb_joy |= 0x04;
+                if (f == 8 * 60 + 200) jb_joy |= 0x10;
+                if (f >= 0 && f % 60 == 40 && f / 60 <= 8) {
+                    jb_shot = true;
+                    jb_name = "jb_" + std::to_string(int(r->pong_top__DOT__jb_track));
+                    std::printf("frame %d: brano %d, canzone del SID %d\n", frames, int(r->pong_top__DOT__jb_track),
+                                int(r->pong_top__DOT__sid__DOT__song_q));
+                }
+                if (f == 8 * 60 + 150) { jb_shot = true; jb_name = "jb_omega_late"; }
+                if (f == 8 * 60 + 230) { jb_shot = true; jb_name = "jb_stop"; }
             }
             // "egg": iniziali "RED" (accende), giro dell'attract e una CHALLENGE, di nuovo "RED" (spegne)
             bool egg_shot = false;
@@ -1202,6 +1472,9 @@ int main(int argc, char** argv) {
             if (train_test) {
                 const int m = r->pong_top__DOT__mode;
                 if (frames == 2) r->pong_top__DOT__train_unlock_r = 1;
+                // PONG_TRAIN_OMEGA=1: anche OMEGA sbloccato (Opponent 8, Secret: senza lo sblocco resta
+                // l'ultimo avversario valido, all'inizio la scalata)
+                if (frames == 2 && std::getenv("PONG_TRAIN_OMEGA")) r->pong_top__DOT__omega_unlock_r = 1;
                 if (m != ch_mode) {
                     ch_mode = m;
                     ch_at = frames;
@@ -1316,7 +1589,8 @@ int main(int argc, char** argv) {
                     static const int kinds[7] = {0, 3, 2, 1, 4, 5, 6};   // rung_kind dei livelli
                     const int lvl = r->pong_top__DOT__ch_level;
                     const bool vs_cpu = r->pong_top__DOT__ch_active && !r->pong_top__DOT__duel;
-                    const int want = vs_cpu ? 7 + kinds[lvl % 7] : -1;
+                    // contro OMEGA (livello 8) la prima sezione della sua canzone, SID_SONG_OMEGA0
+                    const int want = vs_cpu ? (lvl == 7 ? 15 : 7 + kinds[lvl % 7]) : -1;
                     const bool ok = vs_cpu ? song == want : song >= 7 && song <= 13;
                     std::printf("frame %d: partita del livello %d %s, canzone %d (attesa %s)%s\n", frames, lvl + 1,
                                 vs_cpu ? "contro la CPU" : "tra due giocatori", song,
@@ -1325,9 +1599,11 @@ int main(int argc, char** argv) {
                 }
             }
             if (wanted.count(frames) || chal_shot || end_shot || warp_shot || steer_shot || ghost_shot || pick_shot || kpick_shot || kgame_shot || ch_shot ||
-                sup_shot || bul_shot || ht_shot || egg_shot || tr_shot || w_shot) {
+                sup_shot || bul_shot || ht_shot || egg_shot || tr_shot || w_shot || jb_shot) {
                 char name[64];
-                if (tr_shot || w_shot)
+                if (jb_shot)
+                    std::snprintf(name, sizeof name, "%s.ppm", jb_name.c_str());
+                else if (tr_shot || w_shot)
                     std::snprintf(name, sizeof name, "%s.ppm", (tr_shot ? tr_name : w_name).c_str());
                 else if (egg_shot)
                     std::snprintf(name, sizeof name, "%s.ppm", egg_name.c_str());
@@ -1367,7 +1643,7 @@ int main(int argc, char** argv) {
             if (warp_test && (warp || warp_end)) warp_f++;
             // moneta e start come pressioni di un frame sul joystick 1 (bit 9 e 8)
             top.joy0 = (frames == coin_at) ? 0x200 : (frames == start_at) ? 0x100 : 0;
-            top.joy0 |= sup_joy | chal_joy0 | bul_joy | ghost_joy | end_joy | egg_joy | tr_joy0 | w_joy0;
+            top.joy0 |= sup_joy | chal_joy0 | bul_joy | ghost_joy | end_joy | egg_joy | tr_joy0 | w_joy0 | jb_joy;
             top.joy1 = chal_joy1 | tr_joy1 | w_joy1;
             if (demo_test) {
                 // la demo segue l'OSD: a ogni giro dell'attract (2436 frame, demo dal frame 1524)
@@ -1456,6 +1732,9 @@ int main(int argc, char** argv) {
         std::printf("canzoni del SID in partita: %d errori (attesi 0)\n", song_errors);
     if (egg_test)
         std::printf("easter egg: %d errori (attesi 0)\n", egg_errors);
+    if (omega_test)
+        std::printf("OMEGA battuto: OMEGA nell'allenamento %d, jukebox %d (attesi 1 e 1)\n",
+                    int(r->pong_top__DOT__omega_unlock_r), int(r->pong_top__DOT__juke_unlock_r));
     if (end_test) {
         std::printf("voci YOU WIN!: %d (attesa 1, il finale: il livello 1 vinto 7-0 dice PERFECT)\n", you_wins);
         std::printf("allenamento sbloccato dal finale: %d, richiesta di salvataggio: %d (attesi 1 e 1)\n",

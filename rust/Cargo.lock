@@ -562,7 +562,12 @@ name = "paddws-mister-fw"
 version = "4.3.0"
 dependencies = [
  "paddws-core",
+ "paddws-mister-ui",
 ]
+
+[[package]]
+name = "paddws-mister-ui"
+version = "4.3.0"
 
 [[package]]
 name = "paddws-sid"

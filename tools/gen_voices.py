@@ -5,6 +5,7 @@ Uso:
     python tools/gen_voices.py            (voci da espeak-ng, poi la ROM del MiSTer)
     python tools/gen_voices.py --mister   (solo la ROM del MiSTer dai .raw4 già nel repository)
     python tools/gen_voices.py --moves    (solo le urla delle mosse speciali)
+    python tools/gen_voices.py --omega    (solo il nome di OMEGA, poi la ROM del MiSTer)
 
 Richiede espeak-ng portable in C:\\DEV\\@Compiler\\espeak-ng (cartella cambiabile con la
 variabile PADDWS_COMPILERS, come gli altri strumenti); i file generati sono nel repository, quindi
@@ -23,6 +24,10 @@ scrivendo il volume del SID; 7-8 le urla delle mosse (`Special`), 9 READY, 10 GO
 Voce "urlata" scelta dall'utente (al posto di quella grave e lenta di prima): espeak-ng
 `en-us+m3` acuta e veloce, con l'enfasi forte dell'SSML, il soffio dell'urlo (rumore che segue
 l'inviluppo, ripetibile) e una compressione forte perché a 4 bit resti piena.
+
+OMEGA, il boss segreto: il suo nome con la stessa voce, "O-MAY-GAAA" con l'ultima sillaba lenta e
+trascinata (scelto dall'utente fra varie prove): `assets/sounds/voice/omega.raw4`, voce 13, dopo le
+altre perché i numeri di quelle non cambino; nella presentazione si suona come i nomi (`$D418`).
 
 Mosse speciali di NEXT: con la stessa voce chi le esegue grida il nome della mossa, come nei
 picchiaduro (parole nostre): `assets/sounds/voice/move_straight.*` e `move_rise.*`, nell'ordine
@@ -75,6 +80,8 @@ CALLS = [("ready", "READY?", {}),
          # scritta in fonemi di espeak per allungare la prima vocale (scelta dall'utente)
          ("perfect", "[[p'3::::::::f@kt]]",
           {"PITCH": 50, "SPEED": 190, "RANGE": 99, "DRIVE": 5.0, "SHOUT_BREATH": 0.2})]
+# il nome di OMEGA, dopo tutte le altre voci (voce 13): la "E" scritta come si pronuncia, la "GA" lenta
+BOSS = [("omega", 'O MAY<prosody rate="x-slow">GA</prosody>')]
 
 
 def speak(text: str, path: Path) -> None:
@@ -159,6 +166,12 @@ def write_moves() -> None:
         g.update(saved)
 
 
+def write_boss() -> None:
+    """Il nome di OMEGA, con il rumore ripetibile."""
+    for name, text in BOSS:
+        shout(text, OUT / name, random.Random(SHOUT_SEED))
+
+
 def pack(q: list[int]) -> bytes:
     if len(q) % 2:
         q = q + [8]
@@ -167,10 +180,10 @@ def pack(q: list[int]) -> bytes:
 
 def write_mister() -> None:
     """ROM delle voci del core MiSTer dai file .raw4: i nomi nell'ordine di `PaddleKind`, poi le urla
-    delle mosse nell'ordine di `Special`, READY, GO, YOU WIN e PERFECT (indice a 4 bit, indirizzi a
-    15 bit)."""
+    delle mosse nell'ordine di `Special`, READY, GO, YOU WIN, PERFECT e il nome di OMEGA (indice a 4
+    bit, indirizzi a 15 bit)."""
     voices = ([(name.lower(), name) for name in NAMES] + [(name, text) for name, text in MOVES] +
-              [(name, text) for name, text, _ in CALLS])
+              [(name, text) for name, text, _ in CALLS] + [(name, name.upper()) for name, _ in BOSS])
     rom = bytearray()
     starts, lens = [], []
     for name, _ in voices:
@@ -187,7 +200,8 @@ def write_mister() -> None:
         "// Voci \"da SID\", campioni a 4 bit (8 = silenzio), due per byte, prima il nibble alto: 0-6 i nomi",
         "// degli avversari della CHALLENGE (`PaddleKind`), 7-8 le urla delle mosse speciali (`Special`),",
         "// 9 READY e 10 GO della CHALLENGE, 11 YOU WIN (vittoria contro la CPU e finale della CHALLENGE),",
-        "// 12 PERFECT (vittoria di un giocatore senza punti dell'avversario).",
+        "// 12 PERFECT (vittoria di un giocatore senza punti dell'avversario), 13 il nome di OMEGA (come i",
+        "// nomi degli avversari, con il registro del volume).",
         f"localparam VOICE_RATE = {RATE};",
         f"localparam VOICE_ROM_SIZE = {len(rom)};",
         f"localparam [3:0] VOICE_STRAIGHT = 4'd{first_move};",
@@ -196,6 +210,7 @@ def write_mister() -> None:
         f"localparam [3:0] VOICE_GO = 4'd{first_move + len(MOVES) + 1};",
         f"localparam [3:0] VOICE_YOU_WIN = 4'd{first_move + len(MOVES) + 2};",
         f"localparam [3:0] VOICE_PERFECT = 4'd{first_move + len(MOVES) + 3};",
+        f"localparam [3:0] VOICE_OMEGA = 4'd{first_move + len(MOVES) + len(CALLS)};",
         "function [14:0] voice_start(input [3:0] id);",
         "    case (id)",
         *[f"        4'd{i}: voice_start = 15'd{s};   // {voices[i][1].split('<')[0].split('[')[0] or voices[i][0].upper().replace('_', ' ')}"
@@ -223,10 +238,15 @@ def main() -> None:
     if "--moves" in sys.argv[1:]:
         write_moves()
         return
+    if "--omega" in sys.argv[1:]:
+        write_boss()
+        write_mister()
+        return
     rng = random.Random(SHOUT_SEED)
     for name in NAMES:
         shout(name, OUT / name.lower(), rng)
     write_moves()
+    write_boss()
     write_mister()
 
 

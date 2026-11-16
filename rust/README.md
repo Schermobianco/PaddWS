@@ -14,7 +14,9 @@ paddws [--config FILE] [--fullscreen | --windowed] [--crt | --no-crt] [--width N
 
 `--width 0` prende le proporzioni del monitor, `--width 320 --height 240` è la risoluzione del
 core MiSTer. Per le prove: `--screenshot-tour DIR` (una schermata per scena), `--paddle-gallery DIR`
-(un'immagine per tipo di racchetta), `--bench SECONDI` (gioca da solo e stampa i tempi dei frame).
+(un'immagine per tipo di racchetta), `--bench SECONDI` (gioca da solo e stampa i tempi dei frame);
+scorciatoie che non cambiano la configurazione: `--level N` (la scalata dal livello N), `--omega`
+(dritto all'allarme di OMEGA), `--jukebox`.
 
 La configurazione, `padd_config.json`, si cerca accanto all'eseguibile, poi nella cartella corrente
 e in quella superiore (comodo con `cargo run` dentro `rust/`); il menu ci salva le sue scelte, nel

@@ -12,9 +12,17 @@
 //! racchetta (la presentazione delle mosse speciali la vede una volta per lato in ogni sessione),
 //! poi i due giocano a `Rung::points`; il vincitore riprende il livello dal suo lato. Durante la
 //! sfida non entra nessun altro.
+//!
+//! OMEGA, il boss segreto: chi finisce la scala a HARD o EXPERT partendo dal livello 1 senza
+//! continue (`omega_open`) dopo il GUARDIAN trova l'allarme (`Warning`) e la presentazione di
+//! OMEGA invece del finale. Contro OMEGA non entrano sfidanti e non ci sono continue: persa, GAME
+//! OVER e il finale normale; vinta, i premi (`Clear`) e il finale speciale. È il livello
+//! `OMEGA_LEVEL` (dopo i sette della scala): `rung` dà il suo `Rung` come quello degli altri.
 
 use macroquad::prelude::*;
-use paddws_core::challenge::{Entry, LEVELS, RUNGS, Rung, Score, TABLE_SIZE, Table};
+use paddws_core::challenge::{
+    Entry, LEVELS, OMEGA, OMEGA_LEVEL, RUNGS, Rung, SCORE_LEVEL_OMEGA, Score, TABLE_SIZE, Table,
+};
 use paddws_core::fixed::to_f32;
 use paddws_core::{Event, PaddleKind, Side};
 
@@ -32,6 +40,8 @@ use crate::touch;
 
 /// Durata delle schermate, in secondi.
 const INTRO_SECONDS: f64 = 4.0;
+/// OMEGA: la presentazione è più lunga, perché la racchetta passa per tutte le sette forme.
+const OMEGA_INTRO_SECONDS: f64 = 5.25;
 const CLEAR_SECONDS: f64 = 4.0;
 const CONTINUE_SECONDS: f64 = 10.0;
 const INITIALS_SECONDS: f64 = 30.0;
@@ -92,6 +102,43 @@ pub(crate) fn egg_after(on: bool, name: &[u8; 3]) -> bool {
     on ^ (name == EGG_NAME)
 }
 
+/// Iniziali segrete che sbloccano il JUKEBOX per sempre (come battere OMEGA).
+const JUKEBOX_NAME: &[u8; 3] = b"BAS";
+
+/// JUKEBOX sbloccato dopo le iniziali `name`, se prima era `unlocked`: "BAS" lo sblocca, niente
+/// lo blocca più.
+pub(crate) fn jukebox_after(unlocked: bool, name: &[u8; 3]) -> bool {
+    unlocked || name == JUKEBOX_NAME
+}
+
+/// Difficoltà minima per OMEGA (HARD).
+const OMEGA_DIFFICULTY: u8 = 2;
+
+/// L'avversario del livello `level` (da 0): quello della scala, o OMEGA a `OMEGA_LEVEL`.
+pub(crate) fn rung(level: usize) -> &'static Rung {
+    if level == OMEGA_LEVEL { &OMEGA } else { &RUNGS[level.min(LEVELS - 1)] }
+}
+
+/// Nome dell'avversario del livello `level` (da 0), come nel menu OPPONENT.
+pub(crate) fn opponent_name(level: usize) -> &'static str {
+    if level == OMEGA_LEVEL { "OMEGA" } else { rung(level).kind.name() }
+}
+
+/// Battuto il GUARDIAN arriva OMEGA: nella scalata (non nell'allenamento) fatta tutta dal livello 1
+/// senza continue (`Run::clean`), a HARD o EXPERT.
+pub(crate) fn omega_open(run: &Run, difficulty: u8) -> bool {
+    !run.training && run.clean && run.level + 1 == LEVELS && difficulty >= OMEGA_DIFFICULTY
+}
+
+/// Livello della classifica a schermo: LV1-LV7, ALL per la scala finita, ALL+ con OMEGA battuto.
+pub(crate) fn level_label(level: u8) -> String {
+    match level {
+        SCORE_LEVEL_OMEGA.. => "ALL+".to_string(),
+        l if l as usize > LEVELS => "ALL".to_string(),
+        l => format!("LV{l}"),
+    }
+}
+
 /// Partita CHALLENGE in corso: livello e punteggio.
 pub struct Run {
     pub level: usize,
@@ -110,6 +157,13 @@ pub struct Run {
     /// allenamento (voce OPPONENT del menu): una sola partita contro l'avversario del livello,
     /// senza punti arcade, classifica, continue né sfidanti; poi si torna al menu
     pub training: bool,
+    /// scala fatta dal livello 1 senza continue: con HARD o EXPERT dopo il GUARDIAN arriva OMEGA
+    /// (`omega_open`). La perde chi continua e lo sfidante che prende il posto del campione
+    pub clean: bool,
+    /// punti fatti dal GUARDIAN: il premio del campione arriva con il finale, dopo OMEGA
+    pub guardian: u16,
+    /// OMEGA battuto: finale speciale e ALL+ in classifica
+    pub omega_won: bool,
 }
 
 impl Run {
@@ -122,16 +176,25 @@ impl Run {
             howto: [false; 2],
             wins: 0,
             training: false,
+            clean: true,
+            guardian: 0,
+            omega_won: false,
         }
     }
 
-    /// Allenamento contro l'avversario del livello `level` (da 0).
+    /// Allenamento contro l'avversario del livello `level` (da 0; `OMEGA_LEVEL` per OMEGA).
     pub fn training(level: usize) -> Self {
         Self {
-            level: level.min(LEVELS - 1),
+            level: if level == OMEGA_LEVEL { level } else { level.min(LEVELS - 1) },
             training: true,
+            clean: false,
             ..Self::new()
         }
+    }
+
+    /// Contro OMEGA.
+    pub fn omega(&self) -> bool {
+        self.level == OMEGA_LEVEL
     }
 
     pub(crate) fn remember(&mut self, level: u8) {
@@ -152,6 +215,8 @@ impl Run {
         self.wins = self.wins_after(winner);
         let champion_won = winner == self.side;
         self.side = winner;
+        // lo sfidante che prende il posto non ha fatto la scala dal livello 1: niente OMEGA
+        self.clean &= champion_won;
         champion_won
     }
 }
@@ -202,9 +267,10 @@ pub fn pad_keys(app: &App) -> PadKeys {
     })
 }
 
-/// Lato libero per uno sfidante, se c'è una scalata in corso (nell'allenamento non entra nessuno).
+/// Lato libero per uno sfidante, se c'è una scalata in corso (nell'allenamento e contro OMEGA non
+/// entra nessuno).
 fn free_side(app: &App) -> Option<Side> {
-    app.run.as_ref().filter(|r| !r.training).map(|r| r.side.opponent())
+    app.run.as_ref().filter(|r| !r.training && !r.omega()).map(|r| r.side.opponent())
 }
 
 /// Gettone (tasto 5) nelle schermate in cui può entrare uno sfidante.
@@ -384,7 +450,7 @@ impl Challenger {
         r.art_centered(&app.assets.titles.challenger, 1.0, w / 2.0, (mid + CHALLENGER_PLATE) * sc, 0.0, ArtPart::Whole, &paint);
         if let Some(run) = &app.run {
             let who = if run.side == Side::Left { "P2" } else { "P1" };
-            let line = format!("{who} VS CHAMPION   FIRST TO {}", RUNGS[run.level].points);
+            let line = format!("{who} VS CHAMPION   FIRST TO {}", rung(run.level).points);
             text(app, &line, T1, mid + CHALLENGER_LINE, white);
         }
     }
@@ -453,6 +519,8 @@ pub(crate) fn finish(app: &mut App) -> Scene {
 
 /// L'avversario del livello: racchetta a grandezza reale, nome, bonus e punteggio.
 pub struct Intro {
+    /// durata (`INTRO_SECONDS`, `OMEGA_INTRO_SECONDS` per OMEGA) e secondi che restano
+    length: f64,
     left: f64,
     hold: Hold,
     /// nome dell'avversario già annunciato
@@ -462,8 +530,10 @@ pub struct Intro {
 impl Intro {
     pub fn new(app: &App) -> Self {
         app.play(Event::Boost);
+        let length = if app.run.as_ref().is_some_and(Run::omega) { OMEGA_INTRO_SECONDS } else { INTRO_SECONDS };
         Self {
-            left: INTRO_SECONDS,
+            length,
+            left: length,
             hold: Hold::default(),
             announced: false,
         }
@@ -471,7 +541,7 @@ impl Intro {
 
     /// Per la verifica automatica: porta la presentazione a `seconds` dall'inizio.
     pub fn skip_to(&mut self, seconds: f64) {
-        self.left = INTRO_SECONDS - seconds;
+        self.left = self.length - seconds;
     }
 
     /// Come il MiSTer, il nome dell'avversario si ferma quando la presentazione finisce (saltata,
@@ -502,16 +572,20 @@ impl Intro {
         }
         self.left -= dt;
         // la voce dice il nome dell'avversario poco dopo l'inizio del jingle
-        if !self.announced && self.left <= INTRO_SECONDS - ANNOUNCE_AFTER {
+        if !self.announced && self.left <= self.length - ANNOUNCE_AFTER {
             self.announced = true;
             let run = app.run.as_ref().expect("CHALLENGE senza partita");
-            app.announce(RUNGS[run.level].kind);
+            if run.omega() {
+                app.announce_omega();
+            } else {
+                app.announce(RUNGS[run.level].kind);
+            }
         }
         let start = match free {
             Some(free) => champion_start(app, free, tap),
             None => start_pressed(app),
         };
-        let skip = self.left < INTRO_SECONDS - SKIP_AFTER && start;
+        let skip = self.left < self.length - SKIP_AFTER && start;
         (self.left <= 0.0 || skip).then(|| Scene::Game(Box::new(Play::challenge(app))))
     }
 
@@ -521,10 +595,11 @@ impl Intro {
         let r = &app.renderer;
         let run = app.run.as_ref().expect("CHALLENGE senza partita");
         r.fill(BLACK);
-        let f = ((INTRO_SECONDS - self.left) * 60.0).floor() as f32;
+        let f = ((self.length - self.left) * 60.0).floor() as f32;
         let st = Stage::new(app, run, f);
         st.header();
         match st.rung.kind {
+            _ if st.omega => st.omega(),
             PaddleKind::Arcade => st.arcade(),
             PaddleKind::Twist => st.twist(),
             PaddleKind::Hammer => st.hammer(),
@@ -543,7 +618,9 @@ impl Intro {
             r.world_h / scale(app) - 30.0,
             App::color(app.cfg.colors.white),
         );
-        draw_join_hint(app, run.side.opponent());
+        if let Some(free) = free_side(app) {
+            draw_join_hint(app, free);
+        }
         // dopo un duello: quanti ne ha vinti di fila il campione, dal suo lato (di fronte
         // all'invito per lo sfidante)
         let sc = scale(app);
@@ -579,6 +656,16 @@ const LAND_SHAKE: [(f32, f32); 6] = [(0.0, 6.0), (0.0, -4.0), (0.0, 4.0), (0.0, 
 const ARCADE_DY: [f32; 10] = [-28.0, 20.0, -8.0, 32.0, -36.0, 4.0, 24.0, -20.0, 12.0, -4.0];
 /// GUARDIAN: frame in cui la palla arriva sul muro.
 const GUARDIAN_HIT: f32 = 82.0;
+/// OMEGA: la racchetta passa per le sette forme, una ogni `OMEGA_FORM_FRAMES` da `OMEGA_FORMS_AT`,
+/// poi torna ARCADE; a ogni cambio un lampo bianco (`OMEGA_FLASH` frame per l'ultimo, come in
+/// partita; la metà per gli altri, che sono più fitti).
+const OMEGA_FORMS_AT: f32 = 6.0;
+const OMEGA_FORM_FRAMES: f32 = 24.0;
+const OMEGA_FLASH: f32 = 8.0;
+/// OMEGA: il sigillo arriva a questo frame, con la racchetta già tornata ARCADE.
+const OMEGA_NAME_AT: f32 = 180.0;
+/// Motto di OMEGA.
+pub(crate) const OMEGA_TAG: &str = "IT BECOMES THEM ALL";
 
 /// Presentazione: riga del motto (unità a 480 righe, scala `sc`, `u` unità per pixel arcade), 4
 /// pixel arcade sotto `TAG_Y` per fare posto al nome disegnato.
@@ -601,6 +688,8 @@ struct Stage<'a> {
     level: usize,
     /// allenamento: TRAINING al posto del livello
     training: bool,
+    /// OMEGA, il boss segreto
+    omega: bool,
     f: f32,
     /// +1 se l'avversario sta a destra (il giocatore a sinistra), -1 altrimenti
     away: f32,
@@ -616,13 +705,14 @@ struct Stage<'a> {
 
 impl<'a> Stage<'a> {
     fn new(app: &'a App, run: &Run, f: f32) -> Self {
-        let rung = &RUNGS[run.level];
+        let rung = rung(run.level);
         let colors = &app.cfg.colors;
         let mut st = Self {
             app,
             rung,
             level: run.level,
             training: run.training,
+            omega: run.omega(),
             f,
             away: if run.side == Side::Left { 1.0 } else { -1.0 },
             sc: scale(app),
@@ -642,6 +732,12 @@ impl<'a> Stage<'a> {
     fn shake_at(&self) -> (f32, f32) {
         let f = self.f;
         match self.rung.kind {
+            // OMEGA: un colpo a ogni cambio di forma
+            _ if self.omega => {
+                let since = f - OMEGA_FORMS_AT;
+                let change = (0.0..=LEVELS as f32 * OMEGA_FORM_FRAMES).contains(&since) && since % OMEGA_FORM_FRAMES == 0.0;
+                if change { (3.0, 0.0) } else { (0.0, 0.0) }
+            }
             PaddleKind::Hammer if (49.0..57.0).contains(&f) => HAMMER_SHAKE[(f - 49.0) as usize],
             PaddleKind::Hammer if (72.0..78.0).contains(&f) => LAND_SHAKE[(f - 72.0) as usize],
             // TITAN: un colpo sordo ogni quattro scatti della crescita
@@ -703,7 +799,7 @@ impl<'a> Stage<'a> {
 
     /// Scala dei livelli: sette trattini come quelli della mezzeria (battuti bianchi, quello di
     /// adesso giallo che lampeggia, gli altri spenti), che compaiono uno ogni due frame, e sotto il
-    /// livello (FINAL LEVEL lampeggia).
+    /// livello (FINAL LEVEL lampeggia; con OMEGA tutti battuti e SECRET LEVEL che lampeggia).
     fn header(&self) {
         let f = self.f;
         let dim = Color { a: 0.25, ..self.white };
@@ -721,10 +817,12 @@ impl<'a> Stage<'a> {
             let x = w / 2.0 + (i as f32 * 48.0 - 160.0) * self.sc + self.shake.0;
             draw_rectangle(x, self.y(LADDER_Y), 32.0 * self.sc, 10.0 * self.sc, color);
         }
-        let last = self.level + 1 == LEVELS && !self.training;
+        let last = (self.level + 1 == LEVELS || self.omega) && !self.training;
         if f >= 14.0 && (!last || (f / 10.0) as i64 % 2 == 0) {
             let title = if self.training {
                 "TRAINING".to_string()
+            } else if self.omega {
+                "SECRET LEVEL".to_string()
             } else if last {
                 "FINAL LEVEL".to_string()
             } else {
@@ -736,7 +834,12 @@ impl<'a> Stage<'a> {
 
     /// Il nome dell'avversario: la sua grafica (`titles`), alla grandezza delle scritte a 1x.
     fn name_art(&self) -> &PixelArt {
-        self.app.assets.titles.name(self.rung.kind)
+        if self.omega { &self.app.assets.titles.omega } else { self.app.assets.titles.name(self.rung.kind) }
+    }
+
+    /// Il motto dell'avversario.
+    fn tag(&self) -> &'static str {
+        if self.omega { OMEGA_TAG } else { tagline(self.rung.kind) }
     }
 
     /// Grandezza del nome in unità di disegno.
@@ -749,7 +852,7 @@ impl<'a> Stage<'a> {
     }
 
     fn name_row(&self) -> f32 {
-        let tag = self.app.renderer.text_height(tagline(self.rung.kind), self.font(), T1 * self.sc);
+        let tag = self.app.renderer.text_height(self.tag(), self.font(), T1 * self.sc);
         name_row(self.sc, self.u, tag, self.name_size().y)
     }
 
@@ -775,7 +878,7 @@ impl<'a> Stage<'a> {
         if self.f < t0 {
             return;
         }
-        let tag = tagline(self.rung.kind);
+        let tag = self.tag();
         let n = (((self.f - t0) / per) as usize + 1).min(tag.len());
         // la parte scritta, allineata dove starà il motto intero
         let r = &self.app.renderer;
@@ -1111,7 +1214,7 @@ impl<'a> Stage<'a> {
             let paint = if (34.0..36.0).contains(&f) { titles::solid(self.accent) } else { self.paint };
             self.name(x, self.y(row), 0.0, ArtPart::Whole, &paint);
         }
-        let tag = tagline(self.rung.kind);
+        let tag = self.tag();
         if let Some((x, fade)) = dash(44.0, self.x(340.0), self.x(0.0), 3.0) {
             for (gx, a) in ghosts(self.x(340.0), x, fade) {
                 self.text_at(tag, T1, gx, self.y(tag_row), Color { a, ..self.accent });
@@ -1190,6 +1293,113 @@ impl<'a> Stage<'a> {
         self.caps_pop(152.0, 10.0);
         self.first_to(190.0);
     }
+
+    /// OMEGA (diventa tutti gli altri): la racchetta rossa passa per le sette forme della scala, con
+    /// un lampo bianco a ogni cambio, e torna ARCADE; il sigillo lampeggia bianco e prende i suoi
+    /// colori, poi motto, i bonus di ARCADE e i punti.
+    fn omega(&self) {
+        let f = self.f;
+        let since = f - OMEGA_FORMS_AT;
+        if since >= 0.0 {
+            let step = (since / OMEGA_FORM_FRAMES) as usize;
+            // le sette forme, poi ARCADE per sempre
+            let kind = if step < LEVELS { RUNGS[step].kind } else { OMEGA.kind };
+            let changed = since - step.min(LEVELS) as f32 * OMEGA_FORM_FRAMES;
+            let flash = if step < LEVELS { OMEGA_FLASH / 2.0 } else { OMEGA_FLASH };
+            let body = if changed < flash { self.white } else { crate::next_ui::omega_color(self.app) };
+            let r = &self.app.renderer;
+            let shape = Shape {
+                kind: Some(kind),
+                x: self.x(0.0),
+                y: r.screen_y(self.y(PAD_Y)),
+                w: to_f32(self.app.params.pad_width),
+                h: to_f32(self.app.params.kinds[kind as usize].height),
+                front: -self.away,
+                tilt: 0.0,
+                dash: None,
+                preview: false,
+            };
+            let look = Look {
+                body,
+                mark: self.accent,
+                detail: self.gray,
+            };
+            draw_paddle(r, &shape, self.u, look);
+        }
+        // il sigillo: bianco per qualche frame, poi un lampeggio, poi i suoi colori
+        if f >= OMEGA_NAME_AT {
+            let t = f - OMEGA_NAME_AT;
+            let white = t < 4.0 || (t < 20.0 && (t / 4.0) as i64 % 2 == 1);
+            let paint = if white { titles::solid(self.white) } else { self.paint };
+            self.name(self.x(0.0), self.y(self.name_row()), 0.0, ArtPart::Whole, &paint);
+        }
+        self.tag_typed(196.0, 1.0);
+        self.caps_pop(226.0, 10.0);
+        self.first_to(264.0);
+    }
+}
+
+// --------------------------------------------------------------------- allarme
+
+/// Allarme prima di OMEGA: schermo nero e la targa WARNING! che lampeggia (`WARNING_BLINKS` volte,
+/// accesa `WARNING_ON` e spenta `WARNING_OFF` secondi), poi resta accesa fino a `WARNING_SECONDS`;
+/// la canzone del continue fa da sirena (`Scene::music`).
+const WARNING_SECONDS: f64 = 3.5;
+const WARNING_ON: f64 = 0.5;
+const WARNING_OFF: f64 = 0.25;
+const WARNING_BLINKS: f64 = 3.0;
+
+/// La targa WARNING! a `t` secondi dall'inizio dell'allarme è accesa.
+pub(crate) fn warning_lit(t: f64) -> bool {
+    let period = WARNING_ON + WARNING_OFF;
+    t >= period * WARNING_BLINKS || t % period < WARNING_ON
+}
+
+/// Battuto il GUARDIAN con la scala fatta tutta (`omega_open`): l'allarme, poi la presentazione di
+/// OMEGA. Il premio del GUARDIAN aspetta il finale (`Run::guardian`).
+pub struct Warning {
+    t: f64,
+}
+
+impl Warning {
+    /// Il GUARDIAN ha fatto `guardian_points` punti.
+    pub fn new(app: &mut App, guardian_points: u16) -> Self {
+        let run = app.run.as_mut().expect("CHALLENGE senza partita");
+        run.guardian = guardian_points;
+        run.level = OMEGA_LEVEL;
+        Self { t: 0.0 }
+    }
+
+    /// Per la verifica automatica: l'allarme a `seconds` dall'inizio.
+    pub fn skip_to(&mut self, seconds: f64) {
+        self.t = seconds;
+    }
+
+    pub fn update(&mut self, app: &mut App, dt: f64) -> Option<Scene> {
+        if input::pressed(KeyCode::Escape) {
+            app.run = None;
+            return Some(Scene::Menu(Menu::new(app)));
+        }
+        let before = self.t;
+        self.t += dt;
+        // un colpo a ogni accensione della targa
+        let period = WARNING_ON + WARNING_OFF;
+        if (before == 0.0 || (before / period).floor() < (self.t / period).floor()) && self.t < period * WARNING_BLINKS {
+            app.play(Event::Score);
+        }
+        let skip = self.t >= SKIP_AFTER && start_pressed(app);
+        (self.t >= WARNING_SECONDS || skip).then(|| Scene::Intro(Intro::new(app)))
+    }
+
+    pub fn draw(&self, app: &App) {
+        let r = &app.renderer;
+        r.fill(BLACK);
+        if warning_lit(self.t) {
+            let paint = titles::paint(&app.cfg.colors);
+            let art = &app.assets.titles.warning;
+            r.art_centered(art, 1.0, r.world_w / 2.0, r.world_h / 2.0, 0.0, ArtPart::Whole, &paint);
+        }
+    }
 }
 
 // ----------------------------------------------------------------- livello superato
@@ -1204,14 +1414,31 @@ pub struct Clear {
 }
 
 impl Clear {
-    /// Il giocatore ha vinto il livello in corso con l'avversario a `opponent_points`.
+    /// Il giocatore ha vinto il livello in corso con l'avversario a `opponent_points`. Contro
+    /// OMEGA i premi di `Score::omega_bonus`, ALL+ in classifica e gli sblocchi (OMEGA
+    /// nell'allenamento e il JUKEBOX), salvati subito.
     pub fn new(app: &mut App, opponent_points: u16) -> Self {
         let run = app.run.as_mut().expect("CHALLENGE senza partita");
-        let (win, perfect) = Score::win_bonus(run.level, opponent_points);
-        run.score = run.score.saturating_add(win + perfect);
         let level = run.level;
-        let reached = if level + 1 == LEVELS { LEVELS + 1 } else { level + 2 };
+        let (win, perfect) = if run.omega() {
+            Score::omega_bonus(opponent_points)
+        } else {
+            Score::win_bonus(run.level, opponent_points)
+        };
+        run.score = run.score.saturating_add(win + perfect);
+        let reached = if run.omega() {
+            run.omega_won = true;
+            SCORE_LEVEL_OMEGA as usize
+        } else if level + 1 == LEVELS {
+            LEVELS + 1
+        } else {
+            level + 2
+        };
         run.remember(reached as u8);
+        if level == OMEGA_LEVEL && !(app.cfg.game.training_omega && app.cfg.game.jukebox) {
+            (app.cfg.game.training_omega, app.cfg.game.jukebox) = (true, true);
+            crate::config::save_preferences(&app.config_path, &app.cfg);
+        }
         app.play(Event::Score);
         Self {
             level,
@@ -1222,9 +1449,9 @@ impl Clear {
         }
     }
 
-    /// Ultimo livello: la scala è finita.
+    /// Ultimo livello: la scala è finita (anche dopo OMEGA).
     pub fn last(&self) -> bool {
-        self.level + 1 == LEVELS
+        self.level + 1 >= LEVELS
     }
 
     pub fn update(&mut self, app: &mut App, dt: f64) -> Option<Scene> {
@@ -1254,6 +1481,11 @@ impl Clear {
         if self.left > 0.0 && !skip {
             return None;
         }
+        if self.level == OMEGA_LEVEL {
+            // OMEGA battuto: il finale speciale (il premio del campione arriva lì)
+            let guardian = app.run.as_ref().map_or(0, |r| r.guardian);
+            return Some(Scene::Ending(crate::ending_ui::Ending::new(app, guardian)));
+        }
         if self.level + 1 == LEVELS {
             return Some(finish(app));
         }
@@ -1269,14 +1501,19 @@ impl Clear {
             App::color(colors.accent),
         );
         app.renderer.fill(BLACK);
-        let last = self.level + 1 == LEVELS;
-        let title = if last {
+        let last = self.last();
+        let omega = self.level == OMEGA_LEVEL;
+        let title = if omega {
+            "OMEGA CLEAR!".to_string()
+        } else if last {
             "CHAMPION!".to_string()
         } else {
             format!("LEVEL {} CLEAR", self.level + 1)
         };
         text(app, &title, T1, 140.0, accent);
-        if last {
+        if omega {
+            text(app, "YOU BEAT THEM ALL", T1, 172.0, white);
+        } else if last {
             text(app, "YOU BEAT EVERY PADDLE", T1, 172.0, white);
         }
         text(app, &format!("WIN BONUS  +{}", self.win), T1, 232.0, white);
@@ -1347,6 +1584,8 @@ impl Continue {
             }
             if let Some(run) = &mut app.run {
                 run.score = 0;
+                // con un continue la scala non è più fatta tutta di fila: niente OMEGA
+                run.clean = false;
             }
             return Some(Scene::Intro(Intro::new(app)));
         }
@@ -1496,6 +1735,10 @@ impl Initials {
         let egg = egg_after(app.egg, &self.name);
         if egg != app.egg {
             app.set_egg(egg);
+        }
+        if jukebox_after(app.cfg.game.jukebox, &self.name) != app.cfg.game.jukebox {
+            app.cfg.game.jukebox = true;
+            crate::config::save_preferences(&app.config_path, &app.cfg);
         }
         let rank = app.scores.insert(Entry {
             name: self.name,
@@ -1722,11 +1965,7 @@ impl Scores {
             } else {
                 white
             };
-            let level = if e.level as usize > LEVELS {
-                "ALL".to_string()
-            } else {
-                format!("LV{}", e.level)
-            };
+            let level = level_label(e.level);
             let name = String::from_utf8_lossy(&e.name).to_string();
             for (s, x) in [
                 (format!("{}", i + 1), SCORES_COLS[0]),
@@ -1870,6 +2109,72 @@ mod tests {
     }
 
     #[test]
+    fn bas_unlocks_the_jukebox_for_good() {
+        assert!(jukebox_after(false, b"BAS"));
+        assert!(!jukebox_after(false, b"BAD"));
+        assert!(!jukebox_after(false, b"RED"));
+        // una volta sbloccato resta
+        assert!(jukebox_after(true, b"AAA"));
+        assert!(jukebox_after(true, b"BAS"));
+        assert!(JUKEBOX_NAME.iter().all(|c| LETTERS.contains(c)));
+    }
+
+    #[test]
+    fn omega_needs_the_whole_ladder_at_hard_without_continues() {
+        let at_guardian = |run: &mut Run| run.level = LEVELS - 1;
+        let mut run = Run::new();
+        at_guardian(&mut run);
+        // HARD ed EXPERT sì, NORMAL ed EASY no
+        assert!(omega_open(&run, 2) && omega_open(&run, 3));
+        assert!(!omega_open(&run, 1) && !omega_open(&run, 0));
+        // prima del GUARDIAN no
+        run.level = LEVELS - 2;
+        assert!(!omega_open(&run, 3));
+        // il campione che batte uno sfidante resta idoneo
+        let mut run = Run::new();
+        at_guardian(&mut run);
+        assert!(run.duel_won_by(Side::Left));
+        assert!(omega_open(&run, 2));
+        // lo sfidante che vince e prende il posto no
+        assert!(!run.duel_won_by(Side::Right));
+        assert!(!omega_open(&run, 2));
+        // con un continue no
+        let mut run = Run::new();
+        at_guardian(&mut run);
+        run.clean = false;
+        assert!(!omega_open(&run, 3));
+        // nell'allenamento no, neanche contro il GUARDIAN
+        assert!(!omega_open(&Run::training(LEVELS - 1), 3));
+    }
+
+    #[test]
+    fn omega_is_the_level_after_the_ladder() {
+        assert_eq!(*rung(OMEGA_LEVEL), OMEGA);
+        assert_eq!(*rung(3), RUNGS[3]);
+        assert_eq!(opponent_name(OMEGA_LEVEL), "OMEGA");
+        assert_eq!(opponent_name(6), "GUARDIAN");
+        // l'allenamento contro OMEGA resta contro OMEGA, senza sfidanti
+        let run = Run::training(OMEGA_LEVEL);
+        assert!(run.omega() && run.training && !run.clean);
+        assert!(!Run::new().omega());
+    }
+
+    #[test]
+    fn the_scores_show_all_plus_after_omega() {
+        assert_eq!(level_label(1), "LV1");
+        assert_eq!(level_label(LEVELS as u8), "LV7");
+        assert_eq!(level_label(LEVELS as u8 + 1), "ALL");
+        assert_eq!(level_label(SCORE_LEVEL_OMEGA), "ALL+");
+    }
+
+    #[test]
+    fn the_warning_blinks_three_times_then_stays() {
+        let lit: Vec<bool> = (0..14).map(|i| warning_lit(i as f64 * 0.25 + 0.01)).collect();
+        // accesa 0,5 s e spenta 0,25 s, tre volte, poi sempre accesa
+        assert_eq!(lit, [true, true, false, true, true, false, true, true, false, true, true, true, true, true]);
+    }
+
+    #[test]
     fn the_champion_counts_the_duels_won_in_a_row() {
         let mut run = Run::new();
         assert_eq!(run.wins, 0); // senza duelli niente WINS
@@ -1953,6 +2258,13 @@ mod tests {
                 let (h, half_w) = (nh * u, nw * u / 2.0);
                 let center = name_row(sc, u, tag_h, h) * sc;
                 let (top, bottom) = (center - h / 2.0, center + h / 2.0);
+                // OMEGA passa per tutte le forme, ma il sigillo arriva quando è tornato ARCADE
+                let paddle_bottom = if name == "name_omega" {
+                    assert!(OMEGA_NAME_AT >= OMEGA_FORMS_AT + LEVELS as f32 * OMEGA_FORM_FRAMES);
+                    PAD_Y * sc + to_f32(params.kinds[PaddleKind::Arcade as usize].height) / 2.0
+                } else {
+                    paddle_bottom
+                };
                 assert!(top >= paddle_bottom + u, "{w}: {name} a {top}, racchetta fino a {paddle_bottom}");
                 assert!((tag_top - bottom - 4.0 * u).abs() < 0.01, "{w}: {name}");
                 assert!(half_w <= w / 2.0 - 16.0 * u, "{w}: {name} largo {}", 2.0 * half_w);

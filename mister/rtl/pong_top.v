@@ -26,9 +26,12 @@
 // 1 = start, come nei core arcade.
 // Come nel gioco originale un doppio tocco veloce su o giù dà l'accelerazione rapida.
 // Mosse speciali (NEXT e CHALLENGE, sempre accese da PaddWS.sv): prima della partita la schermata HOW TO
-// PLAY (howto_render, con i comandi del controllo scelto nell'OSD), in partita i gesti dei giocatori
-// (modulo move_gesture in fondo) diventano il codice della mossa per un tick; barra, nomi delle mosse
-// ed effetti li disegna next_render.
+// PLAY (con i comandi del controllo scelto nell'OSD), in partita i gesti dei giocatori (modulo
+// move_gesture in fondo) diventano il codice della mossa per un tick; barra, nomi delle mosse ed
+// effetti li disegna next_render.
+// Video: il campo (pong_render) e le aggiunte di partita di NEXT (next_render) sono logica dedicata;
+// schermate e scritte le disegna lo schermo a oggetti (ui_render) con gli oggetti che il firmware
+// (rust/mister-ui) prepara a ogni frame dallo stato fotografato qui (`uis`, in fondo al modulo).
 
 `timescale 1ns / 1ps
 
@@ -40,17 +43,11 @@ module pong_top #(
     parameter FW_ROM1 = "rtl/gen/pong_fw_b1.hex",
     parameter FW_ROM2 = "rtl/gen/pong_fw_b2.hex",
     parameter FW_ROM3 = "rtl/gen/pong_fw_b3.hex",
-    // schermata HOW TO PLAY (tools/gen_howto_assets.py): scritte, mappa delle righe, figurine
-    parameter HOWTO_TEXT_ROM = "rtl/gen/howto_text.hex",
-    parameter HOWTO_ROWS_ROM = "rtl/gen/howto_rows.hex",
-    parameter HOWTO_SPRITE_ROM = "rtl/gen/howto_sprites.hex",
-    // finale della CHALLENGE (tools/gen_ending_assets.py): scritte, mappa delle righe, fuochi
-    parameter ENDING_TEXT_ROM = "rtl/gen/ending_text.hex",
-    parameter ENDING_MAP_ROM = "rtl/gen/ending_map.hex",
+    // finale della CHALLENGE (tools/gen_ending_assets.py): fuochi d'artificio
     parameter ENDING_FW_ROM = "rtl/gen/ending_fw.hex",
-    // titoli disegnati (tools/gen_mister_titles.py): nomi degli avversari e nuovo sfidante, PERFECT
-    parameter CH_TITLE_ROM = "rtl/gen/title_challenge.hex",
-    parameter PERFECT_ROM = "rtl/gen/title_perfect.hex"
+    // schermo a oggetti (tools/gen_mister_ui.py): font 8x8 e ROM grafica
+    parameter UI_FONT_ROM = "rtl/gen/ui_font.hex",
+    parameter UI_GFX_ROM = "rtl/gen/ui_gfx.hex"
 ) (
     input  wire        clk,            // 20 MHz
     input  wire        clk_cpu,        // 60 MHz dalla stessa PLL: processore di pong_logic_rv
@@ -61,9 +58,12 @@ module pong_top #(
                                        // contro la CPU, che l'OSD non ha: per il simulatore dei frame
     input  wire [1:0]  players_mode,   // solo Classic ed EVO: 0 due giocatori, 1 uno, 2 contro la CPU
                                        // (3, da un CFG di prima, quando CHALLENGE era qui: contro la CPU)
-    input  wire [2:0]  train_level,    // NEXT, Opponent dell'OSD: 0 la scalata, 1-7 allenamento contro
-                                       // l'avversario di quel livello (solo dopo lo sblocco)
+    input  wire [3:0]  train_level,    // NEXT, Opponent dell'OSD: 0 la scalata, 1-7 allenamento contro
+                                       // l'avversario di quel livello, 8 contro OMEGA (solo dopo gli sblocchi)
     output wire        train_unlocked, // allenamento sbloccato (finale della scalata, anche dalla NVRAM)
+    output wire        omega_unlocked, // OMEGA nell'allenamento (OMEGA battuto, anche dalla NVRAM)
+    output wire        juke_unlocked,  // JUKEBOX (OMEGA battuto o le iniziali BAS, anche dalla NVRAM)
+    input  wire        jukebox,        // voce JUKEBOX dell'OSD (nascosta finché non è sbloccato)
     input  wire        free_play,
     input  wire [1:0]  difficulty,     // 0 facile .. 3 esperto, dalla partita successiva
     input  wire        super_moves,    // mosse speciali in NEXT e CHALLENGE (anche nella loro demo)
@@ -131,6 +131,11 @@ localparam [10:0]  CH_NEWCH_FRAMES = 11'd180;   // 3 s di HERE COMES A NEW CHALL
 localparam [10:0]  HOWTO_FRAMES = 11'd480;      // 8 s, poi la partita parte da sola
 localparam [10:0]  HOWTO_SKIP_FRAMES = 11'd20;  // Start o A la saltano dopo un terzo di secondo
 localparam [10:0]  CH_INTRO_FRAMES = 11'd240;   // 4 s di presentazione
+localparam [10:0]  CH_OMEGA_INTRO_FRAMES = 11'd315;   // 5,25 s quella di OMEGA (OMEGA_INTRO_SECONDS)
+// allarme prima di OMEGA (Warning di rust/game/src/challenge_ui.rs): 3,5 s, la targa accesa 0,5 s e
+// spenta 0,25 s per tre volte, poi ferma; un colpo a ogni accensione
+localparam [10:0]  CH_WARNING_FRAMES = 11'd210;
+localparam [10:0]  CH_WARNING_PERIOD = 11'd45;
 localparam [10:0]  CH_CLEAR_FRAMES = 11'd240;
 localparam [10:0]  CH_CONT_FRAMES = 11'd600;    // 10 s per continuare
 localparam [10:0]  CH_CONT_SKIP = 11'd15;       // il continue si accetta quasi subito, già con il 9
@@ -154,9 +159,22 @@ wire want_cpu = (players == 2'd2 && !want_next) || want_next;
 wire want_two = players != 2'd1 || want_next;
 // allenamento: l'avversario scelto con Opponent, solo dopo lo sblocco; livello da cui si parte
 reg  train_unlock_r = 1'b0;
+reg  omega_unlock_r = 1'b0, juke_unlock_r = 1'b0;
 assign train_unlocked = train_unlock_r;
-wire want_train = want_challenge && train_unlock_r && train_level != 3'd0;
-wire [2:0] start_level = want_train ? train_level - 3'd1 : 3'd0;
+assign omega_unlocked = omega_unlock_r;
+assign juke_unlocked = juke_unlock_r;
+// Secret (8, OMEGA) vale solo con il suo sblocco: prima resta l'ultimo avversario valido scelto
+// nell'OSD (all'inizio la scalata). Lo sblocco vale subito, anche con Secret già scelto: l'OSD mostra
+// Secret e il core fa quello che l'OSD mostra.
+reg  [3:0] train_last = 4'd0;
+wire       train_ok = train_level < 4'd8 || (train_level == 4'd8 && omega_unlock_r);
+always @(posedge clk) if (train_ok) train_last <= train_level;
+wire [3:0] train_pick = train_ok ? train_level : train_last;
+wire want_train = want_challenge && train_unlock_r && train_pick != 4'd0;
+wire [2:0] start_level = want_train ? train_pick[2:0] - 3'd1 : 3'd0;
+// JUKEBOX: con la voce dell'OSD accesa (e sbloccato) il core mostra solo il jukebox; attract e
+// partite si fermano (l'OSD che cambia la voce riporta all'attract con il reset di PaddWS.sv)
+wire jb_on = jukebox && juke_unlock_r;
 
 // eventi sonori (bit come quelli della logica): 0 ping, 1 pong, 2 boost, 3 punto, 4 gettone
 localparam [7:0] SND_PING = 8'h01, SND_PONG = 8'h02, SND_BOOST = 8'h04, SND_COIN = 8'h10;
@@ -237,6 +255,16 @@ wire        ghost_hide;             // palla nascosta dal GHOST, calcolata dal f
 wire [31:0] super0, super1;         // barra, livelli delle mosse armate (e del tiro in volo: super0)
 wire signed [31:0] ball_dx;
 
+// schermo a oggetti: registri del firmware (dominio di clk_cpu, vedi ui_render e lo stato delle
+// schermate in fondo al modulo)
+wire        ui_wr;
+wire [13:0] ui_addr;
+wire [31:0] ui_wdata, ui_rdata;
+wire [31:0] scope_rdata;                  // oscilloscopi del SID (sid_scope, più sotto)
+wire [1:0]  omega_pad;                    // OMEGA in partita: lato della sua racchetta e lampo (più sotto)
+wire        omega_flash;
+wire [4:0]  jb_song;                      // JUKEBOX: canzone che suona (più sotto)
+
 reg         step = 1'b0;
 reg  [15:0] tick_inputs = 16'd0;
 reg  [1:0]  tick_cpu = 2'b00;       // lati comandati dalla CPU nel tick (bit 0 sinistra)
@@ -246,6 +274,7 @@ reg         match_reset = 1'b0;
 reg         match_two = 1'b1, match_evo = 1'b1, match_next = 1'b0, match_cpu = 1'b0;
 reg  [8:0]  match_lo0 = 9'd0, match_lo1 = 9'd0;
 reg  [5:0]  match_kinds = 6'h3F;   // tipi di racchetta NEXT, 3 bit per lato (7 = senza tipo)
+reg  [1:0]  match_morph = 2'b00;   // OMEGA: lato che cambia forma (bit 0 sinistra, 1 destra)
 reg         match_supers = 1'b0;   // mosse speciali (opzione dell'OSD all'avvio della partita)
 reg  [3:0]  tick_specials = 4'd0;  // mossa del tick, 2 bit per giocatore
 reg  [1:0]  match_level = DEMO_DIFFICULTY;
@@ -261,7 +290,7 @@ wire [2:0]  demo_rung = (seed_counter[24:22] == 3'd7) ? 3'd6 : seed_counter[24:2
 // dell'avversario), quella di destra anche contro un giocatore; tutte e due con il joystick
 pong_logic_rv #(.FW_ROM0(FW_ROM0), .FW_ROM1(FW_ROM1), .FW_ROM2(FW_ROM2), .FW_ROM3(FW_ROM3)) logic_core (
     .clk(clk), .clk_cpu(clk_cpu), .rv_reset(reset), .reset(match_reset), .two_players(match_two), .evo_mode(match_evo),
-    .next_mode(match_next), .loadout0(match_lo0), .loadout1(match_lo1), .kinds(match_kinds),
+    .next_mode(match_next), .loadout0(match_lo0), .loadout1(match_lo1), .kinds(match_kinds), .morph(match_morph),
     .difficulty(match_level), .super_moves(match_supers), .seed(seed_counter),
     .cpu_level0(ch_cpu_left ? match_cpu_level : {2'd0, match_level}), .cpu_level1(match_cpu_level),
     .cpu_control(4'd0), .cpu_seed0(seed_counter ^ 32'd1), .cpu_seed1(seed_counter),
@@ -281,7 +310,8 @@ pong_logic_rv #(.FW_ROM0(FW_ROM0), .FW_ROM1(FW_ROM1), .FW_ROM2(FW_ROM2), .FW_ROM
     .shots_x(shots_x), .shots_y(shots_y), .shots_vx(shots_vx),
     .pad0_motion(pad0_motion), .pad1_motion(pad1_motion), .pad0_h(pad0_h), .pad1_h(pad1_h),
     .sup(sup), .ghost_hide(ghost_hide), .super0(super0), .super1(super1), .ball_dx(ball_dx),
-    .tick(logic_tick), .tick_input(), .tick_special(), .fw_panic()
+    .tick(logic_tick), .tick_input(), .tick_special(), .fw_panic(),
+    .ui_wr(ui_wr), .ui_addr(ui_addr), .ui_wdata(ui_wdata), .ui_rdata(ui_rdata), .ui_sdata(scope_rdata)
 );
 
 // --------------------------------------------------- scelta dei bonus (NEXT)
@@ -462,7 +492,17 @@ reg        train = 1'b0;              // allenamento: un solo avversario, senza 
 // campione, 1 se lo vince lo sfidante; da zero a ogni partita nuova
 reg [7:0]  ch_wins = 8'd0;
 reg        ch_scores_attract = 1'b0;  // classifica mostrata dall'attract: poi la demo
-reg [2:0]  ch_level = 3'd0;
+reg [2:0]  ch_level = 3'd0;             // 0-6 la scala, 7 OMEGA (CH_OMEGA_LEVEL)
+// OMEGA, il boss segreto: la scala fatta tutta dal livello 1 senza continue (ch_clean: lo perde chi
+// continua e lo sfidante che prende il posto del campione), a HARD o EXPERT, fuori dall'allenamento.
+// Battuto il GUARDIAN, invece del finale: l'allarme (omega_warn, la prima parte di M_INTRO) e la
+// presentazione di OMEGA. Il premio del GUARDIAN (guard_bonus) aspetta il finale, che c'è comunque:
+// normale se OMEGA vince, speciale (omega_won) dopo OMEGA CLEAR!
+reg        ch_clean = 1'b0;
+reg        omega_warn = 1'b0;
+reg        omega_won = 1'b0;
+wire       omega_lvl = ch_level == CH_OMEGA_LEVEL[2:0];
+wire       omega_open = ch_clean && !train && difficulty >= 2'd2;
 reg [8:0]  ch_lo = 9'd0;              // bonus e racchetta scelti dal giocatore (il campione)
 reg [2:0]  ch_kind = 3'd0;
 reg        ch_side = 1'b0;            // lato del campione: 0 sinistra, 1 destra (la CPU dall'altro)
@@ -476,6 +516,7 @@ wire       duel_w = score1 > score0;  // lato del vincitore della sfida (puntegg
 // lo sfidante entra dal lato libero, con un credito, mentre la scalata è in corso (non nelle
 // iniziali, nella classifica, nel continue e dopo l'ultimo livello); uno solo per volta
 wire       ch_join = side_start[!ch_side] && ch_active && !duel && !train && !reset && (free_play || credits != 4'd0) &&
+                     !omega_lvl && !omega_warn && !jb_on &&
                      (mode == M_INTRO || mode == M_GAME || (mode == M_CLEAR && ch_level != CH_LEVELS - 1));
 // la CPU di CHALLENGE gioca a sinistra (il campione è a destra)
 assign     ch_cpu_left = ch_active && ch_side;
@@ -492,6 +533,8 @@ reg [17:0] ch_name = 18'd0;
 // nell'OSD
 reg        egg = 1'b0;
 localparam [17:0] EGG_NAME = {6'd13, 6'd14, 6'd27};   // "RED" (R 27, E 14, D 13; la prima nei bit bassi)
+// le iniziali "BAS" sbloccano per sempre il JUKEBOX (come battere OMEGA): B 11, A 10, S 28
+localparam [17:0] JUKE_NAME = {6'd28, 6'd10, 6'd11};
 wire [17:0] ini_name;                 // iniziali complete alla conferma (anche a tempo scaduto)
 // classifica dei 10 migliori: iniziali (codici del font), punti, punti in BCD, livello raggiunto
 reg [17:0] tb_name [0:9];
@@ -512,9 +555,6 @@ wire [27:0] ch_best_bcd;
 // finale (ending_render, più sotto): concluso, Start lo può saltare, voce "YOU WIN!", colpi della sfilata
 wire        end_done, end_skip_ok, end_say;
 wire [1:0]  end_beat;
-wire        end_parade;               // sfilata: racchette e nomi di next_render, i primi end_parade_n
-wire [2:0]  end_parade_n;
-wire [2:0]  end_parade_ko;            // ... di cui battuti (K.O.): racchetta spenta
 integer    ti, tj;
 initial begin
     for (ti = 0; ti < 10; ti = ti + 1) begin
@@ -586,6 +626,12 @@ always @(posedge clk) begin
         ch_active <= 1'b0;
         duel <= 1'b0;
         if (egg_clear) egg <= 1'b0;
+    end else if (jb_on) begin
+        // JUKEBOX: niente attract né partite (il titolo fermo, senza suoni: le canzoni le sceglie il jukebox)
+        mode <= M_TITLE;
+        mframe <= 11'd0;
+        ch_active <= 1'b0;
+        duel <= 1'b0;
     end else if (start_press && in_attract && (free_play || credits != 4'd0)) begin
         // nuova partita con le opzioni dell'OSD; NEXT passa prima dalla scelta dei bonus
         if (!free_play) credits <= credits - 4'd1;
@@ -595,6 +641,10 @@ always @(posedge clk) begin
         train <= want_train;
         ch_wins <= 8'd0;
         ch_level <= start_level;
+        ch_clean <= want_challenge && !want_train;
+        match_morph <= 2'b00;                            // OMEGA solo dalla sua presentazione
+        omega_warn <= 1'b0;
+        omega_won <= 1'b0;
         ch_side <= 1'b0;                                 // in CHALLENGE si comincia a sinistra
         duel <= 1'b0;
         howto_seen <= 2'b00;
@@ -606,6 +656,7 @@ always @(posedge clk) begin
             match_two <= want_two;
             match_evo <= want_evo && want_two;
             match_next <= 1'b0;
+            match_morph <= 2'b00;
             match_level <= difficulty;
             match_cpu_level <= {2'd0, difficulty};
             match_reset <= 1'b1;
@@ -647,8 +698,14 @@ always @(posedge clk) begin
         mframe <= 11'd0;
         ch_lo <= loadout_of(pick_mask[0]);
         ch_kind <= kind_cur[0];
-    end else if (mode == M_INTRO && ((frame_start && mframe >= CH_INTRO_FRAMES) ||
-                                     ((a_press || start_press) && mframe >= CH_SKIP_FRAMES))) begin
+    end else if (mode == M_INTRO && omega_warn && ((frame_start && mframe >= CH_WARNING_FRAMES) ||
+                                                  ((a_press || start_press) && mframe >= CH_SKIP_FRAMES))) begin
+        // fine dell'allarme: la presentazione di OMEGA
+        omega_warn <= 1'b0;
+        mframe <= 11'd0;
+        blink <= 6'd0;
+    end else if (mode == M_INTRO && !omega_warn && ((frame_start && mframe >= (omega_lvl ? CH_OMEGA_INTRO_FRAMES : CH_INTRO_FRAMES)) ||
+                                                   ((a_press || start_press) && mframe >= CH_SKIP_FRAMES))) begin
         // partita del livello: racchetta, bonus e livello della CPU, velocità della palla; il
         // giocatore dal suo lato, la CPU dall'altro
         mode <= M_GAME;
@@ -662,6 +719,7 @@ always @(posedge clk) begin
         match_kinds <= ch_side ? {ch_kind, rung_kind(ch_level)} : {rung_kind(ch_level), ch_kind};
         match_level <= speed_at(rung_speed(ch_level), difficulty);
         match_cpu_level <= rung_cpu_at(ch_level, difficulty);   // spostata dalla difficoltà (Rung::cpu_at)
+        match_morph <= !omega_lvl ? 2'b00 : ch_side ? 2'b01 : 2'b10;   // OMEGA: la CPU cambia forma
         match_supers <= super_moves;
         match_reset <= 1'b1;
         attract_sound <= SND_PING;
@@ -671,7 +729,11 @@ always @(posedge clk) begin
                                      ((a_press || start_press) && mframe >= CH_SKIP_FRAMES))) begin
         // livello superato: il prossimo avversario, o la fine della scala
         mframe <= 11'd0;
-        if (ch_level == CH_LEVELS - 1) begin
+        if (omega_lvl) begin
+            // OMEGA battuto: il finale speciale
+            omega_won <= 1'b1;
+            mode <= M_ENDING;
+        end else if (ch_level == CH_LEVELS - 1) begin
             ch_active <= 1'b0;
             mode <= (ch_rank != 4'd15) ? M_INITIALS : M_SCORES;
             ch_highlight <= 4'd15;
@@ -693,8 +755,9 @@ always @(posedge clk) begin
         ch_pos <= 2'd0;
         ch_letter <= 6'd0;
     end else if (mode == M_CONT && !cont_over && start_press && mframe >= CH_CONT_SKIP && (free_play || credits != 4'd0)) begin
-        // continue: stesso livello, punti da zero (li azzera il conteggio qui sotto)
+        // continue: stesso livello, punti da zero (li azzera il conteggio qui sotto); niente OMEGA
         if (!free_play) credits <= credits - 4'd1;
+        ch_clean <= 1'b0;
         mode <= M_INTRO;
         mframe <= 11'd0;
     end else if (mode == M_CONT && !cont_over && frame_start && mframe >= CH_CONT_FRAMES) begin
@@ -732,6 +795,7 @@ always @(posedge clk) begin
                 duel <= 1'b0;
                 duel_end <= 1'b1;
                 duel_champ <= 1'b0;
+                ch_clean <= 1'b0;
                 ch_side <= !ch_side;
                 ch_lo <= loadout_of(pick_mask[!ch_side]);
                 ch_kind <= kind_cur[!ch_side];
@@ -792,6 +856,7 @@ always @(posedge clk) begin
             duel <= 1'b0;
             duel_end <= 1'b1;
             duel_champ <= duel_w == ch_side;
+            if (duel_w != ch_side) ch_clean <= 1'b0;
             ch_side <= duel_w;
             ch_lo <= loadout_of(pick_mask[duel_w]);
             ch_kind <= kind_cur[duel_w];
@@ -814,13 +879,21 @@ always @(posedge clk) begin
                 M_SCORES: next_mode = ch_scores_attract ? M_DEMO : M_STRIPES;
                 // CHALLENGE: livello vinto (l'ultimo: il finale) o continue; demo e GAME OVER tornano
                 // alle strisce (la fine della sfida tra due giocatori è qui sopra)
-                M_GAME_OVER: next_mode = (!ch_active || train) ? M_STRIPES : ((score0 > score1) == ch_side) ? M_CONT :
-                                         (ch_level == CH_LEVELS - 1) ? M_ENDING : M_CLEAR;
+                // OMEGA: battuto il GUARDIAN con la scala fatta tutta, l'allarme (M_INTRO); contro
+                // OMEGA niente continue (persa: il finale normale), vinta: OMEGA CLEAR!
+                M_GAME_OVER: next_mode = (!ch_active || train) ? M_STRIPES :
+                                         ((score0 > score1) == ch_side) ? (omega_lvl ? M_ENDING : M_CONT) :
+                                         (ch_level == CH_LEVELS - 1) ? (omega_open ? M_INTRO : M_ENDING) : M_CLEAR;
                 default: next_mode = M_STRIPES;
             endcase
             if (next_mode == M_SCORES) begin
                 ch_scores_attract <= 1'b1;
                 ch_highlight <= 4'd15;
+            end
+            // battuto il GUARDIAN con la scala fatta tutta: l'allarme di OMEGA
+            if (mode == M_GAME_OVER && next_mode == M_INTRO) begin
+                ch_level <= CH_OMEGA_LEVEL[2:0];
+                omega_warn <= 1'b1;
             end
             // fine dell'allenamento: si torna all'attract
             if (mode == M_GAME_OVER && next_mode == M_STRIPES) begin
@@ -842,6 +915,7 @@ always @(posedge clk) begin
             match_next <= demo_new >= DEMO_NEXT;
             match_lo0 <= loadout_of(cpu_pick(pick20(seed_counter[4:0])));
             match_supers <= super_moves;
+            match_morph <= 2'b00;
             if (demo_new == DEMO_CHALLENGE) begin
                 match_lo1 <= rung_loadout(demo_rung);
                 match_kinds <= {rung_kind(demo_rung), rand_kind(seed_counter[15:13], seed_counter[18:16])};
@@ -861,6 +935,13 @@ always @(posedge clk) begin
             attract_sound <= attract_events(mode, mframe);
             attract_trigger <= 1'b1;
             attract_auto <= 1'b1;
+        end
+        // allarme di OMEGA: il suono del punto a ogni accensione della targa
+        if (mode == M_INTRO && omega_warn && (mframe == 11'd0 || mframe == CH_WARNING_PERIOD ||
+                                              mframe == 2 * CH_WARNING_PERIOD)) begin
+            attract_sound <= 8'h08;
+            attract_trigger <= 1'b1;
+            attract_auto <= 1'b0;
         end
         // conto alla rovescia: un bip a ogni secondo, poi il via (in CHALLENGE il via è la voce "GO!",
         // `call_go` qui sotto)
@@ -1334,6 +1415,7 @@ reg [23:0] ch_best_r = 24'd0;
 reg [3:0]  ch_best_lvl = 4'd1;
 reg        ch_perfect = 1'b0;
 reg [23:0] end_score = 24'd0, end_bonus = 24'd0;   // finale: punti prima del premio del campione, premio
+reg [23:0] guard_bonus = 24'd0;                    // OMEGA: il premio del GUARDIAN, per il finale
 reg [7:0]  rally_n;
 reg [3:0]  m_n;
 reg [23:0] gained, total;
@@ -1384,10 +1466,25 @@ always @(posedge clk) begin
         score0_q <= score_me;
         ch_score <= ch_score + gained;
     end else if (mode != mode_q2 && ch_active) begin
-        if (mode == M_CLEAR || mode == M_ENDING) begin
+        if (mode == M_INTRO && omega_warn) begin
+            // battuto il GUARDIAN, arriva OMEGA: il premio del GUARDIAN aspetta il finale
+            guard_bonus <= ch_win_bonus(CH_LEVELS - 1) + (score_cpu == 16'd0 ? ch_perfect_bonus(CH_LEVELS - 1) : 16'd0);
+        end else if (mode == M_ENDING && omega_lvl) begin
+            // finale dopo OMEGA, vinto o perso: il premio del campione è quello del GUARDIAN; in
+            // classifica ALL+ con OMEGA battuto, ALL altrimenti
+            total = ch_score + guard_bonus;
+            end_score <= ch_score;
+            end_bonus <= guard_bonus;
+            ch_score <= total;
+            if (total > ch_best_r) begin
+                ch_best_r <= total;
+                ch_best_lvl <= omega_won ? CH_SCORE_LEVEL_OMEGA[3:0] : 4'd8;
+            end
+        end else if (mode == M_CLEAR || mode == M_ENDING) begin
             // livello vinto: premi, e il miglior punteggio con il livello raggiunto. Nel finale il
             // premio dell'ultimo livello è il CHAMPION BONUS (Score::win_bonus, come su PC): il
-            // finale mostra i punti prima, il premio e il totale
+            // finale mostra i punti prima, il premio e il totale. OMEGA battuto: i premi di
+            // Score::omega_bonus (ch_win_bonus e ch_perfect_bonus del livello 7) e ALL+
             ch_perfect <= score_cpu == 16'd0;
             total = ch_score + ch_win_bonus(ch_level) + (score_cpu == 16'd0 ? ch_perfect_bonus(ch_level) : 16'd0);
             end_score <= ch_score;
@@ -1395,7 +1492,8 @@ always @(posedge clk) begin
             ch_score <= total;
             if (total > ch_best_r) begin
                 ch_best_r <= total;
-                ch_best_lvl <= (ch_level == CH_LEVELS - 1) ? 4'd8 : {1'b0, ch_level} + 4'd2;
+                ch_best_lvl <= omega_lvl ? CH_SCORE_LEVEL_OMEGA[3:0] :
+                               (ch_level == CH_LEVELS - 1) ? 4'd8 : {1'b0, ch_level} + 4'd2;
             end
         end else if (mode == M_CONT || mode == M_CHALLENGER) begin
             // continue, o sfida: il punteggio del campione conta per la classifica (se perde la sfida)
@@ -1427,9 +1525,7 @@ always @(posedge clk) begin
 end
 assign ch_best_level = ch_best_lvl;
 
-// punti in BCD per il disegno (doppio dabble, un bit per ciclo: shift e somme)
-wire [27:0] ch_score_bcd;
-bin_to_bcd score_digits (.clk(clk), .bin(ch_score), .bcd(ch_score_bcd));
+// miglior punteggio in BCD per la classifica (doppio dabble, un bit per ciclo: shift e somme)
 bin_to_bcd best_digits (.clk(clk), .bin(ch_best_r), .bcd(ch_best_bcd));
 
 // lampo bianco di 3 frame quando viene segnato un punto
@@ -1675,6 +1771,18 @@ wire comet_on_net = comet && ((comet_prev_x < FIELD_W / 2) != (comet_x < FIELD_W
                               (comet_x - FIELD_W / 2 < 6 && comet_x - FIELD_W / 2 > -6));
 wire [179:0] dash_off;
 integer di;
+// OMEGA: la rete segue la voce 2 del SID (rust/game/src/scope.rs, net_offsets): il firmware
+// (rust/mister-ui) legge gli oscilloscopi (sid_scope, più sotto) e scrive ogni frame lo spostamento
+// di ciascuno dei 30 trattini (-3..3, 3 bit) in tre parole dello schermo a oggetti, 0xB02-0xB04
+// (10 trattini per parola, il primo nei bit bassi). Si scrivono nel vblank e passano nel dominio di
+// clk alla riga 261 (snapshot: il firmware ha finito), così la rete del frame dopo li usa tutti
+// insieme; pong_render li somma a quelli della COMETA.
+reg  [89:0]  omega_net_w = 90'd0, omega_net = 90'd0;
+always @(posedge clk) if (snapshot) omega_net <= omega_net_w;
+wire         omega_net_on = omega_lvl && ch_active && !duel && (mode == M_GAME || mode == M_GAME_OVER);
+always @(posedge clk_cpu)
+    if (ui_wr && ui_addr >= 14'h0B02 && ui_addr <= 14'h0B04)
+        omega_net_w[30 * (ui_addr[1:0] - 2'd2) +: 30] <= ui_wdata[29:0];
 always @(posedge clk) begin
     if (match_reset) begin
         for (di = 0; di < DASHES; di = di + 1) dash_kick[di] <= 8'sd0;
@@ -1695,7 +1803,8 @@ end
 genvar dg;
 generate
     for (dg = 0; dg < DASHES; dg = dg + 1) begin : dash_bus
-        assign dash_off[6 * dg +: 6] = dash_kick[dg][7:2];
+        assign dash_off[6 * dg +: 6] = dash_kick[dg][7:2] +
+                                       (omega_net_on ? {{3{omega_net[3 * dg + 2]}}, omega_net[3 * dg +: 3]} : 6'd0);
     end
 endgenerate
 
@@ -1778,8 +1887,8 @@ function move_avail(input who);
     end
 endfunction
 
-wire [23:0] game_rgb, attract_rgb, next_rgb;
-wire        next_opaque, game_top, game_bg;
+wire [23:0] game_rgb, ui_full, next_rgb;
+wire        next_opaque, game_bg;
 wire        next_label, game_ball;              // la scritta del bonus di NEXT e la palla che le passa sopra
 wire [1:0]  next_halo;
 wire [8:0]  game_hc = hc + shake[8:0];                    // scossa dell'hit-stop
@@ -1800,51 +1909,13 @@ wire [7:0]  over_age = (mframe > 11'd255) ? 8'd255 : mframe[7:0];
 wire        over_off = mode == M_GAME_OVER && !over_solo && !over_perfect && mframe >= 11'd48;
 assign over_closes = mode == M_GAME_OVER && !over_solo && !over_perfect;
 
-// presentazione animata della CHALLENGE: frame dall'inizio e scossa dello schermo (pixel), come
-// Stage::shake_at di rust/game/src/challenge_ui.rs con le distanze dimezzate: il colpo e il nome
-// che atterra di HAMMER, la crescita di TITAN (un colpo ogni 12 frame), i pezzi del muro e la
-// palla sul muro del GUARDIAN
+// presentazione della CHALLENGE (schermo a oggetti): frame dall'inizio, fermi a 255
 wire [7:0]  intro_age = (mframe > 11'd255) ? 8'd255 : mframe[7:0];
-wire [2:0]  intro_kind = rung_kind(ch_level);
-reg signed [3:0] intro_sx, intro_sy;
-always @(*) begin
-    intro_sx = 4'sd0;
-    intro_sy = 4'sd0;
-    if (mode == M_INTRO)
-        case (intro_kind)
-            3'd2: begin   // HAMMER
-                case (intro_age)
-                    8'd49: intro_sx = 4'sd3;
-                    8'd50: begin intro_sx = -4'sd3; intro_sy = 4'sd2; end
-                    8'd51: begin intro_sx = 4'sd3; intro_sy = -4'sd2; end
-                    8'd52: begin intro_sx = -4'sd2; intro_sy = 4'sd1; end
-                    8'd53: begin intro_sx = 4'sd2; intro_sy = -4'sd1; end
-                    8'd54: intro_sx = -4'sd1;
-                    8'd55: intro_sx = 4'sd1;
-                    8'd72: intro_sy = 4'sd3;
-                    8'd73: intro_sy = -4'sd2;
-                    8'd74: intro_sy = 4'sd2;
-                    8'd75: intro_sy = -4'sd1;
-                    8'd76: intro_sy = 4'sd1;
-                    default: ;
-                endcase
-            end
-            3'd1: if (intro_age == 8'd6 || intro_age == 8'd18 || intro_age == 8'd30 || intro_age == 8'd42 ||
-                      intro_age == 8'd54 || intro_age == 8'd66) intro_sy = 4'sd1;   // TITAN
-            3'd6: begin   // GUARDIAN
-                if (intro_age == 8'd14 || intro_age == 8'd22 || intro_age == 8'd30 || intro_age == 8'd38 ||
-                    intro_age == 8'd46) intro_sy = 4'sd1;
-                if (intro_age == 8'd82) intro_sx = 4'sd2;
-            end
-            default: ;
-        endcase
-end
-wire [9:0]  intro_hc = {1'b0, hc} - {{6{intro_sx[3]}}, intro_sx};
-wire [9:0]  intro_vc = {1'b0, vc} - {{6{intro_sy[3]}}, intro_sy};
 
 // reti degli avversari (pong_render): solo nella CHALLENGE contro la CPU, in partita e a fine
 // partita; la rete dell'HAMMER vibra per 14 frame dopo un suo colpo (la palla riparte dal suo lato)
-wire [2:0]  net_kind = (ch_active && !duel && (mode == M_GAME || mode == M_GAME_OVER)) ? rung_kind(ch_level) : 3'd7;
+wire [2:0]  net_kind = (ch_active && !duel && !omega_lvl && (mode == M_GAME || mode == M_GAME_OVER)) ?
+                      rung_kind(ch_level) : 3'd7;
 reg  [3:0]  net_t = 4'd0;
 reg  [3:0]  hammer_net = 4'd0;
 always @(posedge clk) begin
@@ -1857,36 +1928,27 @@ always @(posedge clk) begin
         hammer_net <= 4'd14;
 end
 
-pong_render #(.PERFECT_ROM(PERFECT_ROM)) render (
+// il campo; le scritte di classe C dello schermo a oggetti (punteggi, crediti della demo) ci entrano
+// sotto palla e racchette
+pong_render render (
     .clk(clk), .snapshot(snapshot), .hc(game_hc), .vc(vc),
-    .two(two), .evo(evo), .flash(flash_count != 2'd0 || hit_flash),
+    .evo(evo), .flash(flash_count != 2'd0 || hit_flash),
     .ball_x(ball_x), .ball_y(ball_y), .ball_r(ball_r), .ball_visible(ball_visible),
     .pad0_x(show0_x), .pad0_y(pad0_y), .pad1_x(show1_x), .pad1_y(pad1_y),
     .pad0_h(pad0_h), .pad1_h(pad1_h),
     .pad0_boost_h(pad0_boost_h), .pad1_boost_h(pad1_boost_h),
-    .score0(score0), .score1(score1), .best(best),
-    .lives(lives), .show_lives(!two && (mode == M_GAME || mode == M_GAME_OVER)),
-    .overlay(mode == M_DEMO ? 2'd1 : mode == M_GAME_OVER ? 2'd2 : 2'd0), .demo_mode(demo_kind),
-    .winner(over_winner), .win_solo(over_solo), .perfect(over_perfect),
-    .over_age(over_age), .you_right(ch_cpu_left),
+    .field_off(over_closes), .over_age(over_age),
     .net_kind(net_kind), .net_t(net_t), .net_shake(hammer_net != 4'd0 && hammer_net[1]), .net_shake_dir(hammer_net[2]),
-    .winner_accent(nxt), .ball_accent(nxt && (next_flags[2] || next_flags[10:9] != 2'd0)),
-    .free_play(free_play), .credits(credits), .blink(blink), .upright(upright), .countdown(countdown),
+    .ball_accent(nxt && (next_flags[2] || next_flags[10:9] != 2'd0)),
     .pad_hide(pad_spin | warp_hide | twist_kind), .pad_gray(pad_gray), .dash_off(dash_off), .field_gray(bul_on),
     .blur(bul_blur), .blur_pads(bul_cold),
-    .rgb(game_rgb), .top(game_top), .bg(game_bg), .ball(game_ball)
+    .ui_c(ui_idx != 8'd0 && ui_class == 2'd2), .ui_c_rgb(ui_rgb),
+    .rgb(game_rgb), .bg(game_bg), .ball(game_ball)
 );
 
 next_render next_draw (
     .clk(clk), .snapshot(snapshot),
-    .hc(mode == M_INTRO ? intro_hc : {1'b0, mode == M_ENDING ? hc : game_hc}), .vc(mode == M_INTRO ? intro_vc : {1'b0, vc}),
-    .pick(mode == M_PICK), .pick_cursor0(pick_cur[0]), .pick_cursor1(pick_cur[1]),
-    .pick_mask0(pick_mask[0]), .pick_mask1(pick_mask[1]), .pick_secs(pick_secs), .pick_ready(pick_ready),
-    .cpu(pick_cpu), .lock(pick_lock), .blink(blink),
-    .pick_paddle(pick_paddle), .kind_cursor0(kind_cur[0]), .kind_cursor1(kind_cur[1]), .kind_chosen(kind_chosen),
-    // presentazione di CHALLENGE: la racchetta dell'avversario, rivolta verso il giocatore
-    .intro(mode == M_INTRO), .intro_kind(intro_kind), .intro_right(ch_side), .intro_age(intro_age),
-    .parade(end_parade), .parade_n(end_parade_n), .parade_ko(end_parade_ko),
+    .hc({1'b0, game_hc}), .vc({1'b0, vc}),
     .nxt(nxt && (mode == M_GAME || mode == M_GAME_OVER || mode == M_DEMO)),
     .ball_x(ball_x), .ball_y(ball_y), .ball_r(ball_r), .ball_boost(ball_boost), .ball_vx(ball_vx),
     .kick0({kick_max[0], kick_rise[0], kick_t[0]}), .kick1({kick_max[1], kick_rise[1], kick_t[1]}),
@@ -1896,6 +1958,7 @@ next_render next_draw (
     .label_on(label_frames != 7'd0), .label_player(label_player), .label_bonus(label_bonus),
     .label_kind(label_kind), .label_age(label_age),
     .warp_on(warp_on), .warp_side(warp_side), .warp_from(warp_from),
+    .omega_pad(omega_pad), .omega_flash(omega_flash), .omega_egg(egg),
     .kind0(kind0), .kind1(kind1), .shots_x(shots_x), .shots_y(shots_y),
     .pad0_motion(pad0_motion), .pad1_motion(pad1_motion), .rush_fade(rush_fade), .barrier_flash(barrier_flash),
     .wall0(wall0), .wall1(wall1), .wall_hit0(wall_hit0), .wall_hit1(wall_hit1),
@@ -1907,37 +1970,49 @@ next_render next_draw (
     .rgb(next_rgb), .opaque(next_opaque), .label(next_label), .halo(next_halo)
 );
 
-// schermata HOW TO PLAY delle mosse speciali: due cicli di ritardo, il pixel ne dura tre
-wire [23:0] howto_rgb;
-howto_render #(.TEXT_ROM(HOWTO_TEXT_ROM), .ROWS_ROM(HOWTO_ROWS_ROM), .SPRITE_ROM(HOWTO_SPRITE_ROM)) howto_draw (
-    .clk(clk), .active(mode == M_HOWTO), .frame_start(frame_start), .hc(hc), .vc(vc),
-    .control(control), .blink(blink),
-    .rgb(howto_rgb)
-);
 
 // finale della CHALLENGE: parti, scritte, timbri e fuochi; le racchette della sfilata sono di next_render
 wire [23:0] end_rgb;
-wire        end_top;
+// (fuochi d'artificio; scritte, KO e sfilata dallo schermo a oggetti)
+// Dopo OMEGA battuto, prima del finale la sua racchetta che si spezza (Part::Shatter di
+// ending_ui.rs, SHATTER_FRAMES frame, disegnata dal firmware con shat_f): ending_render parte dopo
+localparam [8:0] SHATTER_FRAMES = 9'd240;
+reg  [8:0]  shat_f = 9'd0;
+always @(posedge clk)
+    if (mode != M_ENDING) shat_f <= 9'd0;
+    else if (frame_start && omega_won && shat_f != SHATTER_FRAMES) shat_f <= shat_f + 9'd1;
+wire        end_go = mode == M_ENDING && (!omega_won || shat_f == SHATTER_FRAMES);
 reg         end_q = 1'b0;
-always @(posedge clk) end_q <= mode == M_ENDING;
-ending_render #(.TEXT_ROM(ENDING_TEXT_ROM), .MAP_ROM(ENDING_MAP_ROM), .FW_ROM(ENDING_FW_ROM)) ending_draw (
-    .clk(clk), .start(mode == M_ENDING && !end_q), .active(mode == M_ENDING), .frame_start(frame_start),
+always @(posedge clk) end_q <= end_go;
+wire [31:0] end_seq;
+wire [23:0] end_disp_s, end_disp_b;
+wire [9:0]  end_scroll;
+ending_render #(.FW_ROM(ENDING_FW_ROM)) ending_draw (
+    .clk(clk), .start(end_go && !end_q), .active(end_go), .frame_start(frame_start),
     .hc(hc), .vc(vc), .score(end_score), .bonus(end_bonus),
-    .rgb(end_rgb), .top(end_top), .parade(end_parade), .parade_n(end_parade_n), .parade_ko(end_parade_ko),
-    .say(end_say), .beat(end_beat), .skip_ok(end_skip_ok), .done(end_done)
+    .rgb(end_rgb),
+    .say(end_say), .beat(end_beat), .skip_ok(end_skip_ok), .done(end_done),
+    .st_seq(end_seq), .st_score(end_disp_s), .st_bonus(end_disp_b), .st_scroll(end_scroll)
 );
 
-attract_render attract (
-    .clk(clk), .hc(hc), .vc(vc), .phase(mode[1:0]), .frame(mframe), .blink(blink),
-    .free_play(free_play), .credits(credits),
-    .ball_x(cur_ix[8:0]), .ball_y(cur_iy[8:0]),
-    .rgb(attract_rgb), .solid(attract_solid)
+// schermo a oggetti: le schermate e le scritte del firmware (rust/mister-ui)
+wire [7:0]  ui_idx;
+wire [1:0]  ui_class;
+wire [23:0] ui_rgb;
+wire [31:0] ui_status;
+ui_render #(.FONT_ROM(UI_FONT_ROM), .GFX_ROM(UI_GFX_ROM)) ui (
+    .clk(clk), .clk_cpu(clk_cpu), .clear(reset), .ce_pix(ce_pix), .hc(hc), .vc(vc),
+    .cpu_wr(ui_wr), .cpu_addr(ui_addr), .cpu_wdata(ui_wdata), .status(ui_status),
+    .px_idx(ui_idx), .px_class(ui_class), .px_rgb(ui_rgb)
 );
+// colore 1 della tavolozza: il nero "solido" della scena del titolo, contro cui rimbalza la pallina
+// (rust/mister-ui: PAL_SOLID)
+assign attract_solid = mode == M_TITLE && ui_idx == 8'd1;
+assign ui_full = (ui_idx != 8'd0) ? ui_rgb : 24'h000000;
+wire   ui_on_a = ui_idx != 8'd0 && ui_class == 2'd0;
+wire   ui_on_b = ui_idx != 8'd0 && ui_class == 2'd1;
 
-// CHALLENGE: schermate a tutto schermo e punti arcade in partita; due cicli di ritardo (i titoli
-// disegnati vengono da una ROM), il pixel ne dura tre
-wire [23:0] ch_rgb;
-wire        ch_opaque;
+// classifica per la NVRAM
 wire [179:0] tb_names_bus;
 wire [279:0] tb_bcd_bus;
 wire [39:0]  tb_levels_bus;
@@ -1955,7 +2030,8 @@ endgenerate
 // classifica sulla SD (NVRAM del MiSTer): legge il file all'avvio e lo riscrive quando il MiSTer lo
 // chiede; i posti letti arrivano qui uno alla volta (nv_go), ciascuno al suo posto
 wire        nv_go;
-wire        nv_unlock;                // file con l'allenamento sbloccato
+wire        nv_unlock;                // file letto, con i segni del byte 4 in nv_flags
+wire [2:0]  nv_flags;                 // bit 0 allenamento, 1 OMEGA nell'allenamento, 2 JUKEBOX
 reg         unlock_new = 1'b0;        // sbloccato adesso: la NVRAM è da salvare
 wire [3:0]  nv_at, nv_level;
 wire [17:0] nv_name;
@@ -1967,20 +2043,33 @@ ch_nvram nvram (
     .ioctl_wr(ioctl_wr), .ioctl_addr(ioctl_addr), .ioctl_dout(ioctl_dout), .ioctl_din(ioctl_din),
     .upload_req(ioctl_upload_req),
     .names(tb_names_bus), .scores(tb_scores_bus), .bcds(tb_bcd_bus), .levels(tb_levels_bus),
-    .unlocked(train_unlock_r), .changed(ins_go || unlock_new), .autosave(nv_autosave),
+    .unlocked({juke_unlock_r, omega_unlock_r, train_unlock_r}), .changed(ins_go || unlock_new), .autosave(nv_autosave),
     .ld_go(nv_go), .ld_busy(ins_go), .ld_at(nv_at), .ld_name(nv_name), .ld_score(nv_score),
-    .ld_bcd(nv_bcd), .ld_level(nv_level), .ld_unlock(nv_unlock)
+    .ld_bcd(nv_bcd), .ld_level(nv_level), .ld_unlock(nv_unlock), .ld_flags(nv_flags)
 );
 
-// sblocco dell'allenamento: il finale della scalata (da salvare: `unlock_new`) o un file della NVRAM
-// che lo ha già; non si toglie più
+// sblocchi, che non si tolgono più (da salvare: `unlock_new`), o da un file della NVRAM che li ha già:
+// l'allenamento con il finale della scalata; OMEGA nell'allenamento e il JUKEBOX battendo OMEGA (OMEGA
+// CLEAR!, fuori dall'allenamento); il JUKEBOX anche con le iniziali BAS (juke_name)
+wire juke_name = ins_go && ins_name == JUKE_NAME;     // ins_go viene solo dalle iniziali
+wire omega_beaten = mode == M_CLEAR && omega_lvl && !train;
 always @(posedge clk) begin
     unlock_new <= 1'b0;
     if (mode == M_ENDING && !train_unlock_r) begin
         train_unlock_r <= 1'b1;
         unlock_new <= 1'b1;
-    end else if (nv_unlock)
-        train_unlock_r <= 1'b1;
+    end else if (omega_beaten && !(omega_unlock_r && juke_unlock_r)) begin
+        omega_unlock_r <= 1'b1;
+        juke_unlock_r <= 1'b1;
+        unlock_new <= 1'b1;
+    end else if (juke_name && !juke_unlock_r) begin
+        juke_unlock_r <= 1'b1;
+        unlock_new <= 1'b1;
+    end else if (nv_unlock) begin
+        if (nv_flags[0]) train_unlock_r <= 1'b1;
+        if (nv_flags[1]) omega_unlock_r <= 1'b1;
+        if (nv_flags[2]) juke_unlock_r <= 1'b1;
+    end
 end
 
 // scrittura della classifica: il posto inserito a fine CHALLENGE (quelli sotto scendono di uno) o un
@@ -2011,22 +2100,6 @@ end
 wire        wins_intro = mode == M_INTRO && ch_wins != 8'd0 && !train;
 wire        wins_over = mode == M_GAME_OVER && duel && over_age >= 8'd60 && (over_age < 8'd158 || !over_closes);
 
-challenge_render #(.TITLE_ROM(CH_TITLE_ROM)) challenge_draw (
-    .clk(clk), .hc(mode == M_INTRO ? intro_hc : {1'b0, hc}), .vc(mode == M_INTRO ? intro_vc : {1'b0, vc}),
-    .screen(mode == M_INTRO ? 3'd1 : mode == M_CLEAR ? 3'd2 : mode == M_CONT ? 3'd3 :
-            mode == M_INITIALS ? 3'd4 : mode == M_SCORES ? 3'd5 : mode == M_CHALLENGER ? 3'd7 :
-            (ch_active && !duel && !train && (mode == M_GAME || mode == M_GAME_OVER)) ? 3'd6 : 3'd0),
-    .side(ch_side), .join_prompt(ch_active && !duel && !train), .train(train), .level(ch_level), .kind(rung_kind(ch_level)), .loadout(rung_loadout(ch_level)),
-    .score_bcd(mode == M_INITIALS ? ch_best_bcd : ch_score_bcd), .hi_bcd(tb_bcd[0]),
-    .perfect(ch_perfect), .coin_prompt(!free_play && credits == 4'd0), .blink(blink),
-    .cont_digit(ch_cont_digit), .cont_sub(ch_cont_sub), .cont_over(cont_over),
-    .name(ch_name), .name_pos(ch_pos), .letter(letter_code(ch_letter)),
-    .table_names(tb_names_bus), .table_bcd(tb_bcd_bus), .table_levels(tb_levels_bus),
-    .highlight(ch_highlight), .mult(ch_mult), .intro_age(intro_age),
-    .wins_on(wins_intro || wins_over), .wins_right(wins_over ? duel_w : ch_side), .wins_big(wins_over),
-    .wins_bcd(ch_wins),
-    .rgb(ch_rgb), .opaque(ch_opaque)
-);
 
 // il lampo bianco (punto o hit-stop) copre anche le aggiunte di NEXT, come nel gioco Rust; la palla
 // passa sopra alla scritta del bonus attivato (next_label), non al resto di NEXT; l'alone
@@ -2035,14 +2108,14 @@ reg flash_q = 1'b0;
 always @(posedge clk) flash_q <= flash_count != 2'd0 || hit_flash;
 wire [23:0] halo_rgb = (next_halo == 2'd1) ? 24'h6E6E6E : (next_halo == 2'd2) ? 24'h404040 : 24'h1E1E1E;
 wire [23:0] rgb_mix;
-assign rgb_mix = (mode <= M_TITLE) ? attract_rgb :
-                 (mode == M_HOWTO) ? howto_rgb :
-                 (mode == M_INTRO && next_opaque) ? next_rgb :
-                 // finale: i timbri sopra le racchette della sfilata, le racchette sopra il resto
-                 (mode == M_ENDING) ? ((end_top || !next_opaque) ? end_rgb : next_rgb) :
-                 (mode >= M_INTRO || (ch_opaque && !flash_q)) ? ch_rgb :
-                 (next_opaque && !game_top && !(next_label && game_ball) && (mode == M_PICK || !flash_q) &&
-                  !over_off) ? next_rgb :
+assign rgb_mix = (mode <= M_TITLE || mode >= M_PICK && mode != M_ENDING) ? ui_full :
+                 // finale: lo schermo a oggetti sopra i fuochi d'artificio
+                 (mode == M_ENDING) ? ((ui_idx != 8'd0) ? ui_rgb : end_rgb) :
+                 // partita, demo e fine partita: le scritte dello schermo a oggetti secondo la classe
+                 // (A sopra tutto tranne il lampo, B sopra le aggiunte di NEXT, C dentro pong_render)
+                 (ui_on_a && !flash_q) ? ui_rgb :
+                 ui_on_b ? ui_rgb :
+                 (next_opaque && !(next_label && game_ball) && !flash_q && !over_off) ? next_rgb :
                  (game_bg && next_halo != 2'd0) ? halo_rgb : game_rgb;
 // easter egg: giallo e rosso scambiati sull'uscita, dopo la scelta del renderer
 egg_swap swap (.on(egg), .rgb_in(rgb_mix), .rgb_out(rgb));
@@ -2061,6 +2134,14 @@ wire [7:0] sid_events = (game_sound ? {1'b0, sound_events[12], sound_events[10] 
                                        sound_events[1] | sound_events[8], sound_events[0] | sound_events[4] | sound_events[9]} : 8'd0) |
                         (attract_play ? attract_sound : 8'd0);
 wire signed [15:0] sid_sample;
+// oscilloscopi delle voci del SID per il firmware (rete di OMEGA, JUKEBOX): sid_scope, letti da
+// 0xF001_8000 (ui_addr[13], indirizzo {campione, voce, posto}: 0 la media di 1 ms, 1 il campione)
+wire [47:0] sid_scope_v;
+wire [7:0]  scope_wptr;
+sid_scope scope_ring (
+    .clk(clk), .scope(sid_scope_v), .wptr(scope_wptr),
+    .clk_cpu(clk_cpu), .raddr(ui_addr[10:0]), .rdata(scope_rdata)
+);
 
 // nel bullet time gli effetti del gioco suonano un'ottava sotto e lenti il doppio, come su PC
 // (il gettone no)
@@ -2080,30 +2161,38 @@ wire       music_off = music_vol >= 4'd10;
 // La sfida della CHALLENGE tra due giocatori suona il tema di un avversario a caso, preso all'inizio
 // della partita da un contatore che gira da 0 a 6 a ogni ciclo (come il seme del gioco Rust, la
 // partita non cambia); le partite fuori dalla CHALLENGE restano senza musica.
-reg  [3:0] theme_song = SID_SONG_THEME0;
+// Contro OMEGA la sezione OMEGA0 + forma, con la forma dai punti del giocatore (omega_form del core:
+// uno per forma, poi resta il GUARDIAN): cambia alla trasformazione.
+reg  [4:0] theme_song = SID_SONG_THEME0;
 reg  [2:0] theme_roll = 3'd0, theme_any = 3'd0;
+wire [2:0] omega_form = (score_me >= 16'd6) ? 3'd6 : score_me[2:0];
 always @(posedge clk) begin
     theme_roll <= (theme_roll == 3'd6) ? 3'd0 : theme_roll + 3'd1;
     if (match_reset) theme_any <= theme_roll;
-    theme_song <= SID_SONG_THEME0 + {1'b0, duel ? theme_any : rung_kind(ch_level)};
+    theme_song <= (omega_lvl && !duel) ? SID_SONG_OMEGA0 + {2'd0, omega_form} :
+                  SID_SONG_THEME0 + {2'd0, duel ? theme_any : rung_kind(ch_level)};
 end
 // musica dinamica (come la musica del gioco Rust): al match point, quando uno dei due è a un punto
 // dalla vittoria, la canzone accelera fino alla fine della partita; nel bullet time rallenta
 reg        music_fast = 1'b0;
 always @(posedge clk) music_fast <= mode == M_GAME && two &&
                                     (score0 + 16'd1 >= points_to_win || score1 + 16'd1 >= points_to_win);
-wire [3:0] sid_song = ch_join || music_off ? 4'd0 :
-                      mode == M_GAME ? (ch_active ? theme_song : 4'd0) :
-                      mode == M_GAME_OVER ? (ch_active && !train ? 4'd0 : SID_SONG_GAME_OVER) :
+// JUKEBOX: la canzone che sceglie il firmware (jb_song, 0 = ferma); allarme di OMEGA: la canzone
+// del continue come sirena
+wire [4:0] sid_song = ch_join || music_off ? 5'd0 :
+                      jb_on ? jb_song :
+                      mode == M_GAME ? (ch_active ? theme_song : 5'd0) :
+                      mode == M_GAME_OVER ? (ch_active && !train ? 5'd0 : SID_SONG_GAME_OVER) :
+                      mode == M_INTRO && omega_warn ? SID_SONG_CONTINUE :
                       mode == M_INTRO || mode == M_CHALLENGER ? SID_SONG_INTRO :
-                      mode == M_CLEAR ? (ch_level == CH_LEVELS - 1 ? SID_SONG_CHAMPION : SID_SONG_CLEAR) :
+                      mode == M_CLEAR ? (ch_level == CH_LEVELS - 1 || omega_lvl ? SID_SONG_CHAMPION : SID_SONG_CLEAR) :
                       mode == M_CONT ? (cont_over ? SID_SONG_GAME_OVER : SID_SONG_CONTINUE) :
                       mode == M_ENDING ? SID_SONG_ENDING :
                       mode == M_INITIALS ? SID_SONG_CHAMPION :
                       mode == M_PICK || mode == M_HOWTO || ((mode == M_STRIPES || mode == M_LOGO || mode == M_TITLE ||
                                           (mode == M_SCORES && ch_scores_attract)) && !attract_mute) ||
                       (mode == M_SCORES && !ch_scores_attract)
-                          ? (egg ? SID_SONG_ENDING : SID_SONG_TITLE) : 4'd0;   // easter egg: il finale
+                          ? (egg ? SID_SONG_ENDING : SID_SONG_TITLE) : 5'd0;   // easter egg: il finale
 
 // Scelta della racchetta: quando un giocatore conferma la sua (non allo scadere del tempo, né la
 // CPU o il campione già scelti) se ne sente il nome come voce di partita (le voci 0-6 della ROM
@@ -2174,8 +2263,8 @@ pong_sid #(.ROM_FILE(SID_ROM), .VOICE_FILE(VOICE_ROM)) sid (
     .slow(sfx_slow),
     .music_fast(music_fast),
     .music_slow(bul_on),
-    .voice_go(frame_start && mode == M_INTRO && mframe == CH_VOICE_FRAME),
-    .voice_id(rung_kind(ch_level)),
+    .voice_go(frame_start && mode == M_INTRO && !omega_warn && mframe == CH_VOICE_FRAME),
+    .voice_id(omega_lvl ? VOICE_OMEGA : {1'b0, rung_kind(ch_level)}),
     .voice_stop(mode != M_INTRO),
     .voice_on(),
     .call_go(call_go),
@@ -2184,7 +2273,8 @@ pong_sid #(.ROM_FILE(SID_ROM), .VOICE_FILE(VOICE_ROM)) sid (
     .music_vol(music_vol),
     .fx_vol(fx_vol),
     .fx_gain(fx_gain),
-    .sample(sid_sample)
+    .sample(sid_sample),
+    .scope(sid_scope_v)
 );
 
 // Uscita: il SID (con il nome dell'avversario già nel suo volume, $D418) più le voci di partita a 4
@@ -2194,6 +2284,156 @@ wire signed [17:0] call_add = (($signed({1'b0, call_level}) - 18'sd8) * $signed(
 wire signed [17:0] audio_mix = {{2{sid_sample[15]}}, sid_sample} + call_add;
 assign audio = (audio_mix[17:15] == 3'b000 || audio_mix[17:15] == 3'b111) ? audio_mix[15:0] :
                {audio_mix[17], {15{~audio_mix[17]}}};
+
+// ------------------------------------------------------------- OMEGA in partita
+//
+// La racchetta di OMEGA (dalla parte della CPU) è rossa (viola con l'easter egg); a ogni
+// trasformazione (il tipo della racchetta cambia nelle parole della logica: niente evento nuovo)
+// un lampo bianco di 8 frame e, per 60 frame, il nome della nuova forma (morph_age, firmware). Non
+// all'inizio della partita: durante il conto alla rovescia il tipo torna ARCADE senza lampi.
+wire [2:0]  omega_kind = ch_side ? kind0[2:0] : kind1[2:0];
+reg  [2:0]  omega_kind_q = 3'd0;
+reg  [7:0]  morph_age = 8'hFF;
+always @(posedge clk) begin
+    omega_kind_q <= omega_kind;
+    if (omega_net_on && mode == M_GAME && !counting && omega_kind != omega_kind_q && omega_kind != 3'd7)
+        morph_age <= 8'd0;
+    else if (match_reset)
+        morph_age <= 8'hFF;
+    else if (frame_start && morph_age != 8'hFF)
+        morph_age <= morph_age + 8'd1;
+end
+assign      omega_pad = omega_net_on ? (ch_side ? 2'b01 : 2'b10) : 2'b00;
+assign      omega_flash = morph_age < 8'd8;
+
+// ------------------------------------------------------------- JUKEBOX
+//
+// Con la voce JUKEBOX dell'OSD (jb_on): su e giù scelgono il brano e lo fanno partire, A o Start lo
+// fermano o lo fanno ripartire (rust/game/src/jukebox.rs). Brani: i sette temi nell'ordine della
+// scala, il finale e OMEGA, che passa da una sezione alla successiva ogni due giri della traccia del
+// basso (JB_OMEGA_SECTION: 2 giri a 50 passi al secondo, in frame a 60 Hz), poi ricomincia.
+localparam [3:0] JB_TRACKS = 4'd9;
+function [9:0] jb_section_len(input [2:0] k);
+    case (k)
+        3'd0, 3'd1: jb_section_len = 10'd845;     // 352 passi
+        3'd2, 3'd3: jb_section_len = 10'd768;     // 320
+        3'd4, 3'd5: jb_section_len = 10'd691;     // 288
+        default:    jb_section_len = 10'd614;     // 256
+    endcase
+endfunction
+reg  [3:0]  jb_track = 4'd0;
+reg         jb_play = 1'b1;
+reg  [2:0]  jb_sec = 3'd0;
+reg  [9:0]  jb_secf = 10'd0;
+always @(posedge clk) begin
+    if (!jb_on) begin
+        jb_track <= 4'd0;
+        jb_play <= 1'b1;
+        jb_sec <= 3'd0;
+        jb_secf <= 10'd0;
+    end else if (up_press || down_press) begin
+        jb_track <= up_press ? ((jb_track == 4'd0) ? JB_TRACKS - 4'd1 : jb_track - 4'd1)
+                             : ((jb_track == JB_TRACKS - 4'd1) ? 4'd0 : jb_track + 4'd1);
+        jb_play <= 1'b1;
+        jb_sec <= 3'd0;
+        jb_secf <= 10'd0;
+    end else if (a_press || start_press) begin
+        jb_play <= !jb_play;
+        jb_sec <= 3'd0;
+        jb_secf <= 10'd0;
+    end else if (frame_start && jb_play && jb_track == JB_TRACKS - 4'd1) begin
+        if (jb_secf + 10'd1 >= jb_section_len(jb_sec)) begin
+            jb_secf <= 10'd0;
+            jb_sec <= (jb_sec == 3'd6) ? 3'd0 : jb_sec + 3'd1;
+        end else
+            jb_secf <= jb_secf + 10'd1;
+    end
+end
+assign      jb_song = !jb_play ? 5'd0 : (jb_track < 4'd7) ? SID_SONG_THEME0 + {2'd0, rung_kind(jb_track[2:0])} :
+                      (jb_track == 4'd7) ? SID_SONG_ENDING : SID_SONG_OMEGA0 + {2'd0, jb_sec};
+
+// ------------------------------------------------------- stato delle schermate per il firmware
+//
+// Il firmware (rust/mister-ui) costruisce ogni frame dallo stato fotografato qui (`uis`), quando il
+// frame non ha più lavoro per la logica: dopo l'ultimo tick (e il suo sound_trigger) o, senza tick,
+// subito dopo frame_start; nuova partita compresa (busy). La foto si prende dopo 64 cicli di calma,
+// così anche i valori calcolati in più cicli (punti in BCD) sono fermi. `ui_seq` dice al firmware
+// che c'è una foto nuova. Formato dei registri: rust/mister-ui/src/regs.rs.
+localparam integer UIS_N = 64;
+// classifica animata: la cifra che gira nei punti, un passo a ogni cambio di intro_age (come faceva
+// challenge_render: non riparte mai da zero)
+reg  [3:0]  sc_roll = 4'd0;
+reg  [7:0]  sc_age_q = 8'd0;
+always @(posedge clk) begin
+    sc_age_q <= intro_age;
+    if (intro_age != sc_age_q) sc_roll <= (sc_roll == 4'd9) ? 4'd0 : sc_roll + 4'd1;
+end
+reg  [31:0] uis [0:UIS_N-1];
+reg  [7:0]  ui_seq = 8'd0;
+reg         ui_wait = 1'b0;
+reg  [5:0]  ui_cnt = 6'd0;
+wire        ui_calm = ticks_left == 3'd0 && !busy && !collect_last && !events_ready && !sound_trigger &&
+                      !step && !wait_start && !match_reset;
+integer     ui_k;
+initial for (ui_k = 0; ui_k < UIS_N; ui_k = ui_k + 1) uis[ui_k] = 32'd0;
+always @(posedge clk) begin
+    if (frame_start) begin
+        ui_wait <= 1'b1;
+        ui_cnt <= 6'd0;
+    end else if (ui_wait) begin
+        if (!ui_calm)
+            ui_cnt <= 6'd0;
+        else if (ui_cnt == 6'd63) begin
+            ui_wait <= 1'b0;
+            ui_seq <= ui_seq + 8'd1;
+            uis[0] <= {4'd0, egg, upright, free_play, credits, blink, mframe, mode};
+            uis[1] <= {14'd0, cur_iy[8:0], cur_ix[8:0]};
+            // scalata: livello e avversario, lato, sfida, allenamento, continue
+            uis[2] <= {1'b0, ch_cont_sub, ch_cont_digit, cont_over, ch_perfect, train, duel, ch_active, ch_side,
+                       rung_loadout(ch_level), rung_kind(ch_level), ch_level};
+            uis[3] <= {4'd0, ch_mult, ch_score};
+            uis[4] <= {4'd0, ch_highlight, ch_best_r};
+            uis[5] <= {1'b0, rung_points(ch_level), letter_code(ch_letter), ch_pos, ch_name};
+            uis[6] <= {16'd0, sc_roll, 1'b0, duel_w, wins_over, wins_intro, ch_wins};
+            // scelta di bonus e racchetta, HOW TO PLAY
+            uis[7] <= {3'd0, control, pick_paddle, pick_lock, pick_cpu, pick_ready, pick_secs, pick_mask[1],
+                       pick_mask[0], pick_cur[1], pick_cur[0]};
+            // partita, demo e fine partita (le scritte sopra il campo)
+            uis[28] <= {8'd0, bul_on, lives, countdown, ch_cpu_left, over_perfect, over_solo, over_winner, nxt,
+                        two, demo_kind, kind_chosen, kind_cur[1], kind_cur[0]};
+            uis[29] <= {score1, score0};
+            uis[30] <= {16'd0, best};
+            uis[31] <= show0_x;
+            uis[32] <= pad0_y;
+            uis[33] <= show1_x;
+            uis[34] <= pad1_y;
+            uis[35] <= pad0_h;
+            uis[36] <= pad1_h;
+            uis[37] <= {14'd0, label_max, label_move, label_age, label_kind, label_bonus, label_player,
+                        label_frames != 7'd0};
+            uis[38] <= {8'd0, end_score};
+            uis[39] <= {8'd0, end_bonus};
+            // hit-stop del SUPER: le scritte del campo tremano con lui (shake, game_hc)
+            uis[40] <= next_flags;
+            // finale: tempi di ending_render
+            uis[41] <= end_seq;
+            uis[42] <= {8'd0, end_disp_s};
+            uis[43] <= {8'd0, end_disp_b};
+            uis[44] <= {22'd0, end_scroll};
+            // OMEGA e JUKEBOX
+            uis[45] <= {music_off, jb_play, jb_sec, jb_track, morph_age, omega_kind, omega_won, omega_warn, omega_lvl,
+                        jb_on, scope_wptr};
+            uis[46] <= {19'd0, music_vol, shat_f};
+            for (ui_k = 0; ui_k < 10; ui_k = ui_k + 1) begin
+                uis[8 + 2 * ui_k] <= {10'd0, tb_level[ui_k], tb_name[ui_k]};
+                uis[9 + 2 * ui_k] <= {4'd0, tb_bcd[ui_k]};
+            end
+        end else
+            ui_cnt <= ui_cnt + 6'd1;
+    end
+end
+// letture del firmware (dominio di clk_cpu; i registri sopra sono fermi quando li legge)
+assign ui_rdata = !ui_addr[12] ? ui_status : ui_addr[6] ? {24'd0, ui_seq} : uis[ui_addr[5:0]];
 
 endmodule
 
@@ -2433,5 +2673,41 @@ always @(*) begin
 end
 
 assign rgb_out = (on && hit) ? swapped : rgb_in;
+
+endmodule
+
+// Binario -> BCD (7 cifre) con il doppio dabble, un bit per ciclo: si ricomincia di continuo, il
+// risultato si aggiorna ogni 25 cicli. Solo confronti, somme e shift.
+module bin_to_bcd (
+    input  wire        clk,
+    input  wire [23:0] bin,
+    output reg  [27:0] bcd
+);
+
+reg [23:0] sh = 24'd0;
+reg [31:0] acc = 32'd0;
+reg [4:0]  count = 5'd0;
+reg [31:0] adj;
+integer    d;
+
+initial bcd = 28'd0;
+
+always @(*) begin
+    adj = acc;
+    for (d = 0; d < 8; d = d + 1)
+        if (acc[4 * d +: 4] >= 4'd5) adj[4 * d +: 4] = acc[4 * d +: 4] + 4'd3;
+end
+
+always @(posedge clk) begin
+    if (count == 5'd0) begin
+        sh <= bin;
+        acc <= 32'd0;
+        count <= 5'd24;
+    end else begin
+        {acc, sh} <= {adj[30:0], sh, 1'b0};
+        count <= count - 5'd1;
+        if (count == 5'd1) bcd <= {adj[26:0], sh[23]};
+    end
+end
 
 endmodule

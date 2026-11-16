@@ -2,15 +2,17 @@
 // Voci "da SID", campioni a 4 bit (8 = silenzio), due per byte, prima il nibble alto: 0-6 i nomi
 // degli avversari della CHALLENGE (`PaddleKind`), 7-8 le urla delle mosse speciali (`Special`),
 // 9 READY e 10 GO della CHALLENGE, 11 YOU WIN (vittoria contro la CPU e finale della CHALLENGE),
-// 12 PERFECT (vittoria di un giocatore senza punti dell'avversario).
+// 12 PERFECT (vittoria di un giocatore senza punti dell'avversario), 13 il nome di OMEGA (come i
+// nomi degli avversari, con il registro del volume).
 localparam VOICE_RATE = 5000;
-localparam VOICE_ROM_SIZE = 18370;
+localparam VOICE_ROM_SIZE = 21204;
 localparam [3:0] VOICE_STRAIGHT = 4'd7;
 localparam [3:0] VOICE_RISE = 4'd8;
 localparam [3:0] VOICE_READY = 4'd9;
 localparam [3:0] VOICE_GO = 4'd10;
 localparam [3:0] VOICE_YOU_WIN = 4'd11;
 localparam [3:0] VOICE_PERFECT = 4'd12;
+localparam [3:0] VOICE_OMEGA = 4'd13;
 function [14:0] voice_start(input [3:0] id);
     case (id)
         4'd0: voice_start = 15'd0;   // ARCADE
@@ -26,6 +28,7 @@ function [14:0] voice_start(input [3:0] id);
         4'd10: voice_start = 15'd13519;   // GO
         4'd11: voice_start = 15'd14538;   // YOU WIN
         4'd12: voice_start = 15'd17086;   // PERFECT
+        4'd13: voice_start = 15'd18370;   // OMEGA
         default: voice_start = 15'd0;
     endcase
 endfunction
@@ -44,6 +47,7 @@ function [11:0] voice_len(input [3:0] id);
         4'd10: voice_len = 12'd1019;   // 0.41 s
         4'd11: voice_len = 12'd2548;   // 1.02 s
         4'd12: voice_len = 12'd1284;   // 0.51 s
+        4'd13: voice_len = 12'd2834;   // 1.13 s
         default: voice_len = 12'd0;
     endcase
 endfunction

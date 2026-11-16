@@ -162,19 +162,36 @@ entrances in characters, simpler). Matches are NEXT, to 5 points.
   won in a row count: **n WINS** appears at the end of the duel on the winner's side and in the
   introductions on their side (whoever beats the champion starts again from 1).
 - **Ending**: after beating the last opponent come CONGRATULATIONS and the voice "YOU WIN!", the
-  parade of the seven opponents with the DEFEATED stamp (on the MiSTer a red K.O., and the beaten
-  paddle goes dark), the final score with the champion's prize
+  parade of the seven opponents with the DEFEATED stamp (on the MiSTer the beaten paddle goes
+  dark), the final score with the champion's prize
   (the win of the last level, plus the perfect match), "YOU ARE THE PADD WS CHAMPION" with
   fireworks, the credits and THE END, in about a minute, with its own music; then the initials.
   Start skips it. The voice "YOU WIN!" is also heard at every match won against the CPU. If the
   winner didn't let the opponent score a single point, PERFECT replaces YOU WIN (or GAME OVER, with
   two players), shouted by the voice.
+- **OMEGA**: if you climb the ladder on HARD or EXPERT from the first level without using a
+  continue, beating the GUARDIAN does not lead to the ending: the WARNING! alarm goes off and
+  OMEGA, the secret boss, arrives ("IT BECOMES THEM ALL"). It starts as ARCADE and at every point
+  it concedes it turns into the next opponent of the ladder, up to the GUARDIAN: a white flash,
+  the name of the new form for a second, its paddle, its power-ups and its section of the song.
+  The net follows the bass of the music. It is played to 7 points, with no continues or
+  challengers. If you beat it you get 50,000 points (plus the perfect match prize), its paddle
+  shatters into the seven opponents' paddles and the ending closes with OMEGA DEFEATED; in the
+  high-score table the level is ALL+. If you lose you see the normal ending.
 - **Training**: once you have reached the ending, the NEXT menu also has **OPPONENT** (on the
   MiSTer *Opponent* in the OSD, on the C64 the line in place of PLAYERS). LADDER is the ladder;
   with one of the seven opponents you play a single match against it, with its paddle, its
   power-ups and its CPU at the menu difficulty, with no score, high-score table, continues or
-  challengers. The unlock is saved: on PC in the configuration (`game.training`), in the browser in
-  `localStorage`, on the MiSTer in the high-score file, on the C64 in the cartridge flash.
+  challengers. Once OMEGA is beaten, it is one of the opponents too, after the GUARDIAN (on the
+  MiSTer *Opponent: Secret*, which does nothing until it is unlocked). The unlocks are saved: on
+  PC in the configuration (`game.training`, `game.training_omega`, `game.jukebox`), in the browser
+  in `localStorage`, on the MiSTer in the high-score file, on the C64 in the cartridge flash.
+- **Jukebox**: once you beat OMEGA, or enter BAS as your initials in the high-score table, the
+  menu also has **JUKEBOX** (on the MiSTer the *Jukebox* entry of the OSD, shown only when
+  unlocked). It plays the themes of the seven opponents, the ending and OMEGA, with three
+  oscilloscopes, one per SID voice: up and down change track, fire stops and restarts it, Esc (on
+  the C64 RUN/STOP) goes back to the menu. On the C64 the waves are rebuilt from what the player
+  writes to the SID.
 - **Voice**: in the introduction a digitised "SID-style" voice announces the opponent's name (on the
   C64 and MiSTer with the trick of the SID volume register; on the C64 from the cartridge). On PC,
   web and MiSTer the same voice also says the name of the paddle just confirmed in the pick, over
@@ -205,7 +222,8 @@ MiSTer core.
   100% goes back to 0%. With the music at 0% no song plays. The music volume changes at once, also
   for the song that is playing; when you change the effects volume you hear a hit at the new volume.
 - On the C64 there is a single **VOLUME**, for music and effects together (the SID has a single
-  volume register), from 0% to 100% in 10% steps; the digitised voices stay at their own level.
+  volume register), from 0% to 100% in 10% steps, digitised voices included (at 0% they are
+  silent).
 - **ATTRACT SOUND: OFF** silences the attract mode, music included, and also turns off the music of
   the menu and of the power-up and paddle picks.
 - In the browser, phones and tablets included, the volumes are the same as on PC: you lower them
@@ -322,6 +340,8 @@ used with `F` / `C` (left) and `.` / `-` (right). Key **5** coin, fire or **RETU
 | special moves | ✓ | ✓ | ✓ (joystick) | — |
 | HOW TO PLAY | ✓ | ✓ | ✓ (joystick) | — |
 | NEXT: ladder, high scores, new challenger, WINS and training | ✓ | ✓ | ✓ | — |
+| OMEGA and jukebox | ✓ | ✓ | ✓ | — |
+| logo in the NEXT menu | ✓ | — (menu in the OSD) | — | — |
 | attract mode demo | chosen mode | chosen mode | — | — |
 | SID music | SID in Rust | SID of the C64 core | real SID | — |
 | "SID-style" voices | ✓ | ✓ | opponent's name, READY?, GO!, YOU WIN! and PERFECT! | — |

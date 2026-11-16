@@ -127,10 +127,12 @@ in_r:    .byte 0
 ; Un frame (intro_scene, dopo il disegno): la scala, il livello, l'entrata.
 .proc in_tick
     ldx ch_elapsed              ; (fino a 255)
-    cpx #IN_DONE + 2
+done_op:
+    cpx #IN_DONE + 2            ; (OMEGA, più lunga, cambia i due limiti: inv_omega)
     jcs tables
     cpx #2                      ; il primo frame dopo il disegno no: il file voce del primo livello
     jcc out                     ; ci copia GO, circa 14.000 cicli
+last_op:
     cpx #IN_LAST + 3            ; l'entrata si ferma al frame IN_LAST (in_f con il segno giusto):
                                 ; motto, capsule e FIRST TO di ogni avversario arrivano prima
     jcs out
@@ -1701,4 +1703,164 @@ put:
     ldy v_row
     rts
 .endscope
+.segment "CODE"
+
+; ------------------------------------------------------------------------------------ OMEGA
+; Diventa tutti gli altri (challenge_ui.rs, Stage::omega): la racchetta rossa (viola con l'easter
+; egg) lampeggia bianca una volta per forma della scala (0,4 s ciascuna), poi una volta più lunga e
+; resta; il sigillo lampeggia e resta, poi motto, i bonus di ARCADE e i punti, agli stessi secondi
+; del PC. La presentazione dura OM_INTRO_FRAMES invece di CH_INTRO_FRAMES, e l'entrata va oltre
+; IN_LAST (in_f senza segno: qui e nelle routine comuni che usa nessun confronto con il segno):
+; init cambia la durata e i limiti di in_tick, che la presentazione rimette a ogni copia. Sul PC la racchetta cambia
+; anche forma: qui l'immagine non si rifà durante la voce (vedi sopra), resta quella di ARCADE.
+; Il nome lo copia init (in_draw ha copiato quello del tipo, ARCADE); SECRET LEVEL prende il posto
+; di FINAL LEVEL, e il trattino che in_tick accende oltre la scala per il livello CH_OMEGA si toglie.
+; Nella cartuccia sta nel banco di OMEGA (paddws.cfg, OMINV), alla pagina che enter_intro prende per
+; un tipo 7 (INV_SRC + 14).
+.segment "INV7"
+.scope inv_omega
+    jmp tick
+    jmp init
+    inv_title TN_7_W, TN_7_H, TN_7_COL, {TN_7_MAP}, {TN_7_CLR}
+OM_FORMS_AT = 5                 ; prima forma, poi una ogni OM_FORM_F frame (0,4 s)
+OM_FORM_F   = 20
+OM_SEAL_AT  = 150               ; sigillo (3 s; sul PC 180 a 60 Hz), 20 frame a tratti
+OM_TAG_AT   = 163               ; motto (196), una lettera a frame
+OM_CAPS_AT  = 188               ; capsule (226), una ogni 7 frame
+OM_FIRST_AT = 220               ; FIRST TO (264)
+OM_INTRO_FRAMES = 262           ; 5,25 s (OMEGA_INTRO_SECONDS del PC)
+OM_LAST     = OM_FIRST_AT       ; ultimo frame dell'entrata
+OM_DONE     = OM_LAST + 8       ; poi le tabelle dei quadrati di nuovo (sopra c'è l'entrata)
+.assert OM_FORMS_AT + CH_LEVELS * OM_FORM_F < OM_SEAL_AT, error, "OMEGA: il sigillo prima dell'ultima forma"
+.assert OM_DONE + 2 < 256 .and OM_DONE + 2 + 20 < OM_INTRO_FRAMES, error, "OMEGA: entrata troppo lunga"
+tag:    .byte "IT BECOMES THEM ALL"
+TAG_LEN = * - tag
+init:
+    lda #OM_LAST + 3            ; i limiti di in_tick per questa entrata
+    sta in_tick::last_op + 1
+    lda #OM_DONE + 2
+    sta in_tick::done_op + 1
+    lda ch_timer                ; e la durata (ch_screen ha messo quella di sempre)
+    clc
+    adc #<(OM_INTRO_FRAMES - CH_INTRO_FRAMES)
+    sta ch_timer
+    lda ch_timer + 1
+    adc #>(OM_INTRO_FRAMES - CH_INTRO_FRAMES)
+    sta ch_timer + 1
+    jsr om_glyphs               ; (i caratteri della rete per la partita)
+    lda #TTL_OMEGA
+    jmp title_copy
+; I sei caratteri della rete di OMEGA: trattini di 2 pixel spostati di -3, -2, -1 (colonna 19) e
+; +1, +2, +3 (colonna 20) dalla mezzeria, nelle prime 4 righe come quelli di sempre.
+.proc om_glyphs
+    ldx #5
+:   txa
+    asl a
+    asl a
+    asl a
+    tay
+    lda om_gv,x
+    sta OM_CHARS,y
+    sta OM_CHARS+1,y
+    sta OM_CHARS+2,y
+    sta OM_CHARS+3,y
+    lda #0
+    sta OM_CHARS+4,y
+    sta OM_CHARS+5,y
+    sta OM_CHARS+6,y
+    sta OM_CHARS+7,y
+    dex
+    bpl :-
+    rts
+.endproc
+om_gv:   .byte $0C, $06, $03, $C0, $60, $30
+tick:
+    lda #CH_BLANK
+    sta SCREEN + IN_LADDER * 40 + CH_LEVELS * 5 + 4
+    sta SCREEN + IN_LADDER * 40 + CH_LEVELS * 5 + 5
+    lda in_f
+    cmp #12
+    bne pad
+    lda in_mode                 ; (nell'allenamento resta TRAINING)
+    cmp #IM_TRAIN
+    beq pad
+    jsr print_at
+    .byte 14, IN_LEVEL, "SECRET LEVEL", 0
+pad:
+    ; la racchetta dal frame OM_FORMS_AT: bianca 3 frame a ogni forma (6 all'ultima)
+    lda in_f
+    sec
+    sbc #OM_FORMS_AT
+    bcc name
+    ldx #0
+:   cmp #OM_FORM_F
+    bcc :+
+    sbc #OM_FORM_F
+    inx
+    cpx #CH_LEVELS
+    bne :-
+:   ldy #3
+    cpx #CH_LEVELS
+    bne :+
+    ldy #6
+:   sty in_t
+    ldx #COL_WHITE
+    cmp in_t
+    bcc :+
+    ldx #COL_RED
+    lda egg_x
+    beq :+
+    ldx #COL_PURPLE
+:   ldy #IN_PADY
+    lda #0
+    jsr in_pad
+name:
+    ; il sigillo dal frame OM_SEAL_AT: lampeggia (3 frame acceso, 3 spento) per 20 frame
+    lda in_f
+    sec
+    sbc #OM_SEAL_AT
+    bcc motto
+    cmp #20
+    bcc :+
+    bne motto
+    ldx #COL_WHITE
+    bne draw
+:   cmp #6
+    bcc :+
+    sbc #6
+    bcs :-
+:   ldx #COL_WHITE
+    cmp #3
+    bcc draw
+    ldx #0
+draw:
+    lda #0
+    ldy #TN_7_ROW
+    jsr in_name
+motto:
+    ; IT BECOMES THEM ALL (più lungo dei motti di in_tag_at), una lettera a frame da OM_TAG_AT
+    lda in_f
+    sec
+    sbc #OM_TAG_AT
+    bcc caps
+    cmp #TAG_LEN
+    bcs caps
+    tay
+    adc #(40 - TAG_LEN) / 2     ; (C = 0)
+    tax
+    lda #IN_TAG
+    sta v_row
+    lda tag,y
+    jsr put_ascii
+    lda #COL_GRAY
+    ldy #IN_TAG
+    jsr color_row
+caps:
+    lda #OM_CAPS_AT
+    ldy #7
+    jsr in_caps_at
+    lda #OM_FIRST_AT
+    jmp in_first
+.endscope
+.assert INV_SRC + 2 * OMEGA_KIND = $80 + (OM_INV_OFF / 256), error, "entrata di OMEGA non alla pagina di un tipo 7"
 .segment "CODE"

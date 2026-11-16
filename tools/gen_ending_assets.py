@@ -144,7 +144,7 @@ class Text:
                 raise SystemExit(f"scritta troppo larga per una riga di {ROW_W} pixel: {s} ({w})")
             self.width[s] = w
             self.masks[s] = [[1 if img.getpixel((x, self.top + y)) else 0 for x in range(w)] for y in range(self.gh)]
-        # cifre nelle celle, come il font a celle di gen_challenge_assets.py
+        # cifre nelle celle, una per cella come nelle schermate della scalata
         self.strip = [[0] * (len(GLYPHS) * self.cell) for _ in range(self.gh)]
         for i, (w, img) in enumerate(glyphs):
             ox = i * self.cell
@@ -155,33 +155,43 @@ class Text:
 
 
 def stamp_bitmap() -> list[list[int]]:
-    """Segno dell'avversario battuto nella sfilata del MiSTer: "KO" rosso in Press Start 2P a scala
-    STAMP_SCALE, a pixel pieni, centrato sulla racchetta (che next_render intanto spegne). Le lettere
-    sono accostate (un pixel fra l'inchiostro): il segno è largo 15 pixel a scala 1, 30 a scala 2 (con
-    i punti, "K.O.", a scala 2 i segni vicini si toccavano).
-    Il timbro inclinato DEFEATED di ending_ui.rs, largo 55 pixel su colonne di 45, a 320x240 si
-    sovrapponeva a quelli vicini e a 1 bit non si leggeva."""
-    sw, sh, k = 64, 36, STAMP_SCALE
-    parts = []
-    for c in "KO":
+    """Timbro DEFEATED della sfilata del MiSTer, come stamp() di rust/game/src/ending_ui.rs: la scritta
+    rossa a scala 1 in un riquadro con il bordo di un pixel (STAMP_BOX_W x STAMP_BOX_H), inclinato di
+    STAMP_ANGLE gradi (sale verso destra). A 320x240 le lettere ruotate pixel per pixel si spezzano:
+    il bordo è fatto di segmenti a un pixel fra gli angoli ruotati, ogni lettera resta dritta e va al
+    posto ruotato del suo centro (le lettere salgono a scalini). Il motore a oggetti lo disegna com'è."""
+    th = math.radians(STAMP_ANGLE)
+    cos, sin = math.cos(th), math.sin(th)
+    out = [[0] * STAMP_W for _ in range(STAMP_H)]
+    cx, cy = (STAMP_W - 1) / 2, (STAMP_H - 1) / 2
+
+    def rot(x: float, y: float) -> tuple[float, float]:
+        return cx + x * cos - y * sin, cy + x * sin + y * cos
+
+    def plot(x: int, y: int) -> None:
+        if not (0 <= x < STAMP_W and 0 <= y < STAMP_H):
+            raise SystemExit(f"timbro fuori dal riquadro {STAMP_W}x{STAMP_H}: {x},{y}")
+        out[y][x] = 1
+
+    def line(a: tuple[float, float], b: tuple[float, float]) -> None:
+        n = max(abs(round(b[0]) - round(a[0])), abs(round(b[1]) - round(a[1])), 1)
+        for k in range(n + 1):
+            plot(round(a[0] + (b[0] - a[0]) * k / n), round(a[1] + (b[1] - a[1]) * k / n))
+
+    hw, hh = (STAMP_BOX_W - 1) / 2, (STAMP_BOX_H - 1) / 2
+    pts = [rot(-hw, -hh), rot(hw, -hh), rot(hw, hh), rot(-hw, hh)]
+    for i in range(4):
+        line(pts[i], pts[(i + 1) % 4])
+    word = "DEFEATED"
+    for i, c in enumerate(word):
         g = text_mask(c)
         box = g.getbbox()
-        parts.append(g.crop((box[0], 0, box[2], CELL)))
-    fw = sum(p.width for p in parts) + len(parts) - 1
-    fh = 7
-    flat = Image.new("1", (fw, fh), 0)
-    xx = 0
-    for p in parts:
-        flat.paste(p.crop((0, 0, p.width, fh)), (xx, 0))
-        xx += p.width + 1
-    if fw * k > sw or fh * k > sh:
-        raise SystemExit(f"KO troppo grande per il segno {sw}x{sh}: {fw * k}x{fh * k}")
-    out = [[0] * sw for _ in range(sh)]
-    x0, y0 = (sw - fw * k) // 2, (sh - fh * k) // 2
-    for y in range(fh * k):
-        for x in range(fw * k):
-            if flat.getpixel((x // k, y // k)):
-                out[y0 + y][x0 + x] = 1
+        gx, gy = rot((i - (len(word) - 1) / 2) * 8, 0)
+        x0, y0 = round(gx - 3.5), round(gy - 3)
+        for y in range(7):
+            for x in range(g.width):
+                if g.getpixel((x, y)):
+                    plot(x0 + x, y0 + y)
     return out
 
 
@@ -192,12 +202,21 @@ def stamp_bitmap() -> list[list[int]]:
 PARADE_Y = 92                     # centro delle racchette (185 a 480 righe)
 PARADE_NAME_Y = 145               # centro dei nomi pari; i dispari PARADE_NAME_DY righe più in basso
 PARADE_NAME_DY = 12
-STAMP_W, STAMP_H = 64, 36
-STAMP_SCALE = 1
-STAMP_CY = PARADE_Y - 4           # centro del KO, poco sopra il centro delle racchette
-# colonne della sfilata: da PARADE_X0 a PARADE_X1, così GUARDIAN (63 pixel) sta dentro lo schermo
-# (su PC le colonne sono W * (2i + 1) / 14); i nomi vicini stanno su due righe
-PARADE_X0, PARADE_X1 = 34, 282
+# timbro DEFEATED (stamp_bitmap): riquadro attorno alla scritta a scala 1 (mezza larghezza = metà
+# della scritta + 4, mezza altezza 7,5 come stamp_size di ending_ui.rs a 240 righe), inclinato come
+# STAMP_ANGLE; STAMP_W x STAMP_H è il riquadro dell'immagine ruotata
+STAMP_BOX_W, STAMP_BOX_H = 72, 15
+STAMP_ANGLE = -8.0
+STAMP_W, STAMP_H = 76, 26
+# centro dei timbri: sotto il centro delle racchette (cy + 15 unità a 480 righe), uno più su e uno più
+# giù di STAMP_STAGGER righe (metà altezza del timbro ruotato più una riga, come ParadeLayout), così i
+# vicini non si toccano; quelli a due colonne di distanza stanno alla stessa altezza
+STAMP_CY = PARADE_Y + 8
+STAMP_STAGGER = 14
+# colonne della sfilata: da PARADE_X0 a PARADE_X1, così i timbri dei due estremi (74 pixel) e
+# GUARDIAN (63 pixel) stanno dentro lo schermo e i timbri a due colonne di distanza non si toccano
+# (su PC le colonne si stringono allo stesso modo, parade_layout); i nomi vicini stanno su due righe
+PARADE_X0, PARADE_X1 = 40, 280
 SCORE_SCALE = 1                   # righe del punteggio: etichette e cifre
 
 
@@ -519,7 +538,7 @@ def main() -> None:
          f"localparam integer END_FW_SIZE = {len(fw_words)};   // {ndots} punti",
          f"localparam integer END_GLYPH_H = {t.gh}, END_CELL = {t.cell};",
          f"localparam integer END_STRIP_ROW0 = {strip_row0}, END_STAMP_ROW0 = {stamp_row0};",
-         f"localparam integer END_STAMP_W = {STAMP_W}, END_STAMP_H = {STAMP_H}, END_STAMP_Y0 = {STAMP_CY - STAMP_H // 2};",
+         f"localparam integer END_STAMP_W = {STAMP_W}, END_STAMP_H = {STAMP_H}, END_STAMP_Y0 = {STAMP_CY - STAMP_H // 2}, END_STAMP_STAGGER = {STAMP_STAGGER};",
          f"localparam integer END_DIG_X0 = {dig_x0};",
          f"localparam integer END_PARADE_Y = {PARADE_Y}, END_PARADE_NAME_Y = {PARADE_NAME_Y}, "
          f"END_PARADE_NAME_DY = {PARADE_NAME_DY};",
@@ -585,14 +604,14 @@ def preview(out: Path, t: Text, b: Builder, words: list[int], windows: dict, cre
         for y in range(top, top + h):
             draw_text(img, y, words[base + y - top])
         if part == 1:
-            # i timbri si sovrappongono agli angoli: il renderer legge due timbri per pixel (le due porte
-            # della ROM), quello della colonna e il vicino
+            # i timbri, sfalsati in altezza (pari più su, dispari più giù)
             for i in range(7):
+                dy = -STAMP_STAGGER if i % 2 == 0 else STAMP_STAGGER
                 for yy in range(STAMP_H):
                     for xx in range(STAMP_W):
                         x = column_x(i) - 1 - STAMP_W // 2 + xx
                         if stamp[yy][xx] and 0 <= x < W:
-                            img.putpixel((x, STAMP_CY - STAMP_H // 2 + yy), pal[2])
+                            img.putpixel((x, STAMP_CY + dy - STAMP_H // 2 + yy), pal[2])
         if part == 3:
             f = 40
             for i, fw in enumerate(fws):

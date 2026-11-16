@@ -1,10 +1,10 @@
 //! Scene: attract, menu, scelta dei bonus e della racchetta NEXT, presentazione delle mosse
-//! speciali, partita, schermate di CHALLENGE.
+//! speciali, partita, schermate di CHALLENGE (con OMEGA), JUKEBOX.
 
 use std::f32::consts::FRAC_PI_2;
 
 use macroquad::prelude::*;
-use paddws_core::challenge::{LEVELS, RUNGS, Score, Table};
+use paddws_core::challenge::{LEVELS, OMEGA_LEVEL, RUNGS, Score, Table};
 use paddws_core::fixed::to_f32;
 use paddws_sid::Call;
 use paddws_core::{
@@ -12,13 +12,14 @@ use paddws_core::{
 };
 
 use crate::attract::{self, Attract, AttractArt, Hud};
-use crate::challenge_ui::{self, Challenger, Clear, Continue, Initials, Intro, Run, Scores};
+use crate::challenge_ui::{self, Challenger, Clear, Continue, Initials, Intro, Run, Scores, Warning};
 use crate::config::{self, Config, Rgb};
 use crate::encoder::{self, Action, Encoders};
 use crate::ending_ui::Ending;
 use crate::gamepad::{self, Control};
 use crate::gesture::{Dir, Gesture, Stick};
 use crate::input::{self, PadKeys};
+use crate::jukebox::Jukebox;
 use crate::moves_ui::HowTo;
 use crate::mouse;
 use crate::next_ui::{self, NextFx, Pick};
@@ -120,6 +121,8 @@ pub enum Song {
     Theme(PaddleKind),
     /// il finale della CHALLENGE: ENDING se la ROM ce l'ha, altrimenti CHAMPION
     Ending,
+    /// OMEGA: la sezione della sua forma (0 ARCADE ... 6 GUARDIAN, OMEGA0-OMEGA6)
+    Omega(u8),
 }
 
 /// Con l'easter egg (`App::egg`) al posto della canzone del titolo suona quella del finale.
@@ -146,10 +149,26 @@ impl Song {
             Song::GameOver => "game_over".into(),
             Song::Champion => "champion".into(),
             Song::Theme(kind) => format!("theme_{}", kind.name()),
+            Song::Omega(form) => format!("omega{form}"),
             Song::Ending => return rom.song_number("ending").unwrap_or_else(|| Song::Champion.number()),
         };
         rom.song_number(&name).unwrap_or(0)
     }
+}
+
+/// Numero della voce del nome di OMEGA nella ROM delle voci (`VOICE_OMEGA` di sid_voices.vh,
+/// cercato per nome come le canzoni); 0 se manca.
+fn omega_voice() -> u8 {
+    static ID: std::sync::OnceLock<u8> = std::sync::OnceLock::new();
+    *ID.get_or_init(|| {
+        include_str!("../../../mister/rtl/gen/sid_voices.vh")
+            .lines()
+            .find_map(|l| {
+                let v = l.trim().strip_prefix("localparam [3:0] VOICE_OMEGA")?.trim_start().strip_prefix('=')?;
+                v.split_once('d')?.1.trim().trim_end_matches(';').trim().parse().ok()
+            })
+            .unwrap_or(0)
+    })
 }
 
 /// GAME TYPE e PLAYERS letti dalla configurazione: (evo, next, giocatori, VS CPU). NEXT è la
@@ -361,6 +380,11 @@ impl App {
         self.sid_music.say(kind as u8);
     }
 
+    /// Presentazione di OMEGA: il suo nome ("O-MAY-GAAA"), detto come quelli degli avversari.
+    pub fn announce_omega(&self) {
+        self.sid_music.say(omega_voice());
+    }
+
     /// Scelta della racchetta: il nome della racchetta sommato all'uscita come le voci di partita,
     /// così la musica non si ferma; interrompe quello di prima.
     pub fn announce_paddle(&self, kind: PaddleKind) {
@@ -441,6 +465,9 @@ pub enum Scene {
     Initials(Initials),
     Scores(Scores),
     Ending(Ending),
+    /// l'allarme prima di OMEGA
+    Warning(Warning),
+    Jukebox(Jukebox),
 }
 
 impl Scene {
@@ -461,6 +488,18 @@ impl Scene {
             Scene::Initials(s) => s.update(app, dt),
             Scene::Scores(s) => s.update(app, dt),
             Scene::Ending(s) => s.update(app, dt),
+            Scene::Warning(s) => s.update(app, dt),
+            Scene::Jukebox(s) => s.update(app, dt),
+        }
+    }
+
+    /// La scena legge le voci del SID (`scope`): la partita contro OMEGA (la rete segue il basso)
+    /// e il JUKEBOX.
+    pub fn uses_scope(&self) -> bool {
+        match self {
+            Scene::Game(s) => s.omega(),
+            Scene::Jukebox(_) => true,
+            _ => false,
         }
     }
 
@@ -488,6 +527,9 @@ impl Scene {
                 // l'allenamento finisce come le altre partite, con il GAME OVER
                 (Some(_), None) => Some(Song::GameOver),
                 (Some(_), Some(_)) if s.training => Some(Song::GameOver),
+                // OMEGA perso: niente continue, GAME OVER subito
+                (Some(_), Some(_)) if s.omega() && s.over_texts().0 == Some("game_over") => Some(Song::GameOver),
+                (None, Some((level, _))) if *level == OMEGA_LEVEL => Some(Song::Omega(s.omega_form())),
                 (None, Some((level, _))) => Some(Song::Theme(RUNGS[*level].kind)),
                 // la sfida della CHALLENGE tra due giocatori: il tema di un avversario a caso
                 (None, None) if s.duel.is_some() => Some(Song::Theme(s.theme)),
@@ -500,6 +542,9 @@ impl Scene {
             Scene::Continue(s) => Some(if s.game_over() { Song::GameOver } else { Song::Continue }),
             Scene::Initials(_) => Some(Song::Champion),
             Scene::Ending(_) => Some(Song::Ending),
+            // l'allarme di OMEGA: la canzone tesa del continue fa da sirena
+            Scene::Warning(_) => Some(Song::Continue),
+            Scene::Jukebox(s) => s.song(),
         }
     }
 
@@ -507,7 +552,7 @@ impl Scene {
     /// cambia, le altre musiche suonano normali.
     pub fn tempo(&self, app: &App) -> (bool, bool) {
         match self {
-            Scene::Game(s) if matches!(self.music(app), Some(Song::Theme(_))) => s.tempo(app),
+            Scene::Game(s) if matches!(self.music(app), Some(Song::Theme(_) | Song::Omega(_))) => s.tempo(app),
             _ => (false, false),
         }
     }
@@ -524,7 +569,10 @@ impl Scene {
             })
         };
         match self {
-            Scene::Attract(_) | Scene::Scores(_) | Scene::Demo(_) | Scene::Ending(_) => start(KeyCode::Key1),
+            Scene::Attract(_) | Scene::Scores(_) | Scene::Demo(_) | Scene::Ending(_) | Scene::Warning(_) => {
+                start(KeyCode::Key1)
+            }
+            Scene::Jukebox(s) => s.pad_keys(),
             Scene::Menu(_) => input::pad_keys(|_, c| match c {
                 Control::Up => Some(KeyCode::Up),
                 Control::Down => Some(KeyCode::Down),
@@ -572,6 +620,8 @@ impl Scene {
             Scene::Initials(s) => s.draw(app),
             Scene::Scores(s) => s.draw(app),
             Scene::Ending(s) => s.draw(app),
+            Scene::Warning(s) => s.draw(app),
+            Scene::Jukebox(s) => s.draw(app),
         }
     }
 }
@@ -708,6 +758,8 @@ enum Item {
     /// riprende la partita lasciata per il menu (`App::suspended`)
     Resume,
     Play,
+    /// i temi con gli oscilloscopi, sbloccato battendo OMEGA o con le iniziali BAS
+    Jukebox,
     Quit,
     Shutdown,
 }
@@ -732,10 +784,12 @@ fn next_game_type(evo: bool, next: bool) -> (bool, bool) {
 }
 
 /// OPPONENT dopo un passo (`step` -1 indietro, altrimenti avanti): LADDER (None), poi gli
-/// avversari nell'ordine della scalata (`RUNGS`), e da capo.
-fn step_opponent(opponent: Option<usize>, step: i8) -> Option<usize> {
-    let n = RUNGS.len() + 1;
-    let i = opponent.map_or(0, |level| level.min(RUNGS.len() - 1) + 1);
+/// avversari nell'ordine della scalata (`RUNGS`), poi OMEGA (`OMEGA_LEVEL`) se è sbloccato
+/// (`omega`), e da capo.
+fn step_opponent(opponent: Option<usize>, step: i8, omega: bool) -> Option<usize> {
+    let last = if omega { OMEGA_LEVEL } else { RUNGS.len() - 1 };
+    let n = last + 2;
+    let i = opponent.map_or(0, |level| level.min(last) + 1);
     let i = if step < 0 { (i + n - 1) % n } else { (i + 1) % n };
     i.checked_sub(1)
 }
@@ -821,6 +875,9 @@ impl Menu {
             items.push(Item::Resume);
         }
         items.push(Item::Play);
+        if app.cfg.game.jukebox {
+            items.push(Item::Jukebox);
+        }
         if !platform::WEB {
             items.push(Item::Quit); // nel browser si chiude la pagina
         }
@@ -834,6 +891,13 @@ impl Menu {
     pub fn show(&mut self, i: usize) {
         self.select(i);
         (self.pos, self.from) = (self.selected as f32, self.selected as f32);
+    }
+
+    /// Per la verifica automatica: la ruota ferma sulla voce la cui scritta comincia con `label`.
+    pub fn show_item(&mut self, app: &App, label: &str) {
+        if let Some(i) = self.items.iter().position(|&it| Self::label(app, it).starts_with(label)) {
+            self.show(i);
+        }
     }
 
     /// Dopo un cambio di modalità le voci possono cambiare (PLAYERS e OPPONENT seguono GAME TYPE):
@@ -964,7 +1028,7 @@ impl Menu {
                 format!("PLAYERS : {name}")
             }
             Item::Opponent => {
-                let name = app.opponent.map_or("LADDER", |level| RUNGS[level].kind.name());
+                let name = app.opponent.map_or("LADDER", challenge_ui::opponent_name);
                 format!("OPPONENT : {name}")
             }
             Item::Difficulty => {
@@ -982,6 +1046,7 @@ impl Menu {
             Item::MouseSpinner => format!("MOUSE SPINNER : {}", on_off(app.mouse_spinner())),
             Item::Resume => "RESUME".into(),
             Item::Play => "PLAY".into(),
+            Item::Jukebox => "JUKEBOX".into(),
             Item::Quit => "QUIT".into(),
             Item::Shutdown => "SHUTDOWN".into(),
         }
@@ -1018,7 +1083,7 @@ impl Menu {
                 app.save_mode();
             }
             // la scelta dell'avversario non si salva
-            Item::Opponent => app.opponent = step_opponent(app.opponent, step),
+            Item::Opponent => app.opponent = step_opponent(app.opponent, step, app.cfg.game.training_omega),
             Item::Difficulty => app.next_difficulty(),
             Item::MusicVolume => {
                 // la musica che suona cambia subito (`App::set_music`)
@@ -1093,6 +1158,7 @@ impl Menu {
                 Some(Scene::Paddles(PaddlePick::new(app)))
             }
             Item::Play => Some(Scene::Game(Box::new(Play::new(app)))),
+            Item::Jukebox => Some(Scene::Jukebox(Jukebox::new())),
             Item::Quit => {
                 app.quit = true;
                 None
@@ -1171,20 +1237,29 @@ impl Menu {
         // con GAME TYPE: NEXT il titolo prende il colore di accento
         let title = if app.next { colors.accent } else { colors.white };
 
-        let title_y = 100.0 * s; // in coordinate di disegno (dall'alto)
-        // riquadro attorno alla scritta a 1x, con un carattere di margine ai lati
-        let half = r.text_width("MAIN MENU", &app.assets.font_text, r.text_1x()) / 2.0 + r.text_1x();
-        let half_h = r.text_1x();
-        draw_rectangle(w / 2.0 - half, title_y - half_h, 2.0 * half, 2.0 * half_h, App::color(title));
-        r.text_centered(
-            "MAIN MENU",
-            &app.assets.font_text,
-            r.text_1x(),
-            w / 2.0,
-            title_y,
-            0.0,
-            App::color(colors.black),
-        );
+        if app.next {
+            // in NEXT il logo PADD con le strisce, dove nel campo 320x240 era MAIN MENU
+            let logo = &app.assets.titles.menu_logo;
+            let (_, top) = crate::titles::LOGO_POSITION;
+            let cy = (top + logo.h / 2.0) * h / 240.0;
+            let paint = crate::titles::logo_paint(colors);
+            r.art_centered(logo, 1.0, w / 2.0, cy, 0.0, crate::render::ArtPart::Whole, &paint);
+        } else {
+            let title_y = 100.0 * s; // in coordinate di disegno (dall'alto)
+            // riquadro attorno alla scritta a 1x, con un carattere di margine ai lati
+            let half = r.text_width("MAIN MENU", &app.assets.font_text, r.text_1x()) / 2.0 + r.text_1x();
+            let half_h = r.text_1x();
+            draw_rectangle(w / 2.0 - half, title_y - half_h, 2.0 * half, 2.0 * half_h, App::color(title));
+            r.text_centered(
+                "MAIN MENU",
+                &app.assets.font_text,
+                r.text_1x(),
+                w / 2.0,
+                title_y,
+                0.0,
+                App::color(colors.black),
+            );
+        }
 
         // le voci lontane prima, quella al centro per ultima
         let mut order: Vec<usize> = (0..self.items.len()).collect();
@@ -1226,6 +1301,9 @@ mod menu_tests {
 
     #[test]
     fn songs_are_found_by_name_and_the_ending_falls_back_to_champion() {
+        // le sette sezioni di OMEGA, una per forma, in fila
+        let omega: Vec<u8> = (0..LEVELS as u8).map(|k| Song::Omega(k).number()).collect();
+        assert!(omega[0] > 0 && omega.windows(2).all(|w| w[1] == w[0] + 1), "{omega:?}");
         let mut all = vec![Song::Title, Song::Intro, Song::Clear, Song::Continue, Song::GameOver, Song::Champion];
         all.extend(PaddleKind::ALL.map(Song::Theme));
         let numbers: Vec<u8> = all.iter().map(|s| s.number()).collect();
@@ -1238,6 +1316,14 @@ mod menu_tests {
         let rom = paddws_sid::Rom::builtin();
         let ending = rom.song_number("ending").unwrap_or(Song::Champion.number());
         assert_eq!(Song::Ending.number(), ending);
+    }
+
+    #[test]
+    fn omega_has_its_name_in_the_voice_rom() {
+        let id = omega_voice();
+        assert!(id as usize >= PaddleKind::COUNT, "{id}");
+        let secs = paddws_sid::VoiceRom::builtin().seconds(id);
+        assert!((0.5..2.0).contains(&secs), "{secs}");
     }
 
     #[test]
@@ -1319,15 +1405,30 @@ mod menu_tests {
         let mut o = None;
         let mut names = Vec::new();
         for _ in 0..=RUNGS.len() {
-            o = step_opponent(o, 1);
-            names.push(o.map_or("LADDER", |l| RUNGS[l].kind.name()));
+            o = step_opponent(o, 1, false);
+            names.push(o.map_or("LADDER", challenge_ui::opponent_name));
         }
         assert_eq!(names, ["ARCADE", "TWIST", "HAMMER", "TITAN", "BLASTER", "RUSH", "GUARDIAN", "LADDER"]);
         // la conferma va avanti come la destra, la sinistra torna indietro
-        assert_eq!(step_opponent(None, 0), Some(0));
-        assert_eq!(step_opponent(None, -1), Some(RUNGS.len() - 1));
-        assert_eq!(step_opponent(Some(0), -1), None);
-        assert_eq!(step_opponent(Some(3), -1), Some(2));
+        assert_eq!(step_opponent(None, 0, false), Some(0));
+        assert_eq!(step_opponent(None, -1, false), Some(RUNGS.len() - 1));
+        assert_eq!(step_opponent(Some(0), -1, false), None);
+        assert_eq!(step_opponent(Some(3), -1, false), Some(2));
+    }
+
+    #[test]
+    fn omega_joins_the_opponents_once_unlocked() {
+        let mut o = None;
+        let mut names = Vec::new();
+        for _ in 0..=RUNGS.len() + 1 {
+            o = step_opponent(o, 1, true);
+            names.push(o.map_or("LADDER", challenge_ui::opponent_name));
+        }
+        assert_eq!(names, ["ARCADE", "TWIST", "HAMMER", "TITAN", "BLASTER", "RUSH", "GUARDIAN", "OMEGA", "LADDER"]);
+        assert_eq!(step_opponent(None, -1, true), Some(OMEGA_LEVEL));
+        assert_eq!(step_opponent(Some(OMEGA_LEVEL), 1, true), None);
+        // bloccato: da OMEGA (una scelta rimasta) si torna nella scala
+        assert_eq!(step_opponent(Some(OMEGA_LEVEL), 1, false), None);
     }
 
     #[test]
@@ -1464,11 +1565,11 @@ fn next_seed(app: &mut App) {
     app.seed = app.seed.wrapping_mul(747_796_405).wrapping_add(2_891_336_453);
 }
 
-/// Parametri della partita al livello `level` di CHALLENGE: la velocità della palla del livello
-/// con la difficoltà scelta.
+/// Parametri della partita al livello `level` di CHALLENGE (anche OMEGA): la velocità della palla
+/// del livello con la difficoltà scelta.
 fn rung_params(app: &App, level: usize) -> Params {
     Params::new(&Tuning {
-        difficulty: RUNGS[level].speed_at(app.cfg.game.difficulty),
+        difficulty: challenge_ui::rung(level).speed_at(app.cfg.game.difficulty),
         ..app.cfg.tuning()
     })
 }
@@ -1528,15 +1629,19 @@ impl Play {
     /// Partita del livello in corso di CHALLENGE: la CPU con racchetta, bonus e abilità del
     /// livello, la velocità della palla del livello e della difficoltà scelta. Il giocatore sta
     /// dal suo lato (`Run::side`), con i bonus e la racchetta di quel lato; la CPU dall'altro.
+    /// Contro OMEGA la racchetta della CPU cambia forma a ogni punto del giocatore (`set_morph`).
     pub fn challenge(app: &mut App) -> Self {
         let run = app.run.as_ref().expect("CHALLENGE senza partita");
         let (level, total, side, training) = (run.level, run.score, run.side, run.training);
-        let rung = RUNGS[level];
+        let rung = *challenge_ui::rung(level);
         let params = rung_params(app, level);
         let (loadouts, kinds) = rung.sides(side, app.loadout[side as usize], app.paddles[side as usize]);
         next_seed(app);
         let mut game = Match::new_next_paddles(params.clone(), loadouts, kinds, app.seed);
         game.set_super_moves(true);
+        if level == OMEGA_LEVEL {
+            game.set_morph(side.opponent());
+        }
         // la CPU del livello spostata dalla difficoltà del menu (`Rung::cpu_at`)
         let cpus = vec![Cpu::new(&params, rung.cpu_at(app.cfg.game.difficulty), side.opponent(), app.seed)];
         let mut play = Self::with_match(app, game, cpus);
@@ -1717,7 +1822,7 @@ impl Play {
             return input::NO_KEYS;
         }
         let solo = self.solo as usize;
-        let free = self.challenge.filter(|_| !self.training).map(|_| 1 - solo);
+        let free = self.challenge.filter(|_| !self.training && !self.omega()).map(|_| 1 - solo);
         let paused = self.paused;
         input::pad_keys(|slot, c| match c {
             Control::Start if free.is_some_and(|f| app.pads.side_of(slot, Some(solo)) == f) => {
@@ -1801,7 +1906,7 @@ impl Play {
     /// Lato dello sfidante se in questo momento può entrare (CHALLENGE contro la CPU, non durante
     /// la sfida né nella demo).
     fn join_side(&self) -> Option<Side> {
-        let ladder = self.challenge.is_some() && !self.training;
+        let ladder = self.challenge.is_some() && !self.training && !self.omega();
         (ladder && self.duel.is_none() && !self.demo && self.game_over.is_none()).then(|| self.solo.opponent())
     }
 
@@ -1973,13 +2078,28 @@ impl Play {
                 app.run = None;
                 return Some(Scene::Menu(Menu::new(app)));
             }
+            let difficulty = app.cfg.game.difficulty;
             let run = app.run.as_mut().expect("CHALLENGE senza partita");
             run.score = score.total;
             let me = score.side as usize;
             let (me, cpu) = (self.game.score[me], self.game.score[1 - me]);
-            return Some(if me > cpu && run.level + 1 == LEVELS {
-                // l'ultimo avversario: il finale
-                Scene::Ending(Ending::new(app, cpu))
+            return Some(if run.omega() {
+                // OMEGA: vinto, i premi e il finale speciale; perso, niente continue: il finale
+                // normale
+                if me > cpu {
+                    Scene::Clear(Clear::new(app, cpu))
+                } else {
+                    let guardian = run.guardian;
+                    Scene::Ending(Ending::new(app, guardian))
+                }
+            } else if me > cpu && run.level + 1 == LEVELS {
+                // l'ultimo avversario: il finale, o l'allarme di OMEGA se la scala è stata fatta
+                // tutta a HARD o EXPERT
+                if challenge_ui::omega_open(run, difficulty) {
+                    Scene::Warning(Warning::new(app, cpu))
+                } else {
+                    Scene::Ending(Ending::new(app, cpu))
+                }
             } else if me > cpu {
                 Scene::Clear(Clear::new(app, cpu))
             } else {
@@ -2124,7 +2244,8 @@ impl Play {
                 // vittoria contro la CPU: la voce "YOU WIN!" con la scritta (all'ultimo livello
                 // della CHALLENGE la dice il finale, poco dopo); "PERFECT!" se un giocatore vince
                 // senza punti dell'avversario, anche in due
-                let last = !self.training && self.challenge.is_some_and(|(level, _)| level + 1 == LEVELS);
+                let omega_next = app.run.as_ref().is_some_and(|r| challenge_ui::omega_open(r, app.cfg.game.difficulty));
+                let last = !self.training && !omega_next && self.challenge.is_some_and(|(level, _)| level + 1 == LEVELS);
                 if !last && self.perfect() {
                     sound.shout = Some(Call::Perfect);
                 } else if self.winner() == Some("you_win") && !last {
@@ -2146,7 +2267,7 @@ impl Play {
     /// Punti per vincere: quelli del livello in CHALLENGE, altrimenti quelli delle opzioni.
     fn target(&self, app: &App) -> u16 {
         match (self.challenge, self.duel) {
-            (Some((level, _)), _) | (None, Some(level)) => RUNGS[level].points,
+            (Some((level, _)), _) | (None, Some(level)) => challenge_ui::rung(level).points,
             (None, None) => app.cfg.game.points_to_win.max(1),
         }
     }
@@ -2216,6 +2337,9 @@ impl Play {
         let pause_hint = self.pause_hint(app);
         let mut y = if let Some(kind) = self.net_kind() {
             self.draw_net(app, kind, white, net_off, pause_hint);
+            h
+        } else if self.omega() && !self.demo {
+            self.draw_omega_net(app, white, net_off, pause_hint);
             h
         } else {
             0.0
@@ -2349,7 +2473,7 @@ impl Play {
                 cx + toward * dir * (half + r.text_1x())
             };
             r.text_centered(&total, font, size, cx, y, 0.0, white);
-            let level = format!("L{}", level + 1);
+            let level = if *level == OMEGA_LEVEL { "OMEGA".to_string() } else { format!("L{}", level + 1) };
             r.text_centered(&level, font, size, beside(&level, -1.0), y, 0.0, gray);
             if score.multiplier() > 1 {
                 let accent = App::color(colors.accent);
@@ -2434,10 +2558,47 @@ impl Play {
     }
 
     /// Rete dell'avversario: solo nella CHALLENGE contro la CPU (non nelle sfide tra due giocatori,
-    /// nelle altre modalità e nella demo).
+    /// nelle altre modalità e nella demo). OMEGA ha la sua (`draw_omega_net`).
     fn net_kind(&self) -> Option<PaddleKind> {
         let (level, _) = self.challenge.as_ref().filter(|_| !self.demo && self.duel.is_none())?;
-        Some(RUNGS[*level].kind)
+        (*level != OMEGA_LEVEL).then(|| RUNGS[*level].kind)
+    }
+
+    /// Partita contro OMEGA (anche nell'allenamento).
+    pub fn omega(&self) -> bool {
+        self.challenge.is_some_and(|(level, _)| level == OMEGA_LEVEL)
+    }
+
+    /// Forma di OMEGA (0 ARCADE ... 6 GUARDIAN, l'avversario della scala di cui ha la racchetta):
+    /// la sezione della sua musica.
+    pub fn omega_form(&self) -> u8 {
+        let kind = self.game.morph().and_then(|side| self.game.paddle_kind(side));
+        RUNGS.iter().position(|r| Some(r.kind) == kind).unwrap_or(0) as u8
+    }
+
+    /// Rete di OMEGA: la rete di sempre (trattini 2x4 a 240 righe, uno ogni 8 righe, sulla
+    /// mezzeria) con ogni trattino spostato in orizzontale fino a 3 pixel dalla voce 2 del SID, il
+    /// basso col wobble: 120 ms della voce su tutta l'altezza, agganciati come un oscilloscopio
+    /// (`scope::net_offsets`). Come le altre reti: grigia nel bullet time (`white`), spenta
+    /// dall'alto fino a `net_off`, senza la zona del simbolo della pausa; la COMETA la sposta.
+    fn draw_omega_net(&self, app: &App, white: Color, net_off: f32, pause_hint: bool) {
+        let r = &app.renderer;
+        let (w, h) = (r.world_w, r.world_h);
+        let (s, u) = (app.scale(), h / 240.0);
+        let dash = (10.0 * s).floor().max(1.0);
+        let gain = crate::music::VOLUME * config::volume_gain(app.cfg.game.music_volume);
+        let offsets = match crate::scope::read(&app.sid_music, 1) {
+            Some((x, rate)) => crate::scope::net_offsets(&x, rate, crate::scope::NET_PEAK * gain),
+            None => [0; crate::scope::NET_DASHES],
+        };
+        for (k, dx) in offsets.iter().enumerate() {
+            let y = (k * crate::scope::NET_STEP) as f32 * u;
+            if y < net_off || (pause_hint && y < PAUSE_ICON_BOTTOM * s) {
+                continue;
+            }
+            let kick = self.fx.as_ref().map_or(0.0, |fx| fx.dash_offset((y / (dash * 2.0)) as usize));
+            draw_rectangle(w / 2.0 + (*dx - 1) as f32 * u + kick, y, 2.0 * u, 4.0 * u, white);
+        }
     }
 
     /// Rete dell'avversario `kind`, come `net_px` di mister/rtl/pong_render.v, in pixel di uno schermo a
@@ -2551,7 +2712,9 @@ impl Play {
     /// punti dell'avversario, PERFECT al posto di YOU WIN, o di GAME OVER sopra chi ha vinto.
     fn over_texts(&self) -> (Option<&'static str>, Option<&'static str>) {
         let winner = self.winner();
-        let lost_level = self.challenge.is_some() && !self.training && self.duel.is_none() && winner == Some("cpu_wins");
+        // contro OMEGA non ci sono continue: GAME OVER subito
+        let lost_level =
+            self.challenge.is_some() && !self.training && !self.omega() && self.duel.is_none() && winner == Some("cpu_wins");
         match (winner, self.perfect()) {
             (Some("you_win"), true) => (None, Some("perfect")),
             (Some("you_win"), false) => (None, winner),
@@ -2835,6 +2998,46 @@ impl Play {
         self.game.score = [7, 8];
         if let Some(fx) = &mut self.fx {
             fx.show_label("P1 BULLET!");
+        }
+    }
+
+    /// Per la verifica automatica: OMEGA nella forma `form` (0 ARCADE ... 6 GUARDIAN), come dopo
+    /// `form` punti del giocatore, con il lampo della trasformazione acceso da `flash` secondi (se
+    /// c'è) e la palla in volo.
+    pub fn fill_omega_demo(&mut self, form: usize, flash: Option<f64>) {
+        let Some(side) = self.game.morph() else { return };
+        let me = side.opponent();
+        let rung = RUNGS[form.min(LEVELS - 1)];
+        let mut loadouts = [rung.loadout; 2];
+        let mut kinds = [Some(rung.kind); 2];
+        if let Some(n) = &self.game.next {
+            loadouts[me as usize] = n.players[me as usize].loadout;
+            kinds[me as usize] = n.players[me as usize].kind;
+        }
+        // la partita rifatta con OMEGA già in quella forma (il core la cambia solo ai punti)
+        self.game = Match::new_next_paddles(self.game.params.clone(), loadouts, kinds, 7);
+        self.game.set_super_moves(true);
+        self.game.set_morph(side);
+        let p = self.game.params.clone();
+        if let Some(n) = &mut self.game.next {
+            n.spawn_timer = u32::MAX;
+        }
+        self.game.serve_timer = 0;
+        let b = &mut self.game.ball;
+        b.x = p.width * 2 / 5;
+        b.y = p.height * 2 / 3;
+        b.vx = p.serve_unit * 2;
+        b.vy = p.serve_unit;
+        self.game.score[me as usize] = form as u16;
+        self.game.score[side as usize] = 2;
+        self.pad_draw_x = [to_f32(self.game.paddles[0].x), to_f32(self.game.paddles[1].x)];
+        self.previous = self.snapshot();
+        if let (Some(fx), Some(t)) = (&mut self.fx, flash) {
+            fx.show_morph(side as usize, t);
+            fx.show_morph_name(rung.kind, side as usize, t);
+        }
+        if let Some((_, score)) = &mut self.challenge {
+            score.total = 486_210;
         }
     }
 

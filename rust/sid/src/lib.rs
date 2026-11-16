@@ -16,6 +16,6 @@ pub mod player;
 pub mod rom;
 pub mod voice;
 
-pub use engine::Music;
+pub use engine::{Music, SCOPE_LEN, Scope};
 pub use rom::Rom;
 pub use voice::{Call, VoiceRom};

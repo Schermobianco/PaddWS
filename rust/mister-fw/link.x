@@ -1,7 +1,7 @@
 /* Firmware del core MiSTer: una sola RAM (BRAM di pong_logic_rv.v) per codice, costanti, dati e
    stack. RAM_SIZE deve coincidere con map::RAM_SIZE e con FW_BYTES di rtl/gen/pong_fw.vh
    (tools/gen_mister_fw.py controlla che codice, dati e stack ci stiano). */
-MEMORY { RAM : ORIGIN = 0x00000000, LENGTH = 64K }
+MEMORY { RAM : ORIGIN = 0x00000000, LENGTH = 160K }
 ENTRY(_start)
 SECTIONS {
   .text : { KEEP(*(.text.init)) *(.text .text.*) } > RAM

@@ -45,7 +45,11 @@ $traces = @(
     # 0,5 s e lo arma con la palla ancora dall'altra parte. CPU con lo spinner; la traccia si ferma prima
     # del tick 4703, dove a 128 Hz la racchetta destra con l'encoder si separa dal core (con il BULLET
     # spento)
-    @{ name = "trace_bul_wait"; args = @("--next", "--tick-hz", "128", "--control", "spinner,spinner", "--seed", "63", "--difficulty", "3", "--ticks", "4700") }
+    @{ name = "trace_bul_wait"; args = @("--next", "--tick-hz", "128", "--control", "spinner,spinner", "--seed", "63", "--difficulty", "3", "--ticks", "4700") },
+    # OMEGA (Match::set_morph): la racchetta della CPU cambia forma a ogni punto dell'avversario, con
+    # il livello della CPU di OMEGA (11), da destra e da sinistra, con e senza mosse speciali
+    @{ name = "trace_omega"; args = @("--next", "--paddles", "guardian,arcade", "--morph", "right", "--cpu-level", "11", "--difficulty", "3", "--seed", "81", "--ticks", "57600") },
+    @{ name = "trace_omega_l"; args = @("--next", "--supers", "--paddles", "arcade,rush", "--morph", "left", "--control", "spinner,joystick", "--seed", "82", "--difficulty", "2", "--ticks", "57600") }
 )
 
 Push-Location "$root\rust"

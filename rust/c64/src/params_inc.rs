@@ -382,10 +382,15 @@ fn challenge(s: &mut String) {
         ("CH_RALLY_STEP", ch::RALLY_STEP as u32),
         ("CH_MAX_MULT", ch::MAX_MULTIPLIER),
         ("CH_TABLE", ch::TABLE_SIZE as u32),
+        ("CH_OMEGA", ch::OMEGA_LEVEL as u32),
+        ("CH_OMEGA_POINTS", ch::OMEGA_POINTS),
+        ("CH_LEVEL_OMEGA", ch::SCORE_LEVEL_OMEGA as u32),
     ] {
         let _ = writeln!(s, "{name:<22} = {v}");
     }
-    let col = |f: fn(&ch::Rung) -> i32| RUNGS.iter().map(f).collect::<Vec<i32>>();
+    // i sette livelli della scala, poi OMEGA (livello CH_OMEGA)
+    let rungs: Vec<ch::Rung> = RUNGS.iter().copied().chain([ch::OMEGA]).collect();
+    let col = |f: fn(&ch::Rung) -> i32| rungs.iter().map(f).collect::<Vec<i32>>();
     bytes(
         s,
         "T_RUNG_KIND",
@@ -400,7 +405,7 @@ fn challenge(s: &mut String) {
         "velocità della palla (difficoltà con NORMAL)",
     );
     bytes(s, "T_RUNG_POINTS", &col(|r| r.points as i32), "punti per vincere");
-    let lo: Vec<i32> = RUNGS.iter().flat_map(|r| r.loadout.map(|b| b as i32)).collect();
+    let lo: Vec<i32> = rungs.iter().flat_map(|r| r.loadout.map(|b| b as i32)).collect();
     bytes(s, "T_RUNG_LOADOUT", &lo, "bonus della CPU, 3 per livello");
     // classifica iniziale: per riga iniziali (3), punti (4, byte basso per primo), livello
     let t = ch::Table::default();

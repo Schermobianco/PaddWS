@@ -16,9 +16,12 @@
 /// Inizio della RAM.
 pub const RAM_BASE: u32 = 0x0000_0000;
 /// Dimensione della RAM in byte (codice, dati e stack): la stessa di `pong_logic_rv.v`.
-pub const RAM_SIZE: u32 = 64 * 1024;
+pub const RAM_SIZE: u32 = 160 * 1024;
 /// Inizio dei registri.
 pub const IO_BASE: u32 = 0xF000_0000;
+/// Registri dello schermo a oggetti e dello stato delle schermate (`paddws_mister_ui::map`, in
+/// parole da qui), relativi a `IO_BASE`.
+pub const UI_REGS: u32 = 0x1_0000;
 
 // ---------------------------------------------------------------- letture (HDL -> firmware)
 
@@ -28,12 +31,13 @@ pub const STATUS_EPOCH: u32 = 0xFF;
 pub const STATUS_STEP: u32 = 1 << 8;
 /// Partita, letta all'ultimo `reset`: bit 0 due giocatori, 1 EVO, 2 NEXT, 3 mosse speciali,
 /// 4-5 difficoltà, 6-14 e 15-23 bonus scelti (3 codici da 3 bit per giocatore), 24-29 tipi di
-/// racchetta (3 bit per lato, 7 = senza tipo). Come gli ingressi di `pong_logic_rv`.
+/// racchetta (3 bit per lato, 7 = senza tipo), 30-31 lato che cambia forma (OMEGA, `Match::set_morph`:
+/// bit 30 sinistra, 31 destra). Come gli ingressi di `pong_logic_rv`.
 pub const R_CONFIG: u32 = 0x004;
 /// Seme della partita.
 pub const R_SEED: u32 = 0x008;
 /// CPU, lette all'ultimo `reset`: bit 0-3 e 4-7 livello della CPU di sinistra e di destra
-/// (0-3 la difficoltà, 4-10 CHALLENGE), 8-9 e 10-11 come comandano la racchetta (0 joystick,
+/// (0-3 la difficoltà, 4-11 CHALLENGE), 8-9 e 10-11 come comandano la racchetta (0 joystick,
 /// 1 spinner, 2 tastiera).
 pub const R_CPU: u32 = 0x00C;
 /// Semi delle due CPU (`Cpu::new`).
@@ -72,6 +76,8 @@ pub const PATCH_CAPSULE_X: u32 = 8;
 pub const PATCH_CAPSULE_Y: u32 = 9;
 pub const PATCH_CAPSULE_VX: u32 = 10;
 pub const PATCH_CAPSULE_VY: u32 = 11;
+/// palla: x (Q16.16), per far segnare un lato nel tick dopo (OMEGA: le trasformazioni vere del core)
+pub const PATCH_BALL_X: u32 = 12;
 
 // ---------------------------------------------------------------- scritture (firmware -> HDL)
 

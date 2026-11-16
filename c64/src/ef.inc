@@ -26,3 +26,6 @@ HI_BANK     = 16                ; la classifica di CHALLENGE: settore 2 della RO
                                 ; solo per lei; nella ROMH dello stesso banco i vettori (un RTI)
 HOWTO_BANK  = 24                ; 24-25: la HOW TO PLAY delle mosse speciali (gen/howto.bin): nel
                                 ; primo la bitmap, nel secondo i colori e quelli dell'easter egg
+OM_BANK     = 26                ; OMEGA (ROML e ROMH): il suo file voce (come quelli dei tipi), poi le
+                                ; sezioni della sua canzone, i temi per il jukebox, il jukebox e
+                                ; l'entrata di OMEGA nella presentazione (paddws.cfg, %O.omega)

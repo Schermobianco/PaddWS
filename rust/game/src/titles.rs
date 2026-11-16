@@ -1,5 +1,6 @@
 //! Titoli disegnati a pixel (`assets/titles`, generati da tools/gen_title_assets.py): i nomi dei
-//! sette avversari nelle presentazioni della scalata, HERE COMES A NEW CHALLENGER! e PERFECT.
+//! sette avversari e di OMEGA nelle presentazioni della scalata, HERE COMES A NEW CHALLENGER!,
+//! WARNING! (l'allarme prima di OMEGA), PERFECT e il logo del menu in NEXT (`menu_logo`).
 //! Si disegnano con `Renderer::art_centered` alla grandezza delle scritte a 1x (un pixel della
 //! grafica per pixel arcade), o a multipli interi nelle animazioni.
 //!
@@ -56,16 +57,26 @@ fn name_png(kind: PaddleKind) -> &'static [u8] {
 
 pub struct Titles {
     names: [PixelArt; PaddleKind::COUNT],
+    /// il nome del boss segreto: sigillo omega con OMEGA sotto
+    pub omega: PixelArt,
     pub challenger: PixelArt,
+    /// WARNING!, la targa rossa dell'allarme prima di OMEGA
+    pub warning: PixelArt,
     pub perfect: PixelArt,
+    /// PADD con tre strisce per lato (`menu_logo.png`): palette 0 trasparente, 1-5 l'accento
+    /// sempre più scuro (`logo_paint`)
+    pub menu_logo: PixelArt,
 }
 
 impl Titles {
     pub fn load() -> Self {
         Self {
             names: PaddleKind::ALL.map(|k| PixelArt::from_png(name_png(k))),
+            omega: PixelArt::from_png(title_png!("name_omega")),
             challenger: PixelArt::from_png(title_png!("challenger")),
+            warning: PixelArt::from_png(title_png!("warning")),
             perfect: PixelArt::from_png(title_png!("perfect")),
+            menu_logo: PixelArt::from_png(title_png!("menu_logo")),
         }
     }
 
@@ -91,6 +102,21 @@ pub fn paint(colors: &Colors) -> ArtPaint {
     p[DARK_GRAY_ROLE] = Some(rgb(55, 55, 55));
     p[RED_ROLE] = Some(rgb(200, 30, 30));
     p[DARK_RED_ROLE] = Some(rgb(90, 10, 10));
+    p
+}
+
+/// Logo del menu: livelli del giallo d'accento dei colori 1-5 della sua palette e angolo in alto a
+/// sinistra nel campo 320x240 (come `assets/titles/menu_logo.json`).
+pub const LOGO_LEVELS: [f32; 5] = [1.0, 0.72, 0.48, 0.3, 0.16];
+pub const LOGO_POSITION: (f32, f32) = (76.0, 32.0);
+
+/// Colori del logo del menu: l'accento della configurazione per i livelli di `LOGO_LEVELS`.
+pub fn logo_paint(colors: &Colors) -> ArtPaint {
+    let accent = Color::from_rgba(colors.accent[0], colors.accent[1], colors.accent[2], 255);
+    let mut p: ArtPaint = [None; ART_ROLES];
+    for (i, k) in LOGO_LEVELS.iter().enumerate() {
+        p[i + 1] = Some(Color::new(accent.r * k, accent.g * k, accent.b * k, 1.0));
+    }
     p
 }
 
@@ -134,10 +160,27 @@ mod tests {
         // ogni grafica dell'elenco è inclusa con il suo nome
         let titles = spec["titles"].as_object().unwrap();
         let names: Vec<String> = PaddleKind::ALL.iter().map(|k| format!("name_{}", k.name().to_lowercase())).collect();
-        for n in names.iter().map(String::as_str).chain(["challenger", "perfect"]) {
+        let others = ["name_omega", "challenger", "warning", "perfect"];
+        for n in names.iter().map(String::as_str).chain(others) {
             assert!(titles.contains_key(n), "{n}");
         }
-        assert_eq!(titles.len(), names.len() + 2);
+        assert_eq!(titles.len(), names.len() + others.len());
+    }
+
+    #[test]
+    fn the_menu_logo_matches_its_json() {
+        let spec: serde_json::Value = serde_json::from_str(include_str!("../../../assets/titles/menu_logo.json")).unwrap();
+        let levels: Vec<f32> = spec["levels"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap() as f32).collect();
+        assert_eq!(levels, LOGO_LEVELS);
+        let pos = (spec["position"]["x"].as_f64().unwrap() as f32, spec["position"]["y"].as_f64().unwrap() as f32);
+        assert_eq!(pos, LOGO_POSITION);
+        // centrato nel campo 320x240
+        let w = spec["size"][0].as_f64().unwrap() as f32;
+        assert!((LOGO_POSITION.0 + w / 2.0 - 160.0).abs() <= 0.5);
+        let p = logo_paint(&Colors::default());
+        assert!(p[SILHOUETTE].is_none() && p[0].is_none() && p[6].is_none());
+        let (a, d) = (p[1].unwrap(), p[5].unwrap());
+        assert!((d.r / a.r - 0.16).abs() < 1e-6);
     }
 
     #[test]

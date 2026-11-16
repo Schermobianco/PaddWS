@@ -34,12 +34,13 @@ db_url = https://raw.githubusercontent.com/Schermobianco/PaddWS/db/db.json.zip
 
 ## High scores on the SD card
 
-The high-score table of the NEXT ladder, together with the training unlock, is saved in NVRAM, like
-in the arcade cores:
+The high-score table of the NEXT ladder, together with the unlocks (training, OMEGA, jukebox), is
+saved in NVRAM, like in the arcade cores:
 `/media/fat/config/nvram/PaddWS.nvm`. With *Autosave scores: On* (the default), after every change
 the MiSTer saves it the next time the OSD is opened; with *Off* only through *Save settings* in the
 system menu. It only works when the core is started from the `.mra`: started from the `.rbf`, the
 table lasts until the core is switched off. A broken file is ignored and the default table stays.
+Cores up to 4.3.0 discard a file with an ALL+ entry (OMEGA beaten).
 
 ## Controls and options
 
@@ -51,7 +52,8 @@ followed by **A**.
 
 The OSD (F12) has the mode (*Game type*: NEXT, EVO, Classic), the players (*Players*, only in
 Classic and EVO), the training opponent (*Opponent*, only in NEXT and after unlocking it by
-reaching the ending), Free Play, difficulty, scores upright or facing
+reaching the ending; *Secret* is OMEGA, and until it is unlocked it changes nothing), the jukebox
+(*Jukebox*, hidden until unlocked; with *On* the core shows only the jukebox), Free Play, difficulty, scores upright or facing
 the players for a table, attract sounds, SID 8580 or 6581, music and effects volume, high-score
 saving, white level, paddle control (joystick, paddle or spinner) and spinner speed. Scanlines and
 filters are the MiSTer's own.
@@ -84,10 +86,9 @@ Don't edit them by hand: change the generator and run it again.
 | `pong_fonts.vh` | `tools/gen_mister_assets.py` |
 | `pong_attract.vh` | `tools/gen_attract_assets.py` |
 | `pong_next.vh` | `tools/gen_next_assets.py` |
-| `pong_challenge.vh` | `tools/gen_challenge_assets.py` |
 | `howto_*.hex`, `pong_howto.vh` | `tools/gen_howto_assets.py` |
 | `ending_*.hex`, `pong_ending.vh` | `tools/gen_ending_assets.py` |
-| `title_*.hex`, `pong_titles.vh` | `tools/gen_mister_titles.py` (from `assets/titles`, `tools/gen_title_assets.py`) |
+| `ui_font.hex`, `ui_gfx.hex`, `ui_gfx.vh` (and `rust/mister-ui/src/assets.rs`) | `tools/gen_mister_ui.py` (from `assets/titles`, `pong_*.vh`, `howto_*`, `ending_*`) |
 | `sid_music.hex`, `sid_music.vh` | `tools/gen_sid_music.py` |
 | `sid_voices.hex`, `sid_voices.vh` | `tools/gen_voices.py --mister` |
 
@@ -101,8 +102,8 @@ The firmware needs Rust with the `riscv32im-unknown-none-elf` target (the portab
 .\mister\sim\run.ps1
 ```
 
-It regenerates with `paddws-trace` the 29 reference traces of the Rust core (Classic, EVO, NEXT,
-paddle types, special moves, CPU, spinner) and plays them back on the firmware in an RV32IM
+It regenerates with `paddws-trace` the 31 reference traces of the Rust core (Classic, EVO, NEXT,
+paddle types, special moves, CPU, spinner, OMEGA) and plays them back on the firmware in an RV32IM
 emulator (`paddws-fw-sim`): the state must match bit for bit on every tick. It also checks, with
 `gen_mister_fw.py --check`, that the firmware in `rtl/gen` is in step with the sources. On Linux,
 in CI and on forge the script is `sim/run.sh`.
@@ -129,9 +130,15 @@ runs start from; `-f` ignores it, `-u` makes the text upright. The most useful s
   (with the training unlock);
 - `wins`, `train`: the counter of duels won in a row and training;
 - `nvram`: the SD high scores and unlock with a fake `hps_io`;
+- `omega`, `jukebox`: OMEGA from the GUARDIAN's GAME OVER on HARD up to the ending, and the
+  jukebox;
 - `win`, `perfect`, `paddle`, `spin`, `mute`, `music`: end of match, paddle and spinner, audio.
 
 The full list, with what each scenario checks, is at the top of `sim/frames/frames.cpp`.
+Long simulations can be interrupted: with `PONG_SAVE_EVERY=N` the state is saved every N frames
+and with `PONG_RESUME=1` the run restarts from the last save. The firmware screens can also be
+tested without Verilator, on the state snapshots recorded with `PONG_UILOG`:
+`cargo run -p paddws-mister-ui --bin paddws-ui-sim -- LOG ...`.
 
 Other test benches, slower or more specific:
 
@@ -151,17 +158,23 @@ folder given by `PADDWS_COMPILERS`.
 - `PaddWS.sv`: glue to the Template_MiSTer `sys/` framework (OSD, joystick, PLL, video, audio).
 - `rtl/pong_top.v`: attract sequence, matches, coins, ladder and training; the four 240 Hz ticks of each frame.
 - `rtl/pong_logic_rv.v`: the processor (`rtl/vexriscv/`), the firmware RAM and the registers.
-- `rtl/*_render.v`: playfield, attract, NEXT, HOW TO PLAY, ladder and ending.
+- `rtl/pong_render.v`, `rtl/next_render.v`: the playfield and the NEXT additions;
+  `rtl/ending_render.v`: the fireworks of the ending.
+- `rtl/ui_render.v` and `rust/mister-ui`: the object screen (rectangles, text and images on a
+  line buffer) and the screens the firmware writes into it every frame.
+- `rtl/sid_scope.v`: the SID voices for the OMEGA net and the jukebox oscilloscopes.
 - `rtl/pong_sid.v` and `rtl/sid/`: music player and voices, with the SID from the MiSTer C64 core.
 - `rtl/ch_nvram.v`: the SD high scores.
 - `sim/`: traces, frame simulator, test benches for the processor and the SID.
 
 ## Good to know
 
-- The timing margin is thin and the DSPs are all used: no divisions or modulo in the RTL, and the
-  renderers work out positions and bounds once per frame, then only compare.
+- No divisions or modulo in the RTL: the renderers work out positions and bounds once per frame,
+  then only compare.
 - The four ticks of a frame start at the beginning of vblank and must be done before the snapshot
-  on line 261, which the renderers use for the whole next frame.
+  on line 261, which the renderers use for the whole next frame. After the ticks the firmware
+  builds the screens from a snapshot of the state: an input outside a match that arrives after the
+  snapshot shows one frame later.
 - Bits 24, 25 and 26 of the OSD status are free, but old CFG files may have them set: don't reuse
   them.
 - `sim/tb_pong_top.v` (Icarus) no longer matches the ports of `pong_top`: use the frame simulator

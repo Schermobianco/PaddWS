@@ -22,6 +22,7 @@ module tb_rv_top #(
     input  wire [8:0]  loadout0,
     input  wire [8:0]  loadout1,
     input  wire [5:0]  kinds,
+    input  wire [1:0]  morph,
     input  wire [1:0]  difficulty,
     input  wire        super_moves,
     input  wire [31:0] seed,
@@ -107,8 +108,9 @@ end
 `LOGIC_WIRES(n_)
 
 pong_logic_rv #(.TICK_HZ(TICK_HZ), .FW_ROM0(FW_ROM0), .FW_ROM1(FW_ROM1), .FW_ROM2(FW_ROM2), .FW_ROM3(FW_ROM3)) dut (
+    .ui_wr(), .ui_addr(), .ui_wdata(), .ui_rdata(32'd0),
     .clk(clk), .clk_cpu(clk_cpu), .rv_reset(rv_reset), .reset(reset), .two_players(two_players), .evo_mode(evo_mode),
-    .next_mode(next_mode), .loadout0(loadout0), .loadout1(loadout1), .kinds(kinds), .difficulty(difficulty),
+    .next_mode(next_mode), .loadout0(loadout0), .loadout1(loadout1), .kinds(kinds), .morph(morph), .difficulty(difficulty),
     .super_moves(super_moves), .seed(seed),
     .cpu_level0(cpu_level0), .cpu_level1(cpu_level1), .cpu_control(cpu_control),
     .cpu_seed0(seed), .cpu_seed1(seed ^ 32'd1),

@@ -22,6 +22,15 @@
 ; bonus e racchetta e i due giocano NEXT ai punti e alla velocità del livello. Il vincitore riprende
 ; il livello dal suo lato (ch_side), con i punti di Score::after_duel; prima il perdente, se era il
 ; campione e il suo miglior punteggio entra in classifica, mette le iniziali.
+;
+; OMEGA (omega.s, rust/core/src/challenge.rs): battuto il GUARDIAN con la scala fatta tutta dal
+; livello 1 senza continue (ch_clean: lo perdono il continue e lo sfidante che prende il posto) a
+; HARD o EXPERT, al posto del finale l'allarme WARNING! (enter_warning), poi la presentazione e la
+; partita contro OMEGA, livello CH_OMEGA (le tabelle dei livelli hanno un ottavo posto per lui);
+; niente sfidanti né continue. Persa: il finale normale; vinta: i premi di Score::omega_bonus, ALL+
+; in classifica (CH_LEVEL_OMEGA), OMEGA nell'allenamento e il JUKEBOX sbloccati (hi_omega, hi_juke,
+; salvati nella flash con la classifica) e il finale speciale (ch_omega, ending.s). Le iniziali BAS
+; sbloccano il JUKEBOX.
 
 CH_INTRO_FRAMES  = 200          ; 4 s
 CH_CLEAR_FRAMES  = 200
@@ -88,6 +97,9 @@ ch_txt:    .res 8
 ch_table:  .res CH_TABLE * CH_ENTRY
 hi_tail:   .res 3               ; HI_MAGIC e il controllo, per il salvataggio
 hi_open:   .res 1               ; allenamento sbloccato: $00 sì, altro no (HI_OPEN, src/ef.s)
+hi_omega:  .res 1               ; OMEGA nell'allenamento: $00 sì (HI_OMEGA)
+hi_juke:   .res 1               ; JUKEBOX nel menu: $00 sì (HI_JUKE)
+.segment "CPUBSS"               ; (non si azzera all'avvio, come LOWBSS: lo scrive hi_load prima)
 hi_next:   .res 1               ; posto della flash del prossimo salvataggio ($80: niente)
 .segment "BSS"
 win_points: .res 1              ; punti per vincere la partita
@@ -103,6 +115,8 @@ bm_diff:   .res 1
 ; lascia player, READY e GO come all'inizio di una scala (il nome dell'avversario, il conto
 ; alla rovescia): in tre frame, perché la copia e GO non stanno in uno (pk_phase di nuovo
 ; PH_MATCH; cg_active da 0 a CG_TRAIN, poi i frame del file, VOICE_FRAMES); poi la presentazione.
+OMEGA_DIFF = 2                  ; OMEGA da HARD in su (OMEGA_DIFFICULTY del PC)
+
 .proc ch_start
     ldx #CG_LADDER
     lda opt_opp
@@ -115,11 +129,16 @@ bm_diff:   .res 1
     ldx #CG_TRAIN
 start:
     stx cg_active
+    txa                         ; la scala dal livello 1 (non l'allenamento): può arrivare OMEGA
+    and #2
+    eor #2
+    sta ch_clean
     jsr ch_keep
     lda #0
     sta ch_side
     sta ch_loser
     sta ch_wins
+    sta ch_omega
     jsr zero_score
     ldx #3
 :   sta ch_best,x
@@ -454,7 +473,13 @@ ladder:
     beq lost
     bcs won
 lost:
-    jmp enter_cont
+    lda ch_level                ; contro OMEGA niente continue: il finale normale, ALL in classifica
+    cmp #CH_OMEGA
+    bcc :+
+    lda #CH_LEVELS + 1
+    jsr remember
+    jmp end_enter
+:   jmp enter_cont
 won:
     jmp enter_clear
 .endproc
@@ -680,7 +705,10 @@ next:
 .proc enter_intro
     ldx ch_level                ; il file voce dell'avversario dalla cartuccia (src/ef.s)
     lda rung_kind,x
-    pha
+    cpx #CH_OMEGA
+    bcc :+
+    lda #OM_BANK - VOICE_BANK0  ; OMEGA: il suo, nel suo banco
+:   pha
     jsr ef_voice
     ; e il codice della presentazione (intro.s): la parte comune, poi l'entrata dell'avversario
     lda #IN_SRC
@@ -690,13 +718,28 @@ next:
     ldy #>IN_RUN
     jsr ef_copy
     pla
-    asl a
+    ldx #IN_BANK
+    cmp #OMEGA_KIND
+    bcc :+
+    lda #OMEGA_KIND             ; (OMEGA: l'entrata come per un tipo 7, nel suo banco)
+    ldx #OM_BANK
+:   asl a
     adc #INV_SRC                ; (C = 0)
     sta ef_src+2
-    lda #IN_BANK
+    txa
     ldx #2
     ldy #>INV_RUN
     jsr ef_copy
+    ldx ch_level                ; OMEGA: la prima sezione della sua canzone, che VOICE_STOP dà
+    cpx #CH_OMEGA               ; (le altre le copia la partita, om_tick)
+    bcc :+
+    lda #>om_s0
+    sta ef_src+2
+    lda #OM_BANK
+    ldx #(om_s1 - om_s0) / 256
+    ldy #>THEME_BASE
+    jsr ef_copy
+:
     lda #1                      ; (sopra le tabelle dei quadrati: math_step non le rifà fino a
     sta math_ready              ; IN_DONE, intro.s)
     lda #0
@@ -807,7 +850,14 @@ done:
     sta ch_bonus+3
 :   dec ch_tmp+2
     bne :--
-    lda ch_bonus
+    lda ch_level                ; OMEGA (Score::omega_bonus): la vittoria vale CH_OMEGA_POINTS, la
+    cmp #CH_OMEGA               ; partita perfetta come un ottavo livello (il conto qui sopra)
+    bcc :+
+    lda #<CH_OMEGA_POINTS
+    sta ch_bonus
+    lda #>CH_OMEGA_POINTS
+    sta ch_bonus+1
+:   lda ch_bonus
     sta ch_tmp
     lda ch_bonus+1
     sta ch_tmp+1
@@ -817,19 +867,24 @@ done:
     lda ch_bonus+3
     sta ch_tmp+1
     jsr add_tmp
-    ; livello raggiunto: il prossimo, o 8 a scala finita
+    ; livello raggiunto: il prossimo, 8 a scala finita (ALL), 9 con OMEGA battuto (ALL+)
     lda ch_level
     clc
     adc #2
     jsr remember
-    ; l'ultimo avversario: il finale (ending.s)
+    ; l'ultimo avversario: il finale (ending.s), o l'allarme di OMEGA se la scala è stata fatta
+    ; tutta, senza continue, a HARD o EXPERT (omega_open del PC)
     lda ch_level
     cmp #CH_LEVELS - 1
+    bne :+
+    lda ch_clean
     beq end_enter
-    lda #<draw_clear
-    sta ch_draw
-    lda #>draw_clear
-    sta ch_draw+1
+    lda opt_level
+    cmp #OMEGA_DIFF
+    bcc end_enter
+    jmp enter_warning
+:
+    jsr cl_draw
     lda #SID_SONG_CLEAR
     jsr sid_song
     lda #ST_CLEAR
@@ -856,96 +911,53 @@ done:
     jmp end_init
 .endproc
 
-.proc draw_clear
-    jsr print_at
-    .byte 13, 5, "LEVEL   CLEAR", 0
-    lda ch_level
-    clc
-    adc #'1'
-    ldx #19
-    ldy #5
-    sty v_row
-    jsr put_ascii
-    lda #COL_YELLOW
-    ldy #5
-    jsr color_row
-    jsr print_at
-    .byte 12, 11, "WIN BONUS  +", 0
-    lda ch_bonus
-    ldx ch_bonus+1
-    ldy #11
-    jsr print_bonus
-    lda ch_bonus+2
-    ora ch_bonus+3
-    beq :+
-    jsr print_at
-    .byte 12, 13, "PERFECT    +", 0
-    lda ch_bonus+2
-    ldx ch_bonus+3
-    ldy #13
-    jsr print_bonus
-    lda #COL_YELLOW
-    ldy #13
-    jsr color_row
-:   jsr print_at
-    .byte 13, 17, "SCORE", 0
-    ldx #19
-    ldy #17
-    jsr print_score
-    jsr print_at
-    .byte 14, 21, "PRESS START", 0
-    lda #COL_GRAY
-    ldy #21
-    jmp color_row
-.endproc
+; --- livello superato e continue: disegno e scena nella cartuccia
 
-; Premio A:X (16 bit) senza zeri davanti dalla colonna 24, riga Y (righe centrate con 4 cifre).
-.proc print_bonus
-    sta ch_tmp
-    stx ch_tmp+1
-    lda #0
-    sta ch_tmp+2
-    sta ch_tmp+3
-    sty v_row
-    jsr num7
-    ldx #0
-:   lda ch_txt,x
-    cmp #'0'
-    bne :+
-    inx
-    cpx #6
-    bne :-
-:   txa
-    clc
-    adc #<ch_txt
-    sta ptr2
-    lda #>ch_txt
-    adc #0
-    sta ptr2+1
-    ldx #24
-    ldy v_row
-    jmp print_str
-.endproc
+; Disegno e scena delle schermate del livello superato e del continue (e di OMEGA battuto) stanno
+; nella cartuccia, nel file del finale dopo i titoli (segmento CLCODE, area ENDI di paddws.cfg), e
+; girano nel secondo schermo, libero dopo il GAME OVER (la presentazione dopo ci copia la sua parte
+; comune, il GAME OVER il suo codice). La copia (CL_PAGES pagine, circa 3.800 cicli l'una) è il
+; disegno del primo frame dopo quello che pulisce lo schermo (cl_load, ch_draw); il disegno vero
+; al frame dopo, quando la scena (cl_scene) comincia a girare.
+CL_RUN   = SCREEN2
+CL_OFF   = TTL_OFF + $0200 + TTL_PAGES * 256
+CL_BANK  = END_BANK + CL_OFF / $2000
+CL_SRC   = $80 + (CL_OFF .mod $2000) / 256
+CL_PAGES = 3
+.import __CLCODE_RUN__, __CLCODE_SIZE__
+.assert __CLCODE_RUN__ = CL_RUN .and __CLCODE_SIZE__ <= CL_PAGES * 256, lderror, "livello superato e continue: codice fuori posto o oltre CL_PAGES"
+.assert (CL_OFF .mod $2000) + CL_PAGES * 256 <= $2000 .and CL_OFF / $2000 = TTL_OFF / $2000, error, "livello superato e continue oltre il banco"
 
-.proc clear_scene
-    jsr ch_phases
-    bcs done
-    ; nuovo sfidante (dopo l'ultimo livello c'è il finale): la sfida è al livello dopo, quello che
-    ; il vincitore affronterà
-    jsr ch_join
-    bcc :+
-    inc ch_level
-    jmp enter_challenger
-:   jsr join_hint
-    jsr ch_skip
-    bcs go
-    jsr ch_timeout
-    bcc done
-go:
-    inc ch_level
-    jmp enter_intro
-done:
+; La schermata la disegna CLCODE (ch_draw: prima la copia).
+.proc cl_draw
+    lda #<cl_load
+    sta ch_draw
+    lda #>cl_load
+    sta ch_draw+1
     rts
+.endproc
+
+.proc cl_load
+    lda #CL_SRC
+    sta ef_src+2
+    lda #CL_BANK
+    ldx #CL_PAGES
+    ldy #>CL_RUN
+    jsr ef_copy
+    lda #<CL_RUN
+    sta ch_draw
+    lda #>CL_RUN
+    sta ch_draw+1
+    inc ch_more
+    rts
+.endproc
+
+; Un frame delle schermate di CLCODE: le fasi, poi la scena (state dice quale).
+.proc cl_scene
+    jsr ch_phases
+    bcs :+
+    jmp CL_RUN + 3
+:   rts
 .endproc
 
 ; --- nuovo sfidante
@@ -973,8 +985,7 @@ done:
 ; Gettone (tasto 5) e Start dello sfidante, il fuoco del lato libero (con i paddle il pulsante del
 ; suo paddle): C = 1 se entra, con un credito che si consuma o in Free Play.
 .proc ch_join
-    lda cg_active               ; nell'allenamento non entra nessuno
-    cmp #CG_TRAIN
+    jsr no_join                 ; nell'allenamento e contro OMEGA non entra nessuno
     beq no
     lda #KEY_5
     jsr key_pressed
@@ -1014,6 +1025,16 @@ no:
     rts
 .endproc
 
+; Z = 1 se non può entrare uno sfidante: nell'allenamento e contro OMEGA.
+.proc no_join
+    lda ch_level
+    cmp #CH_OMEGA
+    beq :+
+    lda cg_active
+    cmp #CG_TRAIN
+:   rts
+.endproc
+
 ; Nella partita contro la CPU (anche nel conto alla rovescia): C = 1 se è entrato uno sfidante. La
 ; partita si interrompe, i punti arcade fatti restano a chi gioca.
 .proc ch_join_match
@@ -1037,8 +1058,7 @@ no:
 ; Invito per lo sfidante, a tratti, in alto sul lato libero: P2 PRESS START (o P1), INSERT COIN
 ; senza crediti (draw_join_hint del PC).
 .proc join_hint
-    lda cg_active               ; (nell'allenamento niente)
-    cmp #CG_TRAIN
+    jsr no_join                 ; (nell'allenamento e contro OMEGA niente)
     bne :+
     rts
 :   ldx #25                     ; colonna: il lato libero è a destra
@@ -1152,7 +1172,13 @@ CHC_RUN  = SCREEN2
     inc ch_elapsed
     inc ch_more
     lda chal_src,x
-    sta ef_src+2
+    cpx #0                      ; l'allarme di OMEGA: i caratteri di WARNING!
+    bne :+
+    ldy ch_level
+    cpy #CH_OMEGA
+    bcc :+
+    lda #TTL_SRC + TTL_WARN
+:   sta ef_src+2
     ldy chal_dst,x
     lda #TTL_BANK
     ldx #2
@@ -1203,6 +1229,34 @@ chal_dst: .byte >(CHARSET + 8 * TC_FIRST), >CHC_RUN
 
 chal_col_a: .byte COL_YELLOW, COL_GRAY      ; banda alta
 chal_col_b: .byte COL_GRAY, COL_YELLOW      ; banda bassa
+
+; --- l'allarme di OMEGA (Warning del PC)
+
+; Battuto il GUARDIAN con la scala fatta tutta (enter_clear): schermo nero e la targa WARNING!
+; che lampeggia (CHCODE, come la targa del nuovo sfidante: draw_challenger la disegna, chc::warn
+; la fa lampeggiare), con la canzone del continue come sirena; poi la presentazione di OMEGA, il
+; livello CH_OMEGA. Il premio del GUARDIAN è già nel punteggio (sul PC aspetta il finale).
+WARN_FRAMES = 175               ; 3,5 s (WARNING_SECONDS)
+.proc enter_warning
+    inc ch_level                ; (CH_OMEGA)
+    lda #<draw_challenger
+    sta ch_draw
+    lda #>draw_challenger
+    sta ch_draw+1
+    lda #SID_SONG_CONTINUE
+    jsr sid_song
+    lda #ST_WARNING
+    ldx #<WARN_FRAMES
+    ldy #>WARN_FRAMES
+    jmp ch_screen
+.endproc
+
+.proc warn_scene
+    jsr ch_phases
+    bcs :+
+    jmp chc_warn
+:   rts
+.endproc
 
 .proc challenger_scene
     jsr ch_phases
@@ -1284,6 +1338,7 @@ challenger:
     eor #4
     sta ch_side
     jsr zero_score              ; A = 0
+    sta ch_clean                ; (lo sfidante non ha fatto la scala dal livello 1: niente OMEGA)
     ldx #3
 :   sta ch_best,x
     dex
@@ -1409,8 +1464,8 @@ IM_TRAIN = 2
 :   lda #IM_LEVEL
     ldx ch_level
     cpx #CH_LEVELS - 1
-    bne :+
-    lda #IM_FINAL
+    bcc :+
+    lda #IM_FINAL               ; (anche OMEGA: la sua entrata scrive SECRET LEVEL)
 :   rts
 train:
     lda #IM_TRAIN
@@ -1428,163 +1483,13 @@ train:
     sta ch_digit
     lda #0
     sta ch_go
-    lda #<draw_cont
-    sta ch_draw
-    lda #>draw_cont
-    sta ch_draw+1
+    jsr cl_draw
     lda #SID_SONG_CONTINUE
     jsr sid_song
     lda #ST_CONT
     ldx #<CH_CONT_FRAMES
     ldy #>CH_CONT_FRAMES
     jmp ch_screen
-.endproc
-
-.proc draw_cont
-    jsr print_at
-    .byte 15, 5, "CONTINUE?", 0
-    lda #COL_YELLOW
-    ldy #5
-    jsr color_row
-    jsr print_at
-    .byte 7, 18, "LEVEL     SCORE RESETS TO 0", 0
-    lda ch_level
-    clc
-    adc #'1'
-    ldx #13
-    ldy #18
-    sty v_row
-    jsr put_ascii
-    lda #COL_GRAY
-    ldy #18
-    jsr color_row
-    ; la pallina accanto alla cifra (sprite 0, la palla con il boost) e sotto il suo trattino grigio
-    lda #CH_GRID_T
-    sta SCREEN + CONT_FLOOR_ROW * 40 + CONT_COL
-    lda #COL_GRAY
-    sta $d800 + CONT_FLOOR_ROW * 40 + CONT_COL
-    lda #SP_BALL6
-    sta sh_ptr
-    lda #CONT_X
-    sta sh_x
-    lda #0
-    sta sh_msb
-    sta sh_mc
-    sta sh_xexp
-    sta sh_yexp
-    lda #1
-    sta sh_enable
-    rts
-.endproc
-CONT_COL       = 24             ; pallina: la colonna, e la riga del trattino
-CONT_FLOOR_ROW = 13
-CONT_X         = SPR_X0 + CONT_COL * 8 + 1  ; la palla di 6 pixel al centro della cella
-CONT_FLOOR     = SPR_Y0 + CONT_FLOOR_ROW * 8 - 6
-; altezza della pallina a m frame dal tocco più vicino: 29 pixel * 4 s (1 - s), s = m / 50
-cont_hop: .byte 0, 2, 5, 7, 9, 10, 12, 14, 16, 17, 19, 20, 21, 22, 23, 24, 25, 26, 27, 27, 28, 28, 29, 29, 29, 29
-
-.proc cont_scene
-    jsr ch_phases
-    jcs done
-    ; gettone
-    lda #KEY_5
-    jsr key_pressed
-    bcc :+
-    lda opt_free
-    bne :+
-    lda credits
-    cmp #MAX_CREDITS
-    bcs :+
-    inc credits
-    lda #EV_COIN
-    jsr sid_fx
-:   ; continue: Start con un credito (o Free Play), già con il 9 (dopo un quarto di secondo)
-    lda ch_elapsed
-    cmp #CONT_SKIP_FRAMES
-    bcc wait
-    jsr champ_start
-    bcc wait
-    lda opt_free
-    bne go
-    lda credits
-    beq wait
-    dec credits
-go:
-    jsr zero_score
-    jmp enter_intro
-wait:
-    jsr ch_timeout
-    bcc :+
-    jmp cont_over
-:   ; secondi rimasti (cifra grande al centro), con un colpo a ogni secondo
-    lda ch_timer
-    sta ch_tmp
-    lda ch_timer+1
-    sta ch_tmp+1
-    ldx #0
-:   lda ch_tmp
-    ora ch_tmp+1
-    beq got
-    inx
-    lda ch_tmp
-    sec
-    sbc #50
-    sta ch_tmp
-    lda ch_tmp+1
-    sbc #0
-    sta ch_tmp+1
-    bcs :-
-got:
-    ; la pallina tocca terra a ogni secondo (quando la cifra cambia); gialla negli ultimi tre
-    lda ch_tmp
-    clc
-    adc #50                     ; frame al prossimo secondo (50: appena toccata terra)
-    cmp #26
-    bcc :+
-    eor #$ff
-    adc #50                     ; (C = 1) 50 - A
-:   tay
-    lda #CONT_FLOOR
-    sec
-    sbc cont_hop,y
-    sta sh_y
-    lda #COL_WHITE
-    cpx #4
-    bcs :+
-    lda egg_yel
-:   sta sh_col
-    cpx #10
-    bcc :+
-    ldx #9
-:   cpx ch_digit
-    beq prompt
-    stx ch_digit
-    txa
-    ldx #18
-    ldy #9
-    jsr draw_digit
-    lda #EV_WALL
-    jsr sid_fx
-prompt:
-    ; PRESS START o INSERT COIN, a tratti
-    lda frame_count
-    and #$20
-    beq off
-    lda opt_free
-    ora credits
-    beq coin
-    jsr print_at
-    .byte 14, 15, "PRESS START", 0
-    rts
-coin:
-    jsr print_at
-    .byte 14, 15, "INSERT COIN", 0
-    rts
-off:
-    jsr print_at
-    .byte 14, 15, "           ", 0
-done:
-    rts
 .endproc
 
 ; --- iniziali
@@ -1749,7 +1654,17 @@ confirm:
     cmp #3
     bcc draw
     jsr egg_check
-    jmp table_insert
+    ; BAS (l'altro easter egg delle iniziali): sblocca il JUKEBOX, salvato con la classifica
+    ldx #2
+:   lda ch_name,x
+    cmp bas_name,x
+    bne :+
+    dex
+    bpl :-
+    lda #0
+    sta hi_juke
+:   jmp table_insert
+bas_name: .byte "BAS"
 draw:
     ; le tre lettere: quelle scelte bianche, quella in corso gialla e a tratti, le altre punti
     ldx #0
@@ -2379,7 +2294,7 @@ row:
     ldx #19
     ldy pk_p
     jsr print_tmp
-    ; livello: LV1-LV7, ALL a scala finita
+    ; livello: LV1-LV7, ALL a scala finita, ALL+ con OMEGA battuto
     ldx pk_dirty
     lda ch_table+7,x
     cmp #CH_LEVELS + 1
@@ -2419,7 +2334,14 @@ last:
 .endproc
 
 .proc print_all
-    lda #'A'
+    cmp #CH_LEVEL_OMEGA         ; OMEGA battuto: ALL+
+    bcc :+
+    lda #'+'
+    ldx #32
+    ldy pk_p
+    sty v_row
+    jsr put_ascii
+:   lda #'A'
     ldx #29
     ldy pk_p
     sty v_row
@@ -2473,7 +2395,8 @@ done:
 ; ------------------------------------------------------------------------------------ in partita
 
 ; Punti arcade in basso dalla parte dell'avversario (a destra, a sinistra se chi gioca è a destra,
-; come sul PC e sul MiSTer) e moltiplicatore (x2-x8) sopra, quando cambiano; nella sfida niente.
+; come sul PC e sul MiSTer) e moltiplicatore (x2-x8) a fianco, verso il bordo, a un carattere dalle
+; cifre come sul PC (scenes.rs), quando cambiano; nella sfida niente.
 .proc ch_hud
     lda cg_active
     cmp #CG_LADDER
@@ -2491,7 +2414,7 @@ done:
     pha
     jsr shots_erase
     pla
-    ldy #23
+    ldy #24
     sty v_row
     cmp #2
     bcs :+
@@ -2523,10 +2446,10 @@ draw:
     sta ch_shown,x
     dex
     bpl :-
-    ldx #32
+    ldx #30                     ; (cifre 30-36, moltiplicatore 38-39; a sinistra 0-1 e 3-9)
     lda ch_side
     beq :+
-    ldx #1
+    ldx #3
 :   ldy #24
     jmp print_score
 put_ascii38:
@@ -2563,7 +2486,8 @@ put_ascii39:
 ; I posti del banco HI_BANK si leggono a HI_SCAN; quelli scritti si susseguono dal primo, il primo
 ; libero (primo byte $FF: le iniziali non lo sono mai) è dove andrà il prossimo salvataggio. Vale
 ; l'ultimo posto completo (HI_MAGIC e l'EOR giusto): uno scritto a metà, per uno spegnimento, no.
-; Con la classifica viene lo sblocco dell'allenamento (hi_open, HI_OPEN): senza posti, bloccato.
+; Con la classifica vengono gli sblocchi dell'allenamento (hi_open, HI_OPEN), di OMEGA
+; nell'allenamento (hi_omega) e del JUKEBOX (hi_juke): senza posti, bloccati.
 .segment "INIT"
 .proc hi_load
     ldx #CH_TABLE * CH_ENTRY - 1    ; la classifica iniziale
@@ -2577,6 +2501,13 @@ put_ascii39:
     lda #$ff
 .endif
     sta hi_open
+.ifdef OMEGATEST
+    lda #0                      ; (prova per VICE: OMEGA nell'allenamento e JUKEBOX sbloccati)
+.else
+    lda #$ff
+.endif
+    sta hi_omega
+    sta hi_juke
     lda #HI_BANK - VOICE_BANK0
     jsr ef_voice
     lda #<HI_SCAN
@@ -2604,7 +2535,7 @@ slot:
     bpl :-
     cmp #HI_SEED
     bne next
-    ldy #HI_OPEN                ; la classifica e lo sblocco (che nei posti di prima è $FF)
+    ldy #HI_JUKE                ; la classifica e gli sblocchi (che nei posti di prima sono $FF)
 :   lda (ptr),y
     sta ch_table,y
     dey
@@ -2680,7 +2611,7 @@ write:
     inc hi_next
 :   rts
 .endproc
-.assert hi_tail = ch_table + HI_TAIL .and hi_open = ch_table + HI_OPEN, error, "il posto della classifica non è di seguito"
+.assert hi_tail = ch_table + HI_TAIL .and hi_open = ch_table + HI_OPEN .and hi_omega = ch_table + HI_OMEGA .and hi_juke = ch_table + HI_JUKE, error, "il posto della classifica non è di seguito"
 
 .segment "ZEROPAGE"
 ch_draw: .res 2                 ; routine di disegno della schermata
@@ -2688,10 +2619,300 @@ ch_draw: .res 2                 ; routine di disegno della schermata
 
 ; --- la targa di HERE COMES A NEW CHALLENGER! (CHCODE, nel secondo schermo: draw_challenger)
 
+
+; ------------------------------------------------------------------------------------ CLCODE
+
+.segment "CLCODE"
+.scope cl
+    jmp draw                    ; CL_RUN: il disegno
+    ; CL_RUN + 3: un frame della scena
+    lda state
+    cmp #ST_CONT
+    bne :+
+    jmp cont_scene
+:   jmp clear_scene
+draw:
+    lda state
+    cmp #ST_CONT
+    bne :+
+    jmp draw_cont
+:   jmp draw_clear
+
+.proc draw_clear
+    lda ch_level
+    cmp #CH_OMEGA
+    bcc level
+    ; OMEGA battuto (Clear del PC): il finale speciale (ch_omega); gli sblocchi li salva la scena
+    lda #1
+    sta ch_omega
+    jsr print_at
+    .byte 14, 5, "OMEGA CLEAR!", 0
+    jsr print_at
+    .byte 11, 7, "YOU BEAT THEM ALL", 0
+    jmp title
+level:
+    jsr print_at
+    .byte 13, 5, "LEVEL   CLEAR", 0
+    lda ch_level
+    clc
+    adc #'1'
+    ldx #19
+    ldy #5
+    sty v_row
+    jsr put_ascii
+title:
+    lda #COL_YELLOW
+    ldy #5
+    jsr color_row
+    jsr print_at
+    .byte 12, 11, "WIN BONUS  +", 0
+    lda ch_bonus
+    ldx ch_bonus+1
+    ldy #11
+    jsr print_bonus
+    lda ch_bonus+2
+    ora ch_bonus+3
+    beq :+
+    jsr print_at
+    .byte 12, 13, "PERFECT    +", 0
+    lda ch_bonus+2
+    ldx ch_bonus+3
+    ldy #13
+    jsr print_bonus
+    lda #COL_YELLOW
+    ldy #13
+    jsr color_row
+:   jsr print_at
+    .byte 13, 17, "SCORE", 0
+    ldx #19
+    ldy #17
+    jsr print_score
+    jsr print_at
+    .byte 14, 21, "PRESS START", 0
+    lda #COL_GRAY
+    ldy #21
+    jmp color_row
+.endproc
+
+; Premio A:X (16 bit) senza zeri davanti dalla colonna 24, riga Y (righe centrate con 4 cifre).
+.proc print_bonus
+    sta ch_tmp
+    stx ch_tmp+1
+    lda #0
+    sta ch_tmp+2
+    sta ch_tmp+3
+    sty v_row
+    jsr num7
+    ldx #0
+:   lda ch_txt,x
+    cmp #'0'
+    bne :+
+    inx
+    cpx #6
+    bne :-
+:   txa
+    clc
+    adc #<ch_txt
+    sta ptr2
+    lda #>ch_txt
+    adc #0
+    sta ptr2+1
+    ldx #24
+    ldy v_row
+    jmp print_str
+.endproc
+
+.proc clear_scene
+    ; OMEGA battuto: al primo frame sblocca OMEGA nell'allenamento e il jukebox, salvati subito
+    ; nella flash (circa 1 ms, 1 s se il settore va cancellato; un frame da solo)
+    lda ch_elapsed
+    cmp #1
+    bne :+
+    lda ch_level
+    cmp #CH_OMEGA
+    bcc :+
+    lda hi_omega
+    ora hi_juke
+    beq :+
+    lda #0
+    sta hi_omega
+    sta hi_juke
+    jmp hi_save
+:   ; nuovo sfidante (dopo l'ultimo livello c'è il finale): la sfida è al livello dopo, quello che
+    ; il vincitore affronterà
+    jsr ch_join
+    bcc :+
+    inc ch_level
+    jmp enter_challenger
+:   jsr join_hint
+    jsr ch_skip
+    bcs go
+    jsr ch_timeout
+    bcc done
+go:
+    lda ch_level                ; OMEGA battuto: il finale (speciale)
+    cmp #CH_OMEGA
+    bcc :+
+    jmp end_enter
+:   inc ch_level
+    jmp enter_intro
+done:
+    rts
+.endproc
+
+.proc draw_cont
+    jsr print_at
+    .byte 15, 5, "CONTINUE?", 0
+    lda #COL_YELLOW
+    ldy #5
+    jsr color_row
+    jsr print_at
+    .byte 7, 18, "LEVEL     SCORE RESETS TO 0", 0
+    lda ch_level
+    clc
+    adc #'1'
+    ldx #13
+    ldy #18
+    sty v_row
+    jsr put_ascii
+    lda #COL_GRAY
+    ldy #18
+    jsr color_row
+    ; la pallina accanto alla cifra (sprite 0, la palla con il boost) e sotto il suo trattino grigio
+    lda #CH_GRID_T
+    sta SCREEN + CONT_FLOOR_ROW * 40 + CONT_COL
+    lda #COL_GRAY
+    sta $d800 + CONT_FLOOR_ROW * 40 + CONT_COL
+    lda #SP_BALL6
+    sta sh_ptr
+    lda #CONT_X
+    sta sh_x
+    lda #0
+    sta sh_msb
+    sta sh_mc
+    sta sh_xexp
+    sta sh_yexp
+    lda #1
+    sta sh_enable
+    rts
+.endproc
+CONT_COL       = 24             ; pallina: la colonna, e la riga del trattino
+CONT_FLOOR_ROW = 13
+CONT_X         = SPR_X0 + CONT_COL * 8 + 1  ; la palla di 6 pixel al centro della cella
+CONT_FLOOR     = SPR_Y0 + CONT_FLOOR_ROW * 8 - 6
+; altezza della pallina a m frame dal tocco più vicino: 29 pixel * 4 s (1 - s), s = m / 50
+cont_hop: .byte 0, 2, 5, 7, 9, 10, 12, 14, 16, 17, 19, 20, 21, 22, 23, 24, 25, 26, 27, 27, 28, 28, 29, 29, 29, 29
+
+.proc cont_scene
+    ; gettone
+    lda #KEY_5
+    jsr key_pressed
+    bcc :+
+    lda opt_free
+    bne :+
+    lda credits
+    cmp #MAX_CREDITS
+    bcs :+
+    inc credits
+    lda #EV_COIN
+    jsr sid_fx
+:   ; continue: Start con un credito (o Free Play), già con il 9 (dopo un quarto di secondo)
+    lda ch_elapsed
+    cmp #CONT_SKIP_FRAMES
+    bcc wait
+    jsr champ_start
+    bcc wait
+    lda opt_free
+    bne go
+    lda credits
+    beq wait
+    dec credits
+go:
+    jsr zero_score              ; A = 0
+    sta ch_clean                ; (un continue: niente OMEGA)
+    jmp enter_intro
+wait:
+    jsr ch_timeout
+    bcc :+
+    jmp cont_over
+:   ; secondi rimasti (cifra grande al centro), con un colpo a ogni secondo
+    lda ch_timer
+    sta ch_tmp
+    lda ch_timer+1
+    sta ch_tmp+1
+    ldx #0
+:   lda ch_tmp
+    ora ch_tmp+1
+    beq got
+    inx
+    lda ch_tmp
+    sec
+    sbc #50
+    sta ch_tmp
+    lda ch_tmp+1
+    sbc #0
+    sta ch_tmp+1
+    bcs :-
+got:
+    ; la pallina tocca terra a ogni secondo (quando la cifra cambia); gialla negli ultimi tre
+    lda ch_tmp
+    clc
+    adc #50                     ; frame al prossimo secondo (50: appena toccata terra)
+    cmp #26
+    bcc :+
+    eor #$ff
+    adc #50                     ; (C = 1) 50 - A
+:   tay
+    lda #CONT_FLOOR
+    sec
+    sbc cont_hop,y
+    sta sh_y
+    lda #COL_WHITE
+    cpx #4
+    bcs :+
+    lda egg_yel
+:   sta sh_col
+    cpx #10
+    bcc :+
+    ldx #9
+:   cpx ch_digit
+    beq prompt
+    stx ch_digit
+    txa
+    ldx #18
+    ldy #9
+    jsr draw_digit
+    lda #EV_WALL
+    jsr sid_fx
+prompt:
+    ; PRESS START o INSERT COIN, a tratti
+    lda frame_count
+    and #$20
+    beq off
+    lda opt_free
+    ora credits
+    beq coin
+    jsr print_at
+    .byte 14, 15, "PRESS START", 0
+    rts
+coin:
+    jsr print_at
+    .byte 14, 15, "INSERT COIN", 0
+    rts
+off:
+    jsr print_at
+    .byte 14, 15, "           ", 0
+done:
+    rts
+.endproc
+
+.endscope
+
 .segment "CHCODE"
 .scope chc
     jmp plate
     ; (CHC_RUN + 3) via gli sprite della targa, prima delle scelte dello sfidante
+sprites_off:
     lda #0
     sta $d01b
     sta sh_enable
@@ -2700,8 +2921,21 @@ ch_draw: .res 2                 ; routine di disegno della schermata
     rts
 ; La targa (tools/gen_c64_assets.py, title_plate): TC_H righe di TC_W celle dalla riga CHAL_ROW0,
 ; colonna CHAL_COL, bianche e da TC_YEL0 gialle; il rosso dentro il bordo: quattro sprite hires
-; espansi, dietro i caratteri (l'immagine nel set, TC_SPRITE).
+; espansi, dietro i caratteri (l'immagine nel set, TC_SPRITE). Per l'allarme di OMEGA (livello
+; CH_OMEGA) WARNING! (title_warning), con gli stessi sprite, e draw_challenger finisce qui.
 plate:
+    lda ch_level
+    cmp #CH_OMEGA
+    bcc draw
+    pla
+    pla
+    lda #<wmap
+    sta cell + 1
+    lda #>wmap
+    sta cell + 2
+    lda #TW_YEL0
+    sta yel + 1
+draw:
     lda #CHAL_ROW0
     sta row
     ldx #0
@@ -2721,6 +2955,7 @@ line:
 cell:
     lda map,x
     sta (ptr),y
+yel:
     cmp #TC_YEL0
     lda #COL_WHITE
     bcc :+
@@ -2756,11 +2991,69 @@ cell:
     sta sh_enable
     sta $d01b                   ; dietro i caratteri: il bordo e le scritte sopra il rosso
     rts
+
+; Un frame dell'allarme (warn_scene): la targa accesa WARN_ON frame e spenta WARN_P - WARN_ON,
+; tre volte con un colpo a ogni accensione, poi accesa (warning_lit del PC); Start dopo il primo
+; secondo, o il tempo: la presentazione di OMEGA.
+WARN_P  = 38                    ; 0,75 s
+WARN_ON = 25                    ; 0,5 s
+warn:
+    lda ch_elapsed
+    sec
+    sbc #1
+    cmp #3 * WARN_P
+    bcs on
+:   cmp #WARN_P
+    bcc :+
+    sbc #WARN_P
+    bcs :-
+:   tay
+    bne :+
+    lda #EV_SCORE
+    jsr sid_fx
+:   cpy #WARN_ON
+    bcc on
+    lda shown                   ; spenta: celle nere, niente sprite
+    beq skip
+    lda #0
+    sta shown
+    sta sh_enable
+    lda #CHAL_ROW0
+    sta row
+:   lda #COL_BLACK
+    ldy row
+    jsr color_row
+    inc row
+    lda row
+    cmp #CHAL_ROW0 + TC_H
+    bne :-
+    beq skip
+on:
+    lda shown
+    bne skip
+    inc shown
+    jsr draw
+skip:
+    jsr ch_skip
+    bcs go
+    jsr ch_timeout
+    bcc done
+go:
+    jsr sprites_off
+    ldy #0                      ; le lettere 2x sotto la targa (il frame del caricamento)
+    ldx #BIG2_N
+    jsr big2_build
+    jmp enter_intro
+done:
+    rts
+shown: .byte 1
 row:   .byte 0
 spr_x: .byte SPR_X0 + CHAL_COL * 8 + TC_SPR_X0, SPR_X0 + CHAL_COL * 8 + TC_SPR_X1
        .byte SPR_X0 + CHAL_COL * 8 + TC_SPR_X2, SPR_X0 + CHAL_COL * 8 + TC_SPR_X3
 map:   .byte TC_MAP
+wmap:  .byte TW_MAP
 .endscope
+chc_warn = chc::warn
 .assert SPR_X0 + CHAL_COL * 8 + TC_SPR_X3 < 256, error, "targa: sprite oltre la x 255"
 .assert TC_SPRITE * 8 .mod 64 = 0, error, "targa: immagine dello sprite non allineata"
 

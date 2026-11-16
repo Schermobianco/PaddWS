@@ -309,6 +309,9 @@ function signed [11:0] kind_warp_shift(input [2:0] kind, input [5:0] k);
     endcase
 endfunction
 localparam integer CH_LEVELS = 7;
+localparam integer CH_OMEGA_LEVEL = 7;
+localparam integer CH_OMEGA_POINTS = 50000;
+localparam integer CH_SCORE_LEVEL_OMEGA = 9;
 localparam integer CH_HIT = 10;
 localparam integer CH_BOOST = 40;
 localparam integer CH_SUPER = 100;
@@ -326,6 +329,7 @@ function [2:0] rung_kind(input [2:0] lvl);
         3'd4: rung_kind = 3'd4;
         3'd5: rung_kind = 3'd5;
         3'd6: rung_kind = 3'd6;
+        3'd7: rung_kind = 3'd0;
         default: rung_kind = 3'd6;
     endcase
 endfunction
@@ -338,6 +342,7 @@ function [3:0] rung_cpu(input [2:0] lvl);
         3'd4: rung_cpu = 4'd8;
         3'd5: rung_cpu = 4'd9;
         3'd6: rung_cpu = 4'd10;
+        3'd7: rung_cpu = 4'd11;
         default: rung_cpu = 4'd10;
     endcase
 endfunction
@@ -350,6 +355,7 @@ function [1:0] rung_speed(input [2:0] lvl);
         3'd4: rung_speed = 2'd1;
         3'd5: rung_speed = 2'd1;
         3'd6: rung_speed = 2'd2;
+        3'd7: rung_speed = 2'd2;
         default: rung_speed = 2'd2;
     endcase
 endfunction
@@ -362,6 +368,7 @@ function [8:0] rung_loadout(input [2:0] lvl);
         3'd4: rung_loadout = 9'd225;
         3'd5: rung_loadout = 9'd49;
         3'd6: rung_loadout = 9'd116;
+        3'd7: rung_loadout = 9'd90;
         default: rung_loadout = 9'd116;
     endcase
 endfunction
@@ -374,6 +381,7 @@ function [5:0] rung_pick(input [2:0] lvl);
         3'd4: rung_pick = 6'd26;
         3'd5: rung_pick = 6'd35;
         3'd6: rung_pick = 6'd50;
+        3'd7: rung_pick = 6'd14;
         default: rung_pick = 6'd50;
     endcase
 endfunction
@@ -386,6 +394,7 @@ function [4:0] rung_points(input [2:0] lvl);
         3'd4: rung_points = 5'd5;
         3'd5: rung_points = 5'd5;
         3'd6: rung_points = 5'd5;
+        3'd7: rung_points = 5'd7;
         default: rung_points = 5'd5;
     endcase
 endfunction
@@ -419,6 +428,10 @@ function [3:0] rung_cpu_at(input [2:0] lvl, input [1:0] diff);
         5'd25: rung_cpu_at = 4'd10;
         5'd26: rung_cpu_at = 4'd11;
         5'd27: rung_cpu_at = 4'd12;
+        5'd28: rung_cpu_at = 4'd10;
+        5'd29: rung_cpu_at = 4'd11;
+        5'd30: rung_cpu_at = 4'd12;
+        5'd31: rung_cpu_at = 4'd12;
         default: rung_cpu_at = 4'd10;
     endcase
 endfunction
@@ -431,6 +444,7 @@ function [15:0] ch_win_bonus(input [2:0] lvl);
         3'd4: ch_win_bonus = 16'd5000;
         3'd5: ch_win_bonus = 16'd6000;
         3'd6: ch_win_bonus = 16'd7000;
+        3'd7: ch_win_bonus = 16'd50000;
         default: ch_win_bonus = 16'd0;
     endcase
 endfunction
@@ -443,6 +457,7 @@ function [15:0] ch_perfect_bonus(input [2:0] lvl);
         3'd4: ch_perfect_bonus = 16'd10000;
         3'd5: ch_perfect_bonus = 16'd12000;
         3'd6: ch_perfect_bonus = 16'd14000;
+        3'd7: ch_perfect_bonus = 16'd16000;
         default: ch_perfect_bonus = 16'd0;
     endcase
 endfunction

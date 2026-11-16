@@ -61,10 +61,11 @@ module pong_logic_rv #(
     input  wire [8:0]  loadout0,   // NEXT: tre bonus scelti (3 bit ciascuno) per giocatore
     input  wire [8:0]  loadout1,
     input  wire [5:0]  kinds,      // NEXT: tipo di racchetta (3 bit per lato, 7 = senza tipo)
+    input  wire [1:0]  morph,      // OMEGA: la racchetta di quel lato cambia forma (bit 0 sinistra, 1 destra)
     input  wire [1:0]  difficulty, // 0 facile .. 3 esperto
     input  wire        super_moves, // NEXT: mosse speciali accese
     input  wire [31:0] seed,
-    // CPU avversarie (Cpu::new), lette con `reset`: livello (0-3 la difficoltà, 4-10 CHALLENGE),
+    // CPU avversarie (Cpu::new), lette con `reset`: livello (0-3 la difficoltà, 4-11 CHALLENGE),
     // comando (2 bit per lato: 0 joystick, 1 spinner, 2 tastiera) e seme di ciascuna
     input  wire [3:0]  cpu_level0,
     input  wire [3:0]  cpu_level1,
@@ -139,7 +140,14 @@ module pong_logic_rv #(
     // comandi effettivi dell'ultimo tick, CPU comprese (come trace_input.hex: tasti e encoder, mosse)
     output wire [31:0]        tick_input,
     output wire [3:0]         tick_special,
-    output reg                fw_panic = 1'b0   // il firmware si è fermato (errore): busy resta alto
+    output reg                fw_panic = 1'b0,  // il firmware si è fermato (errore): busy resta alto
+    // schermo a oggetti (ui_render.v) e stato delle schermate (pong_top), dominio di clk_cpu:
+    // registri da 0xF001_0000 (indirizzo in parole); le letture rispondono in un ciclo come gli altri
+    output wire               ui_wr,
+    output wire [13:0]        ui_addr,
+    output wire [31:0]        ui_wdata,
+    input  wire [31:0]        ui_rdata,
+    input  wire [31:0]        ui_sdata    // letture sincrone (da 0xF001_8000): il dato il ciclo dopo l'indirizzo
 );
 
 `include "pong_fw.vh"
@@ -167,7 +175,8 @@ reg  [31:0] i_rdata, d_ram_q, io_q;
 wire        d_req = d_cyc && d_stb;
 wire        d_io = d_adr[29];                 // indirizzi con il bit 31 a uno
 wire        d_ack = d_req && (d_we || d_rack);
-wire [31:0] d_rdata = d_io ? io_q : d_ram_q;
+reg         io_sync = 1'b0;             // lettura sincrona (ui_sdata), vedi d_ui
+wire [31:0] d_rdata = d_io ? (io_sync ? ui_sdata : io_q) : d_ram_q;
 
 // reset all'accensione (i registri dell'FPGA partono dal valore iniziale), oppure da rv_reset;
 // registrato nel dominio del processore
@@ -195,6 +204,9 @@ VexRiscv cpu (
 //
 // Porta A: istruzioni (solo lettura). Porta B: dati. In un burst (CTI = 010) la parola dopo si
 // legge mentre si conferma quella attuale: il master passa all'indirizzo seguente al ciclo dopo.
+// Sulla porta B una scrittura restituisce il dato nuovo (il processore non lo legge: le scritture si
+// confermano subito): così la sintesi usa una sola M10K a due porte vere per corsia, invece di due
+// copie a porta semplice (lo stesso dato vecchio non si può avere sulla stessa porta di una M10K).
 
 reg [7:0] ram0 [0:RAM_WORDS-1];
 reg [7:0] ram1 [0:RAM_WORDS-1];
@@ -224,20 +236,32 @@ always @(posedge clk_cpu) i_rdata[23:16] <= ram2[i_addr];
 always @(posedge clk_cpu) i_rdata[31:24] <= ram3[i_addr];
 
 always @(posedge clk_cpu) begin
-    if (d_wr_ram && d_sel[0]) ram0[d_addr] <= d_wdata[7:0];
-    d_ram_q[7:0] <= ram0[d_addr];
+    if (d_wr_ram && d_sel[0]) begin
+        ram0[d_addr] <= d_wdata[7:0];
+        d_ram_q[7:0] <= d_wdata[7:0];
+    end else
+        d_ram_q[7:0] <= ram0[d_addr];
 end
 always @(posedge clk_cpu) begin
-    if (d_wr_ram && d_sel[1]) ram1[d_addr] <= d_wdata[15:8];
-    d_ram_q[15:8] <= ram1[d_addr];
+    if (d_wr_ram && d_sel[1]) begin
+        ram1[d_addr] <= d_wdata[15:8];
+        d_ram_q[15:8] <= d_wdata[15:8];
+    end else
+        d_ram_q[15:8] <= ram1[d_addr];
 end
 always @(posedge clk_cpu) begin
-    if (d_wr_ram && d_sel[2]) ram2[d_addr] <= d_wdata[23:16];
-    d_ram_q[23:16] <= ram2[d_addr];
+    if (d_wr_ram && d_sel[2]) begin
+        ram2[d_addr] <= d_wdata[23:16];
+        d_ram_q[23:16] <= d_wdata[23:16];
+    end else
+        d_ram_q[23:16] <= ram2[d_addr];
 end
 always @(posedge clk_cpu) begin
-    if (d_wr_ram && d_sel[3]) ram3[d_addr] <= d_wdata[31:24];
-    d_ram_q[31:24] <= ram3[d_addr];
+    if (d_wr_ram && d_sel[3]) begin
+        ram3[d_addr] <= d_wdata[31:24];
+        d_ram_q[31:24] <= d_wdata[31:24];
+    end else
+        d_ram_q[31:24] <= ram3[d_addr];
 end
 
 // ------------------------------------------------------------------ registri
@@ -267,8 +291,15 @@ initial begin
     end
 end
 
-wire        io_wr = d_req && d_we && d_io;
+wire        d_ui = d_adr[14];             // 0xF001_0000 e oltre: schermo a oggetti
+// letture sincrone dello schermo a oggetti (da 0xF001_8000, gli oscilloscopi): il dato arriva da una
+// RAM con l'indirizzo di questo ciclo, ui_sdata, come la RAM del processore
+always @(posedge clk_cpu) io_sync <= d_ui && d_adr[13];
+wire        io_wr = d_req && d_we && d_io && !d_ui;
 wire [7:0]  io_word = d_adr[7:0];      // indirizzo del registro in parole (0xF000_0000 + 4 * io_word)
+assign      ui_wr = d_req && d_we && d_io && d_ui;
+assign      ui_addr = d_adr[13:0];
+assign      ui_wdata = d_wdata;
 
 always @(posedge clk_cpu) begin
     if (io_wr && io_word == 8'h00) begin
@@ -291,7 +322,7 @@ always @(posedge clk) begin
         reset_pend <= 1'b1;
         step_pend <= 1'b0;
         busy <= 1'b1;
-        r_config <= {2'd0, kinds, loadout1, loadout0, difficulty, super_moves, next_mode, evo_mode, two_players};
+        r_config <= {morph, kinds, loadout1, loadout0, difficulty, super_moves, next_mode, evo_mode, two_players};
         r_seed <= seed;
         r_cpu <= {20'd0, cpu_control, cpu_level1, cpu_level0};
         r_cpu_seed0 <= cpu_seed0;
@@ -325,7 +356,9 @@ end
 // letture dei registri (dominio di clk_cpu): un ciclo, come la RAM. Il tick da fare si vede solo
 // dopo la conferma dell'ultima fine
 always @(posedge clk_cpu) begin
-    if (io_word >= 8'h20 && io_word < 8'h20 + 2 * PATCH_MAX)
+    if (d_ui)
+        io_q <= ui_rdata;
+    else if (io_word >= 8'h20 && io_word < 8'h20 + 2 * PATCH_MAX)
         io_q <= patch[io_word[4:0]];
     else case (io_word)
         8'h00: io_q <= {23'd0, step_pend && done_ack == done_tog, epoch};

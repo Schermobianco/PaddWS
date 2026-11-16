@@ -26,6 +26,11 @@
 //! finestra rettangolare della registrazione del core simulato, `mister/sim/sid/render.cpp`). Per
 //! leggerezza le forme d'onda si calcolano ciclo per ciclo, l'inviluppo a salti (resta fermo
 //! dentro un campione).
+//!
+//! Per gli oscilloscopi del gioco (`take_voice_out`) il SID somma anche l'uscita di ogni voce,
+//! nella stessa scala di `clock`: diretta, o l'uscita del filtro se è l'unica voce che ci passa
+//! (con più voci nel filtro ognuna conta per la sua forma d'onda prima del filtro). Solo lettura:
+//! il suono non cambia.
 
 /// Clock del SID: 1 MHz come nel core MiSTer (`SID_CLOCK` di tools/gen_sid_music.py).
 pub const CLOCK_HZ: u32 = 1_000_000;
@@ -437,6 +442,8 @@ pub struct Sid {
     filter: Filter,
     /// guadagno di ogni voce, 256 = 1
     gains: [u32; 3],
+    /// uscita di ogni voce sommata dall'ultima `take_voice_out` (per gli oscilloscopi)
+    voice_out: [i64; 3],
 }
 
 impl Default for Sid {
@@ -453,6 +460,7 @@ impl Sid {
             volume: 0,
             filter: Filter::default(),
             gains: [256; 3],
+            voice_out: [0; 3],
         }
     }
 
@@ -511,9 +519,16 @@ impl Sid {
             let s = v.clock(n, self.gains[i]);
             if !(i == 2 && off3) {
                 sum += s;
+                self.voice_out[i] += s * self.volume as i64 / 1024;
             }
         }
         sum * self.volume as i64 / 1024
+    }
+
+    /// Uscita di ogni voce sommata dall'ultima chiamata, nella scala di `clock` (vedi l'inizio del
+    /// modulo), e azzera le somme.
+    pub fn take_voice_out(&mut self) -> [i64; 3] {
+        std::mem::take(&mut self.voice_out)
     }
 
     /// `k` cicli (al più `BLOCK`) con il filtro, come `sid_filter.sv` in modo 8580 ma con un passo
@@ -527,14 +542,17 @@ impl Sid {
         let route = self.filter.res_filt;
         let off3 = self.filter.mode & 8 != 0;
         let mut direct = 0;
+        // uscita di ogni voce prima del filtro, per gli oscilloscopi
+        let mut own = [0i64; 3];
         for (i, v) in self.voices.iter_mut().enumerate() {
             let g = self.gains[i];
             if route >> i & 1 != 0 {
-                v.clock_into(k as u32, g, &mut filtered[..k]);
+                own[i] = v.clock_into(k as u32, g, &mut filtered[..k]);
             } else if i == 2 && off3 {
                 v.clock(k as u32, g);
             } else {
-                direct += v.clock(k as u32, g);
+                own[i] = v.clock(k as u32, g);
+                direct += own[i];
             }
         }
         let f = &mut self.filter;
@@ -553,6 +571,10 @@ impl Sid {
             taps += f.tap as i64;
         }
         let full = 0x8000 * k as i64;
+        let single = (route & 7).count_ones() == 1;
+        for (i, out) in self.voice_out.iter_mut().enumerate() {
+            *out += if single && route >> i & 1 != 0 { taps * vol / 8 } else { own[i] * vol / 1024 };
+        }
         (direct * vol / 1024 + taps * vol / 8).clamp(-full, full - k as i64)
     }
 

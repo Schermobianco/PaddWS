@@ -27,3 +27,4 @@ bench = false
 
 [dependencies]
 paddws-core = { path = "../core" }
+paddws-mister-ui = { path = "../mister-ui" }

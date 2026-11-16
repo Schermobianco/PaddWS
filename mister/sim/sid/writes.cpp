@@ -24,8 +24,8 @@ double sc_time_stamp() { return 0; }
 
 static const uint64_t FRAME = 400000;   // cicli per frame del player (50 Hz a 20 MHz)
 static const uint64_t FAST_FRAME = 320000;   // passo della canzone al match point (62,5 Hz)
-static const int FRAMES = 5600;
-static const int DYN_FRAMES = 1700;   // musica dinamica
+static const int FRAMES = 7100;
+static const int DYN_FRAMES = 2400;   // musica dinamica
 
 struct Sim {
     Vpong_sid top;
@@ -65,6 +65,15 @@ static int song_at(int f) {
         case 5170: return 0;
         case 5230: return 13;
         case 5400: return 3;
+        // OMEGA (canzoni 15-21, il wobble del taglio): le sette sezioni una dopo l'altra, come alle
+        // trasformazioni, la prima per più di un giro
+        case 5600: return 15;
+        case 6000: return 16;
+        case 6200: return 17;
+        case 6400: return 18;
+        case 6600: return 19;
+        case 6750: return 20;
+        case 6900: return 21;
         default: return -1;
     }
 }
@@ -87,6 +96,9 @@ static int dyn_song_at(int f) {
         case 850: return 12;    // RUSH, parte nel bullet time
         case 1200: return 7;
         case 1450: return 13;   // cambio insieme all'uscita dal bullet time
+        case 1700: return 15;   // OMEGA: il wobble, anche nel bullet time
+        case 1950: return 18;   // il wobble che si apre, cambio nel bullet time
+        case 2200: return 21;
         default: return -1;
     }
 }
@@ -94,8 +106,8 @@ static int dyn_song_at(int f) {
 // bullet time: 1 entra, 0 esce, -1 nessun cambio (anche un'entrata e un'uscita di fila)
 static int dyn_slow_at(int f) {
     switch (f) {
-        case 200: case 700: case 1001: case 1300: return 1;
-        case 450: case 1000: case 1002: case 1450: return 0;
+        case 200: case 700: case 1001: case 1300: case 1800: case 2250: return 1;
+        case 450: case 1000: case 1002: case 1450: case 2000: case 2350: return 0;
         default: return -1;
     }
 }

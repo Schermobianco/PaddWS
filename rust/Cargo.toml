@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["core", "game", "trace", "c64", "mister-fw", "sid"]
+members = ["core", "game", "trace", "c64", "mister-fw", "mister-ui", "sid"]
 # copie di crate esterni con modifiche nostre: non fanno parte del workspace (né di test e clippy)
 exclude = ["vendor"]
 
@@ -21,6 +21,10 @@ strip = true
 [profile.fw]
 inherits = "release"
 strip = false
+
+# le schermate del MiSTer non sono a tempo critico: codice piccolo per stare nella BRAM del firmware
+[profile.fw.package.paddws-mister-ui]
+opt-level = "s"
 
 # quad-snd (l'audio di macroquad) con la sorgente continua per la musica del SID: vendor/quad-snd
 [patch.crates-io]

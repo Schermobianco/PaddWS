@@ -6,8 +6,9 @@ PADD WS per C64 PAL, su cartuccia EasyFlash. Gioca la stessa partita del core Ru
 ([`rust/core`](../rust/core)) bit per bit: campo 320×200, un tick per frame a 50 Hz, aritmetica
 Q16.16 a 32 bit in 6502 identica a `fixed.rs` e gli stessi parametri delle altre versioni
 (`Tuning::c64()`). Ci sono Classic, EVO, NEXT con le mosse speciali e la scalata (sfidanti, WINS,
-allenamento, classifica e sblocco salvati nella flash), il singolo, la CPU, l'attract (senza demo)
-e le musiche del SID.
+allenamento, classifica e sblocchi salvati nella flash), il boss segreto OMEGA, il jukebox, il
+singolo, la CPU, l'attract (senza demo) e le musiche del SID. Il logo nel menu di NEXT non c'è:
+resta MAIN MENU.
 
 Solo PAL (NTSC per ora no). Finora è stata provata in VICE, non ancora su un C64 vero.
 
@@ -35,7 +36,8 @@ x64sc -easyflashcrtwrite -cartcrt paddws.crt
   menu torna all'attract), **Q** torna al menu.
 
 Il menu (joystick o cursori) ha GAME, PLAYERS (solo in CLASSIC ed EVO; in NEXT, dopo lo sblocco,
-OPPONENT per l'allenamento), DIFFICULTY, CONTROL, FREE PLAY, ATTRACT SOUND, VOLUME e BORDER. Le regole sono in [docs/it/come-si-gioca.md](../docs/it/come-si-gioca.md).
+OPPONENT per l'allenamento), DIFFICULTY, CONTROL, FREE PLAY, ATTRACT SOUND, VOLUME (anche per le
+voci) e BORDER, più JUKEBOX quando è sbloccato. Le regole sono in [docs/it/come-si-gioca.md](../docs/it/come-si-gioca.md).
 
 ## Compilare
 
@@ -51,7 +53,8 @@ Servono cc65 (ca65 e ld65) in `C:\DEV\@Compiler\cc65` e Python (quello di `.venv
 Su Linux: `sh c64/build.sh` (ca65, ld65 e python3 nel PATH).
 
 Oltre alla cartuccia, in `c64\build` restano `paddws.prg` con le etichette (`paddws.lbl`) e la
-mappa (`paddws.map`), il finale della scalata (`paddws.prg.end`) e i file voce `voice0-6.prg`.
+mappa (`paddws.map`), il finale della scalata (`paddws.prg.end`), il banco di OMEGA (`paddws.prg.omega`) e i file voce
+`voice0-7.prg` (il 7 è OMEGA).
 Servono al banco di prova: il `.prg` da solo non parte, gira solo dalla cartuccia.
 
 I file di `c64/gen/` sono generati e stanno nel repository: `tools/gen_c64_assets.py` per grafica,
@@ -61,7 +64,10 @@ Per le schermate ci sono build che partono subito con una partita:
 
 ```powershell
 .\c64\build.ps1 -Name autostart -Define AUTOSTART     # EVO contro la CPU; con AUTONEXT NEXT, con AUTOCHALLENGE la scalata (TRAINTEST=n l'allenamento)
-.\c64\build.ps1 -Name autoend -Define ENDTEST         # il finale della scalata
+.\c64\build.ps1 -Name autoend -Define ENDTEST         # il finale della scalata (ENDOMEGA: dopo OMEGA battuto)
+.\c64\build.ps1 -Name warning -Define WARNTEST       # scalata a HARD, dopo il GUARDIAN subito l'allarme e OMEGA (OMFORM=n: dalla forma n)
+.\c64\build.ps1 -Name unlock -Define UNLOCKTEST,OMEGATEST  # allenamento, OMEGA e jukebox sbloccati
+.\c64\build.ps1 -Name juke -Define JUKETEST,JUKETRACK=8 # subito il jukebox, con il brano n (da 0)
 .\c64\build.ps1 -Name menu3 -Define MENUTEST=3        # il menu con OPPONENT a 3 (UNLOCKTEST: allenamento sbloccato)
 .\c64\build.ps1 -Name intro3 -Define INTROTEST=3      # la presentazione del livello 3 (anche CONTTEST: il continue)
 .\c64\build.ps1 -Name ft -Define AUTOSTART,FRAMETEST  # frame oltre il tempo, cifra rossa in basso a destra (FRAMESTOP: si ferma al primo)
@@ -101,6 +107,8 @@ scalata, `profile` dà i cicli per routine, `--build DIR` usa un'altra cartella 
 - `src/next.s`, `src/supers.s`, `src/pick.s` — NEXT, le mosse speciali, le scelte prima della
   partita e la schermata HOW TO PLAY.
 - `src/cpu.s` — la CPU (`cpu.rs`).
+- `src/omega.s`, `src/jukebox.s` — OMEGA in partita (rete, nome della forma, musica a sezioni) e
+  il jukebox, nel banco di OMEGA della cartuccia.
 - `src/challenge.s`, `src/intro.s`, `src/ending.s` — CHALLENGE con la classifica, le entrate
   degli avversari nella presentazione, e il finale.
 - `src/play.s` — ciclo dei frame, scene, menu, gettoni.

@@ -185,9 +185,12 @@ stage:
 load_tab:
     piece EPG_A + 1, end_run + $100, EPG_B - EPG_A - 1
     piece EPG_B, $EC00, EPG_C - EPG_B
+.assert $EC00 >= VOICE_KEEP, error, "finale: ENDB sopra il player delle voci"
     piece EPG_C, $FB00, EPG_CH - EPG_C
     piece EPG_CH, CHARSET, EPG_D - EPG_CH
     .byte WIN_BANK, $80 + >(WIN_SAMPLES - WIN_RUN), >WIN_SAMPLES, 10
+    ; la pagina degli NMI del player (dopo OMEGA perso la musica della partita l'ha coperta)
+    .byte WIN_BANK, $80 + >(VOICE_GO - WIN_RUN), >VOICE_GO, 1
     .byte 0
     piece EPG_D, WIN_RUN, 1
     piece EPG_E, WIN_SAMPLES, EPG_BANK - EPG_E
@@ -501,7 +504,14 @@ e_bcol:  .byte COL_WHITE
     sta e_bcol
     jsr print_at
     .byte 16, 11, "THE END", 0
-    rts
+    lda ch_omega                ; OMEGA battuto: la riga in più
+    beq :+
+    jsr print_at
+    .byte 13, 14, "OMEGA DEFEATED", 0
+    lda egg_red
+    ldy #14
+    jsr color_row
+:   rts
 .endproc
 
 .proc theend_frame
@@ -704,6 +714,11 @@ STAMP_ROW  = 9
     sta sh_msb
     sta e_k
     sta e_due
+    lda ch_omega                ; OMEGA battuto: prima si spezza (shatter), poi nomi e timbri
+    beq :+
+    lda #SH_RED + SH_MOVE
+    sta e_due
+:
     lda egg_yel                 ; segni dei tipi: solo giallo ($D025 era il grigio)
     sta $d025
     ldx #6
@@ -727,7 +742,10 @@ STAMP_ROW  = 9
     bcs events
     jsr make_pad
 events:
-    ; ogni E_STEP frame un avversario (k pari) o il suo timbro (k dispari)
+    lda ch_omega
+    beq :+
+    jsr shatter
+:   ; ogni E_STEP frame un avversario (k pari) o il suo timbro (k dispari)
     lda e_k
     cmp #14
     bcs end
@@ -1204,6 +1222,84 @@ RK_HEAD_X  = 11                 ; pixel della testa nello sprite
 
 .segment "ENDE"
 
+; OMEGA battuto (ending_ui.rs): nella sfilata, prima dei nomi, la racchetta rossa di OMEGA (viola
+; con l'easter egg) al centro per SH_RED frame, poi si spezza nelle sette racchette degli
+; avversari, nei loro colori e misure, che vanno al loro posto in SH_MOVE frame. Più semplice del
+; PC: le racchette vanno dritte al loro posto della sfilata, che poi continua come sempre.
+SH_RED  = 25
+SH_MOVE = 40
+.proc shatter
+    lda e_t+1
+    bne done
+    lda e_t
+    beq done                    ; (al frame 0 l'immagine di ARCADE non c'è ancora)
+    cmp #SH_RED
+    bcs move
+    ; OMEGA: lo sprite 0 (la racchetta di ARCADE, la sua prima forma) rosso al centro
+    lda #<(SPR_X0 + 160 - 12)
+    sta sh_x
+    lda #<(SPR_Y0 + PARADE_Y)
+    sec
+    sbc pv_rows
+    sta sh_y
+    lda egg_red
+    ldx egg_x
+    beq :+
+    lda #COL_PURPLE
+:   sta sh_col
+    lda #1
+    sta sh_enable
+    ldx #6                      ; le sette partono dal centro (x * 128)
+:   lda #<((SPR_X0 + 160 - 12) * 128)
+    sta sh_px,x
+    lda #>((SPR_X0 + 160 - 12) * 128)
+    sta sh_pxh,x
+    dex
+    bpl :-
+done:
+    rts
+move:
+    cmp #SH_RED + SH_MOVE
+    bcs done
+    ldx #6
+:   clc                         ; x += passo, poi lo sprite dalla x * 128
+    lda sh_px,x
+    adc sh_vlo,x
+    sta sh_px,x
+    lda sh_pxh,x
+    adc sh_vhi,x
+    sta sh_pxh,x
+    lda sh_px,x
+    asl a
+    lda sh_pxh,x
+    rol a
+    sta sh_x,x
+    lda bit_of,x                ; bit 8 della x (C)
+    eor #$ff
+    and sh_msb
+    bcc :+
+    ora bit_of,x
+:   sta sh_msb
+    lda #<(SPR_Y0 + PARADE_Y)
+    sec
+    sbc pv_rows,x
+    sta sh_y,x
+    lda #COL_WHITE
+    sta sh_col,x
+    dex
+    bpl :--
+    lda #$7f
+    sta sh_enable
+    rts
+.endproc
+; passo per frame (x * 128) da 160 al centro di ogni racchetta della sfilata (epad_x): la distanza
+; (-116, -76, -36, 4, 44, 84, 124 pixel) * 128 / SH_MOVE
+.assert SH_MOVE = 40, error, "shatter: passi per SH_MOVE = 40"
+sh_vlo: .lobytes -371, -243, -115, 13, 141, 269, 397
+sh_vhi: .hibytes -371, -243, -115, 13, 141, 269, 397
+sh_px:  .res 7
+sh_pxh: .res 7
+
 .proc credits_enter
     jsr fresh_screen
     lda #0
@@ -1449,8 +1545,20 @@ row:
 :   pha
     ldy cred_col-1,x
     ldx e_row
+    lda row_lo,x                ; (color_span_raw qui, con il ciclo in una pagina: un salto che
+    sta ptr                     ; cambia pagina costa un ciclo a cella, e qui ogni ciclo conta)
+    lda row_hi,x
+    clc
+    adc #>($d800 - SCREEN)
+    sta ptr+1
     pla
-    jsr color_span_raw
+    ldx v_n
+span:
+    sta (ptr),y
+    iny
+    dex
+    bne span
+.assert >span = >*, error, "titoli: il ciclo dei colori a cavallo di una pagina"
 next:
     ldy e_row
     iny

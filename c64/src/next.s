@@ -77,6 +77,7 @@ nx_ammo:   .res 8
 nx_gap:    .res 8               ; pausa prima del colpo successivo (16 bit)
 nx_reload: .res 8               ; ricarica del caricatore (16 bit)
 nx_barrier: .res 8              ; GUARDIAN: settori del muro in piedi, bit 0 = settore 0
+nx_morph:  .res 1               ; OMEGA: lato (0 o 4) che cambia forma a ogni punto subito ($FF nessuno)
 ; colpi del BLASTER: 8 posti (4 per giocatore, prima il sinistro: posto = lato * 4 + k, cioè
 ; X del giocatore + k), passo 4
 MAX_SHOTS = 4
@@ -156,39 +157,30 @@ pl:
     sta nx_armed,x
     lda #0
     sta nx_sel,x
-    sta tp_ok,x
     sta nx_anim,x
     sta nx_cool,x
     sta nx_cool+1,x
-    sta nx_gap,x
-    sta nx_gap+1,x
-    sta nx_reload,x
-    sta nx_reload+1,x
-    sta nx_ammo,x
-    sta nx_barrier,x
     lda cfg_kinds,x
     sta nx_kind,x
-    cmp #K_BLASTER
-    bne :+
-    lda #P_BLASTER_SHOTS
-    sta nx_ammo,x
-:   lda nx_kind,x
-    cmp #K_GUARDIAN
-    bne :+
-    lda #G_WALL                 ; il muro intero
-    sta nx_barrier,x
-:   jsr kind_paddle
+    jsr set_kind
     inx
     inx
     inx
     inx
     cpx #8
     bne pl
+    ; OMEGA (Match::set_morph): la CPU di CHALLENGE al livello CH_OMEGA
+    ldx #$ff
+    lda cg_active
+    beq :+
+    lda ch_level
+    cmp #CH_OMEGA
+    bne :+
+    lda ch_side
+    eor #4
+    tax
+:   stx nx_morph
     lda #0
-    ldx #2 * MAX_SHOTS - 1
-:   sta shot_on,x
-    dex
-    bpl :-
     ldx #3
 :   sta cap_on,x
     dex
@@ -225,6 +217,33 @@ pl:
 :   rts
 .endproc
 
+; Match::set_paddle_kind: la racchetta X prende il tipo nx_kind,x, con lo stato del tipo (muro del
+; GUARDIAN intero, caricatore del BLASTER pieno, nessun colpo in volo, pausa e ricarica a 0). A
+; inizio partita (next_init) e alle trasformazioni di OMEGA (next_morph). X resta.
+.proc set_kind
+    lda #0
+    sta tp_ok,x                 ; (la previsione del TELEPORT si rifà)
+    sta nx_gap,x
+    sta nx_gap+1,x
+    sta nx_reload,x
+    sta nx_reload+1,x
+    .assert MAX_SHOTS = 4, error, "set_kind: quattro posti per giocatore"
+    sta shot_on,x
+    sta shot_on+1,x
+    sta shot_on+2,x
+    sta shot_on+3,x
+    ldy nx_kind,x
+    cpy #K_BLASTER
+    bne :+
+    lda #P_BLASTER_SHOTS
+:   sta nx_ammo,x
+    lda #0
+    cpy #K_GUARDIAN
+    bne :+
+    lda #G_WALL                 ; il muro intero
+:   sta nx_barrier,x
+.endproc
+; (prosegue)
 ; Racchetta X con i valori del suo tipo (7 = la racchetta normale).
 .proc kind_paddle
     lda nx_kind,x
@@ -1690,6 +1709,52 @@ g_bounds: .byte <(P_GUARDIAN_B1 >> 16), <(P_GUARDIAN_B2 >> 16), <(P_GUARDIAN_B3 
     jsr slow_end
     lda nx_btimer
     beq :+
-    jmp bullet_end
-:   rts
+    jsr bullet_end
+:
+.endproc
+; (prosegue)
+; Match::next_morph (OMEGA): dopo un punto dell'avversario la racchetta di nx_morph prende la forma
+; dei punti che ha subito (challenge::omega_form: l'avversario della scala di quel livello, poi
+; resta il GUARDIAN), torna a casa e prende i bonus di quella forma; riserva, barra e bonus armati
+; restano.
+.proc next_morph
+    ldx nx_morph
+    bmi done
+    cpx scorer
+    beq done
+    ldy scorer
+    lda score+1,y
+    bne last
+    lda score,y
+    cmp #CH_LEVELS
+    bcc :+
+last:
+    lda #CH_LEVELS - 1
+:   tay
+    lda rung_kind,y
+    sta nx_kind,x
+    sty n_t
+    tya
+    asl a
+    adc n_t                     ; livello * 3 (C = 0)
+    tay
+    lda rung_loadout,y
+    sta nx_load,x
+    lda rung_loadout+1,y
+    sta nx_load+1,x
+    lda rung_loadout+2,y
+    sta nx_load+2,x
+    jsr set_kind
+    ; (per lo schermo, nello stesso tick il lampo bianco, om_flash di omega.s; l'immagine della
+    ; forma nuova è tra quelle preparate a inizio partita, pad_prep di video.s)
+    lda #OM_FLASH
+    sta om_flash
+    ldy #4                      ; x = home_x (X avanti di 4: non serve più)
+:   lda pad_home,x
+    sta pad_x,x
+    inx
+    dey
+    bne :-
+done:
+    rts
 .endproc

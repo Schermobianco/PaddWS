@@ -30,6 +30,8 @@ ST_INITIALS = 13                ; iniziali
 ST_SCORES  = 14                 ; classifica
 ST_CHALLENGER = 15              ; nuovo sfidante: HERE COMES A NEW CHALLENGER!
 ST_ENDING  = 16                 ; finale di CHALLENGE (ending.s)
+ST_WARNING = 17                 ; allarme prima di OMEGA (challenge.s)
+ST_JUKEBOX = 18                 ; JUKEBOX (jukebox.s)
 
 EV_COIN = $10                   ; effetto del gettone nel player del SID
 
@@ -62,6 +64,7 @@ flash:       .res 1
 paused:      .res 1
 menu_sel:    .res 1             ; voce selezionata del menu
 menu_i:      .res 1             ; voce in disegno (print_str usa v_n)
+menu_n:      .res 1             ; voci del menu (MENU_ITEMS, una in più con il JUKEBOX)
 screen_clear: .res 1            ; begin_match: schermo di testo già pulito nel frame prima
 over_next: .res 1               ; partita finita: GAME OVER al prossimo frame
 fx_pend:   .res 1               ; effetti sonori rimandati dal frame prima (già avanti)
@@ -144,6 +147,10 @@ win_pg:    .res 1               ; YOU WIN o PERFECT nel GAME OVER: 0 no, 1-16 pr
 .proc endtest_setup
     lda #CG_LADDER
     sta cg_active
+.ifdef ENDOMEGA
+    lda #1                      ; (con ENDOMEGA: il finale dopo OMEGA battuto)
+    sta ch_omega
+.endif
     lda #CH_LEVELS - 1
     sta ch_level
     lda #5
@@ -269,9 +276,61 @@ win_pg:    .res 1               ; YOU WIN o PERFECT nel GAME OVER: 0 no, 1-16 pr
     jmp start_game
 .endproc
 .segment "CODE"
+.elseif .defined(WARNTEST)
+; Build per le schermate di OMEGA (-Define WARNTEST): CHALLENGE, subito l'allarme dopo il GUARDIAN
+; (poi la presentazione di OMEGA e la partita; con SMTEST a sinistra la CPU). Tra le routine
+; dell'avvio.
+.segment "BOOTCODE"
+.proc warntest_setup
+    lda #OPT_CHALLENGE
+    sta opt_players
+    lda #2
+    sta opt_mode
+    sta opt_level               ; HARD
+    lda #0
+    sta ch_side
+    lda #CG_LADDER
+    sta cg_active
+    sta ch_clean
+    lda #CH_LEVELS - 1
+    sta ch_level
+    jmp enter_warning
+.endproc
+.segment "CODE"
+.elseif .defined(OMCLEARTEST)
+; Build per le schermate di OMEGA battuto (-Define OMCLEARTEST): CHALLENGE, OMEGA appena battuto 7
+; a 0 (i premi, poi il finale speciale). Tra le routine dell'avvio.
+.segment "BOOTCODE"
+.proc omcleartest_setup
+    lda #OPT_CHALLENGE
+    sta opt_players
+    lda #2
+    sta opt_mode
+    lda #0
+    sta ch_side
+    sta score+4
+    sta score+1
+    sta score+5
+    lda #CG_LADDER
+    sta cg_active
+    lda #CH_OMEGA
+    sta ch_level
+    lda #7
+    sta score
+    jmp enter_clear
+.endproc
+.segment "CODE"
+.elseif .defined(JUKETEST)
+; Build per le schermate del jukebox (-Define JUKETEST): subito il jukebox. Tra le routine
+; dell'avvio.
+.segment "BOOTCODE"
+.proc juketest_setup
+    jmp enter_jukebox
+.endproc
+.segment "CODE"
 .elseif .defined(INTROTEST)
 ; Build per le schermate delle presentazioni (-Define INTROTEST=n): CHALLENGE, subito la
-; presentazione del livello n (1-7); con anche CHALTEST la schermata del nuovo sfidante (solo per
+; presentazione del livello n (1-7, 8 OMEGA); con anche CHALTEST la schermata del nuovo sfidante (solo per
 ; vederla: quello che segue non è il flusso vero, che parte da una presentazione). Tra le routine
 ; dell'avvio.
 .segment "BOOTCODE"
@@ -286,6 +345,11 @@ win_pg:    .res 1               ; YOU WIN o PERFECT nel GAME OVER: 0 no, 1-16 pr
     sta cg_active
     lda #::INTROTEST - 1
     sta ch_level
+.ifdef VOLTEST
+    lda #::VOLTEST              ; (con VOLTEST=n: il VOLUME del menu al passo n, 0-10)
+    sta opt_volume
+    jsr sid_volume
+.endif
 .ifdef CHALTEST
     jmp enter_challenger        ; (con CHALTEST: subito HERE COMES A NEW CHALLENGER!)
 .else
@@ -318,6 +382,12 @@ win_pg:    .res 1               ; YOU WIN o PERFECT nel GAME OVER: 0 no, 1-16 pr
     jsr conttest_setup          ; build per le schermate del continue (sopra)
 .elseif .defined(MENUTEST)
     jsr menutest_setup          ; build per le schermate del menu (sopra)
+.elseif .defined(WARNTEST)
+    jsr warntest_setup          ; build per le schermate di OMEGA (sopra)
+.elseif .defined(OMCLEARTEST)
+    jsr omcleartest_setup       ; build per le schermate di OMEGA battuto (sopra)
+.elseif .defined(JUKETEST)
+    jsr juketest_setup          ; build per le schermate del jukebox (sopra)
 .elseif .defined(INTROTEST)
     jsr introtest_setup         ; build per le schermate delle presentazioni (sopra)
 .elseif .defined(AUTOSTART)
@@ -449,8 +519,8 @@ ft_state: .byte 0, 0, 0, 0, 0
 scenes:
     .word boot_scene - 1, stripes_scene - 1, logo_scene - 1, title_scene - 1, go_stripes - 1
     .word menu_scene - 1, count_scene - 1, play_scene - 1, ov_scene - 1, pick_scene - 1
-    .word intro_scene - 1, clear_scene - 1, cont_scene - 1, initials_scene - 1, scores_scene - 1
-    .word challenger_scene - 1, end_scene - 1
+    .word intro_scene - 1, cl_scene - 1, cl_scene - 1, initials_scene - 1, scores_scene - 1
+    .word challenger_scene - 1, end_scene - 1, warn_scene - 1, jb_scene - 1
 
 ; Un frame: registri ombra nel VIC (vblank), comandi, scena, sprite e musica. Il banco di prova
 ; (paddws-c64 frames) lo chiama per misurare i cicli di un frame intero. Prosegue in scene_done.
@@ -480,13 +550,16 @@ skip:
 
 ; Dopo ogni scena: sprite e riserve di NEXT dallo stato della partita e musica.
 ; Segue frame senza salto.
-SID_TICK_MAX  = 2500            ; sid_tick (o sid_more) più pesante in partita, anche con il tempo
+SID_TICK_MAX  = 2700            ; sid_tick (o sid_more) più pesante in partita, anche con il tempo
+                                ; (circa 2.100 con i temi, 2.600 con le sezioni di OMEGA: sid)
                                 ; che cambia nel bullet time e con il filtro (paddws-c64 sid: i temi
                                 ; fino a circa 2.260, al primo frame di HAMMER; fuori dalla partita il
                                 ; primo frame del titolo arriva a circa 2.930)
 SID_LATE      = 18000 - SID_TICK_MAX
 SID_LATE_LINE = RASTER_LINE + SID_LATE / 58 - 312
 KEEP_SPRITES_LINE = 14500 / 58  ; righe oltre le quali restano gli sprite del frame prima
+KEEP_SPRITES_OMEGA = 14000 / 58 ; lo stesso contro OMEGA, che dopo gli sprite ha om_tick (misurato in
+                                ; VICE: con la soglia di sempre un frame arrivava oltre il suo tempo)
 .assert SID_LATE_LINE >= 56 && SID_LATE_LINE < RASTER_LINE, error, "SID_LATE_LINE fuori dalle righe 56-249"
 .proc scene_done
     lda state
@@ -501,10 +574,20 @@ KEEP_SPRITES_LINE = 14500 / 58  ; righe oltre le quali restano gli sprite del fr
     ; Sprite, riserve e controlli costano fino a circa 3.400 cicli: con la soglia più in alto un
     ; frame arriverebbe oltre il suo tempo e i controlli dopo troverebbero il raster "all'inizio"
     lda #KEEP_SPRITES_LINE
-    jsr frame_after
+    ldx om_flash                ; contro OMEGA più presto, tranne nel frame della trasformazione
+    cpx #OM_FLASH               ; (la forma nuova nel frame del tick)
+    beq :+
+    ldx om_on
+    beq :+
+    lda #KEEP_SPRITES_OMEGA
+:   jsr frame_after
     bcs :+
     jsr compute_sprites
 :   jsr next_hud
+    lda state                   ; OMEGA: lampo, musica e rete (omega.s), dopo gli sprite
+    cmp #ST_PLAY
+    bne music
+    jsr om_tick
 music:
     ; frame già troppo avanti per il player (il tema di CHALLENGE con due note nuove costa fino
     ; a circa 1.700 cicli): la musica aspetta il prossimo, come gli effetti (fx_pend), con le
@@ -753,7 +836,7 @@ done:
 
 ; ------------------------------------------------------------------------------------ menu
 
-MENU_ITEMS = 9
+MENU_ITEMS = 9                  ; (10 con il JUKEBOX sbloccato: menu_n)
 MI_GAME    = 0
 MI_PLAYERS = 1
 MI_LEVEL   = 2
@@ -763,6 +846,7 @@ MI_ASOUND  = 5
 MI_VOLUME  = 6                  ; volume del SID (opt_volume, sid_volume)
 MI_BORDER  = 7                  ; bordo in partita (opt_border, border_game)
 MI_PLAY    = 8
+MI_JUKE    = 9                  ; JUKEBOX (jukebox.s), dopo PLAY, solo se sbloccato (hi_juke)
 MENU_ROW0  = 4                  ; prima voce, una ogni 2 righe (fino alla 20)
 MENU_COL   = 8
 MENU_VCOL  = 25
@@ -810,12 +894,18 @@ MENU_SRC  = $80 + ((MENU_IMG - $0800) .mod $4000) / 256
     jsr print_at
     .byte 16, 2, "PADD WS", 0
     jsr print_at
-    .byte 7, 22, "RUN/STOP: BACK   FIRE: OK", 0
+    .byte 7, 24, "RUN/STOP: BACK   FIRE: OK", 0
     jmp draw_menu
 .endproc
 
-; Voci del menu con i valori; la selezionata in bianco, le altre in grigio.
+; Voci del menu con i valori; la selezionata in bianco, le altre in grigio. Con il JUKEBOX
+; sbloccato una voce in più (menu_n).
 .proc draw_menu
+    ldx #MENU_ITEMS
+    lda hi_juke
+    bne :+
+    inx
+:   stx menu_n
     ldx #0
 item:
     stx menu_i
@@ -856,7 +946,7 @@ item:
     jsr print_str
 :   ldx menu_i
     inx
-    cpx #MENU_ITEMS
+    cpx menu_n
     bne item
     rts
 .endproc
@@ -873,7 +963,7 @@ item:
 .endproc
 
 value_fn: .word v_game - 1, v_players - 1, v_level - 1, v_control - 1, v_free - 1, v_asound - 1
-          .word v_volume - 1, v_border - 1, v_none - 1
+          .word v_volume - 1, v_border - 1, v_none - 1, v_none - 1
 
 .proc v_game
     lda opt_mode
@@ -972,7 +1062,6 @@ done:
 
 game_names:    .word s_classic, s_evo, s_next
 control_names: .word s_joystick, s_paddle
-level_names:   .word s_easy, s_normal, s_hard, s_expert
 on_off_names:  .word s_off, s_on
 border_names:  .word s_black, s_gray
 ; stessa lunghezza, così il valore nuovo copre il vecchio
@@ -981,10 +1070,6 @@ s_evo:      .byte "EVO     ", 0
 s_next:     .byte "NEXT    ", 0
 s_joystick: .byte "JOYSTICK", 0
 s_paddle:   .byte "PADDLE  ", 0
-s_easy:     .byte "EASY    ", 0
-s_normal:   .byte "NORMAL  ", 0
-s_hard:     .byte "HARD    ", 0
-s_expert:   .byte "EXPERT  ", 0
 s_off:      .byte "OFF     ", 0
 s_on:       .byte "ON      ", 0
 s_black:    .byte "BLACK   ", 0
@@ -1041,8 +1126,9 @@ move:
     clc
     adc menu_sel
     bpl :+
-    lda #MENU_ITEMS - 1
-:   cmp #MENU_ITEMS
+    lda menu_n
+    sbc #0                      ; (C = 0) menu_n - 1
+:   cmp menu_n
     bcc :+
     lda #0
 :   sta menu_sel
@@ -1059,8 +1145,13 @@ fire:
     beq :+
     lda menu_sel
     cmp #MI_PLAY
-    bne next_value
+    beq play
+    bcs juke
+    bcc next_value
+play:
     jmp start_game
+juke:
+    jmp enter_jukebox
 :   lda at_tmp
     and #JOY_RIGHT
     bne next_value
@@ -1085,7 +1176,7 @@ done:
 ; Nomi delle voci del menu (nel programma, il menu è quasi pieno); la riga di PLAYERS ha tre
 ; nomi (pl_row).
 item_names: .word s_game, 0, s_level, s_control, s_free, s_asound, s_volume, s_border
-            .word s_play
+            .word s_play, s_jukebox
             .word s_players, s_opponent, s_blank   ; riga di PLAYERS: PL_PLAYERS, PL_OPPONENT, PL_BLANK
 s_game:     .byte "GAME", 0
 s_players:  .byte "PLAYERS ", 0
@@ -1097,16 +1188,23 @@ s_asound:   .byte "ATTRACT SOUND", 0
 s_volume:   .byte "VOLUME", 0
 s_border:   .byte "BORDER", 0
 s_play:     .byte "PLAY", 0
+s_jukebox:  .byte "JUKEBOX", 0
+; (dal menu, che è quasi pieno)
+level_names:   .word s_easy, s_normal, s_hard, s_expert
+s_easy:     .byte "EASY    ", 0
+s_normal:   .byte "NORMAL  ", 0
+s_hard:     .byte "HARD    ", 0
+s_expert:   .byte "EXPERT  ", 0
+player_names:  .word s_one, s_two, s_cpu
+s_one:      .byte "ONE     ", 0
+s_two:      .byte "TWO     ", 0
+s_cpu:      .byte "VS CPU  ", 0
 
 ; stessa lunghezza (8), così il valore nuovo copre il vecchio, anche dei nomi delle racchette
 s_ladder:   .byte "LADDER  ", 0
 s_blank:    .byte "        ", 0
 
 .segment "MENUCODE"
-player_names:  .word s_one, s_two, s_cpu
-s_one:      .byte "ONE     ", 0
-s_two:      .byte "TWO     ", 0
-s_cpu:      .byte "VS CPU  ", 0
 ; giocatori validi per gioco, indice opt_mode * 5 + opt_players (1 ONE, 2 TWO, 3 VS CPU, 4 CHALLENGE)
 players_ok:
     .byte 0, 1, 1, 1, 0                 ; CLASSIC
@@ -1137,7 +1235,7 @@ done:
     bne :+
     jsr pl_row
     clc
-    adc #MENU_ITEMS
+    adc #MENU_ITEMS + 1         ; (dopo PLAY e JUKEBOX)
 :   asl a
     tax
     lda item_names,x
@@ -1159,7 +1257,10 @@ done:
     beq ladder
     tax
     lda rung_kind - 1,x
-    ldx #<kind_names
+    cpx #CH_OMEGA + 1           ; OMEGA (rung_kind ha ARCADE, la sua racchetta)
+    bcc :+
+    lda #OMEGA_KIND
+:   ldx #<kind_names
     ldy #>kind_names
     jmp pick_name
 ladder:
@@ -1182,16 +1283,27 @@ players:
     jmp pick_name
 .endproc
 
-; OPPONENT di A (+1 o -1): LADDER, poi gli avversari nell'ordine della scala, in giro.
+; OPPONENT di A (+1 o -1): LADDER, poi gli avversari nell'ordine della scala, poi OMEGA se è
+; sbloccato (hi_omega), in giro.
 .proc opp_step
+    ldx #CH_LEVELS              ; l'ultimo: GUARDIAN, o OMEGA
+    lda hi_omega
+    bne :+
+    inx
+:   stx m_t
     lda opt_opp
     clc
     adc at_tmp
-    and #7
-    sta opt_opp
+    bpl :+
+    txa
+:   cmp m_t
+    beq :+
+    bcc :+
+    lda #0
+:   sta opt_opp
     rts
 .endproc
-.assert CH_LEVELS = 7, error, "OPPONENT: LADDER e gli avversari non sono 8"
+.assert CH_OMEGA = CH_LEVELS, error, "OPPONENT: OMEGA dopo il GUARDIAN"
 
 ; Cambia il valore della voce selezionata di A (+1 o -1), in giro.
 .proc change_value
@@ -1373,6 +1485,17 @@ not_volume:
     lda bm_diff
     sta cfg_diff
     jsr match_new
+.ifdef OMFORM
+    lda nx_morph                ; (prova per VICE, -Define OMFORM=n: OMEGA comincia con la forma n,
+    bmi :+                      ; l'avversario a n punti)
+    eor #4
+    sta scorer
+    tax
+    lda #::OMFORM
+    sta score,x
+    jsr next_morph
+:
+.endif
     lda #SCROLL_FRAMES - 1      ; il primo cambio del bonus selezionato dopo un secondo
     sta scroll_t
     sta scroll_t+1
@@ -1405,6 +1528,8 @@ not_volume:
     sta lives
     lda #0
     sta match_song
+    sta om_on                   ; (OMEGA si prepara nei primi frame della partita)
+    sta om_flash
     sta cd_digit
     sta over_next
     sta fx_pend
@@ -1515,6 +1640,11 @@ done:
 .ifdef SMTEST
     ldx #0
     jsr cpu_input
+.endif
+.ifdef CURVETEST
+    lda #B_CURVE                ; (prova per VICE, -Define CURVETEST: la CURVE sempre nel primo
+    sta nx_res                  ; posto della riserva di tutti e due)
+    sta nx_res+4
 .endif
 :   jsr dash_before
     jsr match_step

@@ -6,7 +6,9 @@
 #                      memoria (paddws.map); da solo non parte, gira dalla cartuccia
 #   paddws.prg.end     il finale di CHALLENGE (src/ending.s), che ld65 scrive a parte: nella
 #                      cartuccia dal banco END_BANK
-#   voice0-6.prg       i file voce di CHALLENGE (src/voice.s), uno per tipo di racchetta
+#   voice0-6.prg       i file voce di CHALLENGE (src/voice.s), uno per tipo di racchetta, e
+#   voice7.prg         quello di OMEGA
+#   paddws.prg.omega   il resto del banco di OMEGA (musiche, jukebox, entrata nella presentazione)
 # Uso:  .\c64\build.ps1 [-Name paddws] [-Define SIMBOLO[=valore], ...]
 #       (-Name autostart -Define AUTOSTART: parte subito con una partita, per le schermate;
 #       con anche AUTONEXT la partita è NEXT, con AUTOCHALLENGE CHALLENGE, dalle scelte; il
@@ -40,11 +42,11 @@ function Build-Part([string]$Src, [string]$Base, [string]$Ext, [string]$Cfg, [st
 $defs = @(); foreach ($d in $Define) { $defs += @("-D", $d) }
 Build-Part "main.s" $Name ".prg" "paddws.cfg" $defs -Labels
 $voices = @()
-foreach ($k in 0..6) {
+foreach ($k in 0..7) {
     Build-Part "voice.s" "voice$k" ".prg" "voice.cfg" @("-D", "VOICE_KIND=$k")
     $voices += "$out\voice$k.prg"
 }
 Build-Part "crt.s" "$Name-crt" ".bin" "crt.cfg" @()
-& $py "$root\tools\make_crt.py" "$out\$Name.crt" "$out\$Name-crt.bin" "$out\$Name.prg" "$c64\gen\pick_bank.bin" "$out\$Name.prg.end" @voices | Out-Null
+& $py "$root\tools\make_crt.py" "$out\$Name.crt" "$out\$Name-crt.bin" "$out\$Name.prg" "$c64\gen\pick_bank.bin" "$out\$Name.prg.end" "$out\$Name.prg.omega" @voices | Out-Null
 if ($LASTEXITCODE -ne 0) { exit 1 }
 Write-Host "c64\build\$Name.crt: cartuccia EasyFlash ($Name.prg per il banco di prova)"

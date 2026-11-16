@@ -36,6 +36,8 @@ proporzioni diverse compaiono le bande nere (`game.keep_aspect`) invece della de
 | `game.game_type` | `"next"` | modalità scelta nel menu (**GAME TYPE**): `"classic"`, `"evo"` o `"next"` |
 | `game.players` | `"two"` | giocatori scelti nel menu per CLASSIC ed EVO (**PLAYERS**): `"two"`, `"cpu"` o `"one"`; in NEXT non conta. Il `"challenge"` delle versioni prima della 4.2.0 porta a NEXT |
 | `game.training` | `false` | allenamento sbloccato (diventa `true` arrivando al finale della scalata di NEXT): il menu ha la voce **OPPONENT** |
+| `game.training_omega` | `false` | OMEGA nell'allenamento (diventa `true` battendo OMEGA): **OPPONENT** lo propone dopo il GUARDIAN |
+| `game.jukebox` | `false` | jukebox sbloccato (diventa `true` battendo OMEGA o con le iniziali BAS): il menu ha la voce **JUKEBOX** |
 | `game.self_test` | `true` | auto-test all'avvio |
 | `game.attract_sound` | `true` | suoni e musica dell'attract, e musica del menu (gettone e Start si sentono sempre) |
 | `game.music_volume` | `100` | volume di tutte le musiche in percento, da 0 (nessuna musica) a 100 (menu **MUSIC VOLUME**, a passi del 10%). Prende il posto di `game.music` (e prima di `game.sid_sound` e `game.match_music`): se una di loro era `false` parte da 0 |

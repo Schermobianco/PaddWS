@@ -1,12 +1,11 @@
-// Disegno della modalità NEXT: schermate di scelta dei bonus e della racchetta e, in partita,
-// le aggiunte sopra il campo di pong_render (riserve, capsule, icona del bonus armato, racchetta
-// che ruota con il SUPER, salto del TELEPORT, palla guidata con STEER, palla cometa e scie, alone
-// di SLOW, scritta del bonus attivato, segni dei tipi di racchetta, colpi e munizioni del BLASTER,
-// immagini dello scatto del RUSH,
-// muro a settori del GUARDIAN) e, con le mosse speciali, la barra di ciascun giocatore nella banda in alto
+// Disegno della modalità NEXT in partita: le aggiunte sopra il campo di pong_render (riserve,
+// capsule, icona del bonus armato, racchetta che ruota con il SUPER, salto del TELEPORT, palla guidata
+// con STEER, palla cometa e scie, alone di SLOW, scritta del bonus attivato, segni dei tipi di
+// racchetta, colpi e munizioni del BLASTER, immagini dello scatto del RUSH, muro a settori del GUARDIAN) e, con le mosse speciali, la barra di ciascun giocatore nella banda in alto
 // sotto la riserva, la racchetta con la mossa armata (segno accanto, gialla al livello 2), il tiro
 // della mossa in volo, il punto dove RISING STRIKE s'impenna e il nome della mossa ("MAX" al livello
-// 2). La schermata HOW TO PLAY prima della partita è in howto_render.
+// 2). Le schermate (scelta di bonus e racchetta, HOW TO PLAY, presentazione, sfilata del finale) sono
+// dello schermo a oggetti (ui_render, rust/mister-ui).
 // Come rust/game/src/next_ui.rs, su uno schermo 320x240.
 //
 // Una volta per frame (`snapshot`) lo stato della logica diventa posizioni in pixel; durante
@@ -20,34 +19,6 @@ module next_render (
     input  wire        snapshot,
     input  wire [9:0]  hc,
     input  wire [9:0]  vc,
-
-    // schermata di scelta
-    input  wire        pick,
-    input  wire [2:0]  pick_cursor0,
-    input  wire [2:0]  pick_cursor1,
-    input  wire [5:0]  pick_mask0,          // bonus presi (bit = riga: codici 0..4, poi STEER)
-    input  wire [5:0]  pick_mask1,
-    input  wire [3:0]  pick_secs,           // secondi rimasti
-    input  wire        pick_ready,
-    input  wire        cpu,                 // il giocatore di destra è il computer
-    input  wire [1:0]  lock,                // lati con la scelta già fatta (CPU, campione di CHALLENGE)
-    input  wire [5:0]  blink,               // frame % 60
-    // scelta della racchetta (dopo i bonus): cursori e racchette confermate
-    input  wire        pick_paddle,
-    input  wire [2:0]  kind_cursor0,
-    input  wire [2:0]  kind_cursor1,
-    input  wire [1:0]  kind_chosen,
-    // presentazione dell'avversario di CHALLENGE: la sua racchetta al centro con i segni del tipo,
-    // con lo stesso disegno dell'anteprima della scelta (le scritte sono di challenge_render)
-    input  wire        intro,
-    input  wire [2:0]  intro_kind,
-    input  wire        intro_right,         // rivolta a destra (verso il giocatore)
-    input  wire [7:0]  intro_age,           // frame dall'inizio della presentazione (fermi a 255)
-    // finale della CHALLENGE: la sfilata dei sette avversari battuti (le prime `parade_n` racchette, in
-    // colonna, con il nome sotto); solo bianco e giallo, come il resto del finale (ending_render)
-    input  wire        parade,
-    input  wire [2:0]  parade_n,
-    input  wire [2:0]  parade_ko,           // ... le prime `parade_ko` già battute (KO): spente
 
     // partita NEXT
     input  wire        nxt,
@@ -82,6 +53,10 @@ module next_render (
     input  wire        warp_side,
     input  wire signed [31:0] warp_from,    // y di partenza della racchetta (core)
     // tipi di racchetta: stato dei giocatori (kind0/1 di pong_logic_rv), colpi del BLASTER, motion
+    // OMEGA: lato della sua racchetta (rossa, viola con l'easter egg), lampo bianco alla trasformazione
+    input  wire [1:0]  omega_pad,
+    input  wire        omega_flash,
+    input  wire        omega_egg,
     input  wire [31:0] kind0,
     input  wire [31:0] kind1,
     input  wire [255:0] shots_x,           // colpi del BLASTER, 4 per giocatore (prima il sinistro)
@@ -128,7 +103,6 @@ module next_render (
 `include "pong_params.vh"
 `include "pong_fonts.vh"
 `include "pong_next.vh"
-`include "pong_ending.vh"
 
 localparam integer W = P_WIDTH >>> 16;
 localparam integer H = P_HEIGHT >>> 16;
@@ -159,6 +133,9 @@ localparam [23:0] RGB_KICK2 = 24'hAA8C18, RGB_KICK1 = 24'h55460C, RGB_KICK_IMG1 
 localparam [6:0] WHITE = 7'd0, GRAY = 7'd1, BLACK = 7'd2, ACCENT = 7'd3, DETAIL = 7'd4, DIM = 7'd5, GHOST1 = 7'd6,
                  GHOST2 = 7'd7, GHOST3 = 7'd8, KICK2 = 7'd9, KICK1 = 7'd10, KICK_IMG1 = 7'd11, KICK_IMG2 = 7'd12;
 localparam [6:0] T_COL = 7'd13, T_ACC = 7'd25, T_LONG_GRAY = 7'd37, T_LONG_ACC = 7'd59;
+// OMEGA: il rosso del gioco e, con l'easter egg RED (giallo e rosso scambiati), il viola
+localparam [6:0] OMEGA_RED = 7'd81, OMEGA_PURPLE = 7'd82;
+localparam [23:0] RGB_OMEGA_RED = 24'hE62828, RGB_OMEGA_PURPLE = 24'hA040E0;
 // TWIST: inclinazione a gradini (fino a circa 20 gradi) dalla velocità della racchetta
 localparam signed [31:0] TILT1 = P_PAD_MAX_SPEED / 6, TILT2 = P_PAD_MAX_SPEED / 2,
                          TILT3 = P_PAD_MAX_SPEED * 5 / 6;
@@ -240,6 +217,8 @@ function [23:0] pal(input [6:0] i);
             KICK1:     pal = RGB_KICK1;
             KICK_IMG1: pal = RGB_KICK_IMG1;
             KICK_IMG2: pal = RGB_KICK_IMG2;
+            OMEGA_RED: pal = RGB_OMEGA_RED;
+            OMEGA_PURPLE: pal = RGB_OMEGA_PURPLE;
             default:   pal = RGB_BLACK;
         endcase
         for (j = 1; j <= 2 * TRAIL; j = j + 1) begin
@@ -339,127 +318,6 @@ function [2:0] kind_px(input [2:0] kind, input signed [11:0] t, input signed [11
             default: if (body) kind_px = KP_BODY;
         endcase
     end
-endfunction
-
-// ------------------------------------------------ presentazione animata della CHALLENGE
-// La racchetta dell'avversario entra a modo suo (come Stage::arcade, ... di
-// rust/game/src/challenge_ui.rs, distanze dimezzate); il resto lo disegna challenge_render. Per
-// ogni frame: spostamento dal centro (x verso la metà campo dell'avversario, da dove entra), altezza
-// (TITAN cresce dal pavimento), inclinazione (TWIST), lampo giallo, se si vede, e per lo scatto del
-// RUSH le tre immagini tra la partenza e la racchetta con la loro intensità (0 = niente).
-// ARCADE: spostamento verticale delle capsule della raffica (come in challenge_render)
-function signed [5:0] arcade_dy(input [3:0] k);
-    case (k)
-        4'd0: arcade_dy = -6'sd14; 4'd1: arcade_dy = 6'sd10;  4'd2: arcade_dy = -6'sd4; 4'd3: arcade_dy = 6'sd16;
-        4'd4: arcade_dy = -6'sd18; 4'd5: arcade_dy = 6'sd2;   4'd6: arcade_dy = 6'sd12; 4'd7: arcade_dy = -6'sd10;
-        4'd8: arcade_dy = 6'sd6;   default: arcade_dy = -6'sd2;
-    endcase
-endfunction
-reg signed [11:0] ip_dx, ip_dy;        // spostamento (dx verso l'avversario, dy verso il basso)
-reg [9:0]  ip_h;
-reg signed [2:0] ip_tilt;
-reg        ip_flash, ip_show;
-reg [1:0]  ip_fade;                    // RUSH: intensità delle immagini dello scatto
-reg signed [11:0] ip_gx [1:3];         // ... e loro distanza dal centro (verso l'avversario)
-reg signed [11:0] it_a, it_y0, it_y1, it_amp;
-reg signed [19:0] it_m;
-reg [7:0]  it_t;
-reg [3:0]  it_k;
-reg [5:0]  it_i;
-always @(posedge clk) begin
-    ip_dx <= 12'sd0;
-    ip_dy <= 12'sd0;
-    ip_h <= kind_px_h(intro_kind);
-    ip_tilt <= 3'sd0;
-    ip_flash <= 1'b0;
-    ip_show <= 1'b1;
-    ip_fade <= 2'd0;
-    ip_gx[1] <= 12'sd0;
-    ip_gx[2] <= 12'sd0;
-    ip_gx[3] <= 12'sd0;
-    it_a = $signed({4'd0, intro_age});
-    case (intro_kind)
-        K_ARCADE: begin
-            // va incontro alla capsula che arriva (arrivo della k-esima al frame 30 + 6k), poi torna
-            // (a - 30) / 6 come (a - 30) * 43 / 256, giusto fin dove serve
-            it_m = $signed({12'd0, intro_age - 8'd30}) * 43;
-            it_k = (intro_age < 8'd30) ? 4'd0 : (intro_age >= 8'd84) ? 4'd10 : it_m[11:8] + 4'd1;
-            if (intro_age < 8'd10) ip_dy <= 12'sd0;
-            else if (it_k < 4'd10) begin
-                it_y0 = (it_k == 4'd0) ? 12'sd0 : arcade_dy(it_k - 4'd1);
-                it_y1 = arcade_dy(it_k);
-                it_t = (it_k == 4'd0) ? intro_age - 8'd10 : intro_age - (8'd24 + {it_k, 2'b0} + {it_k, 1'b0});
-                ip_dy <= (it_t >= 8'd4) ? it_y1 : it_y0 + (((it_y1 - it_y0) * $signed({4'd0, it_t})) >>> 2);
-            end else begin
-                it_t = intro_age - 8'd84;
-                ip_dy <= (it_t >= 8'd8) ? 12'sd0 : (arcade_dy(4'd9) * $signed({4'd0, 8'd8 - it_t})) >>> 3;
-            end
-            // lampo nei due frame dopo ogni capsula presa
-            ip_flash <= intro_age >= 8'd30 && intro_age < 8'd86 &&
-                        (intro_age - 8'd30) - ({it_m[11:8], 2'b0} + {it_m[11:8], 1'b0}) < 8'd2;
-        end
-        K_TWIST: if (intro_age >= 8'd6 && intro_age < 8'd66) begin
-            // corre su e giù con un'ampiezza che cala, inclinata con la velocità
-            it_t = intro_age - 8'd6;
-            it_amp = 12'sd22 - (($signed({4'd0, it_t}) * 3) >>> 3);
-            it_i = (it_t * 57) >> 4;
-            it_m = it_amp * sin_q8(it_i);
-            ip_dy <= it_m >>> 8;
-            it_m = it_amp * sin_q8(it_i + 6'd16);
-            it_y0 = -(it_m >>> 10);
-            ip_tilt <= (it_y0 > 3) ? 3'sd3 : (it_y0 < -3) ? -3'sd3 : it_y0[2:0];
-        end
-        K_HAMMER: begin
-            // carica all'indietro, colpo in avanti, ritorno
-            if (intro_age >= 8'd40 && intro_age < 8'd48) ip_dx <= it_a - 12'sd39;
-            else if (intro_age >= 8'd49 && intro_age < 8'd55)
-                ip_dx <= (intro_age <= 8'd50) ? -12'sd8 : -12'sd8 + ((it_a - 12'sd50) <<< 1);
-        end
-        K_TITAN: begin
-            // cresce dal pavimento a scatti di 1/24 dell'altezza ogni 3 frame
-            ip_show <= intro_age >= 8'd6;
-            it_k = 4'd0;
-            it_t = (intro_age < 8'd6) ? 8'd0 : (((intro_age - 8'd6) * 11) >> 5) + 8'd1;    // / 3
-            // altezza 48: un passo di 2 pixel
-            if (it_t < 8'd24) begin
-                ip_h <= {1'b0, it_t, 1'b0};
-                ip_dy <= 12'sd24 - $signed({4'd0, it_t});
-            end
-            ip_flash <= intro_age >= 8'd78 && intro_age < 8'd82;
-        end
-        K_BLASTER: begin
-            // da una parte, all'altezza del nome; poi scende a quella delle capsule
-            ip_show <= intro_age >= 8'd4;
-            ip_dx <= 12'sd120;
-            ip_dy <= (intro_age < 8'd64) ? 12'sd41 : (intro_age >= 8'd73) ? 12'sd78 : 12'sd41 + ((it_a - 12'sd64) <<< 2);
-        end
-        K_RUSH: begin
-            // carica sul bordo lampeggiando, poi uno scatto lunghissimo con le immagini
-            if (intro_age < 8'd16) begin
-                it_t = (intro_age * 11) >> 5;                                     // / 3
-                ip_show <= intro_age >= 8'd4 && !it_t[0];
-                ip_dx <= 12'sd140;
-            end else begin
-                it_t = intro_age - 8'd16;
-                ip_dx <= (it_t >= 8'd3) ? 12'sd0 : 12'sd105 - $signed({4'd0, it_t}) * 35;
-                it_y1 = (it_t >= 8'd3) ? 12'sd0 : 12'sd105 - $signed({4'd0, it_t}) * 35;
-                ip_gx[1] <= 12'sd140 - ((12'sd140 - it_y1) >>> 2);
-                ip_gx[2] <= 12'sd140 - ((12'sd140 - it_y1) >>> 1);
-                ip_gx[3] <= 12'sd140 - (((12'sd140 - it_y1) * 3) >>> 2);
-                ip_fade <= (it_t < 8'd4) ? 2'd3 : (it_t < 8'd10) ? 2'd2 : (it_t < 8'd16) ? 2'd1 : 2'd0;
-            end
-        end
-        K_GUARDIAN: begin
-            ip_show <= intro_age >= 8'd4;
-            ip_dx <= -12'sd10;
-        end
-        default: ;
-    endcase
-end
-
-// riga dell'elenco della scelta della racchetta (righe di 20 pixel da y = 74), senza divisioni
-function integer row20(input [9:0] yy);
-    row20 = (yy >= 94) + (yy >= 114) + (yy >= 134) + (yy >= 154) + (yy >= 174) + (yy >= 194);
 endfunction
 
 // inclinazione di TWIST dalla velocità della racchetta (motion), a gradini da -3 a 3
@@ -908,9 +766,7 @@ reg        lbox, ltext, lcol, ldash;      // scritta del bonus o della mossa
 reg        pad_box;                       // pixel di una racchetta: la scritta passa sotto
 reg [9:0]  ldx, lpos;
 reg [6:0]  col;                        // indice della tavolozza (pal)
-reg [9:0]  dx, dy, sx, cxl;
-reg [1:0]  t_count;
-reg [3:0]  rb;                         // codice del bonus della riga r della scelta
+reg [9:0]  dx, dy, sx;
 reg [TEXT_W-1:0] trow;
 reg signed [10:0] sdx, sdy;
 reg signed [21:0] u8, v8;
@@ -919,37 +775,24 @@ reg        w_col, w_line;
 reg [2:0]  kc;
 reg signed [11:0] kx, ky, kq, kr, ka;
 reg signed [11:0] ke, kf, kv, kb, ko;  // colpo di una mossa: frame dal colpo, davanti, dal centro, dietro
-reg [2:0]  kcur;
-reg [9:0]  kcx;
-reg [2:0]  pk;                         // sfilata del finale: colonna e suo centro
-reg [9:0]  pdx;
-reg [2:0]  pkn;                        // ... e colonna del nome (pari o dispari secondo la riga)
-reg [9:0]  pdxn;
 integer    k, p, r;
 // mosse speciali: nome della mossa nella scritta e barre dei due giocatori (un solo confronto per pixel)
 reg        mv_code, mv_on, hb_p;
 reg [9:0]  mv_dx, mv_dy, bq_x, bq_y;
 reg [7:0]  bq_lvl;
 reg [1:0]  bq;
-// scelta dei bonus: lato (1 = destra) e riga del pixel, con la sua prima riga, bonus presi e cursore
-reg        bp;
 // riserve in partita: lato e posto del pixel, il suo bonus, se è il selezionato, e il pixel che ne esce
 reg        rv_p, rv_sel, rv_on;
 reg [1:0]  rv_k;
 reg [3:0]  rv_b;
 reg [6:0]  rv_col;
 // chiamate condivise tra le schermate (vedi il pixel)
-reg        sh_game, sh_pickb, sh_name, sh_kname;
-reg [9:0]  sh_cxb, sh_cxl, sh_kcx;
-reg [2:0]  sh_kcur, sh_ka, sh_kb;
-integer    sh_p, sh_r;
-reg signed [11:0] sh_kx, sh_kq, sh_kr, sh_mx, sh_mq, sh_my, sh_x0, sh_x1;
+reg        sh_name;
+reg [2:0]  sh_ka, sh_kb;
+reg signed [11:0] sh_x0, sh_x1;
 // pixel delle due racchette in partita: codice del tipo (kind_px) e dentro il rettangolo
 reg [2:0]  kcp [0:1];
 reg        kin [0:1];
-reg [2:0]  br, bcur;
-reg [9:0]  by0;
-reg [5:0]  bmask;
 
 always @(*) begin
     on = 1'b0;
@@ -960,17 +803,12 @@ always @(*) begin
     dx = 10'd0;
     dy = 10'd0;
     sx = 10'd0;
-    cxl = 10'd0;
     sdx = 11'sd0;
     sdy = 11'sd0;
     u8 = 22'sd0;
     v8 = 22'sd0;
-    t_count = 2'd0;
-    rb = 4'd0;
     sy = $signed({2'b0, y});
     kc = KP_NONE;
-    kcur = 3'd0;
-    kcx = 10'd0;
     kx = 12'sd0;
     ky = 12'sd0;
     kq = 12'sd0;
@@ -989,11 +827,6 @@ always @(*) begin
     ldash = 1'b0;
     lpos = 10'd0;
     pad_box = 1'b0;
-    bp = 1'b0;
-    br = 3'd0;
-    bcur = 3'd0;
-    by0 = 10'd0;
-    bmask = 6'd0;
     rv_p = 1'b0;
     rv_k = 2'd0;
     rv_b = 4'd0;
@@ -1011,217 +844,15 @@ always @(*) begin
     mv_on = move_lit({2'd0, mv_code}, mv_dx, mv_dy);
     bq = bar_px(bq_x, bq_y, bq_lvl);
 
-    // sfilata del finale: colonna sotto il pixel (sette, centri END_COL0..6), solo confronti
-    pk = (x >= (END_COL0 + END_COL1) / 2) + (x >= (END_COL1 + END_COL2) / 2) + (x >= (END_COL2 + END_COL3) / 2) +
-         (x >= (END_COL3 + END_COL4) / 2) + (x >= (END_COL4 + END_COL5) / 2) + (x >= (END_COL5 + END_COL6) / 2);
-    pdx = (pk == 3'd0) ? END_COL0 : (pk == 3'd1) ? END_COL1 : (pk == 3'd2) ? END_COL2 : (pk == 3'd3) ? END_COL3 :
-          (pk == 3'd4) ? END_COL4 : (pk == 3'd5) ? END_COL5 : END_COL6;
-    // i nomi sono più larghi di una colonna: stanno su due righe, i pari sopra e i dispari sotto, e
-    // nella riga del pixel si sceglie fra le sole colonne di quella riga
-    if (y >= END_PARADE_NAME_Y - NX_NAME0_H / 2 + END_PARADE_NAME_DY)
-        pkn = (x >= (END_COL1 + END_COL3) / 2) ? ((x >= (END_COL3 + END_COL5) / 2) ? 3'd5 : 3'd3) : 3'd1;
-    else
-        pkn = (x >= (END_COL0 + END_COL2) / 2) ? ((x >= (END_COL2 + END_COL4) / 2) ?
-              ((x >= (END_COL4 + END_COL6) / 2) ? 3'd6 : 3'd4) : 3'd2) : 3'd0;
-    pdxn = (pkn == 3'd0) ? END_COL0 : (pkn == 3'd1) ? END_COL1 : (pkn == 3'd2) ? END_COL2 : (pkn == 3'd3) ? END_COL3 :
-           (pkn == 3'd4) ? END_COL4 : (pkn == 3'd5) ? END_COL5 : END_COL6;
-
-    // Chiamate condivise. Le schermate di scelta e la partita non sono mai insieme sullo schermo:
-    // le funzioni più grandi (due kind_px, il nome del bonus e quello della racchetta) si fanno una
-    // volta sola, con gli argomenti della schermata in corso; ogni schermata qui sotto ne usa il
-    // risultato (sh_ka, sh_kb, sh_name, sh_kname) al posto della propria chiamata.
-    sh_game = !((pick && pick_paddle) || intro || parade) && !pick;
-    sh_pickb = !((pick && pick_paddle) || intro || parade) && pick;
-    // scelta dei bonus: lato e riga del pixel (vedi la schermata)
-    bp = x >= W / 2;
-    bmask = bp ? pick_mask1 : pick_mask0;
-    bcur = bp ? pick_cursor1 : pick_cursor0;
-    br = (y >= 100) + (y >= 124) + (y >= 148) + (y >= 172) + (y >= 196);
-    by0 = 76 + {br, 4'd0} + {br, 3'd0};
-    rb = (br == 3'd5) ? B_STEER : {1'b0, br};
-    sh_cxb = bp ? 3 * W / 4 : W / 4;
-    // scelta della racchetta, presentazione e sfilata: anteprima (come la schermata qui sotto) e riga
-    // della miniatura
-    sh_p = (intro || parade) ? 0 : (x >= W / 2);
-    sh_cxl = (sh_p == 0) ? W / 4 : 3 * W / 4;
-    sh_kcur = parade ? pk : intro ? intro_kind : (sh_p == 0) ? kind_cursor0 : kind_cursor1;
-    sh_kcx = parade ? pdx : intro ? W / 2 + (intro_right ? -ip_dx : ip_dx) : sh_cxl - 60;
-    sh_kx = $signed({2'b0, x}) - ($signed({2'b0, sh_kcx}) - PW / 2);
-    sh_kq = (parade || (intro ? intro_right : sh_p == 0)) ? sh_kx : PW - 1 - sh_kx;
-    sh_kr = $signed({2'b0, y}) - ((parade ? END_PARADE_Y : intro ? INTRO_Y + ip_dy : 12'sd144) -
-                                  ($signed({2'b0, intro ? ip_h : kind_px_h(sh_kcur)}) >>> 1));
-    sh_r = row20(y);
-    sh_mx = $signed({2'b0, x}) - ($signed({2'b0, sh_cxl}) - 25);
-    sh_mq = (sh_p == 0) ? sh_mx : 1 - sh_mx;
-    sh_my = $signed({2'b0, y}) - (74 + ((sh_r <<< 4) + (sh_r <<< 2)) + 9 - ($signed({2'b0, kind_px_h(sh_r[2:0])}) >>> 2));
-    // partita: le due racchette
+    // pixel delle due racchette in partita (kind_px, una chiamata per racchetta) e nome del bonus della
+    // scritta
     sh_x0 = $signed({2'b0, x}) - kl[0];
     sh_x1 = $signed({2'b0, x}) - kl[1];
-    // si scelgono gli argomenti e poi si chiama una volta (con due chiamate e la scelta del risultato
-    // il circuito resterebbe doppio)
-    sh_ka = kind_px(sh_game ? kd[0] : sh_kcur,
-                    sh_game ? sh_x0 : sh_kq,
-                    sh_game ? $signed({2'b0, y}) - kt[0] : sh_kr,
-                    sh_game ? kh[0] : intro ? ip_h : kind_px_h(sh_kcur),
-                    sh_game ? ktilt[0] : intro ? ip_tilt : (sh_kcur == K_TWIST) ? 3'sd3 : 3'sd0,
-                    !sh_game && !intro, !sh_game && !intro);
-    sh_kb = kind_px(sh_game ? kd[1] : sh_r[2:0],
-                    sh_game ? PW - 1 - sh_x1 : sh_mq <<< 1,
-                    sh_game ? $signed({2'b0, y}) - kt[1] : sh_my <<< 1,
-                    sh_game ? kh[1] : kind_px_h(sh_r[2:0]),
-                    sh_game ? ktilt[1] : (sh_r == K_TWIST) ? 3'sd3 : 3'sd0,
-                    1'b0, !sh_game);
-    sh_name = name_lit(sh_pickb ? rb[2:0] : label_bonus,
-                       sh_pickb ? x - (sh_cxb - 34) : ldx - (NX_P1_W + 9),
-                       sh_pickb ? y - (by0 + PICK_TEXT_DY) : y - LABEL_TOP);
-    // nella sfilata i nomi pari e dispari su due righe (GUARDIAN e BLASTER sono più larghi di una colonna)
-    sh_kname = kind_name_lit(parade ? pkn : sh_r[2:0],
-                             parade ? x - (pdxn - kind_name_w(pkn) / 2) : x - (sh_cxl - 14),
-                             parade ? y - (END_PARADE_NAME_Y - NX_NAME0_H / 2 + (pkn[0] ? END_PARADE_NAME_DY : 0))
-                                    : y - (74 + ((sh_r <<< 4) + (sh_r <<< 2)) + KIND_TEXT_DY));
+    sh_ka = kind_px(kd[0], sh_x0, $signed({2'b0, y}) - kt[0], kh[0], ktilt[0], 1'b0, 1'b0);
+    sh_kb = kind_px(kd[1], PW - 1 - sh_x1, $signed({2'b0, y}) - kt[1], kh[1], ktilt[1], 1'b0, 1'b0);
+    sh_name = name_lit(label_bonus, ldx - (NX_P1_W + 9), y - LABEL_TOP);
 
-    if ((pick && pick_paddle) || intro || parade) begin
-        // ------------------------------------------------- scelta della racchetta
-        // Con `intro` (presentazione di CHALLENGE) solo l'anteprima della racchetta dell'avversario,
-        // al centro e rivolta verso il giocatore, opaca solo sui suoi pixel: stesso disegno (e stessa
-        // logica) dell'anteprima del giocatore sinistro, più le munizioni del BLASTER.
-        // Con `parade` (sfilata del finale) la stessa anteprima nella colonna del pixel (rivolta a
-        // destra, centrata in END_PARADE_Y, solo le prime parade_n) con il nome sotto a scala 1, nei
-        // colori del finale: dettagli gialli, immagini del RUSH gialle che si diradano invece di scurirsi
-        col = BLACK;
-        on = !intro && !parade;
-        if (!intro && !parade) begin
-            if (nx_ppick_lit(x - (W - NX_PPICK_W) / 2, y - PICK_TITLE_Y)) col = ACCENT;
-            trow = text_glyph(pick_secs >= 4'd10 ? 4'd1 : 4'd0, y - 10'd30);
-            if (y >= 30 && y < 30 + TEXT_H && x >= SECS_X1 && x < SECS_X1 + TEXT_W &&
-                trow[TEXT_W - 1 - (x - SECS_X1)]) col = WHITE;
-            trow = text_glyph(pick_secs >= 4'd10 ? 4'd0 : pick_secs, y - 10'd30);
-            if (y >= 30 && y < 30 + TEXT_H && x >= SECS_X2 && x < SECS_X2 + TEXT_W &&
-                trow[TEXT_W - 1 - (x - SECS_X2)]) col = WHITE;
-            if ((x == W / 2 - 1 || x == W / 2) && y >= 56 && y < 216 && y[2] == 1'b0) col = WHITE;
-        end
-        // ogni colonna sta nella sua metà dello schermo: il lato viene dal pixel e la colonna si disegna
-        // una volta sola; nella presentazione e nella sfilata c'è solo quella di sinistra (p = 0)
-        p = (intro || parade) ? 0 : (x >= W / 2);
-        begin
-            cxl = (p == 0) ? W / 4 : 3 * W / 4;
-            kcur = parade ? pk : intro ? intro_kind : (p == 0) ? kind_cursor0 : kind_cursor1;
-            if (!intro && !parade) begin
-                if (p == 0 ? nx_p1_lit(x - (cxl - 50), y - 58) :
-                    (cpu ? nx_cpu_lit(x - (cxl - 50), y - 58) : nx_p2_lit(x - (cxl - 50), y - 58)))
-                    col = WHITE;
-                if (kind_chosen[p] && nx_ok_lit(x - (cxl + 26), y - 58)) col = ACCENT;
-            end
-            // anteprima a grandezza reale della racchetta sotto il cursore, verso la mezzeria; nella
-            // presentazione animata (ip_*) spostata, alta ip_h, inclinata, senza i segni fissi del
-            // RUSH e del GUARDIAN (le immagini dello scatto qui sotto, il muro in challenge_render)
-            kcx = parade ? pdx : intro ? W / 2 + (intro_right ? -ip_dx : ip_dx) : cxl - 60;
-            kx = $signed({2'b0, x}) - ($signed({2'b0, kcx}) - PW / 2);
-            kq = (parade || (intro ? intro_right : p == 0)) ? kx : PW - 1 - kx;
-            kr = $signed({2'b0, y}) - ((parade ? END_PARADE_Y : intro ? INTRO_Y + ip_dy : 12'sd144) -
-                                       ($signed({2'b0, intro ? ip_h : kind_px_h(kcur)}) >>> 1));
-            kc = sh_ka;
-            if ((intro || parade) && p != 0) kc = KP_NONE;     // nella presentazione una sola racchetta
-            if (parade && pk >= parade_n) kc = KP_NONE;         // avversario non ancora entrato
-            if (intro && !ip_show) kc = KP_NONE;
-            // RUSH: le tre immagini dello scatto, più scure verso la partenza
-            if (intro && p == 0 && ip_fade != 2'd0 && kc == KP_NONE)
-                for (k = 1; k <= 3; k = k + 1)
-                    if ($signed({2'b0, x}) - (W / 2 + (intro_right ? -ip_gx[k] : ip_gx[k]) - PW / 2) >= 0 &&
-                        $signed({2'b0, x}) - (W / 2 + (intro_right ? -ip_gx[k] : ip_gx[k]) - PW / 2) < PW &&
-                        kr >= 0 && kr < $signed({2'b0, ip_h}) && ip_fade + k >= 4) begin
-                        // intensità: dalla più chiara (vicina alla racchetta, k = 3) alla più scura
-                        on = 1'b1;
-                        col = (ip_fade + k >= 6) ? GHOST3 : (ip_fade + k == 5) ? GHOST2 : GHOST1;
-                    end
-            if (kc == KP_BODY) col = (intro && ip_flash) ? ACCENT : WHITE;
-            if (kc == KP_MARK) col = ACCENT;
-            if (kc == KP_DETAIL) col = parade ? ACCENT : DETAIL;
-            if (kc == KP_GHOST1) col = parade ? ((x[0] && y[0]) ? ACCENT : BLACK) : GHOST1;
-            if (kc == KP_GHOST2) col = parade ? ((x[0] ^ y[0]) ? ACCENT : BLACK) : GHOST2;
-            if (kc == KP_GHOST3) col = parade ? ACCENT : GHOST3;
-            if (kc != KP_NONE && kc != KP_CUT) on = 1'b1;
-            // BLASTER nella presentazione: il caricatore pieno dietro la racchetta, dal basso, come in
-            // partita (2 colonne a 3-4 pixel dal retro, un rettangolino di 3 righe ogni 4 per colpo)
-            ka = $signed({2'b0, kind_px_h(kcur)}) - 12'sd2 - kr;   // riga dal basso, da quella sopra il fondo
-            if ((intro || (parade && pk < parade_n)) && p == 0 && kcur == K_BLASTER && (kq == -12'sd4 || kq == -12'sd3) &&
-                ka >= 0 && ka < AMMO_ROWS && ka[1:0] != 2'd3) begin
-                on = 1'b1;
-                col = ACCENT;
-            end
-            // sfilata: la racchetta che ha già il KO si spegne (il nome resta bianco)
-            if (parade && pk < parade_ko && col != BLACK) col = DIM;
-            // sfilata: il nome sotto la racchetta
-            if (parade && p == 0 && pkn < parade_n &&
-                sh_kname) begin
-                on = 1'b1;
-                col = WHITE;
-            end
-            // sette righe ogni 20 pixel: cursore, miniatura e nome
-            if (!intro && !parade && y >= 74 && y < 74 + 20 * 7) begin
-                r = row20(y);
-                if (kcur == r && !kind_chosen[p] && !pick_ready &&
-                    nx_cursor_lit(x - (cxl - 42), y - (74 + ((r <<< 4) + (r <<< 2)) + KIND_TEXT_DY)))
-                    col = ACCENT;
-                // miniatura a metà grandezza
-                kx = $signed({2'b0, x}) - ($signed({2'b0, cxl}) - 25);
-                kq = (p == 0) ? kx : 1 - kx;
-                ky = $signed({2'b0, y}) - (74 + ((r <<< 4) + (r <<< 2)) + 9 - ($signed({2'b0, kind_px_h(r[2:0])}) >>> 2));
-                kc = sh_kb;
-                if (kc == KP_BODY) col = (kcur == r) ? WHITE : GRAY;
-                if (kc == KP_MARK) col = (kcur == r) ? ACCENT : DIM;
-                if (kc == KP_DETAIL) col = (kcur == r) ? DETAIL : DIM;
-                if (kc == KP_GHOST1 || (kc == KP_GHOST2 && kcur != r)) col = GHOST1;
-                if (kc == KP_GHOST2 && kcur == r) col = GHOST2;
-                if (kc == KP_GHOST3) col = (kcur == r) ? GHOST3 : GHOST2;
-                if (sh_kname)
-                    col = (kcur == r) ? (kind_chosen[p] ? ACCENT : WHITE) : GRAY;
-            end
-            // frase del tipo sotto la colonna
-            if (!intro && !parade && tag_lit(kcur, x - (cxl - tag_w(kcur) / 2), y - TAG_Y)) col = GRAY;
-        end
-        if (!intro && !parade && pick_ready && blink < 6'd37 && nx_ready_lit(x - (W - NX_READY_W) / 2, y - READY_Y))
-            col = ACCENT;
-    end else if (pick) begin
-        // ---------------------------------------------------- scelta dei bonus
-        col = BLACK;
-        on = 1'b1;                                         // schermo tutto nero
-        if (nx_pick_lit(x - (W - NX_PICK_W) / 2, y - PICK_TITLE_Y)) col = ACCENT;
-        // secondi rimasti
-        trow = text_glyph(pick_secs >= 4'd10 ? 4'd1 : 4'd0, y - 10'd30);
-        if (y >= 30 && y < 30 + TEXT_H && x >= SECS_X1 && x < SECS_X1 + TEXT_W &&
-            trow[TEXT_W - 1 - (x - SECS_X1)]) col = WHITE;
-        trow = text_glyph(pick_secs >= 4'd10 ? 4'd0 : pick_secs, y - 10'd30);
-        if (y >= 30 && y < 30 + TEXT_H && x >= SECS_X2 && x < SECS_X2 + TEXT_W &&
-            trow[TEXT_W - 1 - (x - SECS_X2)]) col = WHITE;
-        // mezzeria
-        if ((x == W / 2 - 1 || x == W / 2) && y >= 56 && y < 216 && y[2] == 1'b0) col = WHITE;
-        // ogni colonna sta nella sua metà dello schermo e ogni riga nelle sue 24 righe: lato e riga
-        // vengono dal pixel, così cursore, capsula e nome si disegnano una volta sola (e non 12)
-        cxl = sh_cxb;
-        // intestazione: P1 / P2 / CPU e bonus presi su 3
-        if (!bp ? nx_p1_lit(x - (cxl - 50), y - 58) :
-            (cpu ? nx_cpu_lit(x - (cxl - 50), y - 58) : nx_p2_lit(x - (cxl - 50), y - 58)))
-            col = WHITE;
-        t_count = bmask[0] + bmask[1] + bmask[2] + bmask[3] + bmask[4] + bmask[5];
-        trow = text_glyph({2'd0, t_count}, y - 58);
-        if (y >= 58 && y < 58 + TEXT_H && x >= cxl + 26 && x < cxl + 26 + TEXT_W && trow[TEXT_W - 1 - (x - cxl - 26)])
-            col = (t_count == 2'd3) ? WHITE : GRAY;
-        if (nx_of3_lit(x - (cxl + 26 + TEXT_W), y - 58)) col = (t_count == 2'd3) ? WHITE : GRAY;
-        // le sei righe, ogni 24 pixel da y = 76, alte 18: cursore, capsula e nome; l'ultima è STEER
-        // (codice 6)
-        if (y >= by0 && y < by0 + 18) begin
-            if (bcur == br && !lock[bp] && t_count != 2'd3 && !pick_ready &&
-                nx_cursor_lit(x - (cxl - 66), y - (by0 + PICK_TEXT_DY)))
-                col = ACCENT;
-            if (cap_px(x, y, cxl - 52, by0 + 2, rb, bmask[br]))
-                col = (bmask[br] || bcur == br) ? WHITE : GRAY;
-            if (sh_name)
-                col = (bmask[br] || bcur == br) ? WHITE : GRAY;
-        end
-        if (pick_ready && blink < 6'd37 && nx_ready_lit(x - (W - NX_READY_W) / 2, y - READY_Y))
-            col = ACCENT;
-    end else if (nxt) begin
+    if (nxt) begin
         // --------------------------------------------------------------- partita
         // riserve in alto: tre posti per lato, il selezionato in negativo con una freccetta. I posti
         // non si toccano (4 pixel tra l'uno e l'altro): il lato e il posto vengono dal pixel e se ne
@@ -1285,9 +916,10 @@ always @(*) begin
             // di livello 2 armata la racchetta è gialla (anche senza tipo)
             if ((kd[p] != K_NONE || mmax[p]) && !spin[p] && !(wv && wsd == p)) begin
                 kc = kcp[p];
-                if (kc == KP_BODY && (kd[p] == K_TWIST || kd[p] == K_HAMMER || mmax[p])) begin
+                if (kc == KP_BODY && (kd[p] == K_TWIST || kd[p] == K_HAMMER || mmax[p] || omega_pad[p])) begin
                     on = 1'b1;
-                    col = mmax[p] ? (bcold[p] ? GRAY : ACCENT) : kgray[p] ? GRAY : WHITE;
+                    col = mmax[p] ? (bcold[p] ? GRAY : ACCENT) : kgray[p] ? GRAY :
+                          !omega_pad[p] || omega_flash ? WHITE : omega_egg ? OMEGA_PURPLE : OMEGA_RED;
                 end
                 if (kc == KP_MARK) begin
                     on = 1'b1;

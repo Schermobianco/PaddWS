@@ -25,11 +25,8 @@ try {
     $out = & verilator_bin --cc --exe --savable --public-ignore -O3 --x-assign fast --x-initial fast `
         -Wno-fatal -Wno-lint -Wno-style -Wno-SELRANGE '-GSID_ROM=\"../../rtl/gen/sid_music.hex\"' `
         '-GVOICE_ROM=\"../../rtl/gen/sid_voices.hex\"' `
-        '-GHOWTO_TEXT_ROM=\"../../rtl/gen/howto_text.hex\"' '-GHOWTO_ROWS_ROM=\"../../rtl/gen/howto_rows.hex\"' `
-        '-GHOWTO_SPRITE_ROM=\"../../rtl/gen/howto_sprites.hex\"' `
-        '-GENDING_TEXT_ROM=\"../../rtl/gen/ending_text.hex\"' '-GENDING_MAP_ROM=\"../../rtl/gen/ending_map.hex\"' `
         '-GENDING_FW_ROM=\"../../rtl/gen/ending_fw.hex\"' `
-        '-GCH_TITLE_ROM=\"../../rtl/gen/title_challenge.hex\"' '-GPERFECT_ROM=\"../../rtl/gen/title_perfect.hex\"' `
+        '-GUI_FONT_ROM=\"../../rtl/gen/ui_font.hex\"' '-GUI_GFX_ROM=\"../../rtl/gen/ui_gfx.hex\"' `
         '-GFW_ROM0=\"../../rtl/gen/pong_fw_b0.hex\"' '-GFW_ROM1=\"../../rtl/gen/pong_fw_b1.hex\"' `
         '-GFW_ROM2=\"../../rtl/gen/pong_fw_b2.hex\"' '-GFW_ROM3=\"../../rtl/gen/pong_fw_b3.hex\"' `
         '-I../../rtl/gen' --top-module pong_top --Mdir obj -o frames.exe public.vlt $rtl frames.cpp 2>&1 |

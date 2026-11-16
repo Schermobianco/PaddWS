@@ -14,6 +14,42 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+### Aggiunto
+- **OMEGA, il boss segreto** (PC, web, Deck, MiSTer e C64): chi sale la scalata di NEXT a HARD o
+  EXPERT dal primo livello senza usare continue, battuto il GUARDIAN trova l'allarme WARNING! e la
+  presentazione di OMEGA ("IT BECOMES THEM ALL", con la sua voce). OMEGA comincia come ARCADE e a
+  ogni punto che subisce diventa l'avversario successivo della scala (TWIST, HAMMER, TITAN, BLASTER,
+  RUSH, GUARDIAN), con un lampo bianco e il nome della forma nuova per un secondo. Si gioca a 7
+  punti, senza continue né sfidanti. La rete tratteggiata segue il basso della sua canzone dubstep,
+  una sezione per forma, con il wobble del filtro del SID. Se lo batti prendi 50.000 punti (più il
+  premio della partita perfetta), la sua racchetta si spezza nelle sette degli avversari e il finale
+  si chiude con OMEGA DEFEATED; in classifica il livello è ALL+. Se perdi vedi il finale normale.
+  Battere OMEGA lo sblocca nell'allenamento e sblocca anche il jukebox.
+- **JUKEBOX** (PC, web, Deck, MiSTer e C64): si sblocca battendo OMEGA o scrivendo BAS come
+  iniziali in classifica. Suona i temi dei sette avversari, il finale e OMEGA, con tre
+  oscilloscopi, uno per voce del SID. Sul MiSTer è una voce dell'OSD che compare solo a jukebox
+  sbloccato; sul C64 le onde si ricostruiscono da quello che il player scrive nel SID.
+- **Logo nel menu di NEXT** (PC, web e Deck): il logo PADD al posto della scritta MAIN MENU.
+
+### Modificato
+- **MiSTer, nuova struttura video**: le schermate (attract, presentazioni, scelte, HOW TO PLAY,
+  classifica, finale e scritte in partita) le disegna un motore a oggetti in hardware, riempito
+  ogni frame dal firmware RISC-V, al posto dei renderer dedicati; il campo di gioco resta in
+  hardware. Il core usa meno logica (23.959 ALM, 57%, prima 31.500; 50 DSP invece di 104) e più
+  memoria (412 blocchi su 553). Fuori dalla partita, un gettone o un comando che arriva nelle
+  ultime righe del frame si vede un frame dopo.
+- MiSTer: nella sfilata del finale c'è il timbro inclinato DEFEATED, come su PC e C64, al posto del
+  K.O. *Opponent* nell'OSD ha il valore *Secret*: a OMEGA sbloccato fa giocare contro di lui,
+  altrimenti non cambia niente. Una classifica con un posto ALL+ non si legge con i core fino alla
+  4.3.0.
+- C64: le voci digitalizzate seguono il VOLUME del menu (a 0% tacciono). Il moltiplicatore dei
+  punti della scalata sta accanto al punteggio invece che sopra.
+
+### Corretto
+- C64: con la CURVE la coda della palla riparte al colpo e segue la curva nuova.
+- C64: nel conto alla rovescia di NEXT la racchetta poteva mostrare per un frame l'immagine
+  sbagliata (per esempio la TWIST inclinata al posto dell'ARCADE).
+
 ## [4.3.0] - 2026-11-15
 
 ### Aggiunto

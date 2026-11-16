@@ -30,7 +30,13 @@
 ; SID_SONG_ENDING (il finale di CHALLENGE, ENDING del MiSTer) le legge nel finale (ending.s).
 ; SID_SONG_EGG è la stessa canzone letta dalla cartuccia (egg_stage): l'easter egg delle iniziali
 ; (egg_check, challenge.s) la mette al posto di quella del titolo, quando la bitmap dell'attract
-; copre le tracce del finale.
+; copre le tracce del finale. SID_SONG_OMEGA legge a THEME_BASE una sezione della canzone di OMEGA
+; (le canzoni 15-21 del MiSTer, una per forma), che la partita contro di lui copia dalla cartuccia;
+; nel jukebox anche i temi, nella stessa forma.
+;
+; Wobble ($C0+l, tools/gen_sid_music.py), come il player Verilog: il taglio di partenza (sid_ws) e il
+; periodo (sid_wp); acceso, il taglio ci va subito e, a ogni sid_wp passi serviti, ci torna al
+; posto della scivolata di quel passo. All'inizio di una canzone si spegne.
 
 SID = $d400
 
@@ -50,8 +56,13 @@ song_start: .word 0, 0, 0                   ; canzone 0: silenzio
             .word EGG_TRACK + end_bass - ENDC_RUN + EPG_C * 256
             .word EGG_TRACK + end_lead - ENDC_RUN + EPG_C * 256
             .word EGG_TRACK + end_arp - ENDB_RUN + EPG_B * 256
+            ; canzone SID_SONG_OMEGA: una sezione di OMEGA (omegaK_V.bin; nel jukebox anche i temi)
+            ; a THEME_BASE: la prima traccia nella prima pagina, la seconda dalla pagina dopo (fino
+            ; a tre pagine), la terza (vuota, un solo $FF) nell'ultimo byte della prima pagina
+            .word THEME_BASE, THEME_BASE + $100, THEME_BASE + $FF
 .assert SID_SONG_THEME = SID_SONGS + 1 .and SID_SONG_ENDING = SID_SONG_THEME + 1, error, "il tema e il finale devono seguire le canzoni"
 SID_SONG_EGG = SID_SONG_ENDING + 1
+SID_SONG_OMEGA = SID_SONG_EGG + 1
 EGG_TRACK    = $8000            ; ROML del banco END_BANK: il file del finale dalla prima pagina
 ENDB_RUN     = $EC00            ; dove girano le aree del finale con le tracce (paddws.cfg)
 ENDC_RUN     = $FB00
@@ -107,6 +118,10 @@ sid_fc:      .res 2             ; filtro: taglio a 16 bit (il registro a 11 bit 
 sid_sw:      .res 2             ; scivolata del taglio per passo della canzone (0 = ferma)
 sid_rf:      .res 1             ; copia di $D417 (0: nessuna voce nel filtro)
 sid_vm:      .res 1             ; copia di $D418, valida con sid_rf diverso da 0
+.segment "HIBSS"
+sid_ws:      .res 2             ; wobble: taglio di partenza (16 bit), periodo in passi (0 = spento)
+sid_wp:      .res 1             ; e passi che mancano al ritorno
+sid_wc:      .res 1
 
 .segment "CODE"
 
@@ -302,6 +317,7 @@ hush:
     stx sid_rf
     stx sid_sw
     stx sid_sw+1
+    stx sid_wp                  ; (e il wobble spento)
 retune:
     ; tempo appena cambiato (bullet time): le note in corso cambiano ottava subito
     lda sid_retune
@@ -341,7 +357,19 @@ skip:
 play:
     bit sid_cmd
     bmi done
-    ; la scivolata del taglio, prima dei canali; il taglio si scrive sempre
+    ; il wobble e la scivolata del taglio, prima dei canali; il taglio si scrive sempre. Quando il
+    ; wobble torna al taglio di partenza (ogni sid_wp passi serviti) la scivolata del passo salta
+    lda sid_wp
+    beq sweep
+    dec sid_wc
+    bne sweep
+    sta sid_wc
+    lda sid_ws
+    sta sid_fc
+    lda sid_ws+1
+    sta sid_fc+1
+    jmp cut
+sweep:
     lda sid_sw
     ora sid_sw+1
     beq chans
@@ -352,6 +380,7 @@ play:
     lda sid_fc+1
     adc sid_sw+1
     sta sid_fc+1
+cut:
     jsr write_cut
 chans:
     ldx #0
@@ -383,9 +412,11 @@ write:
     adc vbase,x
     tay
     pla
+sid_wr_store:                   ; (il jukebox lo devia per tenere una copia dei registri)
     sta SID,y
     rts
 .endproc
+wr_store = wr::sid_wr_store
 
 ; Un passo del canale X.
 .proc channel
@@ -459,65 +490,7 @@ read_cmd:
     lda (sp),y
     sta sid_cmd_byte
     cmp #$70
-    bcc note_or_rest
-    cmp #$80
-    bcs :+
-    and #15                     ; $7x: strumento (16, 8 byte ciascuno)
-    sta ch_ins,x
-    jmp next1
-:   bne :+
-    iny                         ; $80: scivolata, il valore dopo
-    lda (sp),y
-    sta ch_slide,x
-    jmp next2
-:   cmp #$a0
-    bcs :+
-    cmp #$90
-    bcc stop
-    and #3                      ; $9x: arpeggio
-    sta ch_arp,x
-    jmp next1
-:   cmp #$b0
-    beq sweep
-    bcs :+
-    asl a                       ; $A0+l: taglio, l i 3 bit bassi, poi gli 8 alti
-    asl a
-    asl a
-    asl a
-    asl a
-    sta sid_fc
-    iny
-    lda (sp),y
-    sta sid_fc+1
-    jsr write_cut
-    jmp next2
-:   cmp #$fe
-    bne stop
-    lda ch_start_lo,x           ; $FE: da capo
-    sta ch_ptr_lo,x
-    lda ch_start_hi,x
-    sta ch_ptr_hi,x
-    jmp read_cmd
-stop:
-    ; fine della traccia: la voce tace
-    lda #0
-    sta ch_active,x
-    ldy #4
-    jmp wr
-sweep:
-    iny                         ; $B0: scivolata del taglio, 16 bit
-    lda (sp),y
-    sta sid_sw
-    iny
-    lda (sp),y
-    sta sid_sw+1
-    jsr advance
-next2:
-    jsr advance
-next1:
-    jsr advance
-    jmp read_cmd
-
+    jcs cmds
 note_or_rest:
     iny
     lda (sp),y
@@ -595,6 +568,92 @@ filter:
     stx SID + $17
     jmp sid_set_vol             ; $D418 con il modo del filtro e il volume del menu
 :   rts
+
+cmds:
+    cmp #$80
+    bcs :+
+    and #15                     ; $7x: strumento (16, 8 byte ciascuno)
+    sta ch_ins,x
+    jmp next1
+:   bne :+
+    iny                         ; $80: scivolata, il valore dopo
+    lda (sp),y
+    sta ch_slide,x
+    jmp next2
+:   cmp #$a0
+    bcs :+
+    cmp #$90
+    bcc stop
+    and #3                      ; $9x: arpeggio
+    sta ch_arp,x
+    jmp next1
+:   cmp #$b0
+    beq sweep
+    bcs :+
+    jsr cut5                    ; $A0+l: taglio, l i 3 bit bassi, poi gli 8 alti
+    sta sid_fc
+    iny
+    lda (sp),y
+    sta sid_fc+1
+    jsr write_cut
+    jmp next2
+:   cmp #$d0
+    bcc wobble
+    cmp #$fe
+    bne stop
+    lda ch_start_lo,x           ; $FE: da capo
+    sta ch_ptr_lo,x
+    lda ch_start_hi,x
+    sta ch_ptr_hi,x
+    jmp read_cmd
+wobble:
+    ; $C0+l: wobble, il taglio di partenza (l i 3 bit bassi, poi gli 8 alti) e il periodo; acceso,
+    ; il taglio ci va subito
+    jsr cut5
+    sta sid_ws
+    iny
+    lda (sp),y
+    sta sid_ws+1
+    iny
+    lda (sp),y
+    sta sid_wp
+    sta sid_wc
+    beq :+
+    lda sid_ws
+    sta sid_fc
+    lda sid_ws+1
+    sta sid_fc+1
+    jsr write_cut
+:   jsr advance
+    jmp next2
+stop:
+    ; fine della traccia: la voce tace
+    lda #0
+    sta ch_active,x
+    ldy #4
+    jmp wr
+sweep:
+    iny                         ; $B0: scivolata del taglio, 16 bit
+    lda (sp),y
+    sta sid_sw
+    iny
+    lda (sp),y
+    sta sid_sw+1
+    jsr advance
+next2:
+    jsr advance
+next1:
+    jsr advance
+    jmp read_cmd
+
+; i 3 bit bassi del taglio (in A, gli altri bit qualsiasi) al loro posto nel byte basso a 16 bit
+cut5:
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a
+    rts
 
 ; puntatore della traccia avanti di un byte
 advance:

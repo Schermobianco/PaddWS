@@ -18,9 +18,14 @@ VOICE_END   = $F000             ; i file devono finire prima delle tabelle dei q
 ; Il file del primo livello ci arriva quasi esatto (voice.s lo controlla): se cambiano le sue voci
 ; o il player, VOICE_RES si sposta (dove finisce la parte che si copia, più qualche byte).
 VOICE_RES   = $EB20
+VOL_TAB     = VOICE_RES - $20   ; campione -> volume del SID al VOLUME del menu (16 byte, voice.s:
+                                ; vol_make), all'inizio di una pagina: gli NMI la indicizzano senza
+                                ; conti; i file voce finiscono prima, il banco della vittoria la copre
 VOICE_HUSH  = VOICE_RES         ; jsr: ferma subito la voce (A, X e Y restano); solo con il vettore
                                 ; dell'NMI nel player (bit 7 di $FFFB)
 VOICE_SAY   = VOICE_RES + 6     ; jsr: dice i campioni descritti a X:Y (inizio, fine)
+VOICE_KEEP  = $EC00             ; fine del player che resta: sopra c'è READY, che la partita contro
+                                ; OMEGA (OMCODE) e il finale (ENDB) coprono
 VOICE_GO    = $FA01             ; "GO!" e gli NMI del player, dopo il tema (THEME_BASE, $F800-$FA00)
 VOICE_GO_SRC = $E00B            ; nel file del primo livello: quello che il file copia a VOICE_GO
 
@@ -47,3 +52,10 @@ VOICE_COUNT = $FFC0             ; 3 byte nella RAM sotto il KERNAL, dopo i carat
 VOICE_VOL = $FFF3
 
 VOICE_PAGES = 16                ; pagine copiate dalla cartuccia: da VOICE_BASE a VOICE_END
+
+; OMEGA, il boss dopo il GUARDIAN: il suo file voce (VOICE_KIND = OMEGA_KIND, nella cartuccia nel
+; banco OM_BANK) porta solo il nome; VOICE_STOP dà OMEGA_SONG, la canzone del player che suona le
+; sue sezioni a THEME_BASE (SID_SONG_OMEGA di sid.s), che la presentazione e la partita copiano
+; dallo stesso banco
+OMEGA_KIND  = 7
+OMEGA_SONG  = 10

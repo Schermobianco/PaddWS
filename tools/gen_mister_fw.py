@@ -32,13 +32,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 RUST = ROOT / "rust"
 FW = RUST / "mister-fw"
+UI = RUST / "mister-ui"
 OUT = ROOT / "mister" / "rtl" / "gen"
 TARGET = "riscv32im-unknown-none-elf"
 ELF = RUST / "target" / TARGET / "fw" / "paddws-mister-fw"
 
-RAM_BYTES = 64 * 1024
-# spazio minimo per lo stack sopra .bss: il picco misurato da paddws-fw-sim (6,8 KB) con un margine
-STACK_MIN = 8 * 1024
+RAM_BYTES = 160 * 1024
+# spazio minimo per lo stack sopra .bss: il picco misurato da paddws-fw-sim (6,8 KB per la logica,
+# 12 KB per le schermate di rust/mister-ui, `--ui`) con un margine
+STACK_MIN = 16 * 1024
 
 
 def source_files() -> list[Path]:
@@ -46,6 +48,9 @@ def source_files() -> list[Path]:
     files += sorted((RUST / "core").rglob("*.rs")) + [RUST / "core" / "Cargo.toml"]
     files += [FW / "Cargo.toml", FW / "build.rs", FW / "link.x"]
     files += sorted(p for p in (FW / "src").rglob("*.rs") if "bin" not in p.relative_to(FW / "src").parts)
+    # schermate dello schermo a oggetti (rust/mister-ui), senza il banco di prova
+    files += [UI / "Cargo.toml"]
+    files += sorted(p for p in (UI / "src").rglob("*.rs") if "bin" not in p.relative_to(UI / "src").parts)
     return files
 
 

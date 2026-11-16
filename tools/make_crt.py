@@ -1,7 +1,7 @@
 """Crea la cartuccia EasyFlash della versione C64 (.crt, tipo hardware 32), senza dipendenze.
 
 Uso:
-    python tools/make_crt.py OUT.crt BOOT.bin PROGRAMMA.prg PICK.bin FINALE.bin VOCE0.prg [... VOCE6.prg]
+    python tools/make_crt.py OUT.crt BOOT.bin PROGRAMMA.prg PICK.bin FINALE.bin OMEGA.bin VOCE0.prg [... VOCE7.prg]
 
 Banchi e indirizzi in c64/src/ef.inc:
 - BOOT.bin: gli 8 KB della ROMH del banco 0 (c64/src/crt.s), a $E000 nel modo Ultimax
@@ -17,7 +17,10 @@ Banchi e indirizzi in c64/src/ef.inc:
 - VOCEn.prg: i file voce di CHALLENGE (c64/src/voice.s), senza l'indirizzo di caricamento, nella
   ROML dei banchi da VOICE_BANK0. Solo il file del primo livello arriva oltre VOICE_RES (player e
   READY, che restano per tutta la scala): quella parte va anche negli altri banchi, allo stesso
-  posto, perché la copia prende sempre VOICE_PAGES pagine.
+  posto, perché la copia prende sempre VOICE_PAGES pagine. L'ottavo file (VOCE7) è quello di OMEGA:
+  va all'inizio del banco OM_BANK;
+- OMEGA.bin: il resto del banco di OMEGA (l'uscita PROGRAMMA.prg.omega di ld65: sezioni della sua
+  canzone, temi per il jukebox, jukebox, entrata nella presentazione), dopo il suo file voce;
 - c64/gen/howto.bin (letto da qui, non è un argomento): la HOW TO PLAY delle mosse speciali, nella
   ROML dei banchi HOWTO_BANK (la bitmap) e HOWTO_BANK + 1 (i colori e quelli dell'easter egg);
 - FINALE.bin: il finale di CHALLENGE (c64/src/ending.s, l'uscita PROGRAMMA.prg.end di ld65), nella
@@ -79,6 +82,7 @@ VOICE_GO_SRC = const("VOICE_GO_SRC", "voice.inc")
 WIN_BANK = const("WIN_BANK", "ef.inc")
 END_BANK = const("END_BANK", "ef.inc")
 HOWTO_BANK = const("HOWTO_BANK", "ef.inc")
+OM_BANK = const("OM_BANK", "ef.inc")
 HOWTO = SRC.parent / "gen" / "howto.bin"
 WIN_RUN = const("WIN_RUN", "voice.inc")
 WIN_SAMPLES = const("WIN_SAMPLES", "voice.inc")
@@ -113,8 +117,9 @@ def win_image(first: bytes, voice: Path) -> bytes:
     image[res:res + len(tail)] = tail
     samples = voice.read_bytes()
     at = WIN_SAMPLES - WIN_RUN
-    if not samples or WIN_SAMPLES + len(samples) > WIN_DESC:
-        sys.exit(f"{voice}: {len(samples)} byte, oltre WIN_DESC")
+    if len(samples) <= 256 or WIN_SAMPLES + len(samples) > WIN_DESC:
+        # (il player guarda la fine solo dalla seconda pagina: src/voice.s, nmi_lo)
+        sys.exit(f"{voice}: {len(samples)} byte, non più di una pagina o oltre WIN_DESC")
     image[at:at + len(samples)] = samples
     end = WIN_SAMPLES + len(samples)
     image[WIN_DESC - WIN_RUN:WIN_DESC - WIN_RUN + 4] = bytes([WIN_SAMPLES & 0xFF, WIN_SAMPLES >> 8, end & 0xFF, end >> 8])
@@ -141,7 +146,8 @@ def main() -> None:
     out, boot, program = Path(sys.argv[1]), Path(sys.argv[2]).read_bytes(), Path(sys.argv[3])
     pick = Path(sys.argv[4]).read_bytes()
     ending = Path(sys.argv[5]).read_bytes()
-    voices = [Path(v) for v in sys.argv[6:]]
+    omega = Path(sys.argv[6]).read_bytes()
+    voices = [Path(v) for v in sys.argv[7:]]
     if len(boot) != HALF:
         sys.exit(f"{sys.argv[2]}: {len(boot)} byte invece di {HALF}")
     image = b"\x00" + prg(program, PRG_START + 1)
@@ -165,12 +171,23 @@ def main() -> None:
         chips.append(chip(END_BANK + i // HALF, 0x8000, ending[i:i + HALF]))
     if not ending or END_BANK + (len(ending) - 1) // HALF >= HI_BANK:
         sys.exit(f"{sys.argv[5]}: finale vuoto o oltre il banco della classifica")
+    if len(voices) != 8:
+        sys.exit(f"{len(voices)} file voce invece di 8 (i sette tipi e OMEGA)")
     for kind, (path, data) in enumerate(zip(voices, files)):
         if len(data) <= res:
             data = data + bytes(res - len(data)) + tail
         if len(data) > VOICE_PAGES * 256:
             sys.exit(f"{path}: più lungo di {VOICE_PAGES} pagine")
-        chips.append(chip(VOICE_BANK0 + kind, 0x8000, data))
+        if kind < 7:
+            chips.append(chip(VOICE_BANK0 + kind, 0x8000, data))
+            continue
+        # OMEGA: il file voce, poi il resto del banco (ROML e ROMH)
+        bank = data.ljust(VOICE_PAGES * 256, b"\0") + omega
+        if len(bank) > 2 * HALF:
+            sys.exit(f"banco di OMEGA: {len(bank)} byte, oltre 16 KB")
+        chips.append(chip(OM_BANK, 0x8000, bank[:HALF]))
+        if len(bank) > HALF:
+            chips.append(chip(OM_BANK, 0xA000, bank[HALF:]))
     if len(pick) != 0x1100:
         sys.exit(f"{sys.argv[4]}: {len(pick)} byte invece di 4352")
     chips.append(chip(PICK_BANK, 0x8000, pick))
@@ -184,7 +201,7 @@ def main() -> None:
     vectors[0x1FF0] = 0x40
     vectors[0x1FFA:0x2000] = bytes([0xF0, 0xFF] * 3)
     chips.append(chip(HI_BANK, 0xA000, bytes(vectors)))
-    assert VOICE_BANK0 + len(voices) <= PICK_BANK < WIN_BANK < END_BANK < HI_BANK < HI_BANK + 8 <= HOWTO_BANK
+    assert VOICE_BANK0 + 7 <= PICK_BANK < WIN_BANK < END_BANK < HI_BANK < HI_BANK + 8 <= HOWTO_BANK < HOWTO_BANK + 2 <= OM_BANK < 64
     out.write_bytes(header + b"".join(chips))
     print(f"{out}: {len(chips)} pezzi da 8 KB")
 

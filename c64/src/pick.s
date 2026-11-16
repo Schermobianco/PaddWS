@@ -91,6 +91,7 @@ s_steer:    .byte "STEER   ", 0
 s_bullet:   .byte "BULLET  ", 0
 
 kind_names: .word s_arcade, s_titan, s_hammer, s_twist, s_blaster, s_rush, s_guardian
+            .word s_omega            ; (OMEGA_KIND: OPPONENT del menu)
 s_arcade:   .byte "ARCADE  ", 0
 s_titan:    .byte "TITAN   ", 0
 s_hammer:   .byte "HAMMER  ", 0
@@ -98,6 +99,7 @@ s_twist:    .byte "TWIST   ", 0
 s_blaster:  .byte "BLASTER ", 0
 s_rush:     .byte "RUSH    ", 0
 s_guardian: .byte "GUARDIAN", 0
+s_omega:    .byte "OMEGA   ", 0
 ; frase del tipo (paddle_ui::tagline), centrata sotto la colonna
 kind_tags:  .word t_arcade, t_titan, t_hammer, t_twist, t_blaster, t_rush, t_guardian
 t_arcade:   .byte "  MORE BONUSES  ", 0

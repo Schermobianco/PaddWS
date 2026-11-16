@@ -57,7 +57,8 @@ localparam CONF_STR = {
 	"PaddWS;;",
 	"-;",
 	"O[37:36],Game type,NEXT,EVO,Classic;",
-	"H1O[40:38],Opponent,Ladder,Arcade,Twist,Hammer,Titan,Blaster,Rush,Guardian;",
+	"H1O[41:38],Opponent,Ladder,Arcade,Twist,Hammer,Titan,Blaster,Rush,Guardian,Secret;",
+	"H2O[42],Jukebox,Off,On;",
 	"H0O[15:14],Players,Two,One,Vs CPU;",
 	"O[7],Free play,Off,On;",
 	"O[9:8],Difficulty,Normal,Hard,Expert,Easy;",
@@ -154,14 +155,18 @@ wire [1:0] game_type = (osd_type == 2'd1) ? 2'd1 : (osd_type == 2'd2) ? 2'd0 : 2
 // Players vale solo in Classic ed EVO (in NEXT l'OSD lo nasconde): 0 due, 1 uno, 2 contro la CPU (3
 // da un CFG vecchio: pong_top)
 wire [1:0] players_mode = status[15:14];
-// Opponent (bit 40:38), solo in NEXT e solo dopo lo sblocco dell'allenamento (finale della scalata,
-// salvato nella NVRAM): 0 la scalata, 1-7 allenamento contro l'avversario di quel livello
-wire [2:0] train_level = status[40:38];
-wire train_unlocked;
-// voci nascoste dell'OSD (H0, H1 in CONF_STR): 0 Players in NEXT, 1 Opponent fuori da NEXT o prima
-// dello sblocco
+// Opponent (bit 41:38; il bit 41 dalla 4.4.0, prima sempre a zero), solo in NEXT e solo dopo lo
+// sblocco dell'allenamento (finale della scalata, salvato nella NVRAM): 0 la scalata, 1-7
+// allenamento contro l'avversario di quel livello, 8 (Secret) contro OMEGA: solo dopo averlo battuto;
+// prima l'OSD lo mostra comunque (non sa nascondere un valore) e pong_top tiene l'ultimo valido
+wire [3:0] train_level = status[41:38];
+wire train_unlocked, omega_unlocked, juke_unlocked;
+// voci nascoste dell'OSD (H0, H1, H2 in CONF_STR): 0 Players in NEXT, 1 Opponent fuori da NEXT o prima
+// dello sblocco, 2 Jukebox prima del suo sblocco (OMEGA battuto o le iniziali BAS)
 wire is_next = game_type == 2'd3;
-assign menumask = {14'd0, !(is_next && train_unlocked), is_next};
+assign menumask = {13'd0, !juke_unlocked, !(is_next && train_unlocked), is_next};
+// Jukebox (bit 42): al posto dell'attract i temi del gioco con gli oscilloscopi delle tre voci del SID
+wire jukebox = status[42];
 wire free_play = status[7];
 wire [1:0] difficulty = status[9:8] + 2'd1;   // l'OSD parte da Normal (0): 0 facile .. 3 esperto
 wire upright = !status[10];       // di default dritti: non si presume un tavolo
@@ -178,11 +183,11 @@ wire sid_6581 = status[23];
 wire super_moves = 1'b1;
 
 // cambiare modalità, avversario o numero di giocatori riporta all'attract
-reg [6:0] mode_q = 7'd0;
+reg [8:0] mode_q = 9'd0;
 reg       mode_changed = 1'b0;
 always @(posedge clk_sys) begin
-	mode_q <= {status[40:36], status[15:14]};
-	mode_changed <= mode_q != {status[40:36], status[15:14]};
+	mode_q <= {status[42:36], status[15:14]};
+	mode_changed <= mode_q != {status[42:36], status[15:14]};
 end
 
 wire reset = RESET | status[0] | buttons[1] | mode_changed;
@@ -202,6 +207,9 @@ pong_top pong
 	.players_mode(players_mode),
 	.train_level(train_level),
 	.train_unlocked(train_unlocked),
+	.omega_unlocked(omega_unlocked),
+	.juke_unlocked(juke_unlocked),
+	.jukebox(jukebox),
 	.free_play(free_play),
 	.difficulty(difficulty),
 	.super_moves(super_moves),

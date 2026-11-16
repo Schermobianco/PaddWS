@@ -25,3 +25,7 @@ mister/sim/sid/obj_writes/
 
 # configurazione locale della macchina forge (build_onforge.bat)
 forge.local.psd1
+
+# materiale della pagina di itch.io, solo in locale
+assets/itch/
+tools/gen_itch_cover.py

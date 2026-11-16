@@ -1545,7 +1545,9 @@ mod pixel_art_tests {
                 "name_blaster" => include_bytes!("../../../assets/titles/name_blaster.png"),
                 "name_rush" => include_bytes!("../../../assets/titles/name_rush.png"),
                 "name_guardian" => include_bytes!("../../../assets/titles/name_guardian.png"),
+                "name_omega" => include_bytes!("../../../assets/titles/name_omega.png"),
                 "challenger" => include_bytes!("../../../assets/titles/challenger.png"),
+                "warning" => include_bytes!("../../../assets/titles/warning.png"),
                 "perfect" => include_bytes!("../../../assets/titles/perfect.png"),
                 other => panic!("{other}"),
             }
@@ -1594,6 +1596,17 @@ mod pixel_art_tests {
                 assert_eq!(p != 0, art.owner[i] != 0, "{name}: pixel {i}");
             }
         }
+    }
+
+    /// Il logo del menu in NEXT: la sua palette ha solo i livelli dell'accento (1-5), e PADD si
+    /// separa in quattro lettere (le strisce, basse, vanno alla lettera vicina).
+    #[test]
+    fn the_menu_logo_has_only_the_accent_levels() {
+        let art = ArtPixels::decode(include_bytes!("../../../assets/titles/menu_logo.png"));
+        assert_eq!((art.w, art.h), (167, 25));
+        assert!(art.index.iter().all(|&i| i <= 5));
+        assert!(art.index.contains(&1) && art.index.contains(&5));
+        assert_eq!(art.letters.len(), 4);
     }
 
     #[test]

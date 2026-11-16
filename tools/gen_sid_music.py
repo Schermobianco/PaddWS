@@ -10,6 +10,7 @@ uguale a quello che c'è già non si riscrive):
   c64/gen/sid_music.inc          indirizzi per l'assembler
   c64/gen/themeK_V.bin           tracce dei temi di CHALLENGE (tema K, voce V), per i file voce
   c64/gen/ending.bin             tracce del finale di CHALLENGE (ENDING), per il finale del C64
+  c64/gen/omegaK_V.bin           tracce della canzone di OMEGA (sezione K = forma, voce V)
 
 Le versioni PC, Raspberry e web leggono la stessa ROM (mister/rtl/gen/sid_music.hex) con il port
 in Rust del player e un SID Rust (rust/sid), che suonano le musiche in tempo reale; gli effetti
@@ -25,6 +26,11 @@ Formato di una traccia (un byte per comando, il player avanza a 50 Hz):
             $D415 e $D416); si scrive subito
   0xB0      scivolata del taglio: i due byte dopo (basso, alto: 16 bit con segno, in 1/32 di passo
             del taglio) si sommano al taglio a ogni passo della canzone, prima dei canali; 0 la ferma
+  0xC0+l    wobble del taglio: l i 3 bit bassi del taglio di partenza, il byte dopo gli 8 alti, poi il
+            periodo P in passi (0 = spento): il taglio va subito al valore di partenza e, finché il
+            wobble è acceso, ogni P passi della canzone serviti ci torna (al posto della scivolata
+            di quel passo); in mezzo lo muove la scivolata del taglio (0xB0). Così una nota lunga
+            fa "wub" da sola, senza ribattere la nota
   0xFE      ricomincia la traccia
   0xFF      fine: la voce tace
 
@@ -32,7 +38,10 @@ Il taglio il player lo tiene a 16 bit, con 5 bit di frazione (taglio a 11 bit = 
 comando del taglio azzera la frazione, la scivolata si somma a 16 bit senza saturazione (il
 generatore controlla che il taglio resti tra 0 e 2047, check_cutoff). Con la scivolata accesa, a
 ogni passo della canzone servito (nel bullet time uno su due) il player scrive $D415 =
-(valore >> 5) & 7 e $D416 = valore >> 8, anche se non sono cambiati.
+(valore >> 5) & 7 e $D416 = valore >> 8, anche se non sono cambiati. Col wobble acceso, a ogni passo
+servito il player conta prima il wobble: se il conto arriva a zero il taglio torna al valore di
+partenza, il conto riparte da P e la scivolata di quel passo salta; in tutti e due i casi scrive il
+taglio. All'inizio di una canzone il wobble si spegne, come la scivolata.
 
 Strumento, 8 byte: forma d'onda, attacco/decadimento, sostegno/rilascio, impulso basso e alto,
 frame di rilascio, $D417, $D418. Uno strumento senza filtro ha 0 nel byte 6 e non tocca il filtro;
@@ -55,7 +64,8 @@ $10 passa-basso, $20 passa-banda, $40 passa-alto; volume 15). Il filtro è uno p
 
 Notazione usata qui: "A4/24" nota e durata, "r/12" pausa, "i2" strumento, "s+20" scivolata,
 "a1" arpeggio, "f400" taglio (0-2047), "w-64" scivolata del taglio (in 1/32 di passo per frame:
--64 = due passi), "loop" alla fine per ripetere. Tutte le musiche sono originali.
+-64 = due passi), "W900/11" wobble (taglio di partenza / periodo in passi), "W-" wobble spento, "loop"
+alla fine per ripetere. Tutte le musiche sono originali.
 
 Uso:  python tools/gen_sid_music.py
 """
@@ -174,6 +184,12 @@ def assemble(track: str) -> tuple[list[int], int]:
             v = int(tok[1:])
             assert -0x8000 <= v <= 0x7FFF, tok
             out += [0xB0, v & 0xFF, v >> 8 & 0xFF]
+        elif tok == "W-":
+            out += [0xC0, 0, 0]
+        elif tok[0] == "W":
+            fc, period = (int(v) for v in tok[1:].split("/"))
+            assert 0 <= fc <= 0x7FF and 1 <= period <= 255, tok
+            out += [0xC0 | fc & 7, fc >> 3, period]
         else:
             what, dur = tok.split("/")
             d = int(dur)
@@ -189,13 +205,13 @@ def bars(*parts: str) -> str:
     return " ".join(parts)
 
 
-FILTER_TOKENS = ("f", "w")
+FILTER_TOKENS = ("f", "w", "W")
 
 
 def uses_filter(track: str) -> bool:
     """La traccia usa il filtro: comandi del taglio o strumenti nel filtro."""
     for tok in track.split():
-        if tok[0] in FILTER_TOKENS and tok[1:2] in "0123456789+-" and tok[1:]:
+        if tok[0] in FILTER_TOKENS and tok[1:2] in "0123456789+-" and tok[1:] and tok != "W-":
             return True
         if tok[0] == "i" and len(INSTRUMENTS[int(tok[1:])]) > 5:
             return True
@@ -574,10 +590,118 @@ ENDING = {
     "arp": bars(*[ENDING_DRUMS, ENDING_DRUMS, ENDING_DRUMS, ENDING_FILL] * 3, *ENDING_BREAK) + " loop",
 }
 
+# ----------------------------------------------------------------------------- OMEGA
+# Il boss segreto: dubstep in mi, una sezione per ognuna delle sette forme (OMEGA0 = ARCADE, poi
+# TWIST, HAMMER, TITAN, BLASTER, RUSH, GUARDIAN), sempre più veloce: la partita passa alla sezione
+# dopo a ogni trasformazione. Prima voce: batteria a mezzo tempo (cassa sull'uno, rullante sul tre);
+# seconda voce: il basso profondo di HAMMER (strumento 9, nel passa-basso con la risonanza) sul giro
+# di OMEGA, con il wobble del taglio che lo fa respirare ("wub"). Nessun richiamo ai temi degli
+# avversari. Un ottavo dura OMEGA_EIGHTH[k] frame (da 136 a 188 BPM a mezzo tempo).
+OMEGA_EIGHTH = [11, 11, 10, 10, 9, 9, 8]
+OMEGA_F_HI, OMEGA_F_LO = 900, 160     # il wobble va da qui a qui (taglio a 11 bit)
+
+# il giro di OMEGA, 4 battute da 8 ottavi: (nota, durata in ottavi, un "wub" ogni quanti ottavi)
+OMEGA_RIFF = [
+    [("E2", 4, 1), ("E2", 2, 0.5), ("G2", 2, 1)],
+    [("A#1", 2, 2), ("A1", 2, 1), ("G1", 2, 0.5), ("F1", 2, 1)],
+    [("E2", 4, 1), ("E2", 2, 0.5), ("B1", 2, 1)],
+    [("C2", 2, 1), ("B1", 2, 1), ("A#1", 4, 0.5)],
+]
+
+# batteria di una battuta in ottavi: K cassa, S rullante, H charleston, h due charleston a
+# sedicesimi, L laser (BLASTER)
+OMEGA_DRUMS = {
+    "half": ["K H H H S H K H", "K H H H S H H H", "K H H H S H K H", "K H H K S H h h"],
+    "busy": ["K h H h S h K h", "K h K h S h h h", "K h H h S h K h", "K h K K S S S S"],
+    "laser": ["K H H H S H K L", "K H H H S H L H", "K H H H S H K L", "K H L K S H L L"],
+    "step": ["K H S H K K S H", "K H S H K H S h", "K H S H K K S H", "K h S h K K S S"],
+}
+
+
+def omega_drums(e: int, pattern: str) -> str:
+    out = []
+    for h in pattern.split():
+        if h == "K":
+            out.append(f"i8 C4/1 F3/1 C3/1 G2/1 i12 A1/{e - 4}")
+        elif h == "S":
+            out.append(f"i11 D6/{e}")
+        elif h == "H":
+            out.append(f"i10 A7/{e}")
+        elif h == "h":
+            out.append(f"i10 A7/{e // 2} A7/{e - e // 2}")
+        elif h == "L":
+            out.append(f"i2 s-160 E7/{e} s0")
+    return " ".join(out)
+
+
+def transpose(note: str, semis: int) -> str:
+    v = parse_note(note) + semis
+    return f"{[k for k, n in NAMES.items() if n == v % 12][0]}{v // 12}"
+
+
+def split_frames(total: int, parts: int) -> list[int]:
+    """`total` frame in `parts` pezzi interi quasi uguali."""
+    return [(total * (i + 1)) // parts - (total * i) // parts for i in range(parts)]
+
+
+def omega_wobble(e: int, rate: float = 1.0, rise: bool = False, octave: bool = False,
+                 drop: bool = False, triplets: bool = False) -> str:
+    """Il giro nel basso profondo con il wobble: ogni "wub" è la nota ribattuta (riparte con
+    l'attacco) con il taglio che riparte da OMEGA_F_HI e si chiude fino a OMEGA_F_LO (o si apre, con
+    `rise`). Il comando W fissa il taglio di partenza e il periodo, che è la durata del wub: finché
+    i wub durano uguale, il taglio torna all'inizio da solo insieme alla nota, e la traccia contiene
+    solo le note; un W nuovo solo quando la durata cambia, la scivolata solo quando cambia la
+    pendenza. `rate` moltiplica la durata dei wub, `octave` alza di un'ottava un wub su due, `drop`
+    fa cadere di tono l'ultimo wub delle note lunghe, `triplets` fa i wub a terzine."""
+    out = ["i9"]
+    slope_now, period_now = None, None
+    first, last = (OMEGA_F_LO, OMEGA_F_HI) if rise else (OMEGA_F_HI, OMEGA_F_LO)
+    for bar in OMEGA_RIFF:
+        for note, dur, wub in bar:
+            frames = dur * e
+            if triplets and wub >= 1:
+                count = max(1, round(dur / (wub * 2 / 3)))
+            else:
+                count = max(1, round(dur / (wub * rate)))
+            for j, length in enumerate(split_frames(frames, count)):
+                slope = ((last - first) * 32) // (length + 1)
+                if slope != slope_now:
+                    out.append(f"w{slope:+d}")
+                    slope_now = slope
+                if length != period_now:
+                    out.append(f"W{first}/{length}")
+                    period_now = length
+                pitch = transpose(note, 12) if octave and j % 2 else note
+                if drop and j == count - 1 and length >= 6:
+                    out.append(f"s-6 {pitch}/{length} s0")
+                else:
+                    out.append(f"{pitch}/{length}")
+    out.append("W- w0")
+    return " ".join(out)
+
+
+def omega_section(k: int) -> dict[str, str]:
+    e = OMEGA_EIGHTH[k]
+    drums, lead = [
+        ("half", omega_wobble(e, rate=2)),                          # ARCADE: wub lenti, a quarti
+        ("half", omega_wobble(e, drop=True)),                       # TWIST: le note lunghe cadono
+        ("busy", omega_wobble(e)),                                  # HAMMER: batteria piena
+        ("half", omega_wobble(e, rise=True)),                       # TITAN: wub rovesciati, "yoy"
+        ("laser", omega_wobble(e, octave=True)),                    # BLASTER: laser e salti d'ottava
+        ("busy", omega_wobble(e, rate=0.5)),                        # RUSH: wub a sedicesimi
+        ("step", omega_wobble(e, triplets=True, octave=True)),      # GUARDIAN: terzine, drumstep
+    ][k]
+    return {"bass": " ".join(omega_drums(e, p) for p in OMEGA_DRUMS[drums]) + " loop",
+            "lead": lead + " loop", "arp": ""}
+
+
+OMEGA_SONGS = [(f"OMEGA{k}", omega_section(k)) for k in range(7)]
+
 # Canzoni dopo i temi, come le mosse speciali: fuori dalla ROM del C64 (sid_music.bin), così i
-# numeri dei temi non cambiano; si cercano per nome (SID_SONG_ENDING).
+# numeri dei temi non cambiano; si cercano per nome (SID_SONG_ENDING, SID_SONG_OMEGA0..6).
 LATE_SONGS = [
     ("ENDING", ENDING),
+    *OMEGA_SONGS,
 ]
 
 C64_THEME_BASE = 0xF800        # nel C64: le tracce del tema, una per pagina (src/voice.s)
@@ -631,7 +755,10 @@ def check_filter_use(songs: list[tuple[str, dict[str, str]]], effects: list[tupl
 
 def check_cutoff(name: str, track: str) -> None:
     """Il taglio a 16 bit della traccia resta tra 0 e $FFFF (il player non satura): due giri della
-    traccia, nota per nota, con un passo di margine."""
+    traccia, nota per nota, con un passo di margine (con il wobble passo per passo)."""
+    if any(t[0] == "W" for t in track.split()):
+        check_wobble(name, track)
+        return
     fc, sweep = None, 0
     for tok in 2 * track.split():
         if tok[0] == "f":
@@ -643,6 +770,33 @@ def check_cutoff(name: str, track: str) -> None:
                 assert fc is not None, (name, "scivolata senza taglio")
                 fc += sweep * (int(tok.split("/")[1]) + 1)
                 assert 0 <= fc <= 0xFFFF, (name, "taglio fuori dai limiti", fc)
+
+
+def check_wobble(name: str, track: str) -> None:
+    """Come `check_cutoff`, per le tracce con il wobble: due giri, passo per passo come il player
+    (prima il wobble o la scivolata, poi i comandi della nota), con un passo in più per nota."""
+    fc, sweep, start, period, count = None, 0, 0, 0, 0
+    for tok in 2 * track.split():
+        if tok[0] == "f":
+            fc = int(tok[1:]) << 5
+        elif tok[0] == "w":
+            sweep = int(tok[1:])
+        elif tok == "W-":
+            period = 0
+        elif tok[0] == "W":
+            a, b = (int(v) for v in tok[1:].split("/"))
+            start, period, count, fc = a << 5, b, b, a << 5
+        elif "/" in tok and tok[0] != "s":
+            for _ in range(int(tok.split("/")[1]) + 1):
+                if period:
+                    count -= 1
+                    if count == 0:
+                        count, fc = period, start
+                        continue
+                if sweep:
+                    assert fc is not None, (name, "scivolata senza taglio")
+                    fc += sweep
+                    assert 0 <= fc <= 0xFFFF, (name, "taglio fuori dai limiti", fc)
 
 
 def build() -> dict:
@@ -713,24 +867,24 @@ def build() -> dict:
         rom += data
         lines.append(f"localparam SID_FX_{name} = {len(fx_starts)};")
     assert len(fx_starts) <= 7, "effetti oltre i 3 bit di pong_sid"
-    assert len(starts) <= 15, "canzoni oltre i 4 bit di pong_sid"
-    assert len(rom) <= 4096, len(rom)
+    assert len(starts) <= 31, "canzoni oltre i 5 bit di pong_sid"
+    assert len(rom) <= 8192, len(rom)
     lines.append(f"localparam SID_ROM_SIZE = {len(rom)};")
     lines.append(f"localparam SID_ROM_BASE_SIZE = {base_size};   // senza i temi (C64)")
     # indirizzi d'inizio delle tracce, come funzioni (canzone 1.., voce 0-2; effetto 1..)
-    lines.append("function [11:0] sid_song_start(input [3:0] song, input [1:0] voice);")
+    lines.append("function [12:0] sid_song_start(input [4:0] song, input [1:0] voice);")
     lines.append("    case ({song, voice})")
     for i, addrs in enumerate(starts, start=1):
         for v, a in enumerate(addrs):
-            lines.append(f"        {{4'd{i}, 2'd{v}}}: sid_song_start = 12'd{a};")
-    lines.append("        default: sid_song_start = 12'd0;")
+            lines.append(f"        {{5'd{i}, 2'd{v}}}: sid_song_start = 13'd{a};")
+    lines.append("        default: sid_song_start = 13'd0;")
     lines.append("    endcase")
     lines.append("endfunction")
-    lines.append("function [11:0] sid_fx_start(input [2:0] fx);")
+    lines.append("function [12:0] sid_fx_start(input [2:0] fx);")
     lines.append("    case (fx)")
     for i, a in enumerate(fx_starts, start=1):
-        lines.append(f"        3'd{i}: sid_fx_start = 12'd{a};")
-    lines.append("        default: sid_fx_start = 12'd0;")
+        lines.append(f"        3'd{i}: sid_fx_start = 13'd{a};")
+    lines.append("        default: sid_fx_start = 13'd0;")
     lines.append("    endcase")
     lines.append("endfunction")
     return dict(rom=rom, lines=lines, starts=starts, fx_starts=fx_starts, base_size=base_size,
@@ -780,6 +934,17 @@ def main() -> None:
     inc.append(f"SID_ENDING_LEAD = {len(tracks[0])}")
     inc.append(f"SID_ENDING_ARP = {len(tracks[0]) + len(tracks[1])}")
     inc.append(f"SID_ENDING_SIZE = {sum(len(t) for t in tracks)}")
+    # canzone di OMEGA (una sezione per forma): tracce come quelle dei temi, fino a tre pagine
+    first = len(SONGS) + len(THEMES) + 1
+    for k in range(len(OMEGA_SONGS)):
+        addrs = c64["starts"][first + k]
+        tr = [rom[a:min(b for b in bounds if b > a)] for a in addrs]
+        # fino a tre pagine per traccia (il C64 le copia dove non serve il file voce del nome)
+        assert all(len(t) <= 765 for t in tr) and tr[2] == [0xFF], (k, [len(t) for t in tr])
+        for v, data in enumerate(tr):
+            write_if_changed(C64_OUT / f"omega{k}_{v}.bin", bytes(data))
+    inc.append("; canzone di OMEGA (omegaK_V.bin, una sezione per forma, come i temi): nel player è la canzone del tema")
+    inc.append(f"SID_OMEGA_SECTIONS = {len(OMEGA_SONGS)}")
     write_if_changed(C64_OUT / "sid_music.inc", ("\n".join(inc) + "\n").encode())
     sizes = ", ".join(f"{n.lower()} {sum(len(t) for t in tr)}" for (n, _), tr in zip(THEMES, c64["theme_tracks"]))
     print(f"{len(c64['rom'])} byte ({base_size} nel C64), {len(SONGS)} canzoni, {len(THEMES)} temi ({sizes}), "

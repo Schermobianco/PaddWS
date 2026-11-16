@@ -77,6 +77,8 @@ start:
 .include "play.s"
 .include "pick.s"
 .include "challenge.s"
+.include "omega.s"
+.include "jukebox.s"
 .include "intro.s"
 .include "ef.s"
 .include "unpack.s"

@@ -47,7 +47,9 @@ Altre schermate in [Come si gioca](docs/it/come-si-gioca.md#schermate).
   continua la scalata, e le sfide vinte di fila si contano;
 - 7 tipi di racchetta, 6 bonus che arrivano in capsule da raccogliere e due mosse speciali da fare
   con una sequenza di comandi;
-- finita la scalata si sblocca l'allenamento contro l'avversario che si vuole.
+- finita la scalata si sblocca l'allenamento contro l'avversario che si vuole;
+- chi la finisce a HARD o EXPERT senza continue trova OMEGA, il boss segreto che diventa tutti
+  gli altri, e battendolo sblocca il jukebox con i temi del gioco.
 
 Ci sono anche **CLASSIC**, il Pong di sempre (in due, contro la CPU o da soli contro un muro), ed
 **EVO**, in due o contro la CPU, dove la palla colpita al centro della racchetta si potenzia e lo

@@ -29,6 +29,10 @@
 //! 44,1 kHz), come la registrazione del core simulato (`mister/sim/sid/render.cpp`): un filtro
 //! anti-aliasing semplice, e lo stesso suono delle registrazioni. I passi del player cadono sul
 //! confine del campione (al più 23 microsecondi di scarto, senza deriva).
+//!
+//! Oscilloscopi (`set_scope`, `scope`): con la richiesta accesa, per ogni campione d'uscita si
+//! tiene anche l'uscita di ciascuna delle tre voci (`Sid::take_voice_out`), in un buffer
+//! circolare per voce. Solo lettura: le scritture del player e il suono restano gli stessi.
 
 use crate::chip::{CLOCK_HZ, Sid};
 use crate::player::Player;
@@ -43,6 +47,48 @@ pub const FAST_STEP_CYCLES: u32 = 16_000;
 const SCALE: f32 = 1.0 / 32768.0;
 /// Voce di partita: `(campione - 8) << 11` sulla scala a 16 bit del SID, come in pong_top.v.
 const CALL_SCALE: f32 = 2048.0 * SCALE;
+
+/// Campioni tenuti per voce dagli oscilloscopi (`Scope`): circa 370 ms a 44,1 kHz.
+pub const SCOPE_LEN: usize = 1 << 14;
+
+/// Ultimi `SCOPE_LEN` campioni d'uscita di ogni voce, nella scala dell'uscita (volume compreso).
+#[derive(Clone, Debug)]
+pub struct Scope {
+    voices: [Vec<f32>; 3],
+    /// campioni scritti dall'accensione
+    written: u64,
+}
+
+impl Scope {
+    fn new() -> Scope {
+        Scope {
+            voices: std::array::from_fn(|_| vec![0.0; SCOPE_LEN]),
+            written: 0,
+        }
+    }
+
+    fn push(&mut self, out: [f32; 3]) {
+        let i = (self.written % SCOPE_LEN as u64) as usize;
+        for (v, s) in self.voices.iter_mut().zip(out) {
+            v[i] = s;
+        }
+        self.written += 1;
+    }
+
+    /// Campioni scritti dall'accensione dell'oscilloscopio.
+    pub fn written(&self) -> u64 {
+        self.written
+    }
+
+    /// Campione numero `i` (contato dall'accensione) della voce `voice` (0-2): 0 se non c'è più o
+    /// non c'è ancora.
+    pub fn sample(&self, voice: usize, i: u64) -> f32 {
+        if i >= self.written || i + (SCOPE_LEN as u64) < self.written {
+            return 0.0;
+        }
+        self.voices[voice][(i % SCOPE_LEN as u64) as usize]
+    }
+}
 
 /// Volume come guadagno di una voce del SID (256 = 1).
 fn gain(volume: f32) -> u32 {
@@ -70,6 +116,8 @@ pub struct Music {
     pending_fx: Option<(u8, bool)>,
     /// passi fatti (per le prove)
     steps: u64,
+    /// oscilloscopi delle voci, se richiesti
+    scope: Option<Box<Scope>>,
 }
 
 impl Music {
@@ -94,7 +142,20 @@ impl Music {
             call: CallVoice::default(),
             pending_fx: None,
             steps: 0,
+            scope: None,
         }
+    }
+
+    /// Accende o spegne gli oscilloscopi delle voci (`scope`): accesi riprendono da capo.
+    pub fn set_scope(&mut self, on: bool) {
+        if on != self.scope.is_some() {
+            self.scope = on.then(|| Box::new(Scope::new()));
+        }
+    }
+
+    /// Gli oscilloscopi delle voci, se accesi.
+    pub fn scope(&self) -> Option<&Scope> {
+        self.scope.as_deref()
     }
 
     pub fn rate(&self) -> u32 {
@@ -233,6 +294,8 @@ impl Music {
         if n == 0 {
             return 0.0;
         }
+        // l'uscita di ogni voce si somma dal campione prima
+        self.sid.take_voice_out();
         // i cicli del campione, spezzati agli eventi delle voci
         let (mut left, mut sum, mut call) = (n, 0i64, 0i64);
         while left > 0 {
@@ -250,6 +313,10 @@ impl Music {
                     self.effect(events, slow);
                 }
             }
+        }
+        if let Some(scope) = &mut self.scope {
+            let out = self.sid.take_voice_out();
+            scope.push(out.map(|v| v as f32 * SCALE / n as f32));
         }
         (sum as f32 * SCALE + call as f32 * CALL_SCALE * self.fx_volume) / n as f32
     }
@@ -354,6 +421,39 @@ mod tests {
         let mut b = vec![0.0; 4410 * 3];
         m.render(&mut b);
         assert!((rms(&b) / rms(&a) - 0.25).abs() < 1e-3);
+    }
+
+    /// Oscilloscopi: il suono resta identico, e in una canzone senza filtro le tre voci sommate
+    /// danno l'uscita.
+    #[test]
+    fn oscilloscopi_delle_voci() {
+        let render = |scope: bool| {
+            let mut m = Music::new(44_100);
+            m.set_scope(scope);
+            m.set_song(7);
+            let mut buf = vec![0.0; 22_050];
+            m.render(&mut buf);
+            (buf, m)
+        };
+        let ((plain, _), (seen, m)) = (render(false), render(true));
+        assert_eq!(plain, seen);
+        let scope = m.scope().unwrap();
+        assert_eq!(scope.written(), 22_050);
+        let n = scope.written();
+        let mut err = 0.0f32;
+        let mut voices = [0.0f32; 3];
+        for i in n - 4410..n {
+            let sum: f32 = (0..3).map(|v| scope.sample(v, i)).sum();
+            err = err.max((sum - seen[i as usize]).abs());
+            for (v, e) in voices.iter_mut().enumerate() {
+                *e = e.max(scope.sample(v, i).abs());
+            }
+        }
+        assert!(err < 1e-4, "{err}");
+        assert!(voices.iter().filter(|&&e| e > 0.01).count() >= 2, "{voices:?}");
+        // fuori dal buffer: zero
+        assert_eq!(scope.sample(0, n), 0.0);
+        assert_eq!(scope.sample(0, n - SCOPE_LEN as u64 - 1), 0.0);
     }
 
     /// Match point: 62,5 passi al secondo; rallentata: i canali della canzone a metà.

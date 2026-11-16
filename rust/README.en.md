@@ -14,7 +14,9 @@ paddws [--config FILE] [--fullscreen | --windowed] [--crt | --no-crt] [--width N
 
 `--width 0` follows the monitor's aspect ratio, `--width 320 --height 240` is the MiSTer core's
 resolution. For testing: `--screenshot-tour DIR` (one screenshot per scene), `--paddle-gallery DIR`
-(one image per paddle type), `--bench SECONDS` (plays by itself and prints frame timings).
+(one image per paddle type), `--bench SECONDS` (plays by itself and prints frame timings);
+shortcuts that leave the configuration alone: `--level N` (the ladder from level N), `--omega`
+(straight to the OMEGA alarm), `--jukebox`.
 
 The configuration, `padd_config.json`, is looked up next to the executable, then in the current
 folder and in its parent (handy with `cargo run` inside `rust/`); the menu saves its choices there,

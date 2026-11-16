@@ -9,6 +9,8 @@ use paddws_core::{Bonus, Capsule, Control, Cpu, DIFFICULTY_LEVELS, Input, Match,
 use core::mem::MaybeUninit;
 use core::ptr::addr_of_mut;
 
+use paddws_mister_ui::{Port, Ui};
+
 use crate::map::*;
 use crate::words;
 
@@ -31,6 +33,30 @@ pub struct Engine {
     game: Option<Game>,
     /// numero dell'ultima partita servita (`STATUS[7:0]`)
     epoch: u32,
+    /// schermate e scritte (schermo a oggetti)
+    ui: Ui,
+}
+
+/// I registri dello schermo a oggetti sul bus del firmware.
+struct UiPort<'a, B: Bus>(&'a mut B);
+
+impl<B: Bus> Port for UiPort<'_, B> {
+    #[inline(always)]
+    fn read(&mut self, word: u32) -> u32 {
+        self.0.read(UI_REGS + 4 * word)
+    }
+
+    #[inline(always)]
+    fn write(&mut self, word: u32, value: u32) {
+        self.0.write(UI_REGS + 4 * word, value);
+    }
+
+    #[inline(always)]
+    fn write_block(&mut self, word: u32, values: &[u32]) {
+        for (k, v) in values.iter().enumerate() {
+            self.0.write(UI_REGS + 4 * (word + k as u32), *v);
+        }
+    }
 }
 
 /// Le parole di stato vanno direttamente nei registri dell'HDL, una scrittura ciascuna.
@@ -53,6 +79,10 @@ fn patch(m: &mut Match, field: u32, value: u32) {
     let i = ((field >> 8) & 0xFF) as usize;
     if field & 0xFF == PATCH_SCORE {
         m.score[i & 1] = value as u16;
+        return;
+    }
+    if field & 0xFF == PATCH_BALL_X {
+        m.ball.x = value as i32;
         return;
     }
     let Some(n) = m.next.as_mut() else { return };
@@ -134,15 +164,19 @@ impl Engine {
             unsafe { addr_of_mut!((*p).params[d as usize]).write(params) };
         }
         // SAFETY: come sopra; dopo queste scritture tutti i campi sono inizializzati
-        unsafe {
+        let e = unsafe {
             addr_of_mut!((*p).game).write(None);
             addr_of_mut!((*p).epoch).write(0);
+            addr_of_mut!((*p).ui).write(Ui::new());
             slot.assume_init_mut()
-        }
+        };
+        e.ui.init(&mut UiPort(bus));
+        e
     }
 
-    /// Serve una richiesta dell'HDL, se c'è: prima una nuova partita, poi un tick.
-    /// Restituisce `true` se ha lavorato.
+    /// Serve una richiesta dell'HDL, se c'è: prima una nuova partita, poi un tick, poi il frame
+    /// dello schermo a oggetti (quando pong_top ha fotografato lo stato delle schermate, cioè quando
+    /// il frame non ha più tick da fare). Restituisce `true` se ha lavorato.
     pub fn poll<B: Bus>(&mut self, bus: &mut B) -> bool {
         let status = bus.read(R_STATUS);
         let epoch = status & STATUS_EPOCH;
@@ -157,7 +191,7 @@ impl Engine {
         } else if status & STATUS_STEP != 0 {
             self.tick(bus);
         } else {
-            return false;
+            return self.ui.poll(&mut UiPort(bus));
         }
         bus.write(W_DONE, epoch);
         true
@@ -183,6 +217,12 @@ impl Engine {
                 seed,
             );
             m.set_super_moves(supers);
+            // OMEGA: la racchetta di quel lato cambia forma a ogni punto dell'avversario
+            if c & 1 << 30 != 0 {
+                m.set_morph(Side::Left);
+            } else if c & 1 << 31 != 0 {
+                m.set_morph(Side::Right);
+            }
             m
         } else {
             Match::new(params, if two { 2 } else { 1 }, evo, seed)

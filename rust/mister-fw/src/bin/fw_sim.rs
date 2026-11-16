@@ -8,6 +8,8 @@
 //!   --native  esegue `Engine` sul PC invece che nell'emulatore (più veloce, stessa verifica)
 //!   --ticks N solo i primi N tick di ogni traccia
 //!   --profile SIMBOLI  istruzioni per funzione, con i simboli di `llvm-nm -C -S` sul firmware
+//!   --ui REGISTRO  esegue invece lo schermo a oggetti sugli stati di un registro PONG_UILOG (simulatore
+//!             dei frame): istruzioni per frame, stack, panic
 
 use std::collections::HashMap;
 use std::fs;
@@ -39,6 +41,12 @@ struct Regs {
     panic: Option<u32>,
     /// letture di STATUS: la prima segna la fine dell'avvio
     status_reads: u64,
+    /// schermo a oggetti (--ui): registri dello stato delle schermate, numero della foto, fine del
+    /// frame scritta dal firmware (numero di oggetti), scritture nella regione
+    uis: Vec<u32>,
+    ui_seq: u32,
+    ui_done: Option<u32>,
+    ui_writes: u64,
 }
 
 impl Regs {
@@ -67,6 +75,16 @@ impl Regs {
 
 impl Bus for Regs {
     fn read(&mut self, reg: u32) -> u32 {
+        if reg >= UI_REGS {
+            let word = (reg - UI_REGS) / 4;
+            return if word & 0x1000 == 0 {
+                0
+            } else if word & 0x40 != 0 {
+                self.ui_seq
+            } else {
+                self.uis.get((word & 63) as usize).copied().unwrap_or(0)
+            };
+        }
         match reg {
             R_STATUS => {
                 self.status_reads += 1;
@@ -86,6 +104,13 @@ impl Bus for Regs {
     }
 
     fn write(&mut self, reg: u32, value: u32) {
+        if reg >= UI_REGS {
+            self.ui_writes += 1;
+            if (reg - UI_REGS) / 4 == 0xB00 {
+                self.ui_done = Some(value);
+            }
+            return;
+        }
         match reg {
             W_DONE => {
                 if value & STATUS_EPOCH == self.epoch {
@@ -477,7 +502,8 @@ fn run_trace(t: &Trace, emu: Option<&[u8]>, max_ticks: usize, prof: &mut Option<
         | (get("P_DIFFICULTY")? as u32 & 3) << 4
         | (get("P_LOADOUT0")? as u32) << 6
         | (get("P_LOADOUT1")? as u32) << 15
-        | (kinds as u32) << 24;
+        | (kinds as u32) << 24
+        | (t.cfg.get("P_MORPH").copied().unwrap_or(0) as u32 & 3) << 30;
     regs.seed = seed;
     regs.cpu = get("P_CPU_LEVEL0")? as u32 | (get("P_CPU_LEVEL1")? as u32) << 4 | (get("P_CONTROL")? as u32) << 8;
     regs.cpu_seeds = [seed, seed ^ 1];
@@ -612,8 +638,66 @@ fn print_profile(path: &Path, prof: &[u64]) {
     }
 }
 
+/// --ui LOG: esegue il firmware sugli stati delle schermate di un registro PONG_UILOG (simulatore
+/// dei frame) e misura ogni frame dello schermo a oggetti: istruzioni, scritture, stack.
+fn run_ui(image: &[u8], log: &Path, symbols: Option<&Path>) -> Result<(), String> {
+    let text = fs::read_to_string(log).map_err(|e| format!("{}: {e}", log.display()))?;
+    let mut regs = Regs::new(240);
+    regs.uis = vec![0; 64];
+    let (mut m, boot) = Machine::boot(Some(image), &mut regs)?;
+    let Machine::Emu(cpu) = &mut m else { unreachable!() };
+    println!("avvio: {boot} istruzioni");
+    if symbols.is_some() {
+        cpu.prof = Some(vec![0u64; RAM_SIZE as usize / 4]);
+    }
+    let (mut worst, mut worst_at, mut sum, mut n) = (0u64, 0i64, 0u64, 0u64);
+    for line in text.lines() {
+        let v: Vec<&str> = line.split_whitespace().collect();
+        if v.len() < 2 || v[0] == "#" {
+            continue;
+        }
+        let frame: i64 = v[0].parse().map_err(|_| "riga del registro".to_string())?;
+        for (k, s) in v[1..].iter().enumerate().take(64) {
+            regs.uis[k] = u32::from_str_radix(s, 16).map_err(|_| "riga del registro".to_string())?;
+        }
+        regs.ui_seq = (regs.ui_seq + 1) & 0xFF;
+        regs.ui_done = None;
+        let start = cpu.instret;
+        while regs.ui_done.is_none() {
+            cpu.step(&mut regs)?;
+            if let Some(code) = regs.panic {
+                return Err(format!(
+                    "frame {frame}: panic del firmware ({code:#x}) a pc {:#010x}",
+                    cpu.pc
+                ));
+            }
+            if cpu.instret - start > 5_000_000 {
+                return Err(format!("frame {frame}: il firmware non finisce il frame"));
+            }
+        }
+        let used = cpu.instret - start;
+        if used > worst {
+            worst = used;
+            worst_at = frame;
+        }
+        sum += used;
+        n += 1;
+    }
+    println!(
+        "{n} frame: istruzioni per frame media {}, massimo {worst} (frame {worst_at}); stack minimo {:#x} ({} byte usati)",
+        sum / n.max(1),
+        cpu.min_sp,
+        RAM_SIZE - cpu.min_sp
+    );
+    if let (Some(path), Some(p)) = (symbols, &cpu.prof) {
+        print_profile(path, p);
+    }
+    Ok(())
+}
+
 fn main() -> ExitCode {
     let mut fw_dir = PathBuf::from("../mister/rtl/gen");
+    let mut ui_log: Option<PathBuf> = None;
     let mut native = false;
     let mut max_ticks = usize::MAX;
     let mut dirs = Vec::new();
@@ -622,11 +706,14 @@ fn main() -> ExitCode {
     while let Some(a) = args.next() {
         match a.as_str() {
             "--fw" => fw_dir = args.next().expect("--fw CARTELLA").into(),
+            "--ui" => ui_log = Some(args.next().expect("--ui REGISTRO").into()),
             "--native" => native = true,
             "--profile" => symbols = Some(args.next().expect("--profile SIMBOLI").into()),
             "--ticks" => max_ticks = args.next().and_then(|v| v.parse().ok()).expect("--ticks N"),
             "-h" | "--help" => {
-                println!("Uso: paddws-fw-sim [--fw CARTELLA] [--native] [--ticks N] TRACCIA...");
+                println!(
+                    "Uso: paddws-fw-sim [--fw CARTELLA] [--native] [--ticks N] TRACCIA...  |  paddws-fw-sim --ui REGISTRO"
+                );
                 return ExitCode::SUCCESS;
             }
             _ => dirs.push(PathBuf::from(a)),
@@ -645,6 +732,15 @@ fn main() -> ExitCode {
     };
     if let Some(i) = &image {
         println!("firmware: {} byte da {}", i.len(), fw_dir.display());
+    }
+    if let (Some(log), Some(i)) = (&ui_log, &image) {
+        return match run_ui(i, log, symbols.as_deref()) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                println!("FAIL {e}");
+                ExitCode::FAILURE
+            }
+        };
     }
     let mut prof = symbols.as_ref().map(|_| vec![0u64; RAM_SIZE as usize / 4]);
     let mut failed = 0;

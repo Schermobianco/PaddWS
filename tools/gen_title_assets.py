@@ -219,6 +219,62 @@ def challenger() -> Canvas:
     return c
 
 
+def warning() -> Canvas:
+    """WARNING! nella targa rossa di HERE COMES A NEW CHALLENGER!: l'allarme prima di OMEGA."""
+    c = Canvas(320, 40)
+    plate(c, 64, 255, 1, 38)
+    p, w = text("WARNING!", 2, 3, 18)
+    ox = 160 - w // 2
+    for x, y in p:
+        c.put(ox + x + 1, 9 + y, K)
+    for x, y in p:
+        c.put(ox + x, 8 + y, W if y < 12 else Y)
+    return c
+
+
+# il simbolo omega disegnato a pixel (15x14): arco e due piedi
+OMEGA_SIGN = [
+    "....#######....",
+    "..###.....###..",
+    ".##.........##.",
+    "##...........##",
+    "##...........##",
+    "##...........##",
+    "##...........##",
+    ".##.........##.",
+    "..##.......##..",
+    "...##.....##...",
+    "....##...##....",
+    "....##...##....",
+    "######...######",
+    "######...######",
+]
+
+
+def omega() -> Canvas:
+    """Sigillo: il simbolo omega (giallo in alto, rosso in basso, ombra rosso scuro) fra due barre
+    rosse, e sotto OMEGA alto e bianco con l'ombra rosso scuro."""
+    c = Canvas(80, 34)
+    for y, row in enumerate(OMEGA_SIGN):
+        for x, ch in enumerate(row):
+            if ch == "#":
+                c.put(x + 33, y + 1, DR)
+    for y, row in enumerate(OMEGA_SIGN):
+        for x, ch in enumerate(row):
+            if ch == "#":
+                c.put(x + 32, y, Y if y < 7 else RD)
+    for x in range(28):
+        for xx in (x, 79 - x):
+            c.put(xx, 6, RD), c.put(xx, 7, DR)
+    p, w = text("OMEGA", 1, 2, 10)
+    ox = 40 - w // 2
+    for x, y in p:
+        c.put(ox + x + 1, y + 19, DR)
+    for x, y in p:
+        c.put(ox + x, y + 18, W)
+    return c
+
+
 def perfect() -> Canvas:
     """Cromato: lettere larghe e altissime a fasce bianco, giallo, giallo scuro, filetto sotto."""
     c = Canvas(320, 30)
@@ -243,6 +299,8 @@ TITLES = {
     "name_guardian": guardian,
     "challenger": challenger,
     "perfect": perfect,
+    "warning": warning,
+    "name_omega": omega,
 }
 
 

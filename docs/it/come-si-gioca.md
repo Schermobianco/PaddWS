@@ -160,19 +160,35 @@ semplici). Le partite sono NEXT a 5 punti.
   campione contano: **n WINS** compare a fine sfida dalla parte di chi ha vinto e nelle
   presentazioni dalla sua parte (chi batte il campione riparte da 1).
 - **Finale**: battuto l'ultimo avversario arrivano CONGRATULATIONS e la voce "YOU WIN!", la
-  sfilata dei sette avversari con il timbro DEFEATED (sul MiSTer un K.O. rosso, e la racchetta
-  battuta si spegne), il punteggio finale con il premio del
+  sfilata dei sette avversari con il timbro DEFEATED (sul MiSTer la racchetta battuta si spegne),
+  il punteggio finale con il premio del
   campione (la vittoria dell'ultimo livello, più la partita perfetta), "YOU ARE THE PADD WS
   CHAMPION" con i fuochi d'artificio, i titoli di coda e THE END, in circa un minuto, con una
   musica tutta sua; poi le iniziali. Start lo salta. La voce "YOU WIN!" si sente anche a ogni
   partita vinta contro la CPU. Se chi vince non ha lasciato neanche un punto all'avversario, al posto
   di YOU WIN (o di GAME OVER, in due) compare PERFECT, urlato dalla voce.
+- **OMEGA**: chi sale la scalata a HARD o EXPERT dal primo livello senza usare continue, battuto
+  il GUARDIAN non va al finale: scatta l'allarme WARNING! e arriva OMEGA, il boss segreto ("IT
+  BECOMES THEM ALL"). Comincia come ARCADE e a ogni punto che subisce diventa l'avversario
+  successivo della scala, fino al GUARDIAN: un lampo bianco, il nome della forma nuova per un
+  secondo, la sua racchetta, i suoi bonus e la sua sezione della canzone. La rete segue il basso
+  della musica. Si gioca a 7 punti, senza continue né sfidanti. Se lo batti prendi 50.000 punti (più
+  il premio della partita perfetta), la sua racchetta si spezza nelle sette degli avversari e il
+  finale si chiude con OMEGA DEFEATED; in classifica il livello è ALL+. Se perdi vedi il finale
+  normale.
 - **Allenamento**: arrivati al finale almeno una volta, in NEXT il menu ha anche **OPPONENT** (sul
   MiSTer *Opponent* nell'OSD, sul C64 la riga al posto di PLAYERS). LADDER è la scalata; con uno dei
   sette avversari si gioca una partita sola contro di lui, con la sua racchetta, i suoi bonus e la
-  sua CPU alla difficoltà del menu, senza punti, classifica, continue né sfidanti. Lo sblocco resta
-  salvato: sul PC nella configurazione (`game.training`), nel browser nel `localStorage`, sul MiSTer
-  nel file della classifica, sul C64 nella flash della cartuccia.
+  sua CPU alla difficoltà del menu, senza punti, classifica, continue né sfidanti. Battuto OMEGA,
+  anche lui è fra gli avversari, dopo il GUARDIAN (sul MiSTer *Opponent: Secret*, che senza lo
+  sblocco non cambia niente). Gli sblocchi restano salvati: sul PC nella configurazione
+  (`game.training`, `game.training_omega`, `game.jukebox`), nel browser nel `localStorage`, sul
+  MiSTer nel file della classifica, sul C64 nella flash della cartuccia.
+- **Jukebox**: battendo OMEGA, o scrivendo BAS come iniziali in classifica, il menu ha anche
+  **JUKEBOX** (sul MiSTer la voce *Jukebox* dell'OSD, che compare solo sbloccata). Suona i temi
+  dei sette avversari, il finale e OMEGA, con tre oscilloscopi, uno per voce del SID: su e giù
+  cambiano brano, il fuoco lo ferma e lo fa ripartire, Esc (sul C64 RUN/STOP) torna al menu. Sul
+  C64 le onde si ricostruiscono da quello che il player scrive nel SID.
 - **Voce**: nella presentazione una voce digitalizzata "da SID" annuncia il nome dell'avversario
   (su C64 e MiSTer con il trucco del registro del volume del SID; sul C64 dalla cartuccia). Su PC,
   web e MiSTer la stessa voce dice anche il nome della racchetta appena confermata nella scelta,
@@ -203,7 +219,7 @@ tempo reale un SID scritto in Rust con lo stesso player (`rust/sid`), come il co
   canzone. Il volume della musica cambia subito anche per la canzone che suona; cambiando quello
   degli effetti si sente un colpo al volume nuovo.
 - Sul C64 c'è un solo **VOLUME**, per musica ed effetti insieme (il SID ha un solo registro del
-  volume), da 0% a 100% a passi del 10%; le voci digitalizzate restano al loro livello.
+  volume), da 0% a 100% a passi del 10%, voci digitalizzate comprese (a 0% tacciono).
 - **ATTRACT SOUND: OFF** rende muto l'attract, musica compresa, e spegne anche la musica del menu e
   delle scelte di bonus e racchetta.
 - Nel browser, anche sui telefoni e sui tablet, i volumi sono quelli del PC: si abbassano dal
@@ -318,6 +334,8 @@ menu. Solo PAL; finora provata in VICE. Dettagli in [c64/README.md](../../c64/RE
 | mosse speciali | ✓ | ✓ | ✓ (joystick) | — |
 | HOW TO PLAY | ✓ | ✓ | ✓ (joystick) | — |
 | NEXT: scalata, classifica, nuovo sfidante, WINS e allenamento | ✓ | ✓ | ✓ | — |
+| OMEGA e jukebox | ✓ | ✓ | ✓ | — |
+| logo nel menu di NEXT | ✓ | — (menu nell'OSD) | — | — |
 | demo nell'attract | modalità scelta | modalità scelta | — | — |
 | musiche del SID | SID in Rust | SID del core C64 | SID vero | — |
 | voci "da SID" | ✓ | ✓ | nome dell'avversario, READY?, GO!, YOU WIN! e PERFECT! | — |

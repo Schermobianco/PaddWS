@@ -205,6 +205,24 @@ const WARP_LINE_HALF: f32 = 9.0;
 /// a `BULLET_GHOST_TICKS` (meno immagini, e bordo che lampeggia, durante le rampe).
 const BULLET_GHOST_STEP: usize = 12;
 const BULLET_GHOST_TICKS: usize = 96;
+/// OMEGA: la racchetta è rossa (il rosso del timbro e dei fuochi); con l'easter egg RED, che
+/// scambia giallo e rosso, viola (lo scambio lascia stare i viola). A ogni trasformazione un lampo
+/// bianco di 8 frame.
+const OMEGA_RED: Color = Color::new(230.0 / 255.0, 40.0 / 255.0, 40.0 / 255.0, 1.0);
+const OMEGA_PURPLE: Color = Color::new(160.0 / 255.0, 64.0 / 255.0, 224.0 / 255.0, 1.0);
+pub const MORPH_FLASH_SECONDS: f64 = 8.0 / 60.0;
+/// OMEGA: a ogni trasformazione, con il lampo, il nome disegnato della forma nuova (la grafica delle
+/// presentazioni) per `MORPH_NAME_SECONDS`, nella metà del campo di OMEGA in alto; negli ultimi
+/// `MORPH_NAME_BLINK` lampeggia e sparisce.
+pub const MORPH_NAME_SECONDS: f64 = 1.0;
+const MORPH_NAME_BLINK: f64 = 10.0 / 60.0;
+/// Altezza del centro del nome (frazione dell'altezza del campo, dall'alto).
+const MORPH_NAME_Y: f32 = 0.3;
+
+/// Colore della racchetta di OMEGA (vedi `OMEGA_RED`).
+pub fn omega_color(app: &App) -> Color {
+    if app.egg { OMEGA_PURPLE } else { OMEGA_RED }
+}
 
 /// BULLET a schermo, per chi l'ha attivato.
 #[derive(Clone, Copy)]
@@ -490,7 +508,7 @@ impl Pick {
         let mut chosen = [Vec::new(), Vec::new()];
         if let Some(run) = &app.run {
             // i bonus dell'avversario del primo livello (nell'allenamento di quello scelto)
-            chosen[1] = paddws_core::challenge::RUNGS[run.level].loadout.to_vec();
+            chosen[1] = crate::challenge_ui::rung(run.level).loadout.to_vec();
         } else if app.cpu {
             // tre bonus diversi a caso, dal seme della partita
             let mut rng = paddws_core::Rng::new(app.seed ^ 0x9E37_79B9);
@@ -819,6 +837,11 @@ pub struct NextFx {
     ball_left: bool,
     /// colpo di una mossa speciale per racchetta: mossa, livello e secondi dall'inizio
     kick: [Option<(Special, u8, f64)>; 2],
+    /// OMEGA: tipi delle racchette prima del tick e secondi del lampo della trasformazione
+    kinds_before: [Option<PaddleKind>; 2],
+    morph_flash: [f64; 2],
+    /// OMEGA: nome della forma nuova, lato di OMEGA e secondi che restano
+    morph_name: Option<(PaddleKind, usize, f64)>,
 }
 
 impl NextFx {
@@ -840,7 +863,22 @@ impl NextFx {
             burst: None,
             ball_left: false,
             kick: [None; 2],
+            kinds_before: [None; 2],
+            morph_flash: [0.0; 2],
+            morph_name: None,
         }
+    }
+
+    /// Nome della forma `kind` di OMEGA (dal lato `side`), già acceso da `seconds` (per le
+    /// schermate di verifica; in partita parte con il lampo della trasformazione).
+    pub fn show_morph_name(&mut self, kind: PaddleKind, side: usize, seconds: f64) {
+        self.morph_name = Some((kind, side, MORPH_NAME_SECONDS - seconds));
+    }
+
+    /// Lampo della trasformazione di OMEGA sulla racchetta `side`, già acceso da `seconds` (per le
+    /// schermate di verifica; in partita parte quando il tipo cambia).
+    pub fn show_morph(&mut self, side: usize, seconds: f64) {
+        self.morph_flash[side] = MORPH_FLASH_SECONDS - seconds;
     }
 
     /// Scritta di un bonus al centro in basso (come "P1 SMASH!").
@@ -877,11 +915,21 @@ impl NextFx {
             self.meters = [n.players[0].meter, n.players[1].meter];
             self.rise_pending = n.rise_break.is_some();
             self.bullet_before = n.bullet;
+            self.kinds_before = [n.players[0].kind, n.players[1].kind];
         }
     }
 
     pub fn after_tick(&mut self, game: &Match, events: Events, scale: f32) {
         let Some(n) = &game.next else { return };
+        // OMEGA: la racchetta che cambia tipo in questo tick lampeggia
+        if let Some(side) = game.morph()
+            && n.players[side as usize].kind != self.kinds_before[side as usize]
+        {
+            self.morph_flash[side as usize] = MORPH_FLASH_SECONDS;
+            if let Some(kind) = n.players[side as usize].kind {
+                self.morph_name = Some((kind, side as usize, MORPH_NAME_SECONDS));
+            }
+        }
         if events.has(Event::Activate) {
             for side in 0..2 {
                 let pl = &n.players[side];
@@ -1007,13 +1055,20 @@ impl NextFx {
     }
 
     pub fn update(&mut self, dt: f64) {
-        for t in self.barrier_flash.iter_mut().map(|(t, _)| t).chain(&mut self.rush_ghost) {
+        let flashes = self.barrier_flash.iter_mut().map(|(t, _)| t).chain(&mut self.rush_ghost);
+        for t in flashes.chain(&mut self.morph_flash) {
             *t = (*t - dt).max(0.0);
         }
         if let Some((_, t)) = &mut self.label {
             *t -= dt;
             if *t <= 0.0 {
                 self.label = None;
+            }
+        }
+        if let Some((_, _, t)) = &mut self.morph_name {
+            *t -= dt;
+            if *t <= 0.0 {
+                self.morph_name = None;
             }
         }
         // la scritta della mossa armata resta finché c'è la mossa (`after_tick`)
@@ -1285,6 +1340,19 @@ impl NextFx {
         );
         let x = x + shake;
         let (pw, ph) = (to_f32(pad.width), to_f32(pad.height));
+        // OMEGA: rossa (o viola), bianca nel lampo della trasformazione, grigia nel bullet time
+        // dell'avversario come le altre
+        let skin = if game.morph().is_some_and(|s| s as usize == side) {
+            if self.morph_flash[side] > 0.0 {
+                white
+            } else if cold {
+                gray
+            } else {
+                omega_color(app)
+            }
+        } else {
+            white
+        };
         // chi ha il BULLET armato, in attesa della palla: un bordo di accento attorno alla
         // racchetta che pulsa piano (acceso 3/4 di secondo, spento 1/4); nel bullet time no, la
         // racchetta si distingue già perché resta nitida e a colori
@@ -1390,7 +1458,7 @@ impl NextFx {
                 );
             }
             Some(b) => {
-                body(if blink { gray } else { white });
+                body(if blink { gray } else { skin });
                 let ix = if side == 0 { x + pw + 3.0 * u } else { x - pw - 12.0 * u };
                 draw_icon(b, ix, r.screen_y(y) - 4.5 * u, u, gray);
             }
@@ -1402,12 +1470,36 @@ impl NextFx {
                 } else {
                     (Special::Rise, pl.rise)
                 };
-                body(if level >= MAX_SPECIAL_LEVEL { accent } else { white });
+                body(if level >= MAX_SPECIAL_LEVEL { accent } else { skin });
                 let ix = if side == 0 { x + pw + 3.0 * u } else { x - pw - 12.0 * u };
                 draw_special_icon(special, ix, r.screen_y(y) - 4.5 * u, u, side, accent);
             }
-            _ => body(flash.unwrap_or(white)),
+            _ => body(flash.unwrap_or(skin)),
         }
+    }
+
+    /// OMEGA: il nome della forma nuova (`morph_name`), centrato nella metà del campo di OMEGA in
+    /// alto; dritto con i punteggi dritti, altrimenti girato verso il giocatore come il suo
+    /// punteggio.
+    fn draw_morph_name(&self, app: &App) {
+        let Some((kind, side, left)) = self.morph_name else { return };
+        if left < MORPH_NAME_BLINK && ((left * 30.0) as i64) % 2 == 0 {
+            return;
+        }
+        let r = &app.renderer;
+        let (w, h) = (r.world_w, r.world_h);
+        let x = if side == 0 { w / 4.0 } else { w * 3.0 / 4.0 };
+        // il giocatore sta dall'altra parte: a sinistra legge girato di 90 gradi in senso orario
+        let rotation = if app.cfg.game.scores_upright {
+            0.0
+        } else if side == 1 {
+            std::f32::consts::FRAC_PI_2
+        } else {
+            -std::f32::consts::FRAC_PI_2
+        };
+        let paint = crate::titles::paint(&app.cfg.colors);
+        let art = app.assets.titles.name(kind);
+        r.art_centered(art, 1.0, x, h * MORPH_NAME_Y, rotation, crate::render::ArtPart::Whole, &paint);
     }
 
     /// Scossa orizzontale dello schermo dopo il colpo di una mossa MAX (si somma a quella del SUPER).
@@ -1497,6 +1589,7 @@ impl NextFx {
     /// tranne le racchette e la palla in `pos` (coordinate del core) e la scia della palla, che si
     /// ridisegnano sopra quelle che toccano: le scritte passano sotto.
     pub fn draw_labels(&self, app: &App, game: &Match, pos: &[(f32, f32); 3], shake: f32) {
+        self.draw_morph_name(app);
         let ball = pos[2];
         let r = &app.renderer;
         let (w, h) = (r.world_w, r.world_h);
@@ -1642,5 +1735,34 @@ impl NextFx {
             self.draw_trail(app, game, shake);
             self.draw_ball(app, game, ball, shake);
         }
+    }
+}
+
+#[cfg(test)]
+mod omega_tests {
+    use super::*;
+    use paddws_core::challenge::OMEGA;
+
+    /// Il nome della forma nuova compare solo quando la racchetta di OMEGA cambia tipo, non
+    /// all'inizio della partita, e sparisce dopo `MORPH_NAME_SECONDS`.
+    #[test]
+    fn the_new_form_is_named_only_at_a_transformation() {
+        let params = paddws_core::Params::new(&paddws_core::Tuning::default());
+        let mut m = Match::new_next_paddles(params, [OMEGA.loadout; 2], [None, Some(OMEGA.kind)], 3);
+        m.set_morph(Side::Right);
+        let mut fx = NextFx::new();
+        fx.before_tick(&m);
+        m.step(&paddws_core::Input::default());
+        fx.after_tick(&m, Events::default(), 1.0);
+        assert!(fx.morph_name.is_none() && fx.morph_flash[1] <= 0.0);
+        // la racchetta era un'altra prima del tick: trasformazione
+        fx.kinds_before[1] = Some(PaddleKind::Titan);
+        fx.after_tick(&m, Events::default(), 1.0);
+        assert_eq!(fx.morph_name, Some((OMEGA.kind, 1, MORPH_NAME_SECONDS)));
+        assert_eq!(fx.morph_flash[1], MORPH_FLASH_SECONDS);
+        fx.update(MORPH_NAME_SECONDS - 0.01);
+        assert!(fx.morph_name.is_some());
+        fx.update(0.02);
+        assert!(fx.morph_name.is_none());
     }
 }

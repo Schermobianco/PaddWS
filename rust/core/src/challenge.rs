@@ -97,6 +97,37 @@ pub const RUNGS: [Rung; LEVELS] = {
     ]
 };
 
+/// Il boss segreto OMEGA, dopo il GUARDIAN: si affronta finendo la scala a HARD o EXPERT senza
+/// continue. Una partita a `points` che parte con la racchetta e i bonus di ARCADE; a ogni punto
+/// del giocatore OMEGA prende la forma dell'avversario successivo della scala (`omega_form`,
+/// `Match::set_morph`), fino al GUARDIAN. Livello della CPU e velocità della palla sono i più alti
+/// (il livello si ferma all'ultimo, come per il GUARDIAN a EXPERT). Niente continue contro di lui:
+/// lo decidono le versioni, come le schermate.
+pub const OMEGA: Rung = Rung {
+    kind: PaddleKind::Arcade,
+    cpu: 11,
+    speed: 2,
+    loadout: RUNGS[0].loadout,
+    points: 7,
+};
+
+/// Indice di OMEGA come livello (dopo i sette della scala), per il premio e la classifica.
+pub const OMEGA_LEVEL: usize = LEVELS;
+
+/// Premio della vittoria contro OMEGA (al posto di `win_bonus`).
+pub const OMEGA_POINTS: u32 = 50_000;
+
+/// Livello scritto in classifica: `level` è l'ultimo livello raggiunto (1-7), `LEVELS + 1` per la
+/// scala finita ("ALL"), `LEVELS + 2` con OMEGA battuto ("ALL+").
+pub const SCORE_LEVEL_OMEGA: u8 = LEVELS as u8 + 2;
+
+/// La forma di OMEGA dopo `scored` punti del giocatore: l'avversario della scala di quel livello
+/// (0 ARCADE, poi TWIST, HAMMER, TITAN, BLASTER, RUSH, GUARDIAN, che resta fino alla fine).
+pub const fn omega_form(scored: u16) -> &'static Rung {
+    let i = if (scored as usize) < LEVELS { scored as usize } else { LEVELS - 1 };
+    &RUNGS[i]
+}
+
 impl Rung {
     /// Difficoltà della partita (velocità della palla) con la difficoltà scelta nel menu: la
     /// scala è tarata su NORMAL (1) con il joystick; ogni livello in più o in meno sposta la
@@ -214,6 +245,15 @@ impl Score {
         (
             WIN_POINTS * n,
             if opponent_points == 0 { PERFECT_POINTS * n } else { 0 },
+        )
+    }
+
+    /// Premi per la vittoria contro OMEGA: (vittoria, partita perfetta), con la perfetta come un
+    /// ottavo livello.
+    pub fn omega_bonus(opponent_points: u16) -> (u32, u32) {
+        (
+            OMEGA_POINTS,
+            if opponent_points == 0 { PERFECT_POINTS * (LEVELS as u32 + 1) } else { 0 },
         )
     }
 

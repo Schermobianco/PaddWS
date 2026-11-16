@@ -420,6 +420,8 @@ pub struct Next {
     pub bullet: Option<Side>,
     pub bullet_on: bool,
     pub bullet_timer: u32,
+    /// OMEGA: il lato la cui racchetta cambia forma a ogni punto subito (`Match::set_morph`)
+    pub morph: Option<Side>,
 }
 
 impl Next {
@@ -444,6 +446,7 @@ impl Next {
             bullet: None,
             bullet_on: false,
             bullet_timer: 0,
+            morph: None,
         }
     }
 
@@ -674,30 +677,67 @@ impl Match {
     ) -> Self {
         let mut m = Match::new_next(params, loadouts, seed);
         for side in Side::BOTH {
-            let Some(kind) = kinds[side as usize] else { continue };
-            let k = m.params.kinds[kind as usize];
-            let pad = &mut m.paddles[side as usize];
-            pad.height = k.height;
-            pad.inv_half_height = k.inv_half_height;
-            pad.max_speed = k.max_speed;
-            pad.acceleration = k.acceleration;
-            pad.fast_acceleration = k.fast_acceleration;
-            pad.fwd_max_speed = k.fwd_max_speed;
-            pad.fwd_acceleration = k.fwd_acceleration;
-            pad.fwd_fast_acceleration = k.fwd_fast_acceleration;
-            pad.encoder_step = k.encoder_step;
-            pad.fwd_x = match side {
-                Side::Left => k.fwd_pos,
-                Side::Right => m.params.width - k.fwd_pos,
-            };
-            let pl = &mut m.next.as_mut().unwrap().players[side as usize];
-            pl.kind = Some(kind);
-            pl.barrier = if kind == PaddleKind::Guardian { GUARDIAN_WALL } else { 0 };
-            if kind == PaddleKind::Blaster {
-                pl.ammo = m.params.blaster_shots;
+            if let Some(kind) = kinds[side as usize] {
+                m.set_paddle_kind(side, kind);
             }
         }
         m
+    }
+
+    /// Dà alla racchetta di `side` il tipo `kind`: misure, velocità e stato proprio del tipo
+    /// (muro del GUARDIAN intero, caricatore del BLASTER pieno, nessun colpo in volo). All'inizio
+    /// della partita e alle trasformazioni di OMEGA (`set_morph`).
+    fn set_paddle_kind(&mut self, side: Side, kind: PaddleKind) {
+        let k = self.params.kinds[kind as usize];
+        let pad = &mut self.paddles[side as usize];
+        pad.height = k.height;
+        pad.inv_half_height = k.inv_half_height;
+        pad.max_speed = k.max_speed;
+        pad.acceleration = k.acceleration;
+        pad.fast_acceleration = k.fast_acceleration;
+        pad.fwd_max_speed = k.fwd_max_speed;
+        pad.fwd_acceleration = k.fwd_acceleration;
+        pad.fwd_fast_acceleration = k.fwd_fast_acceleration;
+        pad.encoder_step = k.encoder_step;
+        pad.fwd_x = match side {
+            Side::Left => k.fwd_pos,
+            Side::Right => self.params.width - k.fwd_pos,
+        };
+        let pl = &mut self.next.as_mut().unwrap().players[side as usize];
+        pl.kind = Some(kind);
+        pl.barrier = if kind == PaddleKind::Guardian { GUARDIAN_WALL } else { 0 };
+        pl.shots = [None; MAX_SHOTS];
+        pl.ammo = if kind == PaddleKind::Blaster { self.params.blaster_shots } else { 0 };
+        pl.gap = 0;
+        pl.reload = 0;
+    }
+
+    /// OMEGA: la racchetta di `side` cambia forma a ogni punto dell'avversario (`omega_form`).
+    /// Va chiamata dopo `new_next_paddles`, con la racchetta già nella prima forma (ARCADE).
+    pub fn set_morph(&mut self, side: Side) {
+        if let Some(n) = self.next.as_mut() {
+            n.morph = Some(side);
+        }
+    }
+
+    /// Lato che cambia forma (OMEGA), se c'è.
+    pub fn morph(&self) -> Option<Side> {
+        self.next.as_ref().and_then(|n| n.morph)
+    }
+
+    /// OMEGA, dopo un punto dell'avversario: la racchetta prende la forma che corrisponde ai
+    /// punti che ha subito, torna a casa (se era avanzata) e prende i bonus di quella forma. La
+    /// riserva, la barra e i bonus armati restano.
+    fn next_morph(&mut self, scorer: Side) {
+        let Some(side) = self.morph() else { return };
+        if side == scorer {
+            return;
+        }
+        let form = crate::challenge::omega_form(self.score[scorer as usize]);
+        self.set_paddle_kind(side, form.kind);
+        let pad = &mut self.paddles[side as usize];
+        pad.x = pad.home_x;
+        self.next.as_mut().unwrap().players[side as usize].loadout = form.loadout;
     }
 
     /// Tipo della racchetta di un giocatore (None fuori da NEXT o senza tipo).
@@ -1203,6 +1243,7 @@ impl Match {
                 n.players[scorer.opponent() as usize].gain(self.params.super_gain_conceded, &self.params);
             }
         }
+        self.next_morph(scorer);
     }
 
     /// Al rimbalzo sul bordo l'effetto si inverte con la palla: la curva continua verso il centro.

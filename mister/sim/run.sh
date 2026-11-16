@@ -39,6 +39,9 @@ traces=(
     "trace_bul_hb:--next --paddles hammer,blaster --control spinner,joystick --seed 67 --ticks 57600"
     # BULLET armato in attesa della palla, poi scatto e ribattuta (128 Hz: vedi run.ps1)
     "trace_bul_wait:--next --tick-hz 128 --control spinner,spinner --seed 63 --difficulty 3 --ticks 4700"
+    # OMEGA (Match::set_morph): la racchetta della CPU cambia forma a ogni punto dell'avversario
+    "trace_omega:--next --paddles guardian,arcade --morph right --cpu-level 11 --difficulty 3 --seed 81 --ticks 57600"
+    "trace_omega_l:--next --supers --paddles arcade,rush --morph left --control spinner,joystick --seed 82 --difficulty 2 --ticks 57600"
 )
 
 failed=0

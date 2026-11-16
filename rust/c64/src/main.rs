@@ -14,7 +14,7 @@ use paddws_c64::params_inc::{c64_params, params_inc};
 use paddws_c64::cpu6502::{EF_HALF, EF_OFF, EasyFlash};
 use paddws_c64::{Machine, c64_dir, default_build_dir};
 use paddws_core::fixed::{self, mul, mul_recip};
-use paddws_core::challenge::{RUNGS, Score, TABLE_SIZE, Table};
+use paddws_core::challenge::{OMEGA, OMEGA_LEVEL, RUNGS, Score, TABLE_SIZE, Table};
 use paddws_core::{Bonus, Cpu, Input, Match, PaddleKind, PlayerInput, Rng, Side, Special};
 
 const USAGE: &str =
@@ -189,6 +189,7 @@ fn ui(m: &mut Machine) -> bool {
     // immagini preparate delle racchette di NEXT (pad_prep), per ogni tipo e tutti e due i lati:
     // vanno nei loro sprite e lasciano com'erano i due schermi ($C000-$C7FF)
     let screens: Vec<u8> = m.cpu.mem[0xC000..0xC800].to_vec();
+    m.write_u8("nx_morph", 0, 0xFF); // (nessun OMEGA)
     for kind in 0..7u8 {
         for side in 0..2u16 {
             m.write_u8("nx_kind", side * 4, kind);
@@ -203,6 +204,7 @@ fn ui(m: &mut Machine) -> bool {
                 break;
             }
             m.cpu.frame_start = Some(m.cpu.cycles); // inizio del frame: c'è tempo
+            m.write_u8("pd_made", 0, 0); // (nessuna immagine dinamica in questo frame)
             m.call("pad_prep");
             m.cpu.frame_start = None;
         }
@@ -225,9 +227,49 @@ fn ui(m: &mut Machine) -> bool {
             }
         }
     }
-    println!("  pad_prep: immagini preparate di tutti i tipi al loro posto");
+    // contro OMEGA (a destra): per il suo lato le 7 forme dritte, le 6 altre inclinazioni della
+    // TWIST e i caricatori non pieni del BLASTER (om_slot di video.s, nel codice delle mosse
+    // speciali, qui rimesso come in partita); a sinistra il tipo del giocatore
+    let sm = m.moved_segment("SMCODE").map(|(a, b)| (a, b.to_vec()));
+    let saved_sm = sm.as_ref().map(|(a, b)| m.cpu.mem[*a as usize..*a as usize + b.len()].to_vec());
+    if let Some((a, b)) = &sm {
+        m.cpu.load(*a, b);
+    }
+    let screens2: Vec<u8> = m.cpu.mem[0xC000..0xC800].to_vec();
+    m.write_u8("nx_morph", 0, 4);
+    m.write_u8("nx_kind", 0, 3);
+    m.write_u8("pp_side", 0, 0);
+    m.write_u8("pp_var", 0, 0);
+    let first = 0xC000 + m.read_u8("prep_base", 0) as usize * 64;
+    m.cpu.mem[first..first + 30 * 64].fill(0);
+    let omx = m.read_u8("prep_base", 0) as usize + 14 + 21; // SP_OMX
+    m.cpu.mem[0xC000 + omx * 64..0xC000 + (omx + 3) * 64].fill(0);
+    for _ in 0..60 {
+        if m.read_u8("pp_side", 0) >= 2 {
+            break;
+        }
+        m.cpu.frame_start = Some(m.cpu.cycles);
+        m.write_u8("pd_made", 0, 0);
+        m.call("pad_prep");
+        m.cpu.frame_start = None;
+    }
+    let spin = m.read_u8("prep_base", 0) as usize + 14;
+    let mut slots: Vec<usize> = (0..7).map(|k| m.read_u8("prep_base", 1) as usize + k).collect();
+    slots.extend([0, 1, 2, 4, 5, 6, 7].iter().map(|i| spin + 8 + i));
+    slots.extend(omx..omx + 3);
+    let empty: Vec<usize> = slots.iter().copied().filter(|&sl| m.cpu.mem[0xC000 + sl * 64..0xC000 + sl * 64 + 63].iter().all(|&b| b == 0)).collect();
+    let omega_ok = m.read_u8("pp_side", 0) >= 2 && empty.is_empty() && m.cpu.mem[0xC000..0xC800] == screens2[..];
+    if let (Some((a, _)), Some(b)) = (&sm, &saved_sm) {
+        m.cpu.load(*a, b);
+    }
+    m.write_u8("nx_morph", 0, 0xFF); // (poi partite NEXT senza OMEGA, come dopo match_new)
+    if !omega_ok {
+        println!("FAIL: pad_prep contro OMEGA: lato {} alla fine, sprite vuoti {empty:?} (o schermi cambiati)", m.read_u8("pp_side", 0));
+        return false;
+    }
+    println!("  pad_prep: immagini preparate di tutti i tipi al loro posto; contro OMEGA 7 forme, 6 inclinazioni della TWIST e 4 caricatori del BLASTER");
     match voice(m) {
-        Ok(n) => println!("  voci di CHALLENGE: senza file niente; una scala con i 7 file: {n} campioni in $D418 nell'ordine (nomi, READY al primo frame del conto, GO al via), tema a $F800"),
+        Ok(n) => println!("  voci di CHALLENGE: senza file niente; una scala con i 7 file: {n} campioni in $D418 nell'ordine (nomi, READY al primo frame del conto, GO al via; al 50% del VOLUME scalati, a 0 nessuna voce), tema a $F800"),
         Err(e) => {
             println!("FAIL: voce di CHALLENGE: {e}");
             return false;
@@ -283,6 +325,7 @@ fn ui(m: &mut Machine) -> bool {
     // GHOST (Next::ball_hidden): palla nascosta nei tick in cui non si vede, e mai la coda, che la
     // tradirebbe; senza GHOST, con il boost, la coda c'è
     m.write_u8("m_next", 0, 1);
+    m.write_u8("nx_morph", 0, 0xFF); // (una partita NEXT senza OMEGA: l'allenamento contro OMEGA prima)
     m.write_u8("sh_bg", 0, 0);
     m.write_i32("serve_timer", 0, 0x100);
     m.write_i32("ball_boost", 0, 0x18000);
@@ -610,16 +653,16 @@ fn supers_ui(m: &mut Machine) -> Result<String, String> {
         std::fs::read_to_string(dir.join("sid_music.vh")).map_err(|e| format!("sid_music.vh: {e}"))?,
     );
     let rom: Vec<u8> = hex.split_whitespace().filter_map(|v| u8::from_str_radix(v, 16).ok()).collect();
-    let starts: Vec<usize> = vh
-        .lines()
-        .filter_map(|l| l.split("12'd").nth(1))
-        .filter_map(|v| v.trim_end_matches(';').parse().ok())
-        .collect();
+    // indirizzi della ROM: "sid_song_start = 13'd320;" (la larghezza segue la ROM)
+    let addr = |l: &str| -> Option<usize> {
+        let (_, rest) = l.split_once("_start = ")?;
+        rest.split_once("'d")?.1.trim_end_matches(';').parse().ok()
+    };
+    let starts: Vec<usize> = vh.lines().filter_map(addr).collect();
     let fx_start = |fx: usize| -> Option<usize> {
         vh.lines()
             .find(|l| l.contains("sid_fx_start =") && l.contains(&format!("3'd{fx}:")))
-            .and_then(|l| l.split("12'd").nth(1))
-            .and_then(|v| v.trim_end_matches(';').parse().ok())
+            .and_then(addr)
     };
     let table = m.addr("fx_start");
     for (fx, name) in [(6usize, "MOVE"), (7, "SPECIAL")] {
@@ -655,6 +698,25 @@ const FX_IMAGES: std::ops::Range<usize> = 0xE000..0xE940;
 /// la canzone del player che le suona.
 const THEME_BASE: u16 = 0xF800;
 const SID_SONG_THEME: u8 = 7;
+/// canzone del C64 che suona una sezione di OMEGA a THEME_BASE (sid.s: la prima traccia nella
+/// prima pagina, la seconda dalla pagina dopo, la terza nell'ultimo byte della prima)
+const SID_SONG_OMEGA: u8 = 10;
+/// prima canzone di OMEGA nella ROM del MiSTer (SID_SONG_OMEGA0 di sid_music.vh), una per forma
+const OMEGA_SECTIONS: usize = 7;
+
+/// Le tracce di una sezione di OMEGA (o di un tema, nel jukebox) dove le legge SID_SONG_OMEGA.
+fn load_omega(m: &mut Machine, tracks: &[&[u8]]) -> Result<(), String> {
+    let [t0, t1, t2] = tracks else {
+        return Err(format!("{} tracce invece di 3", tracks.len()));
+    };
+    if t0.len() > 255 || t1.len() > 3 * 256 || t2 != &[0xFF] {
+        return Err(format!("tracce di {}, {} e {} byte: non stanno a THEME_BASE", t0.len(), t1.len(), t2.len()));
+    }
+    m.cpu.load(THEME_BASE, t0);
+    m.cpu.load(THEME_BASE + 0xFF, t2);
+    m.cpu.load(THEME_BASE + 0x100, t1);
+    Ok(())
+}
 
 /// Un frame della voce: VOICE_TICK, poi gli NMI fino alla fine del frame.
 fn voice_frame(m: &mut Machine) -> Result<(), String> {
@@ -694,10 +756,18 @@ fn voice_off(m: &Machine, nmi: u16, what: &str) -> Result<(), String> {
 /// Scritture attese in $D418 per una voce: 8 (il silenzio, con l'attacco del DC), i campioni di
 /// `file` in c64/gen (prima il nibble alto), 8 (il rilascio) e 15; poi quanti sono i campioni.
 fn voice_writes(file: &str) -> Result<(Vec<u8>, usize), String> {
+    voice_writes_at(file, 15)
+}
+
+/// Le scritture attese in $D418 per la voce `file` con il VOLUME del menu al livello del SID
+/// `level` (1-15, sid_vol): ogni campione n scalato attorno al silenzio, 8 + round((n - 8) *
+/// level / 15) (vol_tab di voice.s; a 15 i campioni del file), e alla fine il volume del menu.
+fn voice_writes_at(file: &str, level: u8) -> Result<(Vec<u8>, usize), String> {
     let raw = std::fs::read(c64_dir().join("gen").join(file)).map_err(|e| format!("{file}: {e}"))?;
+    let scale = |n: u8| ((n as i32 - 8) * level as i32 + 127).div_euclid(15) as u8;
     let mut want = vec![8u8];
-    want.extend(raw.iter().flat_map(|b| [b >> 4, b & 15]));
-    want.extend([8, 15]);
+    want.extend(raw.iter().flat_map(|b| [scale(b >> 4), scale(b & 15)]));
+    want.extend([8, level]);
     Ok((want, 2 * raw.len()))
 }
 
@@ -719,8 +789,9 @@ fn same_writes(got: &[u8], want: &[u8], what: &str) -> Result<(), String> {
 /// secondi; GO prende il SID ATTACK_FRAMES frame prima del via, nessun campione prima del via e i
 /// primi nel frame del via. Restituisce i campioni controllati.
 fn countdown_voice(m: &mut Machine, nmi: u16, what: &str) -> Result<usize, String> {
-    let (ready, n_ready) = voice_writes("ready.bin")?;
-    let (go, n_go) = voice_writes("go.bin")?;
+    let level = m.read_u8("sid_vol", 0);
+    let (ready, n_ready) = voice_writes_at("ready.bin", level)?;
+    let (go, n_go) = voice_writes_at("go.bin", level)?;
     m.cpu.watch = Some((0xD418, 0xD418));
     m.cpu.writes.clear();
     let nmis = m.cpu.nmis;
@@ -869,6 +940,23 @@ fn voice(m: &mut Machine) -> Result<usize, String> {
         }
         total += countdown_voice(m, nmi, &format!("livello {}, conto alla rovescia", level + 1))?;
     }
+    // il VOLUME del menu: al 50% (livello del SID 5) i campioni scalati attorno al silenzio; a 0
+    // nessuna voce, né l'8 dell'attacco (che si sentirebbe come un colpo), né NMI
+    let vol = m.read_u8("sid_vol", 0);
+    m.write_u8("sid_vol", 0, 5);
+    total += countdown_voice(m, nmi, "conto alla rovescia al 50%")?;
+    m.write_u8("sid_vol", 0, 0);
+    m.cpu.watch = Some((0xD400, 0xD418));
+    m.cpu.writes.clear();
+    let nmis = m.cpu.nmis;
+    for left in (1..=COUNT_FRAMES).rev() {
+        count_frame(m, left)?;
+    }
+    if !m.cpu.writes.is_empty() || m.cpu.nmis != nmis {
+        return Err(format!("volume a 0: {} scritture nel SID e {} NMI nel conto alla rovescia", m.cpu.writes.len(), m.cpu.nmis - nmis));
+    }
+    voice_off(m, nmi, "volume a 0")?;
+    m.write_u8("sid_vol", 0, vol);
     // fermata a metà: volume subito a 15, niente più NMI
     let (addr, data) = m.voice_file(m.read_u8("rung_kind", 0))?;
     m.cpu.load(addr, &data);
@@ -1159,6 +1247,36 @@ fn next_menu_ui(m: &mut Machine) -> Result<String, String> {
     if m.read_u8("opt_opp", 0) as usize != names.len() - 1 || !row(m, "OPPONENT", &format!("{:<8}", names[names.len() - 1])) {
         return Err("OPPONENT indietro da LADDER: non l'ultimo avversario".into());
     }
+    // OMEGA sbloccato (hi_omega = 0): dopo il GUARDIAN, poi di nuovo LADDER; il JUKEBOX solo
+    // sbloccato (hi_juke = 0), dopo PLAY, e il cursore ci arriva dal fondo
+    let saved_unlocks = (m.read_u8("hi_omega", 0), m.read_u8("hi_juke", 0));
+    m.write_u8("hi_omega", 0, 0);
+    m.write_u8("opt_opp", 0, names.len() as u8 - 1);
+    change(m, MI_PLAYERS, 1);
+    if m.read_u8("opt_opp", 0) != CH_OMEGA + 1 || !row(m, "OPPONENT", "OMEGA   ") {
+        return Err(format!("OPPONENT dopo il GUARDIAN con OMEGA sbloccato: {}", m.read_u8("opt_opp", 0)));
+    }
+    change(m, MI_PLAYERS, 1);
+    if m.read_u8("opt_opp", 0) != 0 {
+        return Err("OPPONENT dopo OMEGA: non LADDER".into());
+    }
+    change(m, MI_PLAYERS, 0xFF);
+    if m.read_u8("opt_opp", 0) != CH_OMEGA + 1 {
+        return Err("OPPONENT indietro da LADDER con OMEGA sbloccato: non OMEGA".into());
+    }
+    let juke_row = |m: &Machine| text_at(m, 0xC000, 4 + 2 * 9, 8, "JUKEBOX");
+    if juke_row(m) || cursor(m, 0, 0x01) != 8 {
+        return Err("JUKEBOX nel menu senza lo sblocco".into());
+    }
+    m.write_u8("hi_juke", 0, 0);
+    m.call("draw_menu");
+    if !juke_row(m) || cursor(m, 0, 0x01) != 9 || cursor(m, 9, 0x02) != 0 {
+        return Err("JUKEBOX sbloccato: la voce non c'è o il cursore non ci arriva".into());
+    }
+    m.write_u8("hi_omega", 0, saved_unlocks.0);
+    m.write_u8("hi_juke", 0, saved_unlocks.1);
+    m.write_u8("opt_opp", 0, 0);
+    m.call("draw_menu");
     // tornando a CLASSIC, PLAYERS
     change(m, MI_GAME, 1);
     if !row(m, "PLAYERS ", "ONE     ") {
@@ -1166,7 +1284,7 @@ fn next_menu_ui(m: &mut Machine) -> Result<String, String> {
     }
     m.write_u8("opt_opp", 0, 0);
     m.write_u8("hi_open", 0, saved_open);
-    Ok("menu: GAME e PLAYERS validi per il gioco, in NEXT la riga vuota saltata, o OPPONENT (LADDER e i 7 avversari, in giro) con l'allenamento sbloccato".into())
+    Ok("menu: GAME e PLAYERS validi per il gioco, in NEXT la riga vuota saltata, o OPPONENT (LADDER e i 7 avversari, in giro, e OMEGA se sbloccato) con l'allenamento sbloccato; JUKEBOX solo sbloccato".into())
 }
 
 /// Frame interi (`each` prima di ognuno) finché `done`, al più `max`; errore con `what` se non
@@ -1291,7 +1409,8 @@ fn wins_ui(m: &mut Machine) -> Result<String, String> {
 /// l'attract, senza classifica né salvataggi.
 fn training_ui(m: &mut Machine) -> Result<String, String> {
     let mut lines = Vec::new();
-    for level in 0..RUNGS.len() {
+    // (e OMEGA, sbloccato, come livello CH_OMEGA)
+    for level in 0..=RUNGS.len() {
         lines.push(training_level(m, level).map_err(|e| format!("livello {}: {e}", level + 1))?);
     }
     Ok(format!("allenamento contro ogni avversario: {}", lines.join("; ")))
@@ -1300,7 +1419,8 @@ fn training_ui(m: &mut Machine) -> Result<String, String> {
 /// Il nome di un avversario nella presentazione (intro.s): la grafica TN_k_* di gen/assets.inc,
 /// con i suoi colori, e la pagina k di titles.bin nei caratteri da TN_FIRST.
 struct IntroName {
-    kind: usize,
+    /// la pagina di titles.bin della grafica TN_k_* (k: tipo, 7 OMEGA)
+    page: usize,
     map: Vec<u8>,
     colors: Vec<u8>,
     w: usize,
@@ -1313,8 +1433,9 @@ impl IntroName {
     fn new(kind: usize) -> Result<Self, String> {
         let inc = std::fs::read_to_string(c64_dir().join("gen/assets.inc")).map_err(|e| format!("assets.inc: {e}"))?;
         let get = |n: String| inc_const(&inc, &n).ok_or(format!("assets.inc: manca {n}"));
+        let page = if kind == 7 { get("TTL_OMEGA".into())? } else { kind };
         Ok(Self {
-            kind,
+            page,
             map: assets_list(&format!("TN_{kind}_MAP")),
             colors: assets_list(&format!("TN_{kind}_CLR")),
             w: get(format!("TN_{kind}_W"))?,
@@ -1327,7 +1448,7 @@ impl IntroName {
     fn shown(&self, m: &Machine) -> bool {
         !self.map.is_empty()
             && title_at(m, &self.map, Some(&self.colors), self.w, self.row, self.col)
-            && title_chars(m, self.kind, 1, self.first, "nome").is_ok()
+            && title_chars(m, self.page, 1, self.first, "nome").is_ok()
     }
 }
 
@@ -1335,7 +1456,7 @@ impl IntroName {
 fn training_level(m: &mut Machine, level: usize) -> Result<String, String> {
     const CG_TRAIN: u8 = 3;
     const SID_SONG_GAME_OVER: u8 = 5;
-    let rung = RUNGS[level];
+    let rung = if level == OMEGA_LEVEL { OMEGA } else { RUNGS[level] };
     quiet_inputs(m);
     let table: Vec<u8> = (0..80).map(|i| m.read_u8("ch_table", i)).collect();
     let hi_next = m.read_u8("hi_next", 0);
@@ -1348,6 +1469,7 @@ fn training_level(m: &mut Machine, level: usize) -> Result<String, String> {
         ("credits", 0),
         ("ctl_paddle", 0),
         ("hi_open", 0),
+        ("hi_omega", 0),
         ("ch_wins", 5),
         ("state", ST_MENU),
     ] {
@@ -1388,7 +1510,7 @@ fn training_level(m: &mut Machine, level: usize) -> Result<String, String> {
     // il nome dell'avversario: la sua grafica, con i suoi caratteri dalla cartuccia (in un frame
     // almeno, a entrata finita)
     let joined = std::cell::Cell::new(false);
-    let name = IntroName::new(rung.kind as usize)?;
+    let name = IntroName::new(if level == OMEGA_LEVEL { 7 } else { rung.kind as usize })?;
     let named = std::cell::Cell::new(false);
     worst = worst.max(frames_until(
         m,
@@ -1445,7 +1567,8 @@ fn training_level(m: &mut Machine, level: usize) -> Result<String, String> {
     }
     m.write_u8("opt_opp", 0, 0);
     m.write_u8("ch_wins", 0, 0);
-    Ok(format!("{} {worst}", rung.kind.name()))
+    m.write_u8("hi_omega", 0, 0xFF);
+    Ok(format!("{} {worst}", if level == OMEGA_LEVEL { "OMEGA" } else { rung.kind.name() }))
 }
 
 /// Sblocco dell'allenamento: il primo arrivo al finale lo salva nella flash con la classifica
@@ -2376,7 +2499,11 @@ fn frames(m: &mut Machine) -> bool {
         ));
         // il tema suona solo in CHALLENGE (contro la CPU quello dell'avversario, nella sfida tra due
         // giocatori quello di un avversario a caso), e lì sempre; mai nelle altre partite
-        let theme = m.read_u8("sid_song_n", 0) == SID_SONG_THEME;
+        // (contro OMEGA la sua canzone, muta mentre la sezione nuova si copia)
+        let song = m.read_u8("sid_song_n", 0);
+        let theme = song == SID_SONG_THEME
+            || (m.read_u8("ch_level", 0) == CH_OMEGA
+                && (song == SID_SONG_OMEGA || (song == 0 && m.read_u8("om_left", 0) != 0)));
         let ch_cpu = m.read_u8("cg_active", 0) != 0;
         if m.read_u8("state", 0) == 7 && !theme_forced.get() {
             if theme != ch_cpu {
@@ -2812,6 +2939,222 @@ fn frames(m: &mut Machine) -> bool {
         Ok(s) => println!("  {s}"),
         Err(e) => {
             println!("FAIL: finale di CHALLENGE: {e}");
+            return false;
+        }
+    }
+    // OMEGA: battuto il GUARDIAN 5 a 0 con la scala fatta tutta a HARD (il file voce del primo
+    // livello in memoria, come dopo una scala), l'allarme, la presentazione di OMEGA e la partita,
+    // con P1 al joystick e ogni tanto un punto suo messo dal banco di prova (la palla oltre la
+    // racchetta di OMEGA), così OMEGA cambia forma; a 6 punti la partita finisce (7 a 0, PERFECT);
+    // poi premi, finale speciale, iniziali e classifica. Il budget, e che tutto succeda.
+    let omega_ok = (|| -> Result<String, String> {
+        quiet_inputs(m);
+        m.cpu.watch = Some((0xD418, 0xD418)); // (il finale l'ha tolta)
+        m.cpu.a = m.read_u8("rung_kind", 0);
+        m.call("ef_voice");
+        for _ in 0..3 {
+            m.cpu.call(VOICE_BASE, 100_000)?;
+        }
+        m.cpu.call(VOICE_BASE + 3, 100_000)?;
+        m.cpu.a = 0;
+        m.call("sid_song");
+        for (name, v) in [
+            ("cg_active", 1u8),
+            ("ch_level", 6),
+            ("ch_side", 0),
+            ("ch_best_lv", 1),
+            ("ch_clean", 1),
+            ("ch_omega", 0),
+            ("opt_level", 2),
+            ("hi_omega", 0xFF),
+            ("hi_juke", 0xFF),
+            ("state", ST_OVER),
+        ] {
+            m.write_u8(name, 0, v);
+        }
+        for (o, v) in [(0u16, 5u8), (1, 0), (4, 0), (5, 0)] {
+            m.write_u8("score", o, v);
+        }
+        m.write_i32("ch_score", 0, 100_000);
+        m.write_i32("ch_best", 0, 0);
+        m.call("ch_after");
+        if m.read_u8("state", 0) != ST_WARNING {
+            return Err(format!("dopo il GUARDIAN la scena {} invece dell'allarme", m.read_u8("state", 0)));
+        }
+        let mut seen = [false; 19];
+        let (mut morphs, mut flash, mut loads, mut net, mut red, mut worst) = (0u32, 0u32, 0u32, 0u32, 0u32, 0u64);
+        // nome della forma nuova a schermo (nm_on), e mai nella prima forma
+        let mut named = 0u32;
+        let mut instant = 0u32;
+        let mut late_morph = false;
+        // forme TWIST e BLASTER: frame con un'immagine preparata delle varianti (inclinata, caricatore
+        // non pieno: om_slot di video.s) e frame con l'immagine dinamica (che contro OMEGA arriva tardi)
+        let (mut tilted, mut loaded, mut dynamic, mut low) = (0u32, 0u32, 0u32, 0u32);
+        let full_mag = c64_params(1).blaster_shots as u32;
+        let mut shot = false;
+        let mut kind = 0u8;
+        let mut ended = false;
+        for f in 0..50 * 60 * 6 {
+            let state = m.read_u8("state", 0) as usize;
+            seen[state.min(18)] = true;
+            m.cpu.joy_port2 = if state == 7 || state == 13 { joy(m, &mut rng) } else { 0xFF };
+            if state == 7 && m.read_u8("serve_timer", 0) == 0 && f % 200 == 0 && m.read_u8("score", 0) < 6 {
+                m.write_i32("ball_x", 0, 316 << 16);
+                m.write_i32("ball_vx", 0, 4 << 16);
+            }
+            if state == 7 && m.read_u8("score", 0) == 6 && m.read_u8("om_left", 0) == 0 && !ended {
+                ended = true;
+                m.write_u8("score", 0, 7);
+                m.write_u8("over_next", 0, 1);
+            }
+            let c = frame(m, &mut stats, &mut voiced).map_err(|e| format!("stato {state}: {e}"))?;
+            worst = worst.max(c);
+            if m.read_u8("state", 0) == 7 {
+                let k = m.read_u8("nx_kind", 4);
+                morphs += (k != kind) as u32;
+                // la forma nuova nello sprite nel frame stesso del tick: l'immagine preparata nel
+                // conto alla rovescia per quella forma (pad_prep, prep_slot)
+                // (in un frame così pesante da tenere gli sprite del frame prima, pd_made, anche il
+                // lampo e il nome arrivano al frame dopo, e con gli sprite spenti si guarda quando
+                // tornano)
+                let pad_on = m.read_u8("sh_enable", 0) & 0x10 != 0;
+                if (k != kind || late_morph) && (m.read_u8("pd_made", 0) == 0xAA || !pad_on) {
+                    late_morph = true;
+                } else if k != kind || std::mem::take(&mut late_morph) {
+                    let ptr = m.read_u8("sh_ptr", 4);
+                    let spin = m.read_u8("prep_base", 0) + 14; // SP_SPIN0
+                    // (con il salto del TELEPORT in corso l'immagine è quella del salto)
+                    let jump = m.read_u8("wp_on", 0) != 0 && m.read_u8("wp_side", 0) == 1;
+                    let ready = ptr == m.read_u8("prep_base", 1) + k
+                        || (spin + 8..spin + 16).contains(&ptr)
+                        || (spin + 21..spin + 24).contains(&ptr)
+                        || (jump && ptr == m.read_u8("pad_slot", 1));
+                    instant += ready as u32;
+                }
+                kind = k;
+                let ptr = m.read_u8("sh_ptr", 4);
+                let spin = m.read_u8("prep_base", 0) + 14; // SP_SPIN0
+                let variant = (spin + 8..spin + 16).contains(&ptr) || (spin + 21..spin + 24).contains(&ptr);
+                tilted += (k == 3 && variant) as u32;
+                loaded += (k == 4 && variant) as u32;
+                low += (k == 4 && (m.read_u8("nx_ammo", 4) as u32) < full_mag) as u32;
+                // (OMEGA della prova spara poco: due colpi nel caricatore messi dal banco di prova,
+                // una volta, per vedere l'immagine nel frame dopo)
+                if k == 4 && low == 0 && !shot {
+                    shot = true;
+                    m.write_u8("nx_ammo", 4, 2);
+                }
+                dynamic += ((k == 3 || k == 4) && ptr == m.read_u8("pad_slot", 1) && m.read_u8("wp_on", 0) == 0) as u32;
+                flash += (m.read_u8("om_flash", 0) != 0) as u32;
+                red += (m.read_u8("sh_col", 4) == COL_RED) as u32;
+                net += (m.cpu.mem[0xC000 + 12 * 40 + 19] != 1) as u32;
+                loads += (m.read_u8("om_left", 0) != 0) as u32;
+                if m.read_u8("om_on", 0) >= 4 && m.read_u8("nm_on", 0) != 0 {
+                    named += 1;
+                    if k == 0 {
+                        return Err("il nome della forma nuova con OMEGA ancora ARCADE".into());
+                    }
+                }
+            }
+            if seen[14] && m.read_u8("state", 0) < 4 {
+                break;
+            }
+        }
+        m.cpu.joy_port2 = 0xFF;
+        let missing: Vec<_> = [ST_WARNING, ST_INTRO, ST_COUNT, ST_PLAY, ST_OVER, ST_CLEAR, ST_ENDING, ST_SCORES]
+            .into_iter()
+            .filter(|&s| !seen[s as usize])
+            .collect();
+        if !missing.is_empty() {
+            return Err(format!("non passa dagli stati {missing:?}"));
+        }
+        // (il lampo dell'ultima trasformazione lo taglia la fine della partita)
+        if tilted == 0 || (low > 0 && loaded == 0) {
+            return Err(format!(
+                "TWIST inclinata in {tilted} frame, BLASTER con il caricatore non pieno in {loaded} su {low} (immagini preparate delle varianti mai usate)"
+            ));
+        }
+        if morphs < 6 || instant < morphs || flash < 5 * 7 || red == 0 || net == 0 || loads == 0 || named < 6 * 35 {
+            return Err(format!(
+                "{morphs} trasformazioni ({instant} con la forma nuova nel frame stesso), {flash} frame di lampo, {named} con il nome della forma, {red} con la racchetta rossa, {net} con la rete spostata, {loads} di copia della musica"
+            ));
+        }
+        let best = m.read_i32("ch_best", 0) as u32;
+        let (win, perfect) = Score::omega_bonus(0);
+        if m.read_u8("ch_best_lv", 0) != SCORE_LEVEL_OMEGA || best < 100_000 + win + perfect {
+            return Err(format!("in classifica livello {} e {best} punti", m.read_u8("ch_best_lv", 0)));
+        }
+        if m.read_u8("hi_omega", 0) != 0 || m.read_u8("hi_juke", 0) != 0 {
+            return Err("OMEGA nell'allenamento e il jukebox non sbloccati".into());
+        }
+        m.write_u8("ch_omega", 0, 0);
+        Ok(format!(
+            "OMEGA: allarme, presentazione, {morphs} trasformazioni (tutte con la forma nuova nel frame del tick, o nel primo con gli sprite rifatti e accesi, {flash} frame di lampo, {named} con il nome della forma), TWIST inclinata in {tilted} frame e BLASTER con il caricatore non pieno in {loaded} su {low} dalle immagini preparate ({dynamic} con l'immagine dinamica), musica copiata in {loads} frame, rete spostata in {net}, premi ({best} punti, ALL+), finale speciale e sblocchi; cicli max {worst}"
+        ))
+    })();
+    match omega_ok {
+        Ok(s) => println!("  {s}"),
+        Err(e) => {
+            println!("FAIL: OMEGA: {e}");
+            return false;
+        }
+    }
+    // JUKEBOX: i brani uno dopo l'altro (giù ogni 3 s), poi OMEGA per 70 s (cambia sezione ogni due
+    // giri), poi RUN/STOP: il menu. Il budget, e che OMEGA passi alle sezioni dopo.
+    let juke_ok = (|| -> Result<String, String> {
+        quiet_inputs(m);
+        m.write_u8("hi_juke", 0, 0);
+        m.call("enter_jukebox");
+        let (mut worst, mut sections, mut songs) = (0u64, std::collections::BTreeSet::new(), std::collections::BTreeSet::new());
+        for f in 0..50 * 3 * 8 + 50 * 70 {
+            if m.read_u8("state", 0) != ST_JUKEBOX {
+                return Err(format!("frame {f}: scena {} invece del jukebox", m.read_u8("state", 0)));
+            }
+            m.cpu.joy_port2 = if f < 50 * 3 * 8 && f % 150 == 149 { !0x02 } else { 0xFF };
+            let c = frame(m, &mut stats, &mut voiced)?;
+            m.cpu.joy_port2 = 0xFF;
+            worst = worst.max(c);
+            songs.insert(m.read_u8("sid_song_n", 0));
+            if m.read_u8("track", 0) == 8 {
+                sections.insert(m.read_u8("osec", 0));
+            }
+        }
+        if sections.len() < 3 || !songs.contains(&SID_SONG_EGG) || !songs.contains(&SID_SONG_OMEGA) {
+            return Err(format!("canzoni {songs:?}, sezioni di OMEGA {sections:?}"));
+        }
+        // RUN/STOP: il menu, con il player com'era (sta SID,y in wr) e le scritte nello schermo
+        let store = m.addr("sid_wr_store");
+        if m.cpu.read(store) != 0x4C || m.read_u8("v_big", 0) & 0x40 == 0 {
+            return Err("il jukebox non devia wr o non scrive nella bitmap".into());
+        }
+        m.write_u8("keys_edge", 7, 0x80);
+        m.call("jbscene");
+        m.write_u8("keys_edge", 7, 0);
+        if m.read_u8("state", 0) != ST_MENU
+            || m.cpu.read(store) != 0x99
+            || m.cpu.read16(store + 1) != 0xD400
+            || m.read_u8("v_big", 0) & 0x40 != 0
+            || m.read_u8("math_ready", 0) != 0
+        {
+            return Err(format!("uscita dal jukebox: scena {}, wr non rimesso o tabelle dei quadrati non da rifare", m.read_u8("state", 0)));
+        }
+        // nel menu math_step rifà le tabelle dei quadrati (servono alle prove dopo)
+        for _ in 0..400 {
+            if m.read_u8("math_ready", 0) != 0 {
+                break;
+            }
+            frame(m, &mut stats, &mut voiced)?;
+        }
+        if m.read_u8("math_ready", 0) == 0 || m.cpu.mem[0xF000..0xF800] != squares.borrow()[..] {
+            let diff = (0..0x800).filter(|&i| m.cpu.mem[0xF000 + i] != squares.borrow()[i]).count();
+            return Err(format!("dopo il jukebox le tabelle dei quadrati non tornano (math_ready {}, {diff} byte diversi, stato {})", m.read_u8("math_ready", 0), m.read_u8("state", 0)));
+        }
+        Ok(format!("JUKEBOX: i 9 brani, OMEGA in {} sezioni, uscita con RUN/STOP; cicli max {worst}", sections.len()))
+    })();
+    match juke_ok {
+        Ok(s) => println!("  {s}"),
+        Err(e) => {
+            println!("FAIL: {e}");
             return false;
         }
     }
@@ -3382,12 +3725,41 @@ fn sid(m: &mut Machine) -> bool {
     let mut worst = 0;
     let mut writes = 0;
     let mut themes = std::collections::BTreeSet::new();
+    let mut omegas = std::collections::BTreeSet::new();
+    let Some(omega0) = vh_param(&vh, "SID_SONG_OMEGA0") else {
+        eprintln!("sid_music.vh senza SID_SONG_OMEGA0");
+        return false;
+    };
     for (n, (commands, expected)) in frames.iter().enumerate() {
         m.cpu.writes.clear();
         let mut cycles = 0;
         for &(kind, v) in commands {
             let mut v = v;
-            if kind == 'S' && v as usize >= theme_song {
+            if kind == 'S' && v as usize >= omega0 {
+                // OMEGA: la sezione a THEME_BASE (omegaK_V.bin, le tracce della ROM: dopo l'ultima
+                // la ROM continua), poi come per i temi
+                let k = v as usize - omega0;
+                let mut bins = Vec::new();
+                for (i, t) in theme_tracks(v as usize).into_iter().enumerate() {
+                    let bin = std::fs::read(c64_dir().join(format!("gen/omega{k}_{i}.bin"))).unwrap_or_default();
+                    if bin.is_empty() || !t.starts_with(&bin) {
+                        println!("FAIL: gen/omega{k}_{i}.bin diverso dalla traccia {i} della canzone {v}");
+                        return false;
+                    }
+                    bins.push(bin);
+                }
+                let tracks: Vec<&[u8]> = bins.iter().map(Vec::as_slice).collect();
+                if let Err(e) = load_omega(m, &tracks) {
+                    println!("FAIL: canzone {v}: {e}");
+                    return false;
+                }
+                if m.read_u8("sid_song_n", 0) == SID_SONG_OMEGA {
+                    m.cpu.a = 0;
+                    cycles += m.call("sid_song");
+                }
+                omegas.insert(v);
+                v = SID_SONG_OMEGA;
+            } else if kind == 'S' && v as usize >= theme_song {
                 // tema: le tracce a THEME_BASE; da un tema all'altro la canzone del C64 resta la
                 // stessa, quindi prima il silenzio (nello stesso frame: riparte da capo come sul
                 // MiSTer)
@@ -3426,14 +3798,19 @@ fn sid(m: &mut Machine) -> bool {
             return false;
         }
     }
-    if themes.len() < 2 {
-        println!("FAIL: il riferimento suona {} temi di CHALLENGE invece di almeno 2", themes.len());
+    if themes.len() < 2 || omegas.len() < OMEGA_SECTIONS {
+        println!(
+            "FAIL: il riferimento suona {} temi di CHALLENGE invece di almeno 2 e {} sezioni di OMEGA invece di {OMEGA_SECTIONS}",
+            themes.len(),
+            omegas.len()
+        );
         return false;
     }
     println!(
-        "PASS: {} frame, {writes} scritture identiche al player Verilog, {} temi di CHALLENGE (cicli per frame max {worst})",
+        "PASS: {} frame, {writes} scritture identiche al player Verilog, {} temi di CHALLENGE e {} sezioni di OMEGA (cicli per frame max {worst})",
         frames.len(),
-        themes.len()
+        themes.len(),
+        omegas.len()
     );
     // tempo della canzone (match point, bullet time) contro il player Rust (rust/sid), verificato
     // a sua volta contro il Verilog: a ogni passo del 6502 lo stesso passo del player Rust, con lo
@@ -3442,12 +3819,22 @@ fn sid(m: &mut Machine) -> bool {
     let bullet = |n: usize| (90..240).contains(&n) || n == 300 || (330..331).contains(&n) || (400..520).contains(&n);
     let mut tempo_writes = 0;
     let mut tempo_worst = 0;
-    for song in [1usize, 2, 7, 9, 11, 13] {
+    for song in [1usize, 2, 7, 9, 11, 13, omega0, omega0 + 5] {
         for (fast, slow) in [(false, true), (true, false), (true, true)] {
             m.call("sid_init");
             m.cpu.a = 0;
             m.call("sid_tempo");
-            let c64_song = if song >= theme_song {
+            let c64_song = if song >= omega0 {
+                let k = song - omega0;
+                let bins: Vec<Vec<u8>> =
+                    (0..3).map(|i| std::fs::read(c64_dir().join(format!("gen/omega{k}_{i}.bin"))).unwrap_or_default()).collect();
+                let tracks: Vec<&[u8]> = bins.iter().map(Vec::as_slice).collect();
+                if let Err(e) = load_omega(m, &tracks) {
+                    println!("FAIL: canzone {song}: {e}");
+                    return false;
+                }
+                SID_SONG_OMEGA
+            } else if song >= theme_song {
                 for (i, t) in theme_tracks(song).into_iter().enumerate() {
                     m.cpu.load((theme_base + i * 0x100) as u16, t);
                 }
@@ -3504,7 +3891,41 @@ fn sid(m: &mut Machine) -> bool {
         }
     }
     println!(
-        "PASS: tempo della canzone (match point, bullet time e tutte e due, 6 canzoni) identico al player Rust: {tempo_writes} scritture (cicli max {tempo_worst})"
+        "PASS: tempo della canzone (match point, bullet time e tutte e due, 8 canzoni con 2 di OMEGA) identico al player Rust: {tempo_writes} scritture (cicli max {tempo_worst})"
+    );
+    // cicli del player in partita (dopo il primo passo, che fa partire la canzone): i temi e le
+    // sezioni di OMEGA, al match point (passo in più con sid_more), per SID_TICK_MAX di play.s
+    let mut tick_worst = [0u64; 2];
+    for song in (theme_song..theme_song + 7).chain(omega0..omega0 + OMEGA_SECTIONS) {
+        let omega = song >= omega0;
+        m.call("sid_init");
+        m.cpu.a = 1;
+        m.call("sid_tempo");
+        if omega {
+            let k = song - omega0;
+            let bins: Vec<Vec<u8>> =
+                (0..3).map(|i| std::fs::read(c64_dir().join(format!("gen/omega{k}_{i}.bin"))).unwrap_or_default()).collect();
+            let tracks: Vec<&[u8]> = bins.iter().map(Vec::as_slice).collect();
+            if load_omega(m, &tracks).is_err() {
+                return false;
+            }
+            m.cpu.a = SID_SONG_OMEGA;
+        } else {
+            for (i, t) in theme_tracks(song).into_iter().enumerate() {
+                m.cpu.load((theme_base + i * 0x100) as u16, t);
+            }
+            m.cpu.a = theme_song as u8;
+        }
+        m.call("sid_song");
+        m.call("sid_tick");
+        for _ in 0..1500 {
+            let c = m.call("sid_tick");
+            tick_worst[omega as usize] = tick_worst[omega as usize].max(c);
+        }
+    }
+    println!(
+        "PASS: player in partita: cicli per passo al più {} con i temi, {} con le sezioni di OMEGA",
+        tick_worst[0], tick_worst[1]
     );
     // il finale di CHALLENGE (ENDING del MiSTer, SID_SONG_ENDING del C64): le tracce di
     // gen/ending.bin, uguali a quelle della ROM, dove le copia il finale (ending.s); una volta e
@@ -3735,6 +4156,9 @@ struct Scenario {
     next: Option<NextSetup>,
     /// mosse speciali accese (SUPER MOVES)
     supers: bool,
+    /// OMEGA (`Match::set_morph`): il lato che cambia forma a ogni punto subito, quello della
+    /// CPU di CHALLENGE al livello CH_OMEGA (dall'altro lato chi gioca)
+    morph: Option<Side>,
 }
 
 /// Scenario di prova: nome, giocatori, EVO, difficoltà, seme, chi gioca, livelli delle CPU.
@@ -3757,6 +4181,7 @@ const fn sc(
         levels,
         next: None,
         supers: false,
+        morph: None,
     }
 }
 
@@ -3779,6 +4204,7 @@ const fn nx(
         levels,
         next: Some((LOADOUTS, kinds)),
         supers: false,
+        morph: None,
     }
 }
 
@@ -3812,10 +4238,25 @@ const fn challenge_right(name: &'static str, level: usize, seed: u32, kind: Padd
         levels: [rung.cpu, 0],
         next: Some((loadouts, kinds)),
         supers: false,
+        morph: None,
     }
 }
 
-const SCENARIOS: [Scenario; 33] = [
+/// OMEGA: CPU contro CPU con le mosse speciali, la racchetta del lato `morph` in ARCADE con i
+/// bonus di OMEGA (quelli di ARCADE), l'altra del tipo `kind`, alla velocità di OMEGA a HARD.
+const fn omega(name: &'static str, seed: u32, morph: Side, levels: [u8; 2], kind: PaddleKind) -> Scenario {
+    let (loadouts, kinds) = match morph {
+        Side::Right => ([LOADOUTS[0], OMEGA.loadout], [Some(kind), Some(OMEGA.kind)]),
+        Side::Left => ([OMEGA.loadout, LOADOUTS[1]], [Some(OMEGA.kind), Some(kind)]),
+    };
+    Scenario {
+        morph: Some(morph),
+        next: Some((loadouts, kinds)),
+        ..sx(name, OMEGA.speed_at(2), seed, Drive::Cpu, levels, [None, None])
+    }
+}
+
+const SCENARIOS: [Scenario; 36] = [
     sc("evo", 2, true, 1, 1, Drive::Script, [0, 0]),
     sc("evo_s2", 2, true, 1, 2, Drive::Script, [0, 0]),
     sc("evo_d0", 2, true, 0, 5, Drive::Script, [0, 0]),
@@ -3942,6 +4383,10 @@ const SCENARIOS: [Scenario; 33] = [
         [0, 6],
         [Some(PaddleKind::Titan), Some(PaddleKind::Arcade)],
     ),
+    // OMEGA: la racchetta che cambia forma a ogni punto subito, da tutti e due i lati
+    omega("omega", 81, Side::Right, [10, 11], PaddleKind::Rush),
+    omega("omega_left", 82, Side::Left, [11, 10], PaddleKind::Blaster),
+    omega("omega_g", 83, Side::Right, [11, 11], PaddleKind::Guardian),
 ];
 
 /// Giocatori simulati come quelli di paddws-trace: inseguono la palla con un errore che cambia
@@ -4388,10 +4833,17 @@ fn mismatch(m: &Machine, g: &Match, events: u16) -> Option<String> {
 
 /// Partite di prova: il 6502 e il core giocano con gli stessi comandi; lo stato deve coincidere
 /// dopo ogni tick.
+/// Livello di CHALLENGE di OMEGA (ch_level).
+const CH_OMEGA: u8 = OMEGA_LEVEL as u8;
+
 fn game(m: &mut Machine, ticks: u32) -> bool {
     m.call("math_init");
     let mut all_ok = true;
     let mut worst_all = 0;
+    // OMEGA: trasformazioni per forma d'arrivo (indice di PaddleKind), quelle rimaste GUARDIAN
+    // e quelle dal BLASTER con dello stato da azzerare (colpi in volo, caricatore non pieno,
+    // pausa o ricarica in corso)
+    let mut morph_all = ([0u32; 7], 0u32, 0u32);
     // BULLET in tutte le partite: armati, scattati, finiti alla ribattuta, rimasti armati a un punto
     let mut bullet_all = [0u32; 4];
     // mosse speciali nelle partite che le hanno
@@ -4402,6 +4854,9 @@ fn game(m: &mut Machine, ticks: u32) -> bool {
             Some((loadouts, kinds)) => Match::new_next_paddles(params.clone(), loadouts, kinds, s.seed),
             None => Match::new(params.clone(), s.players, s.evo, s.seed),
         };
+        if let Some(side) = s.morph {
+            g.set_morph(side);
+        }
         m.write_u8("cfg_next", 0, s.next.is_some() as u8);
         if let Some((loadouts, kinds)) = s.next {
             for side in 0..2 {
@@ -4418,6 +4873,20 @@ fn game(m: &mut Machine, ticks: u32) -> bool {
         m.write_i32("cfg_seed", 0, s.seed as i32);
         m.write_u8("cfg_super", 0, s.supers as u8);
         g.set_super_moves(s.supers);
+        // punti arcade di CHALLENGE (ch_tick dopo ogni tick) per chi gioca a destra con la CPU a
+        // sinistra, e un'altra partita sì e una no anche negli altri scenari; contro OMEGA chi
+        // gioca è dall'altra parte della racchetta che cambia forma
+        let human = if let Some(side) = s.morph {
+            side.opponent()
+        } else if matches!(s.drive, Drive::CpuLeft) || i % 2 == 1 {
+            Side::Right
+        } else {
+            Side::Left
+        };
+        m.write_u8("cg_active", 0, 1);
+        m.write_u8("ch_side", 0, human as u8 * 4);
+        // OMEGA: next_init (da match_new) mette nx_morph dal livello di CHALLENGE e da ch_side
+        m.write_u8("ch_level", 0, if s.morph.is_some() { CH_OMEGA } else { 0 });
         m.call("match_new");
         if let Some(d) = mismatch(m, &g, 0) {
             println!("FAIL {}: dopo match_new\n    {d}", s.name);
@@ -4446,16 +4915,7 @@ fn game(m: &mut Machine, ticks: u32) -> bool {
             m.cpu.x = (side * 4) as u8;
             m.call("cpu_init");
         }
-        // punti arcade di CHALLENGE (ch_tick dopo ogni tick) per chi gioca a destra con la CPU a
-        // sinistra, e un'altra partita sì e una no anche negli altri scenari
-        let human = if matches!(s.drive, Drive::CpuLeft) || i % 2 == 1 {
-            Side::Right
-        } else {
-            Side::Left
-        };
         let mut arcade = Score::new(human);
-        m.write_u8("cg_active", 0, 1);
-        m.write_u8("ch_side", 0, human as u8 * 4);
         for (name, n) in [("ch_score", 4), ("ch_rally", 2), ("ch_before", 2)] {
             for k in 0..n {
                 m.write_u8(name, k, 0);
@@ -4565,7 +5025,23 @@ fn game(m: &mut Machine, ticks: u32) -> bool {
             let before = g.score;
             let bullet_before = g.next.as_ref().map_or((None, false), |n| (n.bullet, n.bullet_on));
             let moves_before = g.next.clone();
+            let morph_before = s.morph.map(|side| {
+                let pl = &g.next.as_ref().expect("OMEGA senza NEXT").players[side as usize];
+                let busy = pl.shots.iter().any(Option::is_some)
+                    || pl.ammo != params.blaster_shots
+                    || pl.gap != 0
+                    || pl.reload != 0;
+                (g.paddle_kind(side), busy && pl.kind == Some(PaddleKind::Blaster), g.score)
+            });
             let events = g.step(&input);
+            if let (Some(side), Some((kind, shots, score))) = (s.morph, morph_before)
+                && g.score[side.opponent() as usize] != score[side.opponent() as usize]
+            {
+                let now = g.paddle_kind(side).expect("OMEGA senza tipo");
+                morph_all.0[now as usize] += 1;
+                morph_all.1 += (kind == Some(PaddleKind::Guardian)) as u32;
+                morph_all.2 += shots as u32;
+            }
             moves.tick(moves_before.as_ref(), &g, events, cpu_sides);
             arcade.on_tick(&g, before, events);
             let ch_score = m.read_i32("ch_score", 0) as u32;
@@ -4633,6 +5109,19 @@ fn game(m: &mut Machine, ticks: u32) -> bool {
             "FAIL: il BULLET non passa per tutti i casi: {armed} armati, {on} scattati, {back} finiti alla ribattuta, {kept} rimasti armati a un punto"
         );
         all_ok = false;
+    }
+    let (forms, stay, shots) = morph_all;
+    let line = format!(
+        "{} trasformazioni (ARCADE..GUARDIAN {forms:?}), {stay} rimaste GUARDIAN, {shots} da un BLASTER che aveva sparato",
+        forms.iter().sum::<u32>()
+    );
+    // tutte le forme della scala dopo ARCADE, e il GUARDIAN che resta
+    let ladder_forms = RUNGS[1..].iter().all(|r| forms[r.kind as usize] > 0);
+    if all_ok && (!ladder_forms || stay == 0 || shots == 0) {
+        println!("FAIL: OMEGA non passa per tutti i casi: {line}");
+        all_ok = false;
+    } else {
+        println!("     OMEGA: {line}");
     }
     if all_ok && let Some(missing) = moves_all.missing() {
         println!(
@@ -4843,6 +5332,10 @@ fn dash(m: &mut Machine) -> Result<String, String> {
 /// Finale di CHALLENGE (c64/src/ending.s): la scena, la canzone del player del C64, la canzone
 /// delle iniziali dopo, le parti dei fuochi e dei titoli.
 const ST_ENDING: u8 = 16;
+const ST_WARNING: u8 = 17;
+const ST_JUKEBOX: u8 = 18;
+/// livello in classifica con OMEGA battuto ("ALL+")
+const SCORE_LEVEL_OMEGA: u8 = paddws_core::challenge::SCORE_LEVEL_OMEGA;
 const ST_OVER: u8 = 8;
 const ST_CONT: u8 = 12;
 const SID_SONG_ENDING: u8 = 8;
@@ -5945,8 +6438,38 @@ fn egg_ui(m: &mut Machine) -> Result<String, String> {
     check(m, true, "dopo RED con il joystick")?;
     egg_initials(m, b"RED");
     check(m, false, "spento alla fine")?;
+    // BAS con il joystick (B, A, S): il JUKEBOX sbloccato, salvato con la classifica; l'easter egg
+    // dei colori resta spento
+    let saved_juke = m.read_u8("hi_juke", 0);
+    m.write_u8("hi_juke", 0, 0xFF);
+    m.write_i32("ch_best", 0, 400_000);
+    m.call("table_rank");
+    let rank = m.cpu.a;
+    m.write_u8("ch_rank", 0, rank);
+    m.call("enter_initials");
+    for _ in 0..3 {
+        frame(m, 0xFF);
+    }
+    for (moves, bit) in [(1, 0x02u8), (1, 0x01), (18, 0x02)] {
+        for b in std::iter::repeat_n(bit, moves).chain([0x10]) {
+            frame(m, 0xFF);
+            frame(m, !b);
+        }
+    }
+    m.cpu.joy_port2 = 0xFF;
+    let name: Vec<u8> = (0..3).map(|i| m.read_u8("ch_table", i)).collect();
+    if name != b"BAS" || m.read_u8("hi_juke", 0) != 0 || m.read_u8("state", 0) != ST_SCORES {
+        return Err(format!(
+            "BAS con il joystick: nome {:?}, hi_juke {:02x}, scena {}",
+            String::from_utf8_lossy(&name),
+            m.read_u8("hi_juke", 0),
+            m.read_u8("state", 0)
+        ));
+    }
+    check(m, false, "dopo BAS")?;
+    m.write_u8("hi_juke", 0, saved_juke);
     Ok(
-        "easter egg: il \"!\" dopo lo spazio nelle iniziali; RED lo accende e lo spegne (anche con il joystick, con il record in classifica), le altre iniziali no; giallo e rosso scambiati nelle scritte e in $D026; la canzone del finale nell'attract"
+        "easter egg: il \"!\" dopo lo spazio nelle iniziali; RED lo accende e lo spegne (anche con il joystick, con il record in classifica), le altre iniziali no; giallo e rosso scambiati nelle scritte e in $D026; la canzone del finale nell'attract; BAS sblocca il JUKEBOX"
             .into(),
     )
 }

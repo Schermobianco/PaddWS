@@ -2,7 +2,8 @@
 # Assembla la versione C64 (come build.ps1) in c64/build: la cartuccia EasyFlash paddws.crt (avvio
 # crt.s, programma, caratteri della scelta dei bonus, voci di CHALLENGE) e i pezzi da cui nasce, che
 # servono anche al banco di prova: paddws.prg (con paddws.lbl e paddws.map), il finale di CHALLENGE
-# paddws.prg.end e i file voce voice0-6.prg. Richiede ca65 e ld65 nel PATH (pacchetto cc65) e python3.
+# paddws.prg.end, il banco di OMEGA paddws.prg.omega e i file voce voice0-7.prg (il 7 è OMEGA).
+# Richiede ca65 e ld65 nel PATH (pacchetto cc65) e python3.
 set -e
 c64=$(cd "$(dirname "$0")" && pwd)
 root=$(dirname "$c64")
@@ -19,11 +20,11 @@ part() {
 
 part main.s paddws .prg paddws.cfg
 voices=""
-for k in 0 1 2 3 4 5 6; do
+for k in 0 1 2 3 4 5 6 7; do
     part voice.s "voice$k" .prg voice.cfg -D "VOICE_KIND=$k"
     voices="$voices $out/voice$k.prg"
 done
 part crt.s paddws-crt .bin crt.cfg
 # shellcheck disable=SC2086
-python3 "$root/tools/make_crt.py" "$out/paddws.crt" "$out/paddws-crt.bin" "$out/paddws.prg" "$c64/gen/pick_bank.bin" "$out/paddws.prg.end" $voices > /dev/null
+python3 "$root/tools/make_crt.py" "$out/paddws.crt" "$out/paddws-crt.bin" "$out/paddws.prg" "$c64/gen/pick_bank.bin" "$out/paddws.prg.end" "$out/paddws.prg.omega" $voices > /dev/null
 echo "c64/build/paddws.crt: cartuccia EasyFlash"

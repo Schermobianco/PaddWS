@@ -1,10 +1,11 @@
-"""Genera la grafica della schermata HOW TO PLAY delle mosse speciali per il core MiSTer
-(mister/rtl/howto_render.v): pixel art in stile Neo Geo a 320x240, come rust/game/src/moves_ui.rs.
+"""Genera la grafica della schermata HOW TO PLAY delle mosse speciali per il core MiSTer: pixel art in
+stile Neo Geo a 320x240, come rust/game/src/moves_ui.rs. Dalla 4.4.0 i file prodotti sono l'ingresso di
+tools/gen_mister_ui.py, che ne fa le immagini dello schermo a oggetti (rust/mister-ui/src/howto.rs).
 
 Uso:
     python tools/gen_howto_assets.py [--preview CARTELLA]
 
-Tre livelli, composti da howto_render.v:
+Tre livelli (come li compone rust/mister-ui/src/howto.rs):
 - scritte (e barre del costo, "+"): righe dello schermo intere, 2 bit per pixel (0 niente,
   1 bianco, 2 grigio, 3 accento), in howto_text.hex; le righe uguali si tengono una volta sola (anche
   le coppie delle scritte grandi e le righe comuni alle varianti joystick, paddle e spinner) e la
@@ -246,7 +247,7 @@ def vh(rows_n: int, skip: tuple[int, int]) -> str:
     leg = legend_x()
     p = [
         "// Generato da tools/gen_howto_assets.py: non modificare a mano.",
-        "// Schermata HOW TO PLAY delle mosse speciali (howto_render.v).",
+        "// Schermata HOW TO PLAY delle mosse speciali (letta da tools/gen_mister_ui.py).",
         f"localparam integer HT_TEXT_ROWS = {rows_n};          // righe di 320 pixel in howto_text.hex",
         "// howto_rows.hex: 1024 voci {controllo, y} -> bit 8 la riga ha scritte, bit 7-0 la riga",
         f"localparam integer HT_SPRITES = {len(SPRITES)};            // celle 32x32 in howto_sprites.hex",

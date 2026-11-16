@@ -218,7 +218,7 @@ impl PaddlePick {
         if let Some(run) = &app.run {
             // scalata: la CPU cambia racchetta a ogni livello, qui si vede quella del primo;
             // allenamento: quella dell'avversario scelto
-            pick.cursor[1] = paddws_core::challenge::RUNGS[run.level].kind as usize;
+            pick.cursor[1] = crate::challenge_ui::rung(run.level).kind as usize;
             pick.chosen[1] = true;
         } else if app.cpu {
             let mut rng = paddws_core::Rng::new(app.seed ^ 0x7A11_E5ED);

@@ -150,15 +150,18 @@ CH_PERFECT             = 2000
 CH_RALLY_STEP          = 4
 CH_MAX_MULT            = 8
 CH_TABLE               = 10
+CH_OMEGA               = 7
+CH_OMEGA_POINTS        = 50000
+CH_LEVEL_OMEGA         = 9
 ; livelli: racchetta della CPU
-.define T_RUNG_KIND 0, 3, 2, 1, 4, 5, 6
+.define T_RUNG_KIND 0, 3, 2, 1, 4, 5, 6, 0
 ; livello della CPU
-.define T_RUNG_CPU 4, 5, 6, 7, 8, 9, 10
+.define T_RUNG_CPU 4, 5, 6, 7, 8, 9, 10, 11
 ; velocità della palla (difficoltà con NORMAL)
-.define T_RUNG_SPEED 0, 0, 0, 1, 1, 1, 2
+.define T_RUNG_SPEED 0, 0, 0, 1, 1, 1, 2, 2
 ; punti per vincere
-.define T_RUNG_POINTS 5, 5, 5, 5, 5, 5, 5
+.define T_RUNG_POINTS 5, 5, 5, 5, 5, 5, 5, 7
 ; bonus della CPU, 3 per livello
-.define T_RUNG_LOADOUT 2, 3, 1, 3, 6, 2, 1, 0, 2, 0, 2, 4, 1, 4, 3, 1, 6, 0, 4, 6, 1
+.define T_RUNG_LOADOUT 2, 3, 1, 3, 6, 2, 1, 0, 2, 0, 2, 4, 1, 4, 3, 1, 6, 0, 4, 6, 1, 2, 3, 1
 ; classifica iniziale: iniziali, punti (4 byte), livello
 .define T_TABLE 80, 87, 83, 32, 78, 0, 0, 7, 80, 87, 83, 80, 70, 0, 0, 7, 80, 87, 83, 128, 62, 0, 0, 6, 80, 87, 83, 176, 54, 0, 0, 5, 80, 87, 83, 224, 46, 0, 0, 5, 80, 87, 83, 16, 39, 0, 0, 4, 80, 87, 83, 64, 31, 0, 0, 3, 80, 87, 83, 112, 23, 0, 0, 3, 80, 87, 83, 160, 15, 0, 0, 2, 80, 87, 83, 208, 7, 0, 0, 1

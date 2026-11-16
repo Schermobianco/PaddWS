@@ -73,6 +73,20 @@
         114,
         25
       ]
+    },
+    "warning": {
+      "file": "warning.png",
+      "size": [
+        192,
+        38
+      ]
+    },
+    "name_omega": {
+      "file": "name_omega.png",
+      "size": [
+        80,
+        33
+      ]
     }
   }
 }

@@ -1,5 +1,5 @@
 // Generato da tools/gen_howto_assets.py: non modificare a mano.
-// Schermata HOW TO PLAY delle mosse speciali (howto_render.v).
+// Schermata HOW TO PLAY delle mosse speciali (letta da tools/gen_mister_ui.py).
 localparam integer HT_TEXT_ROWS = 92;          // righe di 320 pixel in howto_text.hex
 // howto_rows.hex: 1024 voci {controllo, y} -> bit 8 la riga ha scritte, bit 7-0 la riga
 localparam integer HT_SPRITES = 10;            // celle 32x32 in howto_sprites.hex

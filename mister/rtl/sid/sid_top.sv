@@ -27,6 +27,7 @@ module sid_top
 	input   [7:0] pot_y_r,     // not used if DUAL is 0
 	input  [17:0] ext_in_r,    // not used if DUAL is 0
 	output [17:0] audio_r,
+	output [47:0] scope,       // PaddWS: oscilloscopi delle tre voci del primo chip (sid_filter), {3, 2, 1}
 
 	input [N-1:0] filter_en,
 	input [N-1:0] mode,
@@ -290,6 +291,8 @@ always @(posedge clk) begin
 end
 
 wire [17:0] faudio;
+wire signed [15:0] scope_v1, scope_v2, scope_v3;
+assign scope = {scope_v3, scope_v2, scope_v1};
 
 sid_filter sid_filter
 (
@@ -305,7 +308,10 @@ sid_filter sid_filter
 	.voice3(voice_3[n]),
 	.ext_in(22'(signed'({n ? ext_in_r : ext_in_l, 3'b000}))),
 
-	.audio(faudio)
+	.audio(faudio),
+	.scope1(scope_v1),
+	.scope2(scope_v2),
+	.scope3(scope_v3)
 );
 
 always @(posedge clk) begin

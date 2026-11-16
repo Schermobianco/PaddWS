@@ -32,7 +32,8 @@ Uso: paddws-trace [--out DIR] [--width 320] [--height 240] [--seed N] [--ticks N
        paddws-trace --next-stats PARTITE [--seed N] [--difficulty 0-3] [--cpu]   (durata degli scambi, Classic e NEXT)
        paddws-trace --bonus-stats PARTITE [--seed N] [--difficulty 0-3]   (efficacia di ogni bonus, CPU contro CPU; BULLET: palle e punti salvati)
        paddws-trace --teleport-stats PROVE [--seed N] [--difficulty 0-3]   (palle prese con TELEPORT, per velocità)
-       con --next: --paddles TIPO[,TIPO] (arcade, titan, ..., none) gioca con i tipi di racchetta
+       con --next: --paddles TIPO[,TIPO] (arcade, titan, ..., none) gioca con i tipi di racchetta,
+                   --morph left|right la racchetta di quel lato cambia forma a ogni punto subito (OMEGA)
        paddws-trace --paddle-stats PARTITE [--seed N] [--difficulty 0-3]   (tipi di racchetta contro ARCADE, CPU contro CPU)
        con --paddle-stats: --set nome=valore (anche piu' volte) cambia un valore di PaddleTuning, es. --set titan_speed=0.75,
                              o delle mosse speciali (super_cost, super_gain_hit, ...: vale per tutte le statistiche e le tracce),
@@ -79,6 +80,8 @@ struct Args {
     kinds: Vec<String>,
     /// tipi di racchetta della traccia NEXT (sinistra, destra)
     paddles: [Option<PaddleKind>; 2],
+    /// OMEGA: lato la cui racchetta cambia forma (`Match::set_morph`)
+    morph: Option<Side>,
     /// livello della CPU di destra nelle tracce (default: la difficoltà; 4-10 = CHALLENGE)
     cpu_level: Option<u8>,
     /// statistiche giocate da umani simulati invece che dalla CPU
@@ -119,6 +122,7 @@ fn parse_args() -> Args {
         set: Vec::new(),
         kinds: Vec::new(),
         paddles: [None; 2],
+        morph: None,
         cpu_level: None,
         human: false,
         skill: None,
@@ -172,6 +176,13 @@ fn parse_args() -> Args {
             "--difficulty" => {
                 a.difficulty = value().parse().unwrap_or_else(|_| fail("--difficulty non valido"));
                 a.difficulty_set = true;
+            }
+            "--morph" => {
+                a.morph = Some(match value().as_str() {
+                    "left" => Side::Left,
+                    "right" => Side::Right,
+                    v => fail(&format!("--morph: {v} non valido (left o right)")),
+                })
             }
             "--kinds" => a.kinds = value().split(',').map(str::to_string).collect(),
             "--paddles" => {
@@ -500,11 +511,15 @@ fn verilog_params(p: &Params, a: &Args) -> String {
 /// CHALLENGE (core/src/challenge.rs): livelli, punti arcade e classifica iniziale.
 fn challenge_params() -> String {
     use paddws_core::challenge::{
-        BOOST_POINTS, HIT_POINTS, LEVELS, MAX_MULTIPLIER, PERFECT_POINTS, POINT_POINTS, RALLY_STEP, RUNGS,
-        SUPER_POINTS, Score, TABLE_SIZE, Table, WIN_POINTS,
+        BOOST_POINTS, HIT_POINTS, LEVELS, MAX_MULTIPLIER, OMEGA, OMEGA_LEVEL, OMEGA_POINTS, PERFECT_POINTS,
+        POINT_POINTS, RALLY_STEP, RUNGS, SCORE_LEVEL_OMEGA, SUPER_POINTS, Score, TABLE_SIZE, Table, WIN_POINTS,
     };
     let mut out = String::new();
     let _ = writeln!(out, "localparam integer CH_LEVELS = {LEVELS};");
+    // OMEGA: livello dopo la scala, premio, livello in classifica ("ALL+")
+    let _ = writeln!(out, "localparam integer CH_OMEGA_LEVEL = {OMEGA_LEVEL};");
+    let _ = writeln!(out, "localparam integer CH_OMEGA_POINTS = {OMEGA_POINTS};");
+    let _ = writeln!(out, "localparam integer CH_SCORE_LEVEL_OMEGA = {SCORE_LEVEL_OMEGA};");
     let _ = writeln!(out, "localparam integer CH_HIT = {HIT_POINTS};");
     let _ = writeln!(out, "localparam integer CH_BOOST = {BOOST_POINTS};");
     let _ = writeln!(out, "localparam integer CH_SUPER = {SUPER_POINTS};");
@@ -545,6 +560,8 @@ fn challenge_params() -> String {
         for (i, r) in RUNGS.iter().enumerate() {
             let _ = writeln!(out, "        3'd{i}: {name} = {bits}'d{};", f(r).0);
         }
+        // livello 7: OMEGA, il boss segreto dopo la scala
+        let _ = writeln!(out, "        3'd{OMEGA_LEVEL}: {name} = {bits}'d{};", f(&OMEGA).0);
         let _ = writeln!(out, "        default: {name} = {bits}'d{};", f(&RUNGS[LEVELS - 1]).0);
         let _ = writeln!(out, "    endcase");
         let _ = writeln!(out, "endfunction");
@@ -552,7 +569,7 @@ fn challenge_params() -> String {
     // livello della CPU con la difficoltà del menu (Rung::cpu_at): {livello, difficoltà}
     let _ = writeln!(out, "function [3:0] rung_cpu_at(input [2:0] lvl, input [1:0] diff);");
     let _ = writeln!(out, "    case ({{lvl, diff}})");
-    for (i, r) in RUNGS.iter().enumerate() {
+    for (i, r) in RUNGS.iter().chain([&OMEGA]).enumerate() {
         for d in 0..DIFFICULTY_LEVELS {
             let _ = writeln!(out, "        5'd{}: rung_cpu_at = 4'd{};", i * 4 + d as usize, r.cpu_at(d));
         }
@@ -568,6 +585,9 @@ fn challenge_params() -> String {
             let (w, p) = Score::win_bonus(i, 0);
             let _ = writeln!(out, "        3'd{i}: {name} = 16'd{};", if perfect { p } else { w });
         }
+        let (w, p) = Score::omega_bonus(0);
+        assert!(w < 65_536 && p < 65_536, "premi di OMEGA oltre 16 bit");
+        let _ = writeln!(out, "        3'd{OMEGA_LEVEL}: {name} = 16'd{};", if perfect { p } else { w });
         let _ = writeln!(out, "        default: {name} = 16'd0;");
         let _ = writeln!(out, "    endcase");
         let _ = writeln!(out, "endfunction");
@@ -1516,6 +1536,12 @@ fn main() {
         Match::new(params.clone(), a.players, a.evo, a.seed)
     };
     game.set_super_moves(a.supers);
+    if let Some(side) = a.morph {
+        if !a.next {
+            fail("--morph: solo in NEXT (--next)");
+        }
+        game.set_morph(side);
+    }
     let mut script = Script::new(a.seed);
     // NEXT: giocano due CPU, che raccolgono le capsule e usano i bonus
     let mut cpus = [
@@ -1578,7 +1604,8 @@ fn main() {
              localparam signed [31:0] P_TICK_HZ = {};\n\
              localparam [1:0] P_CPU_SIDES = 2'd{};   // lati giocati dalla CPU Rust: bit 0 sinistra, 1 destra\n\
              localparam [3:0] P_CPU_LEVEL0 = 4'd{};   // livello della CPU di sinistra\n\
-             localparam [3:0] P_CONTROL = 4'd{};   // comandi delle CPU, 2 bit per lato: 0 joystick, 1 spinner, 2 tastiera\n",
+             localparam [3:0] P_CONTROL = 4'd{};   // comandi delle CPU, 2 bit per lato: 0 joystick, 1 spinner, 2 tastiera\n\
+             localparam [1:0] P_MORPH = 2'd{};   // OMEGA: la racchetta cambia forma a ogni punto subito, bit 0 sinistra, 1 destra\n",
             a.seed,
             if a.next { 2 } else { a.players },
             (a.evo && !a.next) as u8,
@@ -1592,7 +1619,8 @@ fn main() {
             a.tick_hz,
             if a.next || a.cpu_play { 3 } else { 0 },
             a.difficulty,
-            control_code(a.control[0]) | control_code(a.control[1]) << 2
+            control_code(a.control[0]) | control_code(a.control[1]) << 2,
+            a.morph.map_or(0, |s| 1 << s as u32)
         ),
     );
     write("trace_input.hex", &inputs);
