@@ -129,6 +129,12 @@ done and which checks are needed is explained in [CONTRIBUTING.en.md](CONTRIBUTI
 [code of conduct](CODE_OF_CONDUCT.md), and security issues are reported privately
 ([SECURITY.md](SECURITY.md)).
 
+## Supporting the project
+
+PADD WS is free and will stay free. If you'd like to buy me a coffee, you can do it on Ko-fi:
+
+<a href="https://ko-fi.com/P5P1D4YFE"><img src="https://storage.ko-fi.com/cdn/kofi6.png?v=6" alt="Buy me a coffee on Ko-fi" height="36"></a>
+
 ## License
 
 Copyright © 2020-2026 Schermobianco.

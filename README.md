@@ -127,6 +127,12 @@ le [Discussions](https://github.com/Schermobianco/PaddWS/discussions); chi parte
 [codice di condotta](CODE_OF_CONDUCT.md), e i problemi di sicurezza si segnalano in privato
 ([SECURITY.md](SECURITY.md)).
 
+## Sostenere il progetto
+
+PADD WS è gratuito e lo resterà. Chi vuole offrire un caffè può farlo su Ko-fi:
+
+<a href="https://ko-fi.com/P5P1D4YFE"><img src="https://storage.ko-fi.com/cdn/kofi6.png?v=6" alt="Offrimi un caffè su Ko-fi" height="36"></a>
+
 ## Licenza
 
 Copyright © 2020-2026 Schermobianco.
