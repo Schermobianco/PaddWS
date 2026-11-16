@@ -158,7 +158,10 @@ entrances in characters, simpler). Matches are NEXT, to 5 points.
   they play a duel to 5 points: the winner resumes the level against the CPU from their side, with a
   prize equal to the level's (the champion adds it to their score, the challenger starts from it);
   the loser enters their initials if they make the table, and can join again straight away. To play
-  two from the start, just join during the introduction of the first level. The champion's duels
+  two from the start, just join during the introduction of the first level; with two credits (or in
+  Free Play) there is also player 2's Start in the attract mode (on PC `2` or the second gamepad, on
+  the Deck their knob): on the MiSTer the duel starts right away, on PC you go through the menu and
+  PLAY starts with the duel (not on the C64). The champion's duels
   won in a row count: **n WINS** appears at the end of the duel on the winner's side and in the
   introductions on their side (whoever beats the champion starts again from 1).
 - **Ending**: after beating the last opponent come CONGRATULATIONS and the voice "YOU WIN!", the

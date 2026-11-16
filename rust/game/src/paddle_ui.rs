@@ -242,6 +242,18 @@ impl PaddlePick {
         pick
     }
 
+    /// CHALLENGE che comincia con la sfida (due crediti e lo Start del giocatore 2 nell'attract):
+    /// scelgono tutti e due, P1 fa da campione.
+    pub fn opening_duel(app: &App) -> Self {
+        let mut pick = Self::new(app);
+        pick.cpu = false;
+        pick.fixed = None;
+        pick.duel = Some(Side::Right);
+        pick.chosen = [false; 2];
+        pick.cursor = [0; 2];
+        pick
+    }
+
 
     /// Gamepad come i tasti del lato (`input`): su e giù spostano il cursore, A sceglie la racchetta (o annulla la scelta), B torna al
     /// menu. Con un solo gamepad è di chi sceglie.
@@ -303,6 +315,10 @@ impl PaddlePick {
             if *t <= 0.0 {
                 // poi la scelta dei bonus (nella sfida solo lo sfidante)
                 if let Some(free) = self.duel {
+                    if self.fixed.is_none() {
+                        app.paddles = self.cursor.map(|i| Some(PaddleKind::ALL[i]));
+                        return Some(Scene::Pick(Pick::opening_duel(app)));
+                    }
                     let i = free as usize;
                     app.paddles[i] = Some(PaddleKind::ALL[self.cursor[i]]);
                     return Some(Scene::Pick(Pick::challenger(app, free)));

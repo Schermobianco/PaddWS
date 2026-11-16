@@ -14,6 +14,15 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+### Aggiunto
+- NEXT, MiSTer e PC/web/Deck: con due crediti (o in Free Play) lo Start del giocatore 2 nell'attract
+  (joystick 2 o tasto 2; sul PC anche il secondo gamepad, sul Deck la manopola del giocatore 2) fa
+  cominciare la scalata con la sfida tra i due giocatori, con la scelta di racchetta e bonus di
+  tutti e due; chi vince continua la scalata dal suo lato. Sul MiSTer parte subito, sul PC si passa
+  dal menu (PLAY in NEXT). Non sul C64.
+- NEXT, tutte le versioni tranne Python: il conto alla rovescia del continue mostra i crediti
+  rimasti (CREDIT n), tranne in Free Play.
+
 ## [4.4.0] - 2026-11-16
 
 ### Aggiunto

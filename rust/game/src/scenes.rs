@@ -235,6 +235,9 @@ pub struct App {
     pub attract: AttractArt,
     /// crediti inseriti (contano solo senza Free Play)
     pub credits: u8,
+    /// lo Start del giocatore 2 nell'attract ha pagato due crediti (o Free Play): PLAY in NEXT
+    /// comincia la scalata con la sfida tra i due (`PaddlePick::opening_duel`)
+    pub duel_start: bool,
     /// si gioca con il touch: in pausa compaiono i comandi da toccare
     pub touch: bool,
     /// encoder del cabinato (Raspberry Pi) o mouse come spinner, ed eventi dell'ultimo frame
@@ -569,9 +572,13 @@ impl Scene {
             })
         };
         match self {
-            Scene::Attract(_) | Scene::Scores(_) | Scene::Demo(_) | Scene::Ending(_) | Scene::Warning(_) => {
-                start(KeyCode::Key1)
-            }
+            // nell'attract lo Start del secondo gamepad è quello del giocatore 2 (`coin_and_start`)
+            Scene::Attract(_) | Scene::Scores(_) | Scene::Demo(_) => input::pad_keys(|slot, c| match c {
+                Control::A | Control::Start => Some(challenge_ui::SIDE_START[slot.min(1)]),
+                Control::Select => Some(KeyCode::Key5),
+                _ => None,
+            }),
+            Scene::Ending(_) | Scene::Warning(_) => start(KeyCode::Key1),
             Scene::Jukebox(s) => s.pad_keys(),
             Scene::Menu(_) => input::pad_keys(|_, c| match c {
                 Control::Up => Some(KeyCode::Up),
@@ -651,7 +658,9 @@ fn update_attract(attract: &mut Attract, app: &mut App, dt: f64) -> Option<Scene
     (title && attract.phase != attract::Phase::Title).then(|| Scene::Scores(Scores::attract()))
 }
 
-/// Gettone (tasto 5) e Start nell'attract e nella classifica: Start va al menu.
+/// Gettone (tasto 5) e Start nell'attract e nella classifica: Start va al menu. Con due crediti
+/// (o in Free Play) lo Start del giocatore 2 (tasto 2 o secondo gamepad) li paga tutti e due e PLAY
+/// in NEXT comincia con la sfida tra i due giocatori (`App::duel_start`).
 pub(crate) fn coin_and_start(app: &mut App) -> Option<Scene> {
     if input::pressed(KeyCode::Key5) && !app.cfg.game.free_play && app.credits < 9 {
         app.credits += 1;
@@ -664,10 +673,22 @@ pub(crate) fn coin_and_start(app: &mut App) -> Option<Scene> {
         app.play_coin();
         return None;
     }
-    if (tapped || input::any_pressed(&START_KEYS)) && (app.cfg.game.free_play || app.credits > 0) {
+    // (sul Deck anche il click della manopola del giocatore 2)
+    let p2 = input::pressed(challenge_ui::SIDE_START[1])
+        || app.knob_events.iter().any(|e| e.player == 1 && e.action == Action::Click);
+    if p2 && (app.cfg.game.free_play || app.credits >= 2) {
+        if !app.cfg.game.free_play {
+            app.credits -= 2;
+        }
+        app.duel_start = true;
+        app.play(Event::Hit);
+        return Some(Scene::Menu(Menu::new(app)));
+    }
+    if (tapped || p2 || input::any_pressed(&START_KEYS)) && (app.cfg.game.free_play || app.credits > 0) {
         if !app.cfg.game.free_play {
             app.credits -= 1;
         }
+        app.duel_start = false;
         app.play(Event::Hit);
         return Some(Scene::Menu(Menu::new(app)));
     }
@@ -1151,13 +1172,22 @@ impl Menu {
             // NEXT: la scalata, o l'allenamento contro l'avversario di OPPONENT; prima la
             // racchetta, poi i bonus
             Item::Play if app.next => {
-                app.run = Some(match app.opponent.filter(|_| app.cfg.game.training) {
+                let duel = std::mem::take(&mut app.duel_start);
+                let training = app.opponent.filter(|_| app.cfg.game.training);
+                app.run = Some(match training {
                     Some(level) => Run::training(level),
                     None => Run::new(),
                 });
+                // pagata dal giocatore 2 nell'attract: la scalata comincia con la sfida tra i due
+                if duel && training.is_none() {
+                    return Some(Scene::Paddles(PaddlePick::opening_duel(app)));
+                }
                 Some(Scene::Paddles(PaddlePick::new(app)))
             }
-            Item::Play => Some(Scene::Game(Box::new(Play::new(app)))),
+            Item::Play => {
+                app.duel_start = false;
+                Some(Scene::Game(Box::new(Play::new(app))))
+            }
             Item::Jukebox => Some(Scene::Jukebox(Jukebox::new())),
             Item::Quit => {
                 app.quit = true;

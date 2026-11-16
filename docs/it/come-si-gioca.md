@@ -156,7 +156,10 @@ semplici). Le partite sono NEXT a 5 punti.
   gioca una sfida a 5 punti: chi vince riprende il livello contro la CPU dal suo lato, con un premio
   pari a quello del livello (il campione lo aggiunge ai suoi punti, lo sfidante parte da lì); chi
   perde scrive le iniziali se entra in classifica, e può rientrare subito. Per giocare in due fin
-  dall'inizio basta entrare nella presentazione del primo livello. Le sfide vinte di fila dal
+  dall'inizio basta entrare nella presentazione del primo livello; con due crediti (o in Free Play)
+  c'è anche lo Start del giocatore 2 nell'attract (sul PC `2` o il secondo gamepad, sul Deck la sua
+  manopola): sul MiSTer parte subito la sfida, sul PC si passa dal menu e PLAY comincia con la
+  sfida (sul C64 non c'è). Le sfide vinte di fila dal
   campione contano: **n WINS** compare a fine sfida dalla parte di chi ha vinto e nelle
   presentazioni dalla sua parte (chi batte il campione riparte da 1).
 - **Finale**: battuto l'ultimo avversario arrivano CONGRATULATIONS e la voce "YOU WIN!", la

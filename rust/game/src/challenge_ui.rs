@@ -1663,6 +1663,10 @@ impl Continue {
                 gray,
             );
         }
+        // crediti rimasti, come nell'attract (non in Free Play)
+        if !app.cfg.game.free_play {
+            text(app, &format!("CREDIT {}", app.credits), T1, 450.0, white);
+        }
     }
 }
 

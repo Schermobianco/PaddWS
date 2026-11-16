@@ -261,6 +261,7 @@ async fn run(args: Args, mut cfg: Config, config_path: PathBuf) {
         assets,
         attract,
         credits: 0,
+        duel_start: false,
         touch: false,
         encoders,
         knob_events: Vec::new(),

@@ -132,6 +132,7 @@ esecuzioni seguenti; `-f` lo ignora, `-u` mette le scritte dritte. Gli scenari p
 - `challenge`, `challenger`, `ending`: la scalata di NEXT, l'ingresso di un secondo giocatore e il
   finale (con lo sblocco dell'allenamento);
 - `wins`, `train`: il contatore delle sfide vinte di fila e l'allenamento;
+- `duelstart`: la sfida subito dall'attract, con due crediti e lo Start del giocatore 2;
 - `nvram`: la classifica e lo sblocco sulla SD con un `hps_io` finto;
 - `omega`, `jukebox`: OMEGA dal GAME OVER del GUARDIAN a HARD fino al finale, e il jukebox;
 - `win`, `perfect`, `paddle`, `spin`, `mute`, `music`: fine partita, paddle e spinner, audio.

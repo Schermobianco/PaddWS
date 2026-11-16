@@ -129,6 +129,7 @@ runs start from; `-f` ignores it, `-u` makes the text upright. The most useful s
 - `challenge`, `challenger`, `ending`: the NEXT ladder, a second player joining in and the ending
   (with the training unlock);
 - `wins`, `train`: the counter of duels won in a row and training;
+- `duelstart`: the duel straight from the attract mode, with two credits and player 2's Start;
 - `nvram`: the SD high scores and unlock with a fake `hps_io`;
 - `omega`, `jukebox`: OMEGA from the GUARDIAN's GAME OVER on HARD up to the ending, and the
   jukebox;

@@ -18,6 +18,8 @@
 // rung_points punti. Il vincitore continua la scalata dal suo lato (la CPU anche a sinistra), il
 // perdente inserisce le iniziali se il suo miglior punteggio entra in classifica. "n WINS" conta i
 // duelli vinti di fila dal campione in carica (`ch_wins`): a fine duello e nelle presentazioni.
+// Con due crediti (o in Free Play) lo Start del giocatore 2 nell'attract fa partire subito la sfida
+// tra i due (`duel_start`), poi la scalata con il vincitore.
 // A ogni frame, all'inizio del vblank, la logica esegue 4 tick (240 Hz) nella demo e in
 // partita. La logica è il core Rust eseguito dal processore RISC-V di pong_logic_rv, che a ogni tick
 // calcola anche i comandi delle CPU (demo e avversario).
@@ -518,6 +520,12 @@ wire       duel_w = score1 > score0;  // lato del vincitore della sfida (puntegg
 wire       ch_join = side_start[!ch_side] && ch_active && !duel && !train && !reset && (free_play || credits != 4'd0) &&
                      !omega_lvl && !omega_warn && !jb_on &&
                      (mode == M_INTRO || mode == M_GAME || (mode == M_CLEAR && ch_level != CH_LEVELS - 1));
+// sfida subito dall'attract: con due crediti (o in Free Play) lo Start del giocatore 2 (joystick 2 o
+// tasto 2) fa partire la scalata con la sfida tra i due, senza HERE COMES A NEW CHALLENGER!: scelte di
+// tutti e due, partita a rung_points del primo livello, poi il vincitore continua dal suo lato (P1 fa
+// da campione, come se P2 fosse entrato nella prima presentazione). Non nell'allenamento
+wire       duel_start = side_start[1] && in_attract && want_challenge && !want_train && !jb_on &&
+                        (free_play || credits >= 4'd2);
 // la CPU di CHALLENGE gioca a sinistra (il campione è a destra)
 assign     ch_cpu_left = ch_active && ch_side;
 assign     ui_sel = (duel && mode == M_INITIALS) ? (ch_side ? 2'b10 : 2'b01) : 2'b11;
@@ -632,11 +640,12 @@ always @(posedge clk) begin
         mframe <= 11'd0;
         ch_active <= 1'b0;
         duel <= 1'b0;
-    end else if (start_press && in_attract && (free_play || credits != 4'd0)) begin
-        // nuova partita con le opzioni dell'OSD; NEXT passa prima dalla scelta dei bonus
-        if (!free_play) credits <= credits - 4'd1;
+    end else if ((start_press || duel_start) && in_attract && (free_play || credits != 4'd0)) begin
+        // nuova partita con le opzioni dell'OSD; NEXT passa prima dalla scelta dei bonus (la sfida
+        // subito, duel_start, costa due crediti e passa dalla scelta di tutti e due)
+        if (!free_play) credits <= credits - (duel_start ? 4'd2 : 4'd1);
         mframe <= 11'd0;
-        match_cpu <= want_cpu;
+        match_cpu <= want_cpu && !duel_start;
         ch_active <= want_challenge;
         train <= want_train;
         ch_wins <= 8'd0;
@@ -646,7 +655,7 @@ always @(posedge clk) begin
         omega_warn <= 1'b0;
         omega_won <= 1'b0;
         ch_side <= 1'b0;                                 // in CHALLENGE si comincia a sinistra
-        duel <= 1'b0;
+        duel <= duel_start;
         howto_seen <= 2'b00;
         if (want_next) begin
             mode <= M_PICK;
@@ -685,7 +694,11 @@ always @(posedge clk) begin
         attract_trigger <= 1'b1;
         attract_auto <= 1'b0;
     end else if (pick_go && mode == M_PICK && want_howto) begin
-        if (ch_active) howto_seen[howto_side] <= 1'b1;
+        // nella sfida partita dall'attract (nessun lato fermo nella scelta) la vedono tutti e due
+        if (ch_active) begin
+            if (pick_lock == 2'b00) howto_seen <= 2'b11;
+            else howto_seen[howto_side] <= 1'b1;
+        end
         mode <= M_HOWTO;
         mframe <= 11'd0;
         blink <= 6'd0;                               // PRESS START TO SKIP acceso da subito
@@ -995,21 +1008,23 @@ always @(posedge clk) begin
     pick_restart <= 1'b0;
     pk_q[0] <= {joy0[3], joy0[2], joy0[4]};
     pk_q[1] <= {joy1[3], joy1[2], joy1[4]};
-    if (start_press && in_attract && want_next) begin
+    if ((start_press || duel_start) && in_attract && want_next) begin
+        // nella sfida subito (duel_start) a destra sceglie P2, come lo sfidante
         pick_cur[0] <= 3'd0;
         pick_cur[1] <= 3'd0;
         pick_mask[0] <= 6'd0;
-        pick_mask[1] <= want_challenge ? rung_pick(start_level) :
+        pick_mask[1] <= duel_start ? 6'd0 : want_challenge ? rung_pick(start_level) :
                         want_cpu ? cpu_pick(seed_counter[4:0] >= 5'd20 ? seed_counter[4:0] - 5'd20 : seed_counter[4:0]) : 6'd0;
-        pick_cpu <= want_cpu;
-        pick_lock <= {want_cpu, 1'b0};
+        pick_cpu <= want_cpu && !duel_start;
+        pick_lock <= {want_cpu && !duel_start, 1'b0};
         pick_ready <= 1'b0;
         pick_paddle <= 1'b1;
         kind_cur[0] <= 3'd0;
         // tipo a caso per la CPU, da bit del contatore diversi da quelli dei bonus
-        kind_cur[1] <= want_challenge ? rung_kind(start_level) : !want_cpu ? 3'd0 : (seed_counter[12:10] != 3'd7) ? seed_counter[12:10] :
+        kind_cur[1] <= duel_start ? 3'd0 : want_challenge ? rung_kind(start_level) : !want_cpu ? 3'd0 :
+                       (seed_counter[12:10] != 3'd7) ? seed_counter[12:10] :
                        (seed_counter[15:13] != 3'd7) ? seed_counter[15:13] : 3'd0;
-        kind_chosen <= {want_cpu, 1'b0};
+        kind_chosen <= {want_cpu && !duel_start, 1'b0};
     end else if (ch_join) begin
         // nuovo sfidante: sceglie solo lui, dal lato libero; il lato del campione resta com'è
         pick_cur[!ch_side] <= 3'd0;

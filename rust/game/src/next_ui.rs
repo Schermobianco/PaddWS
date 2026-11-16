@@ -544,6 +544,16 @@ impl Pick {
         pick
     }
 
+    /// CHALLENGE che comincia con la sfida (`PaddlePick::opening_duel`): scelgono tutti e due.
+    pub fn opening_duel(app: &App) -> Self {
+        let mut pick = Self::new(app);
+        pick.cpu = false;
+        pick.fixed = None;
+        pick.duel = Some(Side::Right);
+        pick.chosen = [Vec::new(), Vec::new()];
+        pick
+    }
+
 
     /// Gamepad come i tasti del lato (`input`): su e giù spostano il cursore, A prende o lascia il bonus, B torna al
     /// menu. Con un solo gamepad è di chi sceglie.
@@ -607,9 +617,15 @@ impl Pick {
                 if let Some(free) = self.duel {
                     // sfida in CHALLENGE: lo sfidante vede le mosse speciali se dal suo lato non
                     // le ha ancora viste nessuno in questa sessione
+                    // (nella sfida che apre la scalata la vedono tutti e due insieme)
                     let i = free as usize;
                     let run = app.run.as_mut().expect("sfida senza CHALLENGE");
-                    if !std::mem::replace(&mut run.howto[i], true) {
+                    let seen = if self.fixed.is_none() {
+                        std::mem::replace(&mut run.howto, [true; 2]) == [true; 2]
+                    } else {
+                        std::mem::replace(&mut run.howto[i], true)
+                    };
+                    if !seen {
                         return Some(Scene::HowTo(crate::moves_ui::HowTo::duel(app)));
                     }
                     return Some(Scene::Game(Box::new(Play::duel(app))));

@@ -215,6 +215,11 @@ pub fn screen(r: &Regs, d: &mut Dl) {
                     centered(d, if coin { b"INSERT COIN" } else { b"PRESS START" }, 160, WHITE);
                 }
                 centered(d, b"SCORE RESETS TO 0", 190, GRAY);
+                // crediti rimasti, come nel titolo (non in Free Play)
+                if !r.free_play {
+                    let s = [b'C', b'R', b'E', b'D', b'I', b'T', b' ', b'0' + r.credits as u8];
+                    centered(d, &s, 214, WHITE);
+                }
             }
         }
         regs::M_INITIALS => {

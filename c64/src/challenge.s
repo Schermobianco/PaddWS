@@ -2885,7 +2885,19 @@ got:
     lda #EV_WALL
     jsr sid_fx
 prompt:
-    ; PRESS START o INSERT COIN, a tratti
+    ; crediti rimasti, come nel titolo (non in Free Play): un gettone può arrivare ora
+    lda opt_free
+    bne :+
+    jsr print_at
+    .byte 16, 21, "CREDIT ", 0
+    lda credits
+    clc
+    adc #'0'
+    ldx #23
+    ldy #21
+    sty v_row
+    jsr put_ascii
+:   ; PRESS START o INSERT COIN, a tratti
     lda frame_count
     and #$20
     beq off
