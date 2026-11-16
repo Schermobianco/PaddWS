@@ -14,6 +14,8 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+## [4.4.0] - 2026-11-16
+
 ### Aggiunto
 - **OMEGA, il boss segreto** (PC, web, Deck, MiSTer e C64): chi sale la scalata di NEXT a HARD o
   EXPERT dal primo livello senza usare continue, battuto il GUARDIAN trova l'allarme WARNING! e la
@@ -1275,7 +1277,8 @@ Ricostruite dalle cartelle di backup in `archive/` (date indicative).
 - **1.5** (2020-08) – versione per Raspberry Pi con encoder rotativi.
 - **1.1 – 1.4** (2020-08) – prime versioni pygame: menu, modalità CLASSIC ed EVO, suoni, splash.
 
-[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.3.0...HEAD
+[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.4.0...HEAD
+[4.4.0]: https://github.com/Schermobianco/PaddWS/compare/v4.3.0...v4.4.0
 [4.3.0]: https://github.com/Schermobianco/PaddWS/compare/v4.2.0...v4.3.0
 [4.2.0]: https://github.com/Schermobianco/PaddWS/compare/v4.1.1...v4.2.0
 [4.1.1]: https://github.com/Schermobianco/PaddWS/compare/v4.1.1-beta.5...v4.1.1
