@@ -14,6 +14,8 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+## [4.4.1] - 2026-11-16
+
 ### Aggiunto
 - NEXT, MiSTer e PC/web/Deck: con due crediti (o in Free Play) lo Start del giocatore 2 nell'attract
   (joystick 2 o tasto 2; sul PC anche il secondo gamepad, sul Deck la manopola del giocatore 2) fa
@@ -1286,7 +1288,8 @@ Ricostruite dalle cartelle di backup in `archive/` (date indicative).
 - **1.5** (2020-08) – versione per Raspberry Pi con encoder rotativi.
 - **1.1 – 1.4** (2020-08) – prime versioni pygame: menu, modalità CLASSIC ed EVO, suoni, splash.
 
-[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.4.0...HEAD
+[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.4.1...HEAD
+[4.4.1]: https://github.com/Schermobianco/PaddWS/compare/v4.4.0...v4.4.1
 [4.4.0]: https://github.com/Schermobianco/PaddWS/compare/v4.3.0...v4.4.0
 [4.3.0]: https://github.com/Schermobianco/PaddWS/compare/v4.2.0...v4.3.0
 [4.2.0]: https://github.com/Schermobianco/PaddWS/compare/v4.1.1...v4.2.0
