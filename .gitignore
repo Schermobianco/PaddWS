@@ -30,6 +30,7 @@ forge.local.psd1
 assets/itch/
 tools/gen_itch_cover.py
 tools/gen_itch_background.py
+tools/gen_itch_cover_c64.py
 
 # compilati temporanei da provare (eseguibili, configurazioni di prova), solo in locale
 /test/
