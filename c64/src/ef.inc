@@ -29,3 +29,5 @@ HOWTO_BANK  = 24                ; 24-25: la HOW TO PLAY delle mosse speciali (ge
 OM_BANK     = 26                ; OMEGA (ROML e ROMH): il suo file voce (come quelli dei tipi), poi le
                                 ; sezioni della sua canzone, i temi per il jukebox, il jukebox e
                                 ; l'entrata di OMEGA nella presentazione (paddws.cfg, %O.omega)
+KP_BANK     = 27                ; dal 27 (ROML e ROMH): la scelta della racchetta con i ritratti, il
+                                ; codice (kpick.s, %O.kpick) e i dati (gen/kpick.bin)

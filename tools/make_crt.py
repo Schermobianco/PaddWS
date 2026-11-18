@@ -23,6 +23,10 @@ Banchi e indirizzi in c64/src/ef.inc:
   canzone, temi per il jukebox, jukebox, entrata nella presentazione), dopo il suo file voce;
 - c64/gen/howto.bin (letto da qui, non è un argomento): la HOW TO PLAY delle mosse speciali, nella
   ROML dei banchi HOWTO_BANK (la bitmap) e HOWTO_BANK + 1 (i colori e quelli dell'easter egg);
+- PROGRAMMA.prg.kpick (accanto al programma, non è un argomento) e c64/gen/kpick.bin: la scelta
+  della racchetta con i ritratti, il codice (c64/src/kpick.s, 4 pagine) e poi i dati
+  (tools/gen_c64_portraits.py), dal banco KP_BANK, ROML e ROMH; il resto del codice
+  (PROGRAMMA.prg.kpick2) va nella riga 1 della bitmap dello sfondo, vuota;
 - FINALE.bin: il finale di CHALLENGE (c64/src/ending.s, l'uscita PROGRAMMA.prg.end di ld65), nella
   ROML dei banchi da END_BANK, 8 KB per banco;
 - banco della vittoria WIN_BANK (ROML): "YOU WIN!" (c64/gen/you_win.bin) con il player delle voci,
@@ -60,14 +64,15 @@ BOOT_END = 0x10000 # la classifica, una pagina vuota e il GAME OVER (nel banco 4
 SRC = Path(__file__).resolve().parent.parent / "c64" / "src"
 
 
-def const(name: str, inc: str) -> int:
-    """Costante di c64/src/INC (`NOME = $XXXX` o decimale)."""
+def const(name: str, inc: str, base: int = 0) -> int:
+    """Costante di c64/src/INC (`NOME = $XXXX` o decimale, o `NOME = $80 + n` con base $80)."""
     path = SRC / inc
-    m = re.search(rf"^{name}\s*=\s*(\$[0-9A-Fa-f]+|\d+)", path.read_text(encoding="utf-8"), re.M)
+    m = re.search(rf"^{name}\s*=\s*(\$[0-9A-Fa-f]+|\d+)(?:\s*\+\s*(\d+))?", path.read_text(encoding="utf-8"), re.M)
     if not m:
         sys.exit(f"{path}: manca {name}")
     v = m.group(1)
-    return int(v[1:], 16) if v.startswith("$") else int(v)
+    value = int(v[1:], 16) if v.startswith("$") else int(v)
+    return value + int(m.group(2) or 0)
 
 
 PRG_BANK = const("PRG_BANK", "ef.inc")
@@ -83,6 +88,8 @@ WIN_BANK = const("WIN_BANK", "ef.inc")
 END_BANK = const("END_BANK", "ef.inc")
 HOWTO_BANK = const("HOWTO_BANK", "ef.inc")
 OM_BANK = const("OM_BANK", "ef.inc")
+KP_BANK = const("KP_BANK", "ef.inc")
+KPICK = SRC.parent / "gen" / "kpick.bin"
 HOWTO = SRC.parent / "gen" / "howto.bin"
 WIN_RUN = const("WIN_RUN", "voice.inc")
 WIN_SAMPLES = const("WIN_SAMPLES", "voice.inc")
@@ -201,7 +208,41 @@ def main() -> None:
     vectors[0x1FF0] = 0x40
     vectors[0x1FFA:0x2000] = bytes([0xF0, 0xFF] * 3)
     chips.append(chip(HI_BANK, 0xA000, bytes(vectors)))
-    assert VOICE_BANK0 + 7 <= PICK_BANK < WIN_BANK < END_BANK < HI_BANK < HI_BANK + 8 <= HOWTO_BANK < HOWTO_BANK + 2 <= OM_BANK < 64
+    # scelta della racchetta: il codice, poi i dati, 8 KB per metà di banco
+    kcode = Path(str(program) + ".kpick").read_bytes()
+    if len(kcode) != 0x400:
+        sys.exit(f"{program}.kpick: {len(kcode)} byte invece di 1024")
+    # i cursori (PROGRAMMA.prg.kpick2) nella riga 1 della bitmap dello sfondo, vuota: da $E140
+    kcode2 = Path(str(program) + ".kpick2").read_bytes()
+    bg = bytearray(KPICK.read_bytes())
+    if len(kcode2) != 0x140 or any(bg[0x140:0x280]):
+        sys.exit(f"{program}.kpick2: {len(kcode2)} byte invece di 320, o riga 1 dello sfondo non vuota")
+    bg[0x140:0x280] = kcode2
+    # lo schermo VS (PROGRAMMA.prg.kvs, .kvs2, .kvs3): il codice all'inizio del suo banco, nelle 4
+    # pagine lasciate vuote da tools/gen_c64_portraits.py, poi quello della riga 24 della bitmap a
+    # KV_ROW24P e quello dei caratteri 64-159 a KV_CHARSP
+    vs_bank = const("KV_BANK_REL", "../gen/kpick.inc")
+    vs_row24 = const("KV_ROW24P", "../gen/kpick.inc", 0x80)
+    vs_chars = const("KV_CHARSP", "../gen/kpick.inc", 0x80)
+    at = vs_bank * 2 * HALF - 0x400
+    for ext, page, size in ((".kvs", 0x80, 0x400), (".kvs2", vs_row24, 0x100), (".kvs3", vs_chars, 0x300)):
+        code = Path(str(program) + ext).read_bytes()
+        here = at + (page - 0x80) * 256
+        if len(code) > size or any(bg[here:here + size]):
+            sys.exit(f"{program}{ext}: oltre {size} byte, o il suo posto nei dati non vuoto")
+        bg[here:here + len(code)] = code
+    # la sfilata del finale (PROGRAMMA.prg.parade): all'inizio del suo banco, come il VS
+    pr_bank = const("PR_BANK_REL", "../gen/kpick.inc")
+    pcode = Path(str(program) + ".parade").read_bytes()
+    here = pr_bank * 2 * HALF - 0x400
+    if len(pcode) != 0x400 or any(bg[here:here + 0x400]):
+        sys.exit(f"{program}.parade: {len(pcode)} byte invece di 1024, o il suo posto nei dati non vuoto")
+    bg[here:here + 0x400] = pcode
+    kpick = kcode + bytes(bg)
+    for i in range(0, len(kpick), HALF):
+        chips.append(chip(KP_BANK + i // (2 * HALF), 0x8000 + i // HALF % 2 * HALF, kpick[i:i + HALF]))
+    assert VOICE_BANK0 + 7 <= PICK_BANK < WIN_BANK < END_BANK < HI_BANK < HI_BANK + 8 <= HOWTO_BANK < HOWTO_BANK + 2 <= OM_BANK < KP_BANK
+    assert KP_BANK + (len(kpick) - 1) // (2 * HALF) < 64
     out.write_bytes(header + b"".join(chips))
     print(f"{out}: {len(chips)} pezzi da 8 KB")
 

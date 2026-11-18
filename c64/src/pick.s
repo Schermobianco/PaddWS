@@ -100,8 +100,8 @@ s_blaster:  .byte "BLASTER ", 0
 s_rush:     .byte "RUSH    ", 0
 s_guardian: .byte "GUARDIAN", 0
 s_omega:    .byte "OMEGA   ", 0
-; frase del tipo (paddle_ui::tagline), centrata sotto la colonna
-kind_tags:  .word t_arcade, t_titan, t_hammer, t_twist, t_blaster, t_rush, t_guardian
+; frase del tipo (paddle_ui::tagline), centrata nella metà (scelta e presentazione)
+kind_tags: .word t_arcade, t_titan, t_hammer, t_twist, t_blaster, t_rush, t_guardian
 t_arcade:   .byte "  MORE BONUSES  ", 0
 t_titan:    .byte " TALL BUT SLOW  ", 0
 t_hammer:   .byte "  POWER SHOTS   ", 0
@@ -194,8 +194,15 @@ draw:
     jmp kind_enter
 .endproc
 
-; Scelta della racchetta, la prima.
+; Scelta della racchetta, la prima: il suo codice (kpick.s) dalla cartuccia, al posto delle mosse
+; speciali, che la scelta dei bonus ricopia.
 .proc kind_enter
+    lda #$80
+    sta ef_src+2
+    lda #KP_BANK
+    ldx #4
+    ldy #>KP_RUN
+    jsr ef_copy
     lda #1
     sta pk_kind
     lda #$ff                    ; nessuna anteprima ancora (NEXTBSS non si azzera all'avvio, e la
@@ -411,10 +418,14 @@ done:
     lda hw_pg                   ; HOW TO PLAY in corso
     beq :+
     jmp howto_scene
+:   lda pk_kind                 ; la racchetta: kpick.s
+    beq :+
+    jmp KP_RUN
 :   lda #KEY_STOP
     jsr key_pressed
     bcc :+
     jsr pick_letters            ; di nuovo le lettere 2x (un frame lungo, verso il menu)
+    jsr math_invalidate         ; (la scelta della racchetta ha coperto le tabelle dei quadrati)
     jmp enter_menu
 :   lda pk_phase
     beq ready
@@ -431,23 +442,22 @@ done:
     lda #COL_WHITE
     jmp clear_text
 chars:
-    ; sullo schermo vuoto: nella scelta dei bonus le metà delle lettere (put_low); in quella della
-    ; racchetta, che viene prima, ci sono già i caratteri di sempre
+    ; sullo schermo vuoto le metà delle lettere (put_low)
     lda #PH_DRAW
     sta pk_phase
-    lda pk_kind
-    bne :+
     clc
     jmp pick_chars
-:   rts
 draw:
     lda #PH_NONE
     sta pk_phase
     jmp pick_draw
 match:
+    lda math_ready              ; le tabelle dei quadrati, che la scelta della racchetta ha coperto
+    beq :+
     lda #PH_NONE
     sta pk_phase
     jmp start_next
+:   rts
 late:
     cmp #PH_THEME
     bne restore
@@ -471,10 +481,9 @@ second:
     lda #1
     sec
     jsr pick_chars
-    ldx #PH_THEME
     lda cg_active
     cmp #CG_DUEL
-    beq phase
+    jeq vs_duel                 ; la sfida: prima lo schermo VS (kvs.s), che carica il tema
     lda cfg_super
     beq match_next
     lda ctl_paddle
@@ -493,7 +502,11 @@ ready:
     dec pk_ready
     beq go
     lda pk_ready
-    cmp #SM_PAGES + 1
+    cmp #READY_FRAMES - 3       ; dopo le due colonne: le tabelle dei quadrati, che la scelta della
+    bne :+                      ; racchetta ha coperto, da rifare (math_step, nei frame leggeri)
+    jsr math_invalidate
+    lda pk_ready
+:   cmp #SM_PAGES + 1
     bcs :+
     sbc #0                      ; (C = 0) pagina pk_ready - 1
     jsr sm_page
@@ -503,10 +516,7 @@ ready:
     jmp draw_columns
 :   rts
 go:
-    lda pk_kind
-    beq :+
-    jmp bonus_enter
-:   ; scelte finite: lo schermo pulito ora, il resto al prossimo frame (PH_RESTORE)
+    ; scelte finite: lo schermo pulito ora, il resto al prossimo frame (PH_RESTORE)
     lda #PH_RESTORE
     sta pk_phase
     lda #COL_WHITE
@@ -531,26 +541,13 @@ choosing:
     lda pk_frames
     ora pk_frames+1
     beq finish
-    lda pk_kind
-    bne kinds
     lda pk_count
     and pk_count+1
     cmp #3
     bne redraw
-    beq finish
-kinds:
-    lda pk_ok
-    and pk_ok+1
-    beq redraw
 finish:
-    lda pk_kind
-    bne :+
     jsr fill_defaults
-    jmp :++
-:   lda #1
-    sta pk_ok
-    sta pk_ok+1
-:   lda #READY_FRAMES
+    lda #READY_FRAMES
     sta pk_ready
     lda #EV_BOOST
     jsr sid_fx
@@ -728,16 +725,11 @@ duel:
 
 ; ------------------------------------------------------------------------------------ disegno
 
-; Tutto lo schermo della scelta.
+; Tutto lo schermo della scelta dei bonus.
 .proc pick_draw
-    lda pk_kind
-    bne :+
     jsr print_at
     .byte 13, 0, "PICK 3 BONUSES", 0
-    jmp :++
-:   jsr print_at
-    .byte 12, 0, "PICK YOUR PADDLE", 0
-:   lda #COL_YELLOW
+    lda #COL_YELLOW
     ldx #0
     ldy #0
     jsr color_row
@@ -847,7 +839,7 @@ off:
 ; Colonna del giocatore pk_p: intestazione e righe.
 .proc draw_column
     ldx pk_p
-    ; intestazione: P1, P2 o CPU e, per i bonus, quanti su 3 (per la racchetta OK se confermata)
+    ; intestazione: P1, P2 o CPU e quanti bonus su 3
     lda col_base,x
     clc
     adc #2
@@ -874,8 +866,6 @@ head:
     clc
     adc #13
     tax
-    lda pk_kind
-    bne ok
     ldy pk_p
     lda pk_count,y
     clc
@@ -902,76 +892,15 @@ head:
     ldy col_base,x
     ldx #20
     jsr color_span_row6
-    jmp rows
-ok:
-    ldy pk_p
-    lda pk_ok,y
-    beq :+
-    lda #'O'
-    ldy #6
-    sty v_row
-    jsr put_ascii
-    inx
-    lda #'K'
-    ldy #6
-    jsr put_ascii
-    lda #COL_YELLOW
-    jmp :++
-:   lda #' '
-    ldy #6
-    sty v_row
-    jsr put_ascii
-    inx
-    lda #' '
-    ldy #6
-    jsr put_ascii
-    lda #COL_WHITE
-:   ldx pk_p
-    ldy col_base,x
-    ldx #20
-    jsr color_span_row6
-rows:
     lda #0
     sta pk_i
 row:
     jsr draw_row
     inc pk_i
-    jsr rows_count
-    cmp pk_i
+    lda pk_i
+    cmp #PICKS
     bne row
-    ; racchetta: la frase del tipo sotto il cursore
-    lda pk_kind
-    beq done
-    ldx pk_p
-    ldy pk_cursor,x
-    tya
-    asl a
-    tay
-    lda kind_tags,y
-    sta ptr2
-    lda kind_tags+1,y
-    sta ptr2+1
-    lda col_base,x
-    clc
-    adc #2
-    tax
-    ldy #PICK_ROW0 + 2 * KINDS
-    jsr print_str
-    lda #COL_GRAY
-    ldx pk_p
-    ldy col_base,x
-    ldx #20
-    stx v_n
-    ldx #PICK_ROW0 + 2 * KINDS
-    jmp color_span
-done:
     rts
-rows_count:
-    lda #PICKS
-    ldy pk_kind
-    beq :+
-    lda #KINDS
-:   rts
 .endproc
 
 s_p1:    .byte "P1 ", 0
@@ -988,23 +917,13 @@ s_cpu_h: .byte "CPU", 0
     ldx pk_p
     lda #0
     sta m_t                     ; preso
-    lda pk_kind
-    bne kind
     ldy pk_i
     lda pickable,y
     jsr pick_has
     lda #0                      ; preso = C (pick_has usa m_t: con 0 bonus del destro vi lascia 1)
     rol a
     sta m_t
-    jmp cursor
-kind:
-    lda pk_ok,x
-    beq cursor
-    lda pk_i
-    cmp pk_cursor,x
-    bne cursor
-    inc m_t
-cursor:
+
     ; cursore: sotto il cursore, finché si sceglie (non per la CPU)
     lda #' '
     sta m_lo
@@ -1016,24 +935,10 @@ cursor:
     lda pk_p
     cmp pk_fixed
     beq :+
-    lda pk_kind
-    bne :+
     ldy pk_p
     lda pk_count,y
     cmp #3
     beq :+
-    lda #'>'
-    sta m_lo
-:   lda pk_kind
-    beq :+
-    ; racchetta: il cursore finché non è confermata
-    lda pk_i
-    cmp pk_cursor,x
-    bne :+
-    lda pk_ok,x
-    bne :+
-    lda pk_ready
-    bne :+
     lda #'>'
     sta m_lo
 :   lda col_base,x
@@ -1041,27 +946,15 @@ cursor:
     adc #2
     tax
     lda m_lo
-    jsr put_pick
-    ; colore della riga: bonus presi e quello sotto il cursore bianchi, gli altri grigi; per la
-    ; racchetta bianca quella sotto il cursore, gialla se confermata
+    jsr put_low
+    ; colore della riga: bonus presi e quello sotto il cursore bianchi, gli altri grigi
     ldx pk_p
-    lda pk_kind
-    bne kcolor
     lda m_t
     bne white
     lda m_lo
     cmp #'>'
     beq white
-gray:
     lda #COL_GRAY
-    bne color
-kcolor:
-    lda pk_i
-    cmp pk_cursor,x
-    bne gray
-    lda m_t
-    beq white
-    lda #COL_YELLOW
     bne color
 white:
     lda #COL_WHITE
@@ -1072,9 +965,7 @@ color:
     stx v_n
     ldx v_row
     jsr color_span
-    ; scelta dei bonus: la riga sotto (metà basse della capsula e delle lettere) dello stesso colore
-    lda pk_kind
-    bne :+
+    ; la riga sotto (metà basse della capsula e delle lettere) dello stesso colore
     ldx pk_p
     ldy col_base,x
     lda #20
@@ -1083,21 +974,16 @@ color:
     inx
     lda m_b
     jsr color_span
-:
-    ; il cursore in giallo (nella scelta dei bonus anche la metà sotto)
+    ; il cursore in giallo, le due metà
     lda m_lo
     cmp #'>'
     bne :+
     ldx v_row
     jsr cursor_yellow
-    lda pk_kind
-    bne :+
     ldx v_row
     inx
     jsr cursor_yellow
-:   lda pk_kind
-    bne name_kind
-    ; capsula 2x2 (in negativo se presa) e nome del bonus
+:   ; capsula 2x2 (in negativo se presa) e nome del bonus
     ldy pk_i
     lda pickable,y
     sta m_b+1
@@ -1127,21 +1013,6 @@ color:
     lda bonus_names+1,y
     sta ptr2+1
     jmp print_low
-name_kind:
-    ldx pk_p
-    lda col_base,x
-    clc
-    adc #4
-    tax
-    lda pk_i
-    asl a
-    tay
-    lda kind_names,y
-    sta ptr2
-    lda kind_names+1,y
-    sta ptr2+1
-    ldy v_row
-    jmp print_str
 .endproc
 
 ; Cursore della riga X in giallo.
@@ -1160,14 +1031,6 @@ name_kind:
 ; La capsula (2x2 caratteri) ha il centro tra due righe: nella scelta dei bonus il nome e il
 ; cursore accanto si abbassano di 4 pixel, con le metà delle lettere che pick_chars mette al posto
 ; delle lettere 2x (pick_start): la metà alta nella riga v_row, la bassa in quella sotto.
-
-; Carattere ASCII A alla colonna X, riga v_row: nella scelta dei bonus abbassato (put_low).
-.proc put_pick
-    ldy pk_kind
-    beq put_low
-    ldy v_row
-    jmp put_ascii
-.endproc
 
 ; Stringa ASCII in (ptr2), abbassata, dalla colonna X alla riga v_row. Gli spazi si saltano: il
 ; nome di una riga è sempre lo stesso, le sue celle vuote restano quelle di clear_text.
@@ -2502,9 +2365,9 @@ bl_on:     .res 1               ; colori del bullet time a schermo
 ; ------------------------------------------------------------------------------------ anteprima
 
 ; Scelta della racchetta: la racchetta sotto il cursore a grandezza reale (sprite 3 e 4 come in
-; partita), a destra della lista di ciascun giocatore e con il davanti verso la mezzeria, come
-; sul MiSTer: TWIST inclinata, BLASTER con il caricatore pieno.
-PV_CY = (PICK_ROW0 + KINDS - 1) * 8 + 4    ; centro della lista (riga in pixel)
+; partita), nel campo sotto la griglia (paddle_ui.rs, PADDLE_X) e con il davanti verso la
+; mezzeria: TWIST inclinata, BLASTER con il caricatore pieno. Poi i cursori (kpick.s).
+PV_CY = 13 * 8 + 36             ; centro del campo (riga in pixel)
 
 .proc pick_preview
     lda #0
@@ -2573,16 +2436,13 @@ place:
     eor #$ff
     and sh_xexp
     sta sh_xexp
-    ; x: il corpo è al centro dell'immagine (24 pixel); la destra oltre 255
+    ; x: il corpo è al centro dell'immagine (24 pixel)
     lda pv_x,y
     sta sh_x+SPN_PAD,y
     lda bit_of+SPN_PAD,y
     eor #$ff
     and sh_msb
-    cpy #1
-    bne :+
-    ora bit_of+SPN_PAD,y
-:   sta sh_msb
+    sta sh_msb
     ; y: centrata sulla lista, due righe di pixel per riga dello sprite
     lda #<(SPR_Y0 + PV_CY)
     sec
@@ -2593,7 +2453,7 @@ next:
     cpy #2
     jne side
 done:
-    rts
+    jmp KP_RUN + 3
 .endproc
 
 .segment "RODATA"
@@ -2604,8 +2464,8 @@ done:
 .endmacro
 pv_rows: pv_rows_of T_KIND_H
 pv_var:  .byte 0, 0, 0, 3 + 3, P_BLASTER_SHOTS * 32, 0, 0, 0
-pv_x:    .byte <(SPR_X0 + 16 * 8 - 12), <(SPR_X0 + 36 * 8 - 12)
-.assert SPR_X0 + 16 * 8 - 12 < 256 .and SPR_X0 + 36 * 8 - 12 >= 256, error, "anteprime: bit alto della x"
+pv_x:    .byte SPR_X0 + 14 * 8 + 4 - 12, SPR_X0 + 25 * 8 + 4 - 12
+.assert SPR_X0 + 25 * 8 + 4 - 12 < 256, error, "anteprime: bit alto della x"
 .segment "NEXTBSS"
 pv_kind: .res 2                 ; tipo nell'immagine dell'anteprima ($ff nessuna)
 .segment "CODE"

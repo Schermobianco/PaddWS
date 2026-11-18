@@ -234,11 +234,13 @@ e_bdone:  .byte 0               ; ENDD ed ENDE copiati
 run:
     lda e_new
     bne change
-    ; ENDD ed ENDE dopo la voce (detta e finita: niente copie con gli NMI della voce)
+    ; ENDD ed ENDE dopo la sfilata (parade.s, a $F000-$FAFF), con la voce finita (niente copie con
+    ; gli NMI della voce)
     lda e_bdone
     bne :+
-    lda e_voiced
-    beq :+
+    lda e_part
+    cmp #EP_SCORE
+    bcc :+
     bit $fffb
     bmi :+
     jsr load_step
@@ -553,6 +555,10 @@ e_bcol:  .byte COL_WHITE
 .endproc
 
 .proc close_frame
+    lda e_io                    ; prima gli sprite e il titolo, se la sfilata li ha coperti
+    beq :+
+    jmp e_restore
+:
     lda e_pg
     cmp #8
     bcc copy
@@ -693,223 +699,100 @@ e_line:  .byte 0
 
 ; ------------------------------------------------------------------------------------ sfilata
 
-PARADE_Y   = 77                 ; centro delle racchette (pixel)
-PARADE_SPR = $C400              ; immagini delle racchette, una per sprite (puntatori 16-22)
-STAMP_ROW  = 9
-
+; La sfilata con i ritratti (parade.s, 4.5.0): il suo codice dalla cartuccia a $F400 a voce finita
+; (a $F000 c'erano i campioni di YOU WIN), poi un frame alla volta fino a E_PARADE.
 .proc parade_enter
     jsr fresh_screen
-    jsr print_at
-    .byte 13, 2, "YOUR OPPONENTS", 0
-    lda #COL_YELLOW
-    ldy #2
-    jsr color_rows2
-    ; sprite 0-6: le racchette, multicolore ed espanse in verticale, dietro le scritte (il timbro)
-    lda #$7f
-    sta sh_mc
-    sta sh_yexp
-    sta $d01b
+    lda #MODE_OFF
+    sta sh_mode
     lda #0
-    sta sh_xexp
-    sta sh_msb
-    sta e_k
-    sta e_due
-    lda ch_omega                ; OMEGA battuto: prima si spezza (shatter), poi nomi e timbri
-    beq :+
-    lda #SH_RED + SH_MOVE
-    sta e_due
-:
-    lda egg_yel                 ; segni dei tipi: solo giallo ($D025 era il grigio)
-    sta $d025
-    ldx #6
-:   lda #COL_WHITE
-    sta sh_col,x
-    txa
-    clc
-    adc #(PARADE_SPR - $C000) / 64
-    sta sh_ptr,x
-    dex
-    bpl :-
+    sta e_prl
+    sta $d01b
+    lda egg_yel                 ; da qui alla fine $D025 giallo (il razzo dei fuochi; prima era il
+    sta $d025                   ; grigio delle racchette), poi close_frame lo rimette
     rts
 .endproc
 
 .proc parade_frame
-    ; immagini: una per frame nei primi 7 (pad_image del programma, come le anteprime della scelta)
-    lda e_t+1
-    bne events
-    lda e_t
-    cmp #7
-    bcs events
-    jsr make_pad
-events:
-    lda ch_omega
-    beq :+
-    jsr shatter
-:   ; ogni E_STEP frame un avversario (k pari) o il suo timbro (k dispari)
-    lda e_k
-    cmp #14
-    bcs end
-    dec e_due
-    bpl end
-    lda #E_STEP - 1
-    sta e_due
-    lda e_k
-    inc e_k
-    lsr a
-    tax                         ; avversario
-    bcs stamp
-    jsr show_pad
-    jmp end
-stamp:
-    jsr show_stamp
-end:
+    lda e_prl
+    bne run
+    bit $fffb                   ; YOU WIN ancora con gli NMI del player
+    bmi wait
+    lda #$80
+    sta ef_src+2
+    lda #KP_BANK + PR_BANK_REL
+    ldx #4
+    ldy #>PR_RUN
+    jsr ef_copy
+    inc e_prl
+wait:
+    rts
+run:
+    jsr PR_RUN
     lda #<E_PARADE
     ldx #>E_PARADE
     jsr at_time
     bcc :+
-    lda #0                      ; sprite come prima
-    sta sh_enable
-    sta $d01b
-    lda #$ff                    ; in partita le immagini delle racchette si rifanno
-    sta pd_n
-    sta pd_n+1
     jmp next_part
 :   rts
 .endproc
+e_prl: .byte 0                  ; codice della sfilata copiato
 
-; Immagine della racchetta del tipo e_t nello sprite PARADE_SPR + tipo * 64.
-.proc make_pad
-    sta e_c
-    sta pi_kind
-    tax
-    lda #0
-    sta pi_side
-    lda pv_rows,x
-    sta pi_n
-    lda pv_var,x
-    sta pi_var
-    cpx #K_BLASTER
-    bne :+
-    lda #P_BLASTER_SHOTS        ; caricatore pieno
-    jsr mag_setup
-:   jsr pad_image
-    lda e_c
-    lsr a
-    lsr a
-    clc
-    adc #>PARADE_SPR
-    sta ptr+1
-    lda e_c                     ; (tipo & 3) * 64
-    lsr a
-    ror a
-    ror a
-    and #$c0
-    sta ptr
-    ldy #IMG_BYTES - 1
-:   lda sh_img,y
-    sta (ptr),y
-    dey
-    bpl :-
-    rts
-.endproc
-
-; Avversario X: la racchetta (sprite X) e il nome sotto (righe 14 e 16 a turno).
-.proc show_pad
-    stx e_c
-    lda bit_of,x
-    ora sh_enable
-    sta sh_enable
-    ; x: centro 44 + 40 * X; y: centrata su PARADE_Y (due righe di pixel per riga dello sprite)
-    lda epad_x,x
-    sta sh_x,x
-    cpx #5
-    bcc :+
-    lda bit_of,x
-    ora sh_msb
-    sta sh_msb
-:   lda #<(SPR_Y0 + PARADE_Y)
-    sec
-    sbc pv_rows,x
-    sta sh_y,x
-    ; nome
-    lda name_lo,x
-    sta ptr2
-    lda name_hi,x
-    sta ptr2+1
-    ldy #14
+; Gli sprite del programma e il titolo dell'attract, sotto l'I/O, che la bitmap della sfilata
+; copre (parade.s; e_io da 1, 0 a posto): un passo per frame, 2 pagine dalla cartuccia all'appoggio
+; a $F000 (qui ci sono i colori della sfilata, o i fuochi, che a quel punto non servono più), poi
+; sotto l'I/O. Alla fine della sfilata (pr_restore) o all'uscita, se si salta prima (close_frame).
+.proc e_restore
+    ldx e_io
+    dex
     txa
     lsr a
-    bcc :+
-    ldy #16
-:   lda name_col,x
-    tax
-    jmp print_str
-.endproc
-
-; Timbro DEFEATED rosso dell'avversario X (5x3 caratteri, centrato sulla racchetta).
-.proc show_stamp
-    lda stamp_col,x
-    sta e_col
-    lda #STAMP_ROW
-    sta e_row
-    ldx #0
-row:
-    stx e_c
-    ldy e_row
-    lda row_lo,y
-    clc
-    adc e_col
+    tax                         ; 0-7: quale pezzo da 2 pagine
+    bcs put
+    lda e_src_page,x
+    sta ef_src+2
+    lda e_src_bank,x
+    ldx #2
+    ldy #>$F000
+    jsr ef_copy
+    jmp next
+put:
+    lda e_dst_page,x
+    sta ptr+1
+    lda #>$F000
+    sta ptr2+1
+    lda #0
     sta ptr
-    lda row_hi,y
-    adc #0
-    sta ptr+1
-    ldy #0
-:   lda stamp_tiles,x
-    sta (ptr),y
-    lda ptr+1                   ; colore: la stessa cella nella RAM dei colori
-    pha
-    clc
-    adc #>($d800 - SCREEN)
-    sta ptr+1
-    lda egg_red
-    sta (ptr),y
-    pla
-    sta ptr+1
-    inx
-    iny
-    cpy #END_STAMP_W
-    bne :-
-    inc e_row
-    cpx #END_STAMP_W * END_STAMP_H
-    bne row
-    rts
+    sta ptr2
+    php
+    sei
+    lda #$34
+    sta $01
+    ldx #2
+    jsr copy_pages
+    lda #$35
+    sta $01
+    plp
+next:
+    inc e_io
+    lda e_io
+    cmp #17
+    bcc :+
+    lda #0
+    sta e_io
+:   rts
 .endproc
-
-.macro pad_names n0, n1, n2, n3, n4, n5, n6
-    name_lo:  .lobytes n0, n1, n2, n3, n4, n5, n6
-    name_hi:  .hibytes n0, n1, n2, n3, n4, n5, n6
-.endmacro
-pad_names n_arcade, n_titan, n_hammer, n_twist, n_blaster, n_rush, n_guardian
-; colonna del nome: centrato su 44 + 40 * k pixel
-name_col: .byte 3, 8, 13, 18, 22, 29, 32
-epad_x:
-    .repeat 7, k
-    .byte <(SPR_X0 + 44 + 40 * k - 12)
-    .endrepeat
-stamp_col:
-    .repeat 7, k
-    .byte 3 + 5 * k
-    .endrepeat
-stamp_tiles: .byte END_STAMP
-n_arcade:   .byte "ARCADE", 0
-n_titan:    .byte "TITAN", 0
-n_hammer:   .byte "HAMMER", 0
-n_twist:    .byte "TWIST", 0
-n_blaster:  .byte "BLASTER", 0
-n_rush:     .byte "RUSH", 0
-n_guardian: .byte "GUARDIAN", 0
-e_k:   .byte 0                  ; prossimo evento della sfilata (avversario * 2 + timbro)
-e_due: .byte 0                  ; frame che mancano all'evento (- 1)
+e_io: .byte 0
+; sprite del programma (nel .prg a $C000-$C7FF: banco PRG_BANK + 2, pagine $B8-$BF) e titolo
+; dell'attract (banco PICK_BANK, TITLE_SRC), 2 pagine per volta
+E_SPR_BANK = PRG_BANK + ($C000 - $0800) / $4000
+E_SPR_PAGE = $80 + (($C000 - $0800) .mod $4000) / 256
+e_src_bank: .byte E_SPR_BANK, E_SPR_BANK, E_SPR_BANK, E_SPR_BANK, PICK_BANK, PICK_BANK, PICK_BANK, PICK_BANK
+e_src_page: .byte E_SPR_PAGE, E_SPR_PAGE + 2, E_SPR_PAGE + 4, E_SPR_PAGE + 6
+            .byte TITLE_SRC, TITLE_SRC + 2, TITLE_SRC + 4, TITLE_SRC + 6
+e_dst_page: .byte >SPRITES, >SPRITES + 2, >SPRITES + 4, >SPRITES + 6
+            .byte >TITLE_BUF, >TITLE_BUF + 2, >TITLE_BUF + 4, >TITLE_BUF + 6
+.assert E_SPR_PAGE + 8 <= $C0 .and TITLE_PAGES = 8, error, "finale: sprite o titolo da rimettere"
 
 .proc score_frame
     ldy e_t+1
@@ -1033,6 +916,10 @@ e_div:   .res 1
 e_rem:   .res 1
 e_q:     .res 4
 
+; le scintille dei fuochi (sotto) usano la RAM dalla sfilata in poi: almeno quanta ne serve
+.if 7 * FW_SLOTS * FW_MAX > * - parade_enter
+    .res 7 * FW_SLOTS * FW_MAX - (* - parade_enter)
+.endif
 overlay_end:
 
 ; Scintille dei fuochi: nella RAM del codice della sfilata e del punteggio, che a quel punto non
@@ -1221,84 +1108,6 @@ ROCKET_PTR = (ROCKET_IMG - $C000) / 64
 RK_HEAD_X  = 11                 ; pixel della testa nello sprite
 
 .segment "ENDE"
-
-; OMEGA battuto (ending_ui.rs): nella sfilata, prima dei nomi, la racchetta rossa di OMEGA (viola
-; con l'easter egg) al centro per SH_RED frame, poi si spezza nelle sette racchette degli
-; avversari, nei loro colori e misure, che vanno al loro posto in SH_MOVE frame. Più semplice del
-; PC: le racchette vanno dritte al loro posto della sfilata, che poi continua come sempre.
-SH_RED  = 25
-SH_MOVE = 40
-.proc shatter
-    lda e_t+1
-    bne done
-    lda e_t
-    beq done                    ; (al frame 0 l'immagine di ARCADE non c'è ancora)
-    cmp #SH_RED
-    bcs move
-    ; OMEGA: lo sprite 0 (la racchetta di ARCADE, la sua prima forma) rosso al centro
-    lda #<(SPR_X0 + 160 - 12)
-    sta sh_x
-    lda #<(SPR_Y0 + PARADE_Y)
-    sec
-    sbc pv_rows
-    sta sh_y
-    lda egg_red
-    ldx egg_x
-    beq :+
-    lda #COL_PURPLE
-:   sta sh_col
-    lda #1
-    sta sh_enable
-    ldx #6                      ; le sette partono dal centro (x * 128)
-:   lda #<((SPR_X0 + 160 - 12) * 128)
-    sta sh_px,x
-    lda #>((SPR_X0 + 160 - 12) * 128)
-    sta sh_pxh,x
-    dex
-    bpl :-
-done:
-    rts
-move:
-    cmp #SH_RED + SH_MOVE
-    bcs done
-    ldx #6
-:   clc                         ; x += passo, poi lo sprite dalla x * 128
-    lda sh_px,x
-    adc sh_vlo,x
-    sta sh_px,x
-    lda sh_pxh,x
-    adc sh_vhi,x
-    sta sh_pxh,x
-    lda sh_px,x
-    asl a
-    lda sh_pxh,x
-    rol a
-    sta sh_x,x
-    lda bit_of,x                ; bit 8 della x (C)
-    eor #$ff
-    and sh_msb
-    bcc :+
-    ora bit_of,x
-:   sta sh_msb
-    lda #<(SPR_Y0 + PARADE_Y)
-    sec
-    sbc pv_rows,x
-    sta sh_y,x
-    lda #COL_WHITE
-    sta sh_col,x
-    dex
-    bpl :--
-    lda #$7f
-    sta sh_enable
-    rts
-.endproc
-; passo per frame (x * 128) da 160 al centro di ogni racchetta della sfilata (epad_x): la distanza
-; (-116, -76, -36, 4, 44, 84, 124 pixel) * 128 / SH_MOVE
-.assert SH_MOVE = 40, error, "shatter: passi per SH_MOVE = 40"
-sh_vlo: .lobytes -371, -243, -115, 13, 141, 269, 397
-sh_vhi: .hibytes -371, -243, -115, 13, 141, 269, 397
-sh_px:  .res 7
-sh_pxh: .res 7
 
 .proc credits_enter
     jsr fresh_screen

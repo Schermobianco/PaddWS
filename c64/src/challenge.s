@@ -65,6 +65,7 @@ ch_load:   .res 6               ; bonus di ciascun lato (come pk_chosen): il cam
 ch_kinds:  .res 2               ; racchetta di ciascun lato
 ch_loser:  .res 1               ; iniziali del perdente di una sfida, poi riprende il vincitore
 ch_wins:   .res 1               ; duelli vinti di fila dal campione (0: nessuno ancora), fino a 99
+in_vs:     .res 1               ; presentazione: 1 nello schermo VS (kvs.s, intro_scene), $80 da caricare
 .segment "ZEROPAGE"
 ch_level:  .res 1
 .segment "BSS"
@@ -297,6 +298,14 @@ go_page:
     sbc #KINDS
     bcs :-
 :   jsr ef_voice
+    ; la pagina degli NMI del player e GO (a metà della scala c'è il conto con le voci): la
+    ; scelta della racchetta, in bitmap, l'ha coperta
+    lda #$80 + >(VOICE_GO - WIN_RUN)
+    sta ef_src+2
+    lda #WIN_BANK
+    ldx #1
+    ldy #>VOICE_GO
+    jsr ef_copy
     jsr VOICE_TICK              ; primo frame del file: il tema a THEME_BASE
     jsr VOICE_STOP              ; A = SID_SONG_THEME
     sta match_song
@@ -744,6 +753,7 @@ next:
     sta math_ready              ; IN_DONE, intro.s)
     lda #0
     sta ch_go
+    sta in_vs
     lda #<in_draw
     sta ch_draw
     lda #>in_draw
@@ -776,9 +786,18 @@ begin:
     inc ch_go
 wait:
     rts
+:   lda cg_active               ; dopo lo schermo VS della sfida, la sfida (pick.s)
+    cmp #CG_DUEL
+    bne :+
+    jmp start_next
 :   jmp ch_begin
 intro:
-    jsr VOICE_TICK              ; la voce, 0,5 s dopo il primo frame
+    lda in_vs                   ; lo schermo VS (kvs.s): il file voce non c'è più
+    beq :++
+    bmi :+
+    jmp KV_RUN + 3
+:   jmp vs_load
+:   jsr VOICE_TICK              ; la voce, 0,5 s dopo il primo frame
     jsr ch_phases
     bcs done
     lda ch_elapsed              ; né sfidante né salto nel frame in cui il file voce del primo
@@ -813,6 +832,39 @@ go:
     jmp clear_text
 done:
     rts
+.endproc
+
+intro_go = intro_scene::go
+
+; Lo schermo VS della presentazione (kvs.s), finita la voce: da in_tick, il prossimo frame (vs_load).
+.proc vs_enter
+    lda #$80
+    sta in_vs
+    rts
+.endproc
+
+; La sfida, finite le scelte: lo schermo VS (kvs.s, che alla fine carica il tema della sfida) come
+; una presentazione, poi la partita (intro_scene, start_next).
+.proc vs_duel
+    lda #ST_INTRO
+    sta state
+    lda #0
+    sta ch_go
+    sta ch_phase
+    sta ch_elapsed
+    jmp vs_enter
+.endproc
+
+; Il codice del VS dalla cartuccia al posto di quello della presentazione (INCODE), in un frame suo
+; (4 pagine, circa 15.000 cicli), poi il suo inizio.
+.proc vs_load
+    lda #$80
+    sta ef_src+2
+    lda #KV_BANK
+    ldx #4
+    ldy #>KV_RUN
+    jsr ef_copy
+    jmp KV_RUN
 .endproc
 
 ; --- livello superato
