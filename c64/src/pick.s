@@ -1119,6 +1119,38 @@ done:
     rts
 .endproc
 
+; Celle gialle sul nero ($70) dello schermo $C000 (i colori delle bitmap delle schermate dei
+; personaggi) nella riga A, dalla colonna X per Y celle: del colore di egg_yel (rosso con l'easter
+; egg). Le scritte; i ritratti tengono i loro colori, come sul PC.
+.proc egg_span
+    sty v_n
+    tay
+    txa
+    clc
+    adc row_lo,y
+    sta ptr
+    lda row_hi,y
+    adc #0
+    sta ptr+1
+    lda egg_yel
+    asl a
+    asl a
+    asl a
+    asl a
+    sta m_t
+    ldy v_n
+:   dey
+    bmi done
+    lda (ptr),y
+    cmp #COL_YELLOW << 4
+    bne :-
+    lda m_t
+    sta (ptr),y
+    bne :-                      ; (sempre: non è nero)
+done:
+    rts
+.endproc
+
 ; Il colore A, con giallo e rosso scambiati se c'è l'easter egg (egg_check). Cambia solo A.
 .proc egg_color
     cmp #COL_RED

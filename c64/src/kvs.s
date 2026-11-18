@@ -406,6 +406,12 @@ net:
     inx
     cpx #KV_NET_ROW + KV_NET_ROWS
     bne net
+    ; scritte gialle (livello, VS, icone): rosse con l'easter egg
+    lda #KV_ICON_ROW
+    ldx #0
+    ldy #80
+    jsr egg_span
+    jsr kv_egg
     inc kv_step
     rts
 texts:
@@ -733,6 +739,21 @@ next:
     bne done
     jmp kv_first
 done:
+    rts
+.endproc
+
+; Righe 1-5, colonne 11-28 (livello e VS, tra i ritratti): giallo dell'easter egg.
+.proc kv_egg
+    lda #1
+:   pha
+    ldx #11
+    ldy #18
+    jsr egg_span
+    pla
+    clc
+    adc #1
+    cmp #6
+    bne :-
     rts
 .endproc
 

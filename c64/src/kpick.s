@@ -332,6 +332,19 @@ side:
 :   ldx kp_x
     dex
     bpl side
+    ; scritte gialle: rosse con l'easter egg (titolo, OK, READY!)
+    ldy #40
+    lda #0
+    tax
+    jsr egg_span
+    ldy #40
+    lda #KP_LABEL_ROW
+    ldx #0
+    jsr egg_span
+    ldy #40
+    lda #KP_HINT_ROW
+    ldx #0
+    jsr egg_span
     lda #3                      ; i due pannelli (kp_job) e gli OK
     sta pk_dirty
     jsr kp_dirty
