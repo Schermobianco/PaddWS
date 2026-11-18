@@ -201,12 +201,11 @@ pub const ART_ROLES: usize = 9;
 /// sagoma: tutti i pixel non trasparenti in un colore solo (le immagini fantasma, i lampi).
 pub type ArtPaint = [Option<Color>; ART_ROLES];
 
-/// Che cosa disegnare di una grafica a pixel: tutta, una lettera sola (`PixelArt::letters`) o un
-/// rettangolo (in pixel della grafica), ognuno al suo posto nella grafica.
+/// Che cosa disegnare di una grafica a pixel: tutta o un rettangolo (in pixel della grafica), al suo
+/// posto nella grafica.
 #[derive(Clone, Copy, Debug)]
 pub enum ArtPart {
     Whole,
-    Letter(usize),
     Area(Rect),
 }
 
@@ -217,72 +216,64 @@ pub enum ArtPart {
 /// L'indice della palette è il ruolo del colore, non il colore: la texture è un atlante di
 /// maschere bianche, una per ruolo (più la sagoma), che si disegnano ciascuna nel suo colore. Così
 /// bianco e giallo seguono i colori della configurazione e la stessa grafica si disegna anche in
-/// un colore solo. Le lettere (`letters`) hanno maschere a parte, per le animazioni che le
-/// mostrano una alla volta.
+/// un colore solo.
 pub struct PixelArt {
     pub w: f32,
     pub h: f32,
     texture: Texture2D,
-    /// celle dell'atlante, una per (strato, ruolo): strato 0 tutta la grafica, poi le lettere
+    /// celle dell'atlante, una per ruolo
     cells: Vec<Option<Rect>>,
-    letters: Vec<Rect>,
 }
 
-/// Pixel di una grafica a palette: indici riga per riga, la lettera di ogni pixel (0 per nessuna,
-/// poi da 1) e il riquadro di ogni lettera. A parte dalla texture per i test.
+/// Pixel di una grafica a palette: indici riga per riga. A parte dalla texture per i test.
 struct ArtPixels {
     w: usize,
     h: usize,
     index: Vec<u8>,
-    owner: Vec<u8>,
-    letters: Vec<Rect>,
+}
+
+/// Un PNG a palette (modo P, 1-8 bit per pixel), così com'è: larghezza, altezza e gli indici riga
+/// per riga, senza colori.
+pub(crate) fn decode_indexed(bytes: &[u8]) -> (usize, usize, Vec<u8>) {
+    let mut decoder = png::Decoder::new(bytes);
+    decoder.set_transformations(png::Transformations::IDENTITY);
+    let mut reader = decoder.read_info().expect("PNG incluso nell'eseguibile");
+    let mut buf = vec![0; reader.output_buffer_size()];
+    let info = reader.next_frame(&mut buf).expect("PNG incluso nell'eseguibile");
+    assert_eq!(info.color_type, png::ColorType::Indexed, "grafica a palette");
+    let bits = info.bit_depth as usize;
+    assert!(bits <= 8, "grafica a palette");
+    let (w, h) = (info.width as usize, info.height as usize);
+    let mask = ((1u16 << bits) - 1) as u8;
+    let index = (0..h)
+        .flat_map(|y| {
+            let row = &buf[y * info.line_size..(y + 1) * info.line_size];
+            (0..w).map(move |x| {
+                let bit = x * bits;
+                (row[bit / 8] >> (8 - bits - bit % 8)) & mask
+            })
+        })
+        .collect();
+    (w, h, index)
 }
 
 impl ArtPixels {
     /// Un PNG a palette (modo P, 1-8 bit per pixel), così com'è: gli indici, senza colori.
     fn decode(bytes: &[u8]) -> Self {
-        let mut decoder = png::Decoder::new(bytes);
-        decoder.set_transformations(png::Transformations::IDENTITY);
-        let mut reader = decoder.read_info().expect("PNG incluso nell'eseguibile");
-        let mut buf = vec![0; reader.output_buffer_size()];
-        let info = reader.next_frame(&mut buf).expect("PNG incluso nell'eseguibile");
-        assert_eq!(info.color_type, png::ColorType::Indexed, "grafica a palette");
-        let bits = info.bit_depth as usize;
-        assert!(bits <= 8, "grafica a palette");
-        let (w, h) = (info.width as usize, info.height as usize);
-        let mask = ((1u16 << bits) - 1) as u8;
-        let index: Vec<u8> = (0..h)
-            .flat_map(|y| {
-                let row = &buf[y * info.line_size..(y + 1) * info.line_size];
-                (0..w).map(move |x| {
-                    let bit = x * bits;
-                    (row[bit / 8] >> (8 - bits - bit % 8)) & mask
-                })
-            })
-            .collect();
+        let (w, h, index) = decode_indexed(bytes);
         assert!(index.iter().all(|&i| (i as usize) < ART_ROLES), "ruolo sconosciuto nella grafica");
-        let (owner, letters) = art_letters(w, h, &index);
-        Self {
-            w,
-            h,
-            index,
-            owner,
-            letters,
-        }
+        Self { w, h, index }
     }
 
     /// Atlante delle maschere: (larghezza, altezza, alfa di ogni pixel, celle). Una cella per ogni
-    /// (strato, ruolo) che ha pixel, una sotto l'altra, con un pixel vuoto attorno (il filtro
+    /// ruolo che ha pixel, una sotto l'altra, con un pixel vuoto attorno (il filtro
     /// Nearest non prende mai i vicini); i lati a potenze di 2 come in `rasterize_pixel_font`.
     fn atlas(&self) -> (u32, u32, Vec<u8>, Vec<Option<Rect>>) {
-        let layers = self.letters.len() + 1;
-        let lit = |layer: usize, role: usize, i: usize| {
+        let lit = |role: usize, i: usize| {
             let p = self.index[i];
-            p != 0 && (role == 0 || p as usize == role) && (layer == 0 || self.owner[i] as usize == layer)
+            p != 0 && (role == 0 || p as usize == role)
         };
-        let used: Vec<bool> = (0..layers * ART_ROLES)
-            .map(|c| (0..self.index.len()).any(|i| lit(c / ART_ROLES, c % ART_ROLES, i)))
-            .collect();
+        let used: Vec<bool> = (0..ART_ROLES).map(|role| (0..self.index.len()).any(|i| lit(role, i))).collect();
         let (cw, ch) = (self.w + 2, self.h + 2);
         let tw = cw.next_power_of_two();
         let th = (used.iter().filter(|u| **u).count() * ch).max(1).next_power_of_two();
@@ -295,7 +286,7 @@ impl ArtPixels {
                 if !used {
                     return None;
                 }
-                for i in (0..self.index.len()).filter(|&i| lit(c / ART_ROLES, c % ART_ROLES, i)) {
+                for i in (0..self.index.len()).filter(|&i| lit(c, i)) {
                     let (x, y) = (i % self.w, i / self.w);
                     alpha[(y0 + 1 + y) * tw + 1 + x] = 255;
                 }
@@ -306,76 +297,6 @@ impl ArtPixels {
             .collect();
         (tw as u32, th as u32, alpha, cells)
     }
-}
-
-/// Lettere di una grafica: le parti connesse (anche in diagonale) alte almeno metà della grafica,
-/// da sinistra a destra; le parti più basse (scie, scintille) vanno alla lettera più vicina in
-/// orizzontale. Restituisce la lettera di ogni pixel (0 per i trasparenti, poi da 1) e il riquadro
-/// di ogni lettera; nessuna lettera se ce n'è una sola (una targa, lettere che si toccano).
-fn art_letters(w: usize, h: usize, index: &[u8]) -> (Vec<u8>, Vec<Rect>) {
-    let mut part = vec![usize::MAX; w * h];
-    let mut boxes: Vec<(usize, usize, usize, usize)> = Vec::new();
-    for start in 0..w * h {
-        if index[start] == 0 || part[start] != usize::MAX {
-            continue;
-        }
-        let id = boxes.len();
-        let mut b = (start % w, start / w, start % w, start / w);
-        part[start] = id;
-        let mut stack = vec![start];
-        while let Some(i) = stack.pop() {
-            let (x, y) = (i % w, i / w);
-            b = (b.0.min(x), b.1.min(y), b.2.max(x), b.3.max(y));
-            for (dx, dy) in [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)] {
-                let (nx, ny) = (x as i32 + dx, y as i32 + dy);
-                if nx < 0 || ny < 0 || nx >= w as i32 || ny >= h as i32 {
-                    continue;
-                }
-                let j = ny as usize * w + nx as usize;
-                if index[j] != 0 && part[j] == usize::MAX {
-                    part[j] = id;
-                    stack.push(j);
-                }
-            }
-        }
-        boxes.push(b);
-    }
-    let tall = |b: &(usize, usize, usize, usize)| 2 * (b.3 - b.1 + 1) >= h;
-    let mut letters: Vec<usize> = (0..boxes.len()).filter(|&i| tall(&boxes[i])).collect();
-    if letters.len() < 2 {
-        return (vec![0; w * h], Vec::new());
-    }
-    letters.sort_by_key(|&i| boxes[i].0);
-    // lettera di ogni parte: la sua, o quella più vicina in orizzontale
-    let of_part: Vec<usize> = boxes
-        .iter()
-        .enumerate()
-        .map(|(i, b)| match letters.iter().position(|&l| l == i) {
-            Some(n) => n,
-            None => (0..letters.len())
-                .min_by_key(|&n| {
-                    let l = boxes[letters[n]];
-                    l.0.saturating_sub(b.2).max(b.0.saturating_sub(l.2))
-                })
-                .unwrap_or(0),
-        })
-        .collect();
-    let owner = (0..w * h)
-        .map(|i| if index[i] == 0 { 0 } else { of_part[part[i]] as u8 + 1 })
-        .collect();
-    let rects = (0..letters.len())
-        .map(|n| {
-            let (x0, y0, x1, y1) = boxes
-                .iter()
-                .zip(&of_part)
-                .filter(|(_, p)| **p == n)
-                .map(|(b, _)| *b)
-                .reduce(|r, b| (r.0.min(b.0), r.1.min(b.1), r.2.max(b.2), r.3.max(b.3)))
-                .unwrap_or_default();
-            Rect::new(x0 as f32, y0 as f32, (x1 - x0 + 1) as f32, (y1 - y0 + 1) as f32)
-        })
-        .collect();
-    (owner, rects)
 }
 
 impl PixelArt {
@@ -390,17 +311,11 @@ impl PixelArt {
             h: pixels.h as f32,
             texture,
             cells,
-            letters: pixels.letters,
         }
     }
 
-    /// Riquadri delle lettere, da sinistra, in pixel della grafica (vuoto se non si separano).
-    pub fn letters(&self) -> &[Rect] {
-        &self.letters
-    }
-
-    fn cell(&self, layer: usize, role: usize) -> Option<Rect> {
-        self.cells.get(layer * ART_ROLES + role).copied().flatten()
+    fn cell(&self, role: usize) -> Option<Rect> {
+        self.cells.get(role).copied().flatten()
     }
 }
 
@@ -836,21 +751,19 @@ impl Renderer {
         let (sin, cos) = rotation.sin_cos();
         let origin = self.snap(vec2(cx - (vx * cos - vy * sin), cy - (vx * sin + vy * cos)));
         let whole = Rect::new(0.0, 0.0, art.w, art.h);
-        let (layer, area) = match part {
-            ArtPart::Whole => (0, whole),
-            ArtPart::Letter(i) if i < art.letters.len() => (i + 1, whole),
-            ArtPart::Letter(_) => return,
+        let area = match part {
+            ArtPart::Whole => whole,
             ArtPart::Area(r) => {
                 let (x0, y0) = (r.x.clamp(0.0, art.w), r.y.clamp(0.0, art.h));
                 let (x1, y1) = ((r.x + r.w).clamp(x0, art.w), (r.y + r.h).clamp(y0, art.h));
-                (0, Rect::new(x0, y0, x1 - x0, y1 - y0))
+                Rect::new(x0, y0, x1 - x0, y1 - y0)
             }
         };
         if area.w <= 0.0 || area.h <= 0.0 {
             return;
         }
         for (role, color) in paint.iter().enumerate() {
-            let (Some(color), Some(cell)) = (color, art.cell(layer, role)) else { continue };
+            let (Some(color), Some(cell)) = (color, art.cell(role)) else { continue };
             draw_texture_ex(
                 &art.texture,
                 origin.x + area.x * u.x,
@@ -1577,36 +1490,13 @@ mod pixel_art_tests {
         }
     }
 
-    /// Le lettere che si mostrano una alla volta (BLASTER colpo per colpo, GUARDIAN mattone per
-    /// mattone) si separano tutte, da sinistra, senza sovrapporsi in orizzontale più di quanto
-    /// faccia il corsivo; ogni pixel acceso ha la sua lettera.
-    #[test]
-    fn the_letters_of_blaster_and_guardian_separate() {
-        for (name, art, _) in titles() {
-            let count = match name.as_str() {
-                "name_blaster" => 7,
-                "name_guardian" => 8,
-                _ => continue,
-            };
-            assert_eq!(art.letters.len(), count, "{name}");
-            for pair in art.letters.windows(2) {
-                assert!(pair[0].x < pair[1].x && pair[0].center().x < pair[1].center().x, "{name}: {pair:?}");
-            }
-            for (i, &p) in art.index.iter().enumerate() {
-                assert_eq!(p != 0, art.owner[i] != 0, "{name}: pixel {i}");
-            }
-        }
-    }
-
-    /// Il logo del menu in NEXT: la sua palette ha solo i livelli dell'accento (1-5), e PADD si
-    /// separa in quattro lettere (le strisce, basse, vanno alla lettera vicina).
+    /// Il logo del menu in NEXT: la sua palette ha solo i livelli dell'accento (1-5).
     #[test]
     fn the_menu_logo_has_only_the_accent_levels() {
         let art = ArtPixels::decode(include_bytes!("../../../assets/titles/menu_logo.png"));
         assert_eq!((art.w, art.h), (167, 25));
         assert!(art.index.iter().all(|&i| i <= 5));
         assert!(art.index.contains(&1) && art.index.contains(&5));
-        assert_eq!(art.letters.len(), 4);
     }
 
     #[test]

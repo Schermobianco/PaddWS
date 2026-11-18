@@ -1,0 +1,100 @@
+{
+  "roles": [
+    "black",
+    "white",
+    "light_gray",
+    "gray",
+    "dark_gray",
+    "accent",
+    "accent_dark"
+  ],
+  "grays": {
+    "black": [
+      0,
+      0,
+      0
+    ],
+    "white": [
+      255,
+      255,
+      255
+    ],
+    "light_gray": [
+      195,
+      195,
+      195
+    ],
+    "gray": [
+      130,
+      130,
+      130
+    ],
+    "dark_gray": [
+      70,
+      70,
+      70
+    ]
+  },
+  "accent": {
+    "arcade": [
+      255,
+      210,
+      30
+    ],
+    "titan": [
+      230,
+      120,
+      40
+    ],
+    "hammer": [
+      230,
+      40,
+      40
+    ],
+    "twist": [
+      150,
+      70,
+      200
+    ],
+    "blaster": [
+      70,
+      190,
+      70
+    ],
+    "rush": [
+      60,
+      200,
+      220
+    ],
+    "guardian": [
+      90,
+      150,
+      255
+    ],
+    "omega": [
+      224,
+      64,
+      255
+    ]
+  },
+  "dark": 0.55,
+  "big": [
+    88,
+    104
+  ],
+  "small": 32,
+  "mid": [
+    64,
+    72
+  ],
+  "c64_accent": {
+    "arcade": 7,
+    "titan": 8,
+    "hammer": 2,
+    "twist": 4,
+    "blaster": 5,
+    "rush": 3,
+    "guardian": 14,
+    "omega": 4
+  }
+}

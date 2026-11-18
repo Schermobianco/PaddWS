@@ -826,7 +826,7 @@ impl HowTo {
         }
         // CHALLENGE: la sfida o la presentazione del primo avversario; altrimenti la partita
         Some(if self.duel {
-            Scene::Game(Box::new(Play::duel(app)))
+            Scene::Intro(crate::challenge_ui::Intro::duel(app))
         } else if app.run.is_some() {
             Scene::Intro(Intro::new(app))
         } else {

@@ -19,7 +19,7 @@ use paddws_core::{Event, PaddleKind, Rng};
 use crate::challenge_ui::{self, T1};
 use crate::input;
 use crate::next_ui::unit;
-use crate::paddle_ui::{Look, Shape, TWIST_MAX_TILT, draw_paddle};
+use crate::paddle_ui::{self, Look, Shape, draw_paddle};
 use crate::scenes::{App, START_KEYS, Scene};
 use crate::touch;
 
@@ -439,9 +439,11 @@ impl Ending {
         }
         // sfilata: un colpo per ogni avversario che entra e per ogni timbro
         if let Some((Part::Parade, at)) = part_at(self.t, self.omega) {
-            let due = (0..PaddleKind::COUNT)
+            let hits = if self.omega { 2 * PARADE_SLOTS } else { 2 * PARADE_SLOTS - 1 };
+            let due = (0..PARADE_SLOTS)
                 .map(|i| i as f64 * PARADE_STEP)
                 .flat_map(|s| [s, s + STAMP_AFTER])
+                .take(hits)
                 .take_while(|&s| at >= s)
                 .count();
             while self.sounds < due {
@@ -488,44 +490,45 @@ impl Ending {
         }
     }
 
-    /// I sette avversari, uno al secondo, con le racchette vere e il timbro DEFEATED.
+    /// Gli avversari battuti, uno al secondo nell'ordine della scalata, nei ritratti medi (due file
+    /// da quattro, sulla griglia di caratteri del C64): entrano normali, al timbro DEFEATED passano
+    /// all'immagine sconfitta e il nome diventa grigio. Dopo OMEGA sfila anche lui, svelato; se no
+    /// all'ottavo posto arriva la sua sagoma con il punto di domanda, senza timbro.
     fn draw_parade(&self, app: &App, at: f64, white: Color, yellow: Color) {
         let r = &app.renderer;
-        let (sc, u) = (app.scale(), unit(app));
-        let p = &app.params;
-        text(app, "YOUR OPPONENTS", T1, 60.0, yellow);
-        let zoom = 1.2;
-        let look = Look {
-            body: white,
-            mark: yellow,
-            detail: yellow,
-        };
+        let u = unit(app);
         let font = &app.assets.font_text;
-        let char_w = r.text_width("M", font, T1 * sc);
-        let lay = parade_layout(r.world_w, sc, char_w, stamp_size(app), 8.0 * r.arcade_px());
-        for (i, kind) in PaddleKind::ALL.into_iter().enumerate() {
+        let t1 = r.text_1x();
+        let gray = App::color(app.cfg.colors.lgray);
+        let title = paddle_ui::at(app, 160.0, paddle_ui::line(PARADE_TITLE_ROW));
+        r.text_centered("YOUR OPPONENTS", font, t1, title.x, title.y, 0.0, yellow);
+        for i in 0..PARADE_SLOTS {
             let age = at - i as f64 * PARADE_STEP;
             if age < 0.0 {
                 break;
             }
-            let x = lay.x(r.world_w, i);
-            let cy = 185.0 * sc; // dall'alto
-            let shape = Shape {
-                kind: Some(kind),
-                x,
-                y: r.world_h - cy, // y del core, verso l'alto
-                w: to_f32(p.pad_width) * zoom,
-                h: to_f32(p.kinds[kind as usize].height) * zoom,
-                front: 1.0,
-                tilt: if kind == PaddleKind::Twist { TWIST_MAX_TILT } else { 0.0 },
-                dash: None,
-                preview: true,
+            let kind = RUNGS.get(i).map(|rung| rung.kind); // None: OMEGA
+            let (x, y, name_row) = parade_slot(i);
+            let corner = paddle_ui::at(app, x, y);
+            let params = DrawTextureParams {
+                dest_size: Some(vec2(PARADE_W, PARADE_H) * u),
+                ..Default::default()
             };
-            draw_paddle(r, &shape, u * zoom, look);
-            let name_y = if lay.stagger && i % 2 == 1 { 315.0 } else { 290.0 };
-            r.text_centered(kind.name(), font, T1 * sc, x, name_y * sc, 0.0, white);
-            if age >= STAMP_AFTER {
-                stamp(app, x + STAMP_DX * sc, cy + 15.0 * sc + lay.stamp_dy(i));
+            let name = paddle_ui::at(app, x + PARADE_W / 2.0, paddle_ui::line(name_row));
+            if kind.is_none() && !self.omega {
+                // OMEGA non ancora battuto: la sagoma e il punto di domanda
+                draw_texture_ex(&app.assets.portraits.omega_mid_locked, corner.x, corner.y, WHITE, params);
+                // viola come gli occhi della sagoma (e il "?" della scelta)
+                r.text_centered("?", font, t1, name.x, name.y, 0.0, Color::from_rgba(0xE0, 0x40, 0xFF, 255));
+                continue;
+            }
+            let stamped = age >= STAMP_AFTER;
+            draw_texture_ex(app.assets.portraits.mid(kind, stamped), corner.x, corner.y, WHITE, params);
+            let label = kind.map_or("OMEGA", PaddleKind::name);
+            r.text_centered(label, font, t1, name.x, name.y, 0.0, if stamped { gray } else { white });
+            if stamped {
+                let c = paddle_ui::at(app, x + PARADE_W / 2.0, y + PARADE_H - PARADE_STAMP_UP);
+                stamp(app, c.x, c.y);
             }
         }
     }
@@ -650,64 +653,34 @@ fn text(app: &App, s: &str, size: f32, y: f32, color: Color) {
     r.text_centered(s, &app.assets.font_text, size * sc, r.world_w / 2.0, y * sc, 0.0, color);
 }
 
-/// Inclinazione del timbro, in salita verso destra: poca, perché i timbri vicini (uno più su e
-/// uno più giù, `ParadeLayout`) restino uno sopra l'altro senza toccarsi.
+/// Inclinazione del timbro, in salita verso destra: poca, perché i timbri vicini restino separati.
 const STAMP_ANGLE: f32 = -8.0 * std::f32::consts::PI / 180.0;
-/// Spostamento del timbro rispetto alla racchetta (unità a 480 righe) e spessore del bordo.
-const STAMP_DX: f32 = -2.0;
+/// Spessore del bordo del timbro (unità a 480 righe).
 const STAMP_LINE: f32 = 2.0;
 
-/// Sfilata del finale: distanza fra le colonne, nomi su due righe e timbri alternati.
-#[derive(Clone, Copy, Debug)]
-struct ParadeLayout {
-    gap: f32,
-    /// nomi alternati su due righe (quando due vicini non stanno sulla stessa con un carattere
-    /// di spazio)
-    stagger: bool,
-    /// metà della distanza in verticale fra un timbro e il successivo: uno più su, uno più giù
-    stamp_half_step: f32,
-}
+/// Sfilata del finale: otto posti (i sette della scalata e OMEGA), due file da quattro di ritratti
+/// medi `PARADE_W` x `PARADE_H` (8x9 caratteri), in pixel del campo 320x240 sulle righe del C64:
+/// titolo alla riga 1, ritratti alle righe 3-11 e 14-22, nomi alle 12 e 23, colonne 1, 11, 21 e 31.
+/// Il timbro sta `PARADE_STAMP_UP` righe sopra il fondo del ritratto.
+const PARADE_SLOTS: usize = LEVELS + 1;
+const PARADE_W: f32 = 64.0;
+const PARADE_H: f32 = 72.0;
+const PARADE_TITLE_ROW: u32 = 1;
+const PARADE_STAMP_UP: f32 = 14.0;
 
-impl ParadeLayout {
-    /// Centro della colonna `i` (coordinate di disegno).
-    fn x(&self, world_w: f32, i: usize) -> f32 {
-        world_w / 2.0 + (i as f32 - (PaddleKind::COUNT as f32 - 1.0) / 2.0) * self.gap
-    }
-
-    /// Spostamento verticale del timbro della colonna `i`.
-    fn stamp_dy(&self, i: usize) -> f32 {
-        if i.is_multiple_of(2) { -self.stamp_half_step } else { self.stamp_half_step }
-    }
+/// Posto `i` della sfilata: angolo in alto a sinistra (pixel del campo) e riga del nome.
+fn parade_slot(i: usize) -> (f32, f32, u32) {
+    let (row, name_row) = if i < 4 { (3.0, 12) } else { (14.0, 23) };
+    (8.0 + (i % 4) as f32 * 80.0, paddle_ui::TOP + row * 8.0, name_row)
 }
 
 /// Mezza larghezza e mezza altezza del riquadro del timbro ruotato, bordo compreso, con il
-/// riquadro di mezze misure `(hw, hh)` (`stamp_size`).
+/// riquadro di mezze misure `(hw, hh)` (`stamp_size`). Per il test della sfilata.
+#[cfg(test)]
 fn stamp_extent((hw, hh): (f32, f32), sc: f32) -> (f32, f32) {
     let (sin, cos) = STAMP_ANGLE.sin_cos();
     let (hw, hh) = (hw + STAMP_LINE * sc / 2.0, hh + STAMP_LINE * sc / 2.0);
     (hw * cos + hh * sin.abs(), hw * sin.abs() + hh * cos)
-}
-
-/// Disposizione della sfilata nel campo largo `world_w`, con un carattere a 1x largo `char_w`, il
-/// timbro di mezze misure `stamp` e almeno `margin` dai bordi. I timbri vicini sono sfalsati in
-/// verticale di più della loro altezza (uno più su, uno più giù), così non si toccano mai; quelli
-/// a due colonne di distanza, alla stessa altezza, stanno uno accanto all'altro. Le colonne sono
-/// strette quanto basta perché timbri e nomi dei due estremi restino nello schermo.
-fn parade_layout(world_w: f32, sc: f32, char_w: f32, stamp: (f32, f32), margin: f32) -> ParadeLayout {
-    let (ex, ey) = stamp_extent(stamp, sc);
-    let half = |k: PaddleKind| k.name().len() as f32 * char_w / 2.0;
-    let reach = (ex + STAMP_DX.abs() * sc).max(PaddleKind::ALL.into_iter().map(half).fold(0.0, f32::max));
-    let n = PaddleKind::COUNT as f32;
-    let gap = (world_w / n).min((world_w - 2.0 * (reach + margin)) / (n - 1.0));
-    // nomi: un carattere di spazio fra uno e l'altro, se no righe alternate
-    let stagger = PaddleKind::ALL
-        .windows(2)
-        .any(|pair| half(pair[0]) + half(pair[1]) + char_w > gap);
-    ParadeLayout {
-        gap,
-        stagger,
-        stamp_half_step: ey + 2.0 * sc,
-    }
 }
 
 /// Metà larghezza e metà altezza del riquadro del timbro: attorno alla scritta a 1x.
@@ -761,54 +734,22 @@ mod tests {
         }
     }
 
-    /// Sfilata nel campo 16:9 e 4:3 (480 righe, 1x = 16 unità): timbri che non si toccano (i
-    /// riquadri ruotati, bordo compreso, separati da un asse), nomi con almeno un carattere di
-    /// spazio, tutto ad almeno 8 pixel arcade (16 unità) dai bordi.
+    /// Sfilata: i ritratti e i nomi stanno nel campo 320x240 senza toccarsi, e i timbri (riquadri
+    /// ruotati, bordo compreso, a 480 righe: 1x = 16 unità, un pixel arcade = 2) di due posti
+    /// vicini nella stessa fila non si toccano.
     #[test]
-    fn the_parade_never_overlaps_and_stays_inside() {
-        for (w, sc) in [(852.0f32, (852.0 / 800.0 + 1.0) / 2.0), (640.0, (640.0 / 800.0 + 1.0) / 2.0), (1056.0, 1.0)] {
-            let (char_w, margin) = (16.0, 16.0);
-            let stamp = (4.0 * char_w + 8.0 * sc, 15.0 * sc);
-            let lay = parade_layout(w, sc, char_w, stamp, margin);
-            let (hw, hh) = stamp;
-            let line = STAMP_LINE * sc / 2.0;
-            let (sin, cos) = STAMP_ANGLE.sin_cos();
-            // angoli del riquadro di ogni timbro, allargato di mezzo bordo
-            let boxes: Vec<[(f32, f32); 4]> = (0..PaddleKind::COUNT)
-                .map(|i| {
-                    let (x, y) = (lay.x(w, i) + STAMP_DX * sc, lay.stamp_dy(i));
-                    let (a, b) = (hw + line, hh + line);
-                    [(-a, -b), (a, -b), (a, b), (-a, b)].map(|(dx, dy)| (x + dx * cos - dy * sin, y + dx * sin + dy * cos))
-                })
-                .collect();
-            let separated = |p: &[(f32, f32); 4], q: &[(f32, f32); 4]| {
-                // assi separatori: le normali ai lati (i riquadri hanno la stessa inclinazione)
-                [(cos, sin), (-sin, cos)].iter().any(|&(ax, ay)| {
-                    let proj = |b: &[(f32, f32); 4]| {
-                        b.iter().map(|&(x, y)| x * ax + y * ay).fold((f32::MAX, f32::MIN), |(lo, hi), v| (lo.min(v), hi.max(v)))
-                    };
-                    let ((p0, p1), (q0, q1)) = (proj(p), proj(q));
-                    p1 < q0 - 1.0 || q1 < p0 - 1.0
-                })
-            };
-            for i in 0..boxes.len() {
-                for j in i + 1..boxes.len() {
-                    assert!(separated(&boxes[i], &boxes[j]), "{w}: timbri {i} e {j} si toccano");
-                }
-                for &(x, _) in &boxes[i] {
-                    assert!(x >= margin - 0.01 && x <= w - margin + 0.01, "{w}: timbro {i} a {x}");
-                }
-            }
-            // nomi: un carattere di spazio fra vicini sulla stessa riga, margine dai bordi
-            let half = |k: PaddleKind| k.name().len() as f32 * char_w / 2.0;
-            for (i, k) in PaddleKind::ALL.into_iter().enumerate() {
-                let x = lay.x(w, i);
-                assert!(x - half(k) >= margin - 0.01 && x + half(k) <= w - margin + 0.01, "{w}: {}", k.name());
-                let next = if lay.stagger { i + 2 } else { i + 1 };
-                if let Some(&n) = PaddleKind::ALL.get(next) {
-                    let space = lay.x(w, next) - x - half(k) - half(n);
-                    assert!(space >= char_w - 0.01, "{w}: {} e {} a {space}", k.name(), n.name());
-                }
+    fn the_parade_fits_and_the_stamps_do_not_touch() {
+        let sc = 1.0;
+        let (hw, hh) = (4.0 * 16.0 + 8.0 * sc, 15.0 * sc);
+        let (ex, _) = stamp_extent((hw, hh), sc);
+        for i in 0..PARADE_SLOTS {
+            let (x, y, name_row) = parade_slot(i);
+            assert!(x >= 0.0 && x + PARADE_W <= 320.0 && y >= paddle_ui::TOP && y + PARADE_H <= 240.0, "posto {i}");
+            assert!(paddle_ui::line(name_row) > y + PARADE_H, "posto {i}: nome sul ritratto");
+            if i % 4 != 3 {
+                let (next, _, _) = parade_slot(i + 1);
+                // centri dei timbri a 80 pixel arcade (160 unità): devono starci due mezze larghezze
+                assert!(2.0 * ex < (next - x) * 2.0, "timbri {i} e {} larghi {}", i + 1, 2.0 * ex);
             }
         }
     }

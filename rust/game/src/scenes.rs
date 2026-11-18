@@ -57,6 +57,7 @@ pub struct Assets {
     pub font_text: GameFont,
     pub font_score: GameFont,
     pub titles: crate::titles::Titles,
+    pub portraits: crate::portraits::Portraits,
 }
 
 /// Effetti del SID: i bit degli eventi di `paddws_sid::player::effect_of` (come `sid_events` di
@@ -602,10 +603,12 @@ impl Scene {
         }
     }
 
-    /// La scena usa C come tasto di gioco (NEXT): il tasto rapido del filtro CRT va spento.
+    /// La scena usa C come tasto di gioco (NEXT): il tasto rapido del filtro CRT va spento. Anche
+    /// nella HOW TO PLAY delle mosse (mostra C come USE) e nella presentazione VS, tra la scelta e
+    /// la partita, dove il giocatore 1 ha la mano sui tasti delle mosse.
     pub fn uses_bonus_keys(&self) -> bool {
         match self {
-            Scene::Pick(_) | Scene::Paddles(_) => true,
+            Scene::Pick(_) | Scene::Paddles(_) | Scene::HowTo(_) | Scene::Intro(_) => true,
             Scene::Game(s) => s.fx.is_some(),
             _ => false,
         }

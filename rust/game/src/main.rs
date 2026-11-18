@@ -17,6 +17,7 @@ mod music;
 mod next_ui;
 mod paddle_ui;
 mod platform;
+mod portraits;
 mod render;
 mod scenes;
 mod scope;
@@ -197,6 +198,8 @@ fn load_assets() -> Assets {
         font_score: GameFont::from_bytes(include_bytes!("../../../assets/fonts/pong-score.ttf")),
         // titoli disegnati a pixel: vedi `titles`
         titles: titles::Titles::load(),
+        // ritratti della scelta della racchetta: vedi `portraits`
+        portraits: portraits::Portraits::load(),
     }
 }
 
@@ -617,7 +620,7 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         app.set_egg(true);
         scene
     }
-    let shots: [(&str, MakeScene); 129] = [
+    let shots: [(&str, MakeScene); 131] = [
         ("1_demo_classic", |app| demo_at(app, DemoMode::Classic)),
         ("1_demo_evo", |app| demo_at(app, DemoMode::Evo)),
         ("1_demo_next", |app| demo_at(app, DemoMode::Next)),
@@ -685,6 +688,19 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
                 (run.wins, run.side) = (1, paddws_core::Side::Right);
             }
             let mut intro = challenge_ui::Intro::new(app);
+            intro.skip_to(3.0);
+            Scene::Intro(intro)
+        }),
+        // lo schermo VS prima di una sfida tra due giocatori (il campione a sinistra con 2 sfide vinte)
+        ("8_intro_duel", |app| {
+            use paddws_core::Bonus as B;
+            challenge(app, 2);
+            app.paddles = [Some(paddws_core::PaddleKind::Blaster), Some(paddws_core::PaddleKind::Twist)];
+            app.loadout = [[B::Teleport, B::Ghost, B::Curve], [B::Smash, B::Steer, B::Slow]];
+            if let Some(run) = &mut app.run {
+                run.wins = 2;
+            }
+            let mut intro = challenge_ui::Intro::duel(app);
             intro.skip_to(3.0);
             Scene::Intro(intro)
         }),
@@ -1058,6 +1074,7 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         }),
         ("c_omega_7_shatter", |app| omega_ending(app, E::Shatter, 0.9)),
         ("c_omega_7_shatter_split", |app| omega_ending(app, E::Shatter, 1.8)),
+        ("c_omega_7_parade", |app| omega_ending(app, E::Parade, 8.0)),
         ("c_omega_8_the_end", |app| omega_ending(app, E::TheEnd, 0.2)),
         ("c_omega_9_training", |app| {
             challenge(app, 0);

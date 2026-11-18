@@ -18,7 +18,7 @@ use crate::gamepad::Control;
 use crate::input::{self, PadKeys};
 use crate::paddle_ui::{self, Look, Shape};
 use crate::render::Renderer;
-use crate::scenes::{App, Menu, Play, Scene};
+use crate::scenes::{App, Menu, Scene};
 use crate::touch;
 
 /// Icone 9x9 a 1 bit, come le bitmap del core MiSTer, nell'ordine di `Bonus`.
@@ -628,7 +628,8 @@ impl Pick {
                     if !seen {
                         return Some(Scene::HowTo(crate::moves_ui::HowTo::duel(app)));
                     }
-                    return Some(Scene::Game(Box::new(Play::duel(app))));
+                    // prima della sfida lo schermo VS con i due giocatori
+                    return Some(Scene::Intro(crate::challenge_ui::Intro::duel(app)));
                 }
                 // poi la presentazione delle mosse speciali (in CHALLENGE solo qui, prima del
                 // primo incontro)

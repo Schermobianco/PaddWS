@@ -14,7 +14,7 @@ use crate::encoder::Action;
 use crate::gamepad::Control;
 use crate::input::{self, PadKeys};
 use crate::next_ui::{PICK_KEYS, PICK_SECONDS, Pick, READY_SECONDS, unit};
-use crate::render::Renderer;
+use crate::render::{ArtPart, Renderer};
 use crate::scenes::{App, Menu, Scene};
 use crate::touch;
 
@@ -288,12 +288,9 @@ impl PaddlePick {
         self.chosen = [false, true];
     }
 
-    /// y del centro della riga `i` e altezza delle righe (coordinate di disegno).
-    fn row(app: &App, i: usize) -> (f32, f32) {
-        let s = app.scale();
-        let rows = PaddleKind::COUNT as f32;
-        let row_h = ((app.renderer.world_h - 165.0 * s - 75.0 * s) / rows).min(50.0 * s);
-        (165.0 * s + (i as f32 + 0.5) * row_h, row_h)
+    /// Lati che scelgono (non la CPU né il campione che tiene la sua racchetta).
+    fn choosing(&self) -> impl Iterator<Item = usize> + '_ {
+        (0..2).filter(|&side| self.fixed != Some(side))
     }
 
     /// Conferma o annulla la racchetta sotto il cursore di `side`; confermata, se ne sente il nome
@@ -363,23 +360,30 @@ impl PaddlePick {
                 _ => {}
             }
         }
-        // touch: un tocco su una riga della propria colonna mostra quella racchetta (e annulla la
-        // conferma); si conferma toccando OK in cima alla colonna, come nella scelta dei bonus (vale
-        // tutto lo spazio sopra le righe), e un altro tocco lì la lascia
-        let (first, row_h) = Self::row(app, 0);
+        // touch: un tocco su una casella della griglia mostra quella racchetta (e annulla la
+        // conferma) per chi sceglie (in due, per chi sta da quella parte dello schermo); un tocco
+        // fuori dalla griglia, nella propria metà, conferma o lascia la scelta (come OK)
+        let solo = {
+            let mut sides = self.choosing();
+            match (sides.next(), sides.next()) {
+                (Some(side), None) => Some(side),
+                _ => None,
+            }
+        };
+        let half = |p: Vec2| usize::from(p.x >= app.renderer.world_w / 2.0);
         for p in touch::taps() {
-            let side = usize::from(p.x >= app.renderer.world_w / 2.0);
+            let cell = (0..CELLS).find(|&i| cell_rect(app, i).contains(p));
+            let side = solo.unwrap_or_else(|| half(p));
             if self.fixed == Some(side) {
                 continue;
             }
-            if p.y < first - row_h / 2.0 {
-                self.toggle(app, side);
-            } else if let Some(i) = (0..n).find(|&i| {
-                let (cy, row_h) = Self::row(app, i);
-                (p.y - cy).abs() < row_h / 2.0
-            }) {
-                self.cursor[side] = i;
-                self.chosen[side] = false;
+            match cell {
+                Some(i) if i < n => {
+                    self.cursor[side] = i;
+                    self.chosen[side] = false;
+                }
+                Some(_) => {} // la casella di OMEGA non si sceglie
+                None => self.toggle(app, side),
             }
         }
         // tempo scaduto: vale la racchetta sotto il cursore
@@ -393,18 +397,20 @@ impl PaddlePick {
 
     pub fn draw(&self, app: &App) {
         let r = &app.renderer;
-        let (w, h) = (r.world_w, r.world_h);
+        let w = r.world_w;
         let s = app.scale();
         let u = unit(app);
-        let white = App::color(app.cfg.colors.white);
-        let gray = App::color(app.cfg.colors.lgray);
-        let accent = App::color(app.cfg.colors.accent);
-        let dim = Color { a: 0.35, ..gray };
+        let colors = &app.cfg.colors;
+        let white = App::color(colors.white);
+        let gray = App::color(colors.lgray);
+        let accent = App::color(colors.accent);
+        let frame = Color::from_rgba(0x46, 0x46, 0x46, 255);
         let font = &app.assets.font_text;
+        let portraits = &app.assets.portraits;
         let p = &app.params;
         let t1 = r.text_1x();
         r.fill(BLACK);
-        r.text_centered("PICK YOUR PADDLE", font, t1, w / 2.0, 34.0 * s, 0.0, accent);
+        r.text_centered("PICK YOUR PADDLE", font, t1, w / 2.0, at(app, 0.0, line(0)).y, 0.0, accent);
         let secs = format!("{:02}", self.left.max(0.0).ceil() as u32);
         let blink = self.left < 3.0 && (get_time() * 4.0) as i64 % 2 == 1;
         r.text_centered(
@@ -412,119 +418,150 @@ impl PaddlePick {
             &app.assets.font_score,
             48.0 * s,
             w / 2.0,
-            84.0 * s,
+            at(app, 0.0, TIMER_Y).y,
             0.0,
             if blink { gray } else { white },
         );
 
-        let dash = 10.0 * s;
-        let mut y = 120.0 * s;
-        while y < h - 20.0 * s {
-            draw_rectangle(w / 2.0 - u, y, 2.0 * u, dash, white);
-            y += dash * 2.0;
+        // griglia: le caselle dei sette tipi e quella di OMEGA, il boss segreto (non si sceglie)
+        for i in 0..CELLS {
+            let cell = cell_rect(app, i);
+            let texture = match PaddleKind::ALL.get(i) {
+                Some(&kind) => portraits.small(kind),
+                None => &portraits.omega_small,
+            };
+            draw_texture_ex(texture, cell.x, cell.y, WHITE, DrawTextureParams {
+                dest_size: Some(cell.size()),
+                ..Default::default()
+            });
+            draw_rectangle_lines(cell.x, cell.y, cell.w, cell.h, u, frame);
+            if i >= PaddleKind::COUNT {
+                let omega = App::color([0xE0, 0x40, 0xFF]);
+                r.text_centered("?", font, t1, cell.center().x, cell.y + cell.h - 6.0 * u, 0.0, omega);
+            }
         }
 
-        let half = w / 2.0;
-        let (first, _) = Self::row(app, 0);
-        let (last, _) = Self::row(app, PaddleKind::COUNT - 1);
-        let mid = (first + last) / 2.0;
+        // il campo sotto la griglia: rete tratteggiata e le due racchette a grandezza reale
+        let mut y = COURT_Y + 2.0;
+        while y < COURT_Y + COURT_H {
+            let top = at(app, 160.0, y);
+            draw_rectangle(top.x - u, top.y, 2.0 * u, 5.0 * u, white);
+            y += 8.0;
+        }
+
         for side in 0..2 {
-            let x0 = side as f32 * half;
-            let front = if side == 0 { 1.0 } else { -1.0 };
-            r.text_centered(&self.name(side), font, t1, x0 + half * 0.19, 132.0 * s, 0.0, white);
+            let kind = PaddleKind::ALL[self.cursor[side]];
+            // ritratto grande, il personaggio intero; quello di destra guarda il centro
+            let corner = at(app, PORTRAIT_X[side], PORTRAIT_Y);
+            draw_texture_ex(portraits.big(kind), corner.x, corner.y, WHITE, DrawTextureParams {
+                dest_size: Some(vec2(PORTRAIT_W, PORTRAIT_H) * u),
+                flip_x: side == 1,
+                ..Default::default()
+            });
+            let mid = PORTRAIT_X[side] + PORTRAIT_W / 2.0;
+            r.text_centered(&self.name(side), font, t1, at(app, mid, 0.0).x, at(app, 0.0, line(4)).y, 0.0, white);
+            // OK verso la griglia (sul touch, finché non si sceglie, il pulsante da toccare)
+            let ok = at(app, mid + if side == 0 { 28.0 } else { -28.0 }, line(4));
             if self.chosen[side] {
-                r.text_centered("OK", font, t1, x0 + half * 0.68, 132.0 * s, 0.0, accent);
+                r.text_centered("OK", font, t1, ok.x, ok.y, 0.0, accent);
             } else if app.touch && self.fixed != Some(side) && self.ready.is_none() {
-                // touch: il pulsante con cui si conferma, come nella scelta dei bonus
-                let cx = x0 + half * 0.68;
-                draw_rectangle(cx - 35.0 * s, 132.0 * s - 18.0 * s, 70.0 * s, 36.0 * s, accent);
-                r.text_centered("OK", font, t1, cx, 132.0 * s, 0.0, App::color(app.cfg.colors.black));
+                draw_rectangle(ok.x - 16.0 * u, ok.y - 7.0 * u, 32.0 * u, 14.0 * u, accent);
+                r.text_centered("OK", font, t1, ok.x, ok.y, 0.0, App::color(colors.black));
             }
-            // anteprima a grandezza reale della racchetta sotto il cursore
-            let sel = PaddleKind::ALL[self.cursor[side]];
-            let k = &p.kinds[sel as usize];
+            // il nome disegnato sotto il ritratto, dentro lo schermo
+            let name = app.assets.titles.name(kind);
+            let half = name.w / 2.0 + 2.0;
+            let cx = mid.clamp(half, 320.0 - half);
+            let paint = crate::titles::paint(colors);
+            r.art_centered(name, 1.0, at(app, cx, 0.0).x, at(app, 0.0, NAME_Y).y, 0.0, ArtPart::Whole, &paint);
             let shape = Shape {
-                kind: Some(sel),
-                x: x0 + half * 0.19,
-                y: h - mid,
+                kind: Some(kind),
+                x: at(app, PADDLE_X[side], 0.0).x,
+                y: r.world_h - at(app, 0.0, COURT_Y + COURT_H / 2.0).y,
                 w: to_f32(p.pad_width),
-                h: to_f32(k.height),
-                front,
+                h: to_f32(p.kinds[kind as usize].height),
+                front: if side == 0 { 1.0 } else { -1.0 },
                 // TWIST si mostra inclinato, come quando sale
-                tilt: if sel == PaddleKind::Twist { TWIST_MAX_TILT } else { 0.0 },
+                tilt: if kind == PaddleKind::Twist { TWIST_MAX_TILT } else { 0.0 },
                 dash: None,
                 preview: true,
             };
-            draw_paddle(
-                r,
-                &shape,
-                u,
-                Look {
-                    body: white,
-                    mark: accent,
-                    detail: gray,
-                },
-            );
-
-            for (i, &kind) in PaddleKind::ALL.iter().enumerate() {
-                let (cy, row_h) = Self::row(app, i);
-                let on = i == self.cursor[side];
-                if on && !self.chosen[side] && self.ready.is_none() {
-                    r.text_centered(">", font, t1, x0 + half * 0.36, cy, 0.0, accent);
-                }
-                // miniatura: la stessa racchetta in piccolo
-                let k = &p.kinds[kind as usize];
-                let mini = (row_h * 0.8 / to_f32(p.kinds[PaddleKind::Titan as usize].height)).min(0.4);
-                let shape = Shape {
-                    kind: Some(kind),
-                    x: x0 + half * 0.45,
-                    y: h - cy,
-                    w: (to_f32(p.pad_width) * mini).max(2.0 * u),
-                    h: to_f32(k.height) * mini,
-                    front,
-                    tilt: if kind == PaddleKind::Twist { TWIST_MAX_TILT } else { 0.0 },
-                    dash: (kind == PaddleKind::Rush).then_some((x0 + half * 0.45 - front * to_f32(p.pad_width) * mini * 8.0, 1.0)),
-                    preview: false,
-                };
-                let look = if on {
-                    Look {
-                        body: white,
-                        mark: accent,
-                        detail: gray,
-                    }
-                } else {
-                    Look {
-                        body: gray,
-                        mark: dim,
-                        detail: dim,
-                    }
-                };
-                draw_paddle(r, &shape, u, look);
-                let color = match (on, self.chosen[side]) {
-                    (true, true) => accent,
-                    (true, false) => white,
-                    _ => gray,
-                };
-                r.text_centered(kind.name(), font, t1, x0 + half * 0.7, cy, 0.0, color);
-            }
-            r.text_centered(tagline(sel), font, t1, x0 + half / 2.0, h - 50.0 * s, 0.0, gray);
+            draw_paddle(r, &shape, u, Look { body: white, mark: accent, detail: gray });
+            let half_x = at(app, HALF_X[side], 0.0).x;
+            r.text_centered(tagline(kind), font, t1, half_x, at(app, 0.0, line(22)).y, 0.0, white);
         }
+
+        // cursori sopra la griglia, gialli tutti e due con la sigla del giocatore; finché si sceglie
+        // lampeggiano (sul C64 sono sprite)
+        let on = (get_time() * 4.0) as i64 % 4 != 3;
+        for side in 0..2 {
+            if !self.chosen[side] && self.fixed != Some(side) && self.ready.is_none() && !on {
+                continue;
+            }
+            let cell = cell_rect(app, self.cursor[side]);
+            draw_rectangle_lines(cell.x, cell.y, cell.w, cell.h, 4.0 * u, accent);
+            let tag = if self.cpu && self.fixed == Some(side) { "CPU".to_string() } else { format!("{}P", side + 1) };
+            let tag_w = (tag.len() as f32 * 8.0 + 2.0) * u;
+            let x = if side == 0 { cell.x + 2.0 * u } else { cell.x + cell.w - 2.0 * u - tag_w };
+            draw_rectangle(x, cell.y + cell.h - 10.0 * u, tag_w, 9.0 * u, BLACK);
+            r.text_centered(&tag, font, t1, x + tag_w / 2.0, cell.y + cell.h - 5.5 * u, 0.0, accent);
+        }
+
+        let hint_y = at(app, 0.0, line(24)).y;
         if self.ready.is_some() && (get_time() * 6.0) as i64 % 2 == 0 {
-            r.text_centered("READY!", font, t1, w / 2.0, h - 16.0 * s, 0.0, accent);
-        } else if self.ready.is_none() && app.touch {
-            for side in 0..2 {
-                if self.fixed != Some(side) && !self.chosen[side] {
-                    let x = if side == 0 { w / 4.0 } else { 3.0 * w / 4.0 };
-                    r.text_centered("TAP OK TO CHOOSE", font, t1, x, h - 16.0 * s, 0.0, gray);
-                }
-            }
+            r.text_centered("READY!", font, t1, w / 2.0, hint_y, 0.0, accent);
         } else if self.ready.is_none() {
-            if self.fixed != Some(0) {
-                r.text_centered("W S + C", font, t1, w / 4.0, h - 16.0 * s, 0.0, gray);
-            }
-            if self.fixed != Some(1) {
-                r.text_centered("UP DOWN + -", font, t1, 3.0 * w / 4.0, h - 16.0 * s, 0.0, gray);
+            for side in self.choosing() {
+                if app.touch && self.chosen[side] {
+                    continue;
+                }
+                let hint = match (app.touch, side) {
+                    (true, _) => "TAP OK TO CHOOSE",
+                    (false, 0) => "W S + C",
+                    (false, _) => "UP DOWN + -",
+                };
+                r.text_centered(hint, font, t1, at(app, HALF_X[side], 0.0).x, hint_y, 0.0, gray);
             }
         }
     }
+}
+
+// La disposizione della scelta, in pixel del campo 320x240 e allineata ai caratteri da 8 pixel del
+// C64 (40x25 a partire dalla riga `TOP`, come lì): riga 0 il titolo, 1-3 il tempo, 4 P1/P2 e OK,
+// 5-17 i ritratti grandi (11x13 caratteri, colonne 0-10 e 29-39), 5-12 la griglia 4x2 di caselle
+// 4x4 (colonne 12-27), 13-21 il campo con le due racchette, 18-21 i nomi, 22 le frasi, 24 i comandi.
+pub(crate) const TOP: f32 = 20.0;
+pub(crate) const PORTRAIT_W: f32 = 88.0;
+pub(crate) const PORTRAIT_H: f32 = 104.0;
+pub(crate) const PORTRAIT_X: [f32; 2] = [0.0, 320.0 - PORTRAIT_W];
+const PORTRAIT_Y: f32 = TOP + 5.0 * 8.0;
+const GRID_X: f32 = 12.0 * 8.0;
+const GRID_Y: f32 = PORTRAIT_Y;
+const CELL: f32 = 32.0;
+/// caselle della griglia: i sette tipi e OMEGA
+const CELLS: usize = PaddleKind::COUNT + 1;
+const TIMER_Y: f32 = TOP + 8.0 + 12.0;
+const COURT_Y: f32 = TOP + 13.0 * 8.0;
+const COURT_H: f32 = 9.0 * 8.0;
+pub(crate) const PADDLE_X: [f32; 2] = [14.0 * 8.0 + 4.0, 25.0 * 8.0 + 4.0];
+const NAME_Y: f32 = TOP + 18.0 * 8.0 + 16.0;
+/// centro di ciascuna metà, per le frasi e i comandi
+pub(crate) const HALF_X: [f32; 2] = [80.0, 240.0];
+
+/// Centro verticale della riga di caratteri `row`.
+pub(crate) fn line(row: u32) -> f32 {
+    TOP + row as f32 * 8.0 + 4.0
+}
+
+/// Punto (x, y) in pixel del campo 320x240, centrato orizzontalmente, in coordinate di disegno.
+pub(crate) fn at(app: &App, x: f32, y: f32) -> Vec2 {
+    let u = unit(app);
+    vec2(app.renderer.world_w / 2.0 + (x - 160.0) * u, y * u)
+}
+
+/// Riquadro della casella `i` della griglia (prima riga ARCADE-TWIST, seconda BLASTER-OMEGA).
+fn cell_rect(app: &App, i: usize) -> Rect {
+    let u = unit(app);
+    let corner = at(app, GRID_X + (i % 4) as f32 * CELL, GRID_Y + (i / 4) as f32 * CELL);
+    Rect::new(corner.x, corner.y, CELL * u, CELL * u)
 }
