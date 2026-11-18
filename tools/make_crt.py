@@ -212,12 +212,13 @@ def main() -> None:
     kcode = Path(str(program) + ".kpick").read_bytes()
     if len(kcode) != 0x400:
         sys.exit(f"{program}.kpick: {len(kcode)} byte invece di 1024")
-    # i cursori (PROGRAMMA.prg.kpick2) nella riga 1 della bitmap dello sfondo, vuota: da $E140
+    # i cursori (PROGRAMMA.prg.kpick2) nella riga 1 della bitmap dello sfondo e nella riga 2 fino
+    # alla colonna 16, vuote: da $E140
     kcode2 = Path(str(program) + ".kpick2").read_bytes()
     bg = bytearray(KPICK.read_bytes())
-    if len(kcode2) != 0x140 or any(bg[0x140:0x280]):
-        sys.exit(f"{program}.kpick2: {len(kcode2)} byte invece di 320, o riga 1 dello sfondo non vuota")
-    bg[0x140:0x280] = kcode2
+    if len(kcode2) != 0x1C8 or any(bg[0x140:0x308]):
+        sys.exit(f"{program}.kpick2: {len(kcode2)} byte invece di 456, o righe 1-2 dello sfondo non vuote")
+    bg[0x140:0x308] = kcode2
     # lo schermo VS (PROGRAMMA.prg.kvs, .kvs2, .kvs3): il codice all'inizio del suo banco, nelle 4
     # pagine lasciate vuote da tools/gen_c64_portraits.py, poi quello della riga 24 della bitmap a
     # KV_ROW24P e quello dei caratteri 64-159 a KV_CHARSP

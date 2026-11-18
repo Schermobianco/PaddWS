@@ -217,6 +217,8 @@ def pick_screen() -> tuple[bytes, bytes]:
             data, colors[i], err = cell_bitmap(img, cx, cy, force)
             bitmap[i * 8:i * 8 + 8] = data
             lossy += err > 0
+    # riga 1 e riga 2 fino alla colonna 16: vuote, nere su nero (il codice dei cursori, make_crt.py)
+    assert not any(bitmap[320:2 * 320 + 17 * 8]) and not any(colors[40:2 * 40 + 17])
     # immagine dello sprite del cursore nella riga vuota, nera su nero
     at = SPRITE_ROW * 320
     assert not any(bitmap[at:at + 320]) and not any(colors[SPRITE_ROW * 40:SPRITE_ROW * 40 + 40])

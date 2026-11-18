@@ -510,7 +510,7 @@ cdst:
 
 ; ------------------------------------------------------------------------------------ sprite
 
-; Cursori e sigle (kp_cursors, nella riga 1 della bitmap): prima che lo schermo si veda, nessuno
+; Cursori e sigle (kp_cursors, nelle righe 1-2 della bitmap): prima che lo schermo si veda, nessuno
 ; sprite.
 .proc kp_sprites
     lda kp_pg
@@ -550,7 +550,8 @@ ks_blank: .byte "              ", 0
 
 ; ------------------------------------------------------------------------------------ riga 1
 
-; Codice nella riga 1 della bitmap, vuota e nera su nero (segmento KPCODE2): tools/make_crt.py lo
+; Codice nella riga 1 della bitmap e nella riga 2 fino alla colonna 16, vuote e nere su nero
+; (segmento KPCODE2): tools/make_crt.py lo
 ; mette nello sfondo della cartuccia, quindi c'è solo dopo la copia dello sfondo.
 .segment "KPCODE2"
 
@@ -568,7 +569,7 @@ side:
     lda frame_count
     and #63
     cmp #48
-    bcs next
+    jcs next
 on:
     ; angolo della casella negli sprite: kp_c (x), kp_r (y)
     lda pk_cursor,x
@@ -595,7 +596,18 @@ on:
     lda bit_of,y
     ora sh_yexp
     sta sh_yexp
-    ; riquadro nero, due pixel dentro la casella (CPU, a destra, più largo)
+    ; con i due cursori sulla stessa casella sigla e riquadro di destra in alto (21 righe su)
+    ldx kp_x
+    cpx #1
+    bne :+
+    lda pk_cursor
+    cmp pk_cursor+1
+    bne :+
+    lda kp_r
+    sec
+    sbc #21
+    sta kp_r
+:   ; riquadro nero, due pixel dentro la casella (CPU, a destra, più largo)
     ldx kp_x
     jsr kp_cpu
     lda kp_box_img,y
