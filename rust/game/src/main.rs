@@ -620,7 +620,7 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         app.set_egg(true);
         scene
     }
-    let shots: [(&str, MakeScene); 131] = [
+    let shots: [(&str, MakeScene); 132] = [
         ("1_demo_classic", |app| demo_at(app, DemoMode::Classic)),
         ("1_demo_evo", |app| demo_at(app, DemoMode::Evo)),
         ("1_demo_next", |app| demo_at(app, DemoMode::Next)),
@@ -776,6 +776,13 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
             // la ruota alla prima voce: sopra il rullo resta vuoto
             let mut menu = Menu::new(app);
             menu.show(0);
+            Scene::Menu(menu)
+        }),
+        ("2_menu_crt", |app| {
+            // la pagina CRT SETTINGS, sulla prima regolazione
+            let mut menu = Menu::new(app);
+            menu.open_page(app, true);
+            menu.show(1);
             Scene::Menu(menu)
         }),
         ("3_game_evo", |app| {

@@ -372,6 +372,8 @@ struct CrtPass {
     /// uscita a risoluzione ridotta, se serve
     reduced: Option<RenderTarget>,
     out_size: Vec2,
+    /// parametri con cui è stato preparato (`Renderer::update_layout` li confronta)
+    cfg: Crt,
 }
 
 impl Renderer {
@@ -451,7 +453,8 @@ impl Renderer {
         self.screen_px = (0, 0);
     }
 
-    /// Da chiamare a ogni frame: ricalcola il letterbox se la finestra è cambiata.
+    /// Da chiamare a ogni frame: ricalcola il letterbox se la finestra è cambiata e segue i
+    /// parametri del CRT (la pagina CRT SETTINGS del menu li cambia mentre si guarda).
     pub fn update_layout(&mut self, crt: &Crt) {
         let dpi = screen_dpi_scale();
         let screen = (
@@ -460,7 +463,17 @@ impl Renderer {
         );
         let crt_wanted = crt.enabled;
         if screen == self.screen_px && crt_wanted == self.crt.is_some() {
-            return;
+            match &mut self.crt {
+                // le righe emulate cambiano il buffer ridotto: si rifà tutto
+                Some(pass) if pass.cfg.resolution_scale != crt.resolution_scale => {}
+                Some(pass) => {
+                    if pass.cfg != *crt {
+                        pass.set_params(crt);
+                    }
+                    return;
+                }
+                None => return,
+            }
         }
         self.screen_px = screen;
         let (sw, sh) = (screen.0.max(1) as f32, screen.1.max(1) as f32);
@@ -981,11 +994,7 @@ impl CrtPass {
                 return None;
             }
         };
-        material.set_uniform("HardScan", cfg.hard_scan);
-        material.set_uniform("HardPix", cfg.hard_pix);
-        material.set_uniform("Warp", vec2(cfg.warp_x, cfg.warp_y));
-        material.set_uniform("MaskDark", cfg.mask_dark);
-        material.set_uniform("MaskLight", cfg.mask_light);
+        set_crt_uniforms(&material, cfg);
 
         let scale = (CRT_MAX_PIXELS / (w * h) as f32).sqrt().min(1.0);
         let out = ((w as f32 * scale).round().max(1.0), (h as f32 * scale).round().max(1.0));
@@ -1027,8 +1036,23 @@ impl CrtPass {
             source_size,
             reduced,
             out_size: vec2(out.0, out.1),
+            cfg: cfg.clone(),
         })
     }
+
+    /// Parametri nuovi dello shader, con le stesse righe emulate (i buffer restano).
+    fn set_params(&mut self, cfg: &Crt) {
+        set_crt_uniforms(&self.material, cfg);
+        self.cfg = cfg.clone();
+    }
+}
+
+fn set_crt_uniforms(material: &Material, cfg: &Crt) {
+    material.set_uniform("HardScan", cfg.hard_scan);
+    material.set_uniform("HardPix", cfg.hard_pix);
+    material.set_uniform("Warp", vec2(cfg.warp_x, cfg.warp_y));
+    material.set_uniform("MaskDark", cfg.mask_dark);
+    material.set_uniform("MaskLight", cfg.mask_light);
 }
 
 impl BlurPass {

@@ -293,7 +293,7 @@ const OLD_RESOLUTION_SCALE: f32 = 1.0;
 const WARP: (f32, f32) = (0.01172, 0.015625);
 const OLD_WARPS: [(f32, f32); 2] = [(0.03125, 0.04167), (0.015625, 0.020833)];
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Crt {
     pub enabled: bool,
@@ -319,6 +319,90 @@ impl Default for Crt {
             mask_light: 1.5,
         }
     }
+}
+
+/// Regolazioni del filtro CRT dalla pagina CRT SETTINGS del menu. Le prime quattro valgono in
+/// percento del default (`Crt::default`), LINES in righe emulate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CrtKnob {
+    /// durezza delle scanline (`hard_scan`): più alta, righe più sottili e spazi più scuri
+    Scanlines,
+    /// nitidezza dei pixel in orizzontale (`hard_pix`)
+    Sharpness,
+    /// bombatura (`warp_x`, `warp_y`, insieme)
+    Curvature,
+    /// maschera dei fosfori (`mask_dark` 1 - m, `mask_light` 1 + m)
+    Mask,
+    /// righe emulate (`resolution_scale` = 3 × righe del campo / righe)
+    Lines,
+}
+
+impl CrtKnob {
+    pub const ALL: [CrtKnob; 5] = [Self::Scanlines, Self::Sharpness, Self::Curvature, Self::Mask, Self::Lines];
+
+    /// Valori che si scelgono dal menu, in ordine crescente. Niente bombature al 133% e niente
+    /// 1440 righe: sono i valori di prima che `load` cambia da solo (`OLD_WARPS`,
+    /// `OLD_RESOLUTION_SCALE`).
+    pub fn levels(self) -> &'static [u16] {
+        match self {
+            Self::Scanlines | Self::Sharpness => &[25, 50, 75, 100, 150, 200, 300],
+            Self::Curvature => &[0, 25, 50, 75, 100, 125, 150, 175, 200],
+            Self::Mask => &[0, 25, 50, 75, 100, 125, 150],
+            Self::Lines => &[240, 288, 360, 480, 576, 720],
+        }
+    }
+}
+
+impl Crt {
+    /// Valore della regolazione `knob` (`rows`: righe del campo), nelle unità di
+    /// `CrtKnob::levels`; un valore scritto a mano nel file può cadere tra due livelli.
+    pub fn level(&self, knob: CrtKnob, rows: f32) -> f32 {
+        let d = Crt::default();
+        match knob {
+            CrtKnob::Scanlines => self.hard_scan / d.hard_scan * 100.0,
+            CrtKnob::Sharpness => self.hard_pix / d.hard_pix * 100.0,
+            CrtKnob::Curvature => self.warp_y / d.warp_y * 100.0,
+            CrtKnob::Mask => (self.mask_light - 1.0) / (d.mask_light - 1.0) * 100.0,
+            CrtKnob::Lines => 3.0 * rows / self.resolution_scale.max(0.01),
+        }
+    }
+
+    pub fn set_level(&mut self, knob: CrtKnob, level: u16, rows: f32) {
+        let d = Crt::default();
+        let k = f32::from(level) / 100.0;
+        match knob {
+            CrtKnob::Scanlines => self.hard_scan = d.hard_scan * k,
+            CrtKnob::Sharpness => self.hard_pix = d.hard_pix * k,
+            CrtKnob::Curvature => (self.warp_x, self.warp_y) = (d.warp_x * k, d.warp_y * k),
+            CrtKnob::Mask => {
+                let m = (d.mask_light - 1.0) * k;
+                (self.mask_dark, self.mask_light) = ((1.0 - m).max(0.0), 1.0 + m);
+            }
+            CrtKnob::Lines => self.resolution_scale = 3.0 * rows / f32::from(level.max(1)),
+        }
+    }
+
+    /// Un passo della regolazione `knob`: +1 e -1 vanno al livello sopra o sotto quello di adesso
+    /// fermandosi al primo e all'ultimo, 0 (la conferma) sale e dopo l'ultimo torna al primo.
+    pub fn step(&mut self, knob: CrtKnob, step: i8, rows: f32) {
+        let levels = knob.levels();
+        let now = self.level(knob, rows);
+        // mezzo punto di tolleranza per gli arrotondamenti del file
+        let above = levels.iter().copied().find(|&l| f32::from(l) > now + 0.5);
+        let below = levels.iter().rev().copied().find(|&l| f32::from(l) < now - 0.5);
+        let level = match step {
+            s if s < 0 => below.unwrap_or(levels[0]),
+            s if s > 0 => above.unwrap_or(levels[levels.len() - 1]),
+            _ => above.unwrap_or(levels[0]),
+        };
+        self.set_level(knob, level, rows);
+    }
+}
+
+/// Numero per il file JSON con al più sei decimali: un f32 passato a f64 si scriverebbe con
+/// tutte le cifre della sua approssimazione binaria (0.01172 -> 0.011719999834895134).
+fn tidy(v: f32) -> f64 {
+    (f64::from(v) * 1e6).round() / 1e6
 }
 
 /// Modalità NEXT: palla, capsule e bonus, con le stesse unità del resto del file (800x480,
@@ -796,7 +880,20 @@ pub fn save_preferences(path: &Path, cfg: &Config) {
     set(&mut data, "game", "training", cfg.game.training);
     set(&mut data, "game", "training_omega", cfg.game.training_omega);
     set(&mut data, "game", "jukebox", cfg.game.jukebox);
-    set(&mut data, "crt_effects", "enabled", cfg.crt_effects.enabled);
+    let crt = &cfg.crt_effects;
+    set(&mut data, "crt_effects", "enabled", crt.enabled);
+    // i parametri del filtro si regolano da CRT SETTINGS
+    for (key, v) in [
+        ("resolution_scale", crt.resolution_scale),
+        ("hard_scan", crt.hard_scan),
+        ("hard_pix", crt.hard_pix),
+        ("warp_x", crt.warp_x),
+        ("warp_y", crt.warp_y),
+        ("mask_dark", crt.mask_dark),
+        ("mask_light", crt.mask_light),
+    ] {
+        set(&mut data, "crt_effects", key, tidy(v));
+    }
     set(&mut data, "mouse", "spinner", cfg.mouse.spinner);
     write_json(path, &data);
 }
@@ -947,6 +1044,64 @@ mod tests {
         fs::write(&path, r#"{"crt_effects": {"resolution_scale": 6.0}}"#).unwrap();
         assert_eq!(load(&path).crt_effects.resolution_scale, 6.0);
         assert_eq!(Config::default().crt_effects.resolution_scale, 2.5);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn crt_settings_step_through_their_levels() {
+        let mut crt = Crt::default();
+        for knob in CrtKnob::ALL {
+            // il default è uno dei livelli: 100% e 576 righe
+            let want = if knob == CrtKnob::Lines { 576.0 } else { 100.0 };
+            assert!((crt.level(knob, 480.0) - want).abs() < 0.01, "{knob:?}");
+            let levels = knob.levels();
+            assert!(levels.windows(2).all(|w| w[0] < w[1]), "{knob:?}");
+            // in giù fino al primo, che resta; con la conferma dopo l'ultimo si torna al primo
+            for _ in 0..levels.len() {
+                crt.step(knob, -1, 480.0);
+            }
+            assert!((crt.level(knob, 480.0) - f32::from(levels[0])).abs() < 0.01, "{knob:?}");
+            for &l in &levels[1..] {
+                crt.step(knob, 0, 480.0);
+                assert!((crt.level(knob, 480.0) - f32::from(l)).abs() < 0.01, "{knob:?} {l}");
+            }
+            crt.step(knob, 0, 480.0);
+            assert!((crt.level(knob, 480.0) - f32::from(levels[0])).abs() < 0.01, "{knob:?}");
+            crt.step(knob, -1, 480.0);
+            assert!((crt.level(knob, 480.0) - f32::from(levels[0])).abs() < 0.01, "{knob:?}");
+        }
+        // un valore a metà tra due livelli va a quello sopra o a quello sotto
+        let mut crt = Crt { warp_y: Crt::default().warp_y * 1.44, ..Crt::default() };
+        crt.step(CrtKnob::Curvature, -1, 480.0);
+        assert!((crt.level(CrtKnob::Curvature, 480.0) - 125.0).abs() < 0.01);
+        // nessun livello è un valore di prima, che `load` cambierebbe da solo
+        for l in CrtKnob::Curvature.levels() {
+            let mut crt = Crt::default();
+            crt.set_level(CrtKnob::Curvature, *l, 480.0);
+            let (x, y) = (tidy(crt.warp_x) as f32, tidy(crt.warp_y) as f32);
+            assert!(OLD_WARPS.iter().all(|o| (x - o.0).abs() > 1e-4 || (y - o.1).abs() > 1e-4), "{l}");
+        }
+        for l in CrtKnob::Lines.levels() {
+            let mut crt = Crt::default();
+            crt.set_level(CrtKnob::Lines, *l, 480.0);
+            assert!((crt.resolution_scale - OLD_RESOLUTION_SCALE).abs() > 0.1, "{l}");
+        }
+    }
+
+    #[test]
+    fn crt_settings_are_saved_with_few_decimals() {
+        let path = std::env::temp_dir().join(format!("paddws_crt_prefs_{}.json", std::process::id()));
+        fs::write(&path, r#"{"crt_effects": {"enabled": true}}"#).unwrap();
+        let mut cfg = load(&path);
+        cfg.crt_effects.set_level(CrtKnob::Curvature, 150, 480.0);
+        cfg.crt_effects.set_level(CrtKnob::Lines, 360, 480.0);
+        save_preferences(&path, &cfg);
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.contains("0.01758"), "{text}");
+        assert!(!text.contains("0.0175799"), "{text}");
+        let back = load(&path).crt_effects;
+        assert!((back.level(CrtKnob::Curvature, 480.0) - 150.0).abs() < 0.01);
+        assert_eq!(back.resolution_scale, 4.0);
         let _ = fs::remove_file(path);
     }
 

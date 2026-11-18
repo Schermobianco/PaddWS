@@ -17,8 +17,8 @@ nella cartella corrente e in quella superiore; la versione Python nella cartella
 quelle sconosciute vengono ignorate (la versione Python le segnala nel log); la versione Rust
 aggiunge al file le chiavi nuove, con i loro default.
 Dimensioni e velocità sono espresse per la risoluzione di riferimento 800×480 e scalate su
-`resolution`. Dal menu si cambiano e si salvano modalità e giocatori, schermo intero, filtro CRT,
-difficoltà, volumi della musica e degli effetti, suoni dell'attract, luminosità del bianco, zoom,
+`resolution`. Dal menu si cambiano e si salvano modalità e giocatori, schermo intero, filtro CRT
+e i suoi parametri (pagina **CRT SETTINGS**), difficoltà, volumi della musica e degli effetti, suoni dell'attract, luminosità del bianco, zoom,
 punteggi e mouse come spinner.
 
 Con `resolution.width = 0` (default) il campo prende le proporzioni del monitor con l'altezza
@@ -49,7 +49,10 @@ proporzioni diverse compaiono le bande nere (`game.keep_aspect`) invece della de
 | `mouse.spinner` | `false` | il mouse come spinner del giocatore di sinistra (menu **MOUSE SPINNER**); con gli encoder del cabinato non conta |
 | `mouse.travel_pixels` | `1000` | pixel di movimento del mouse per portare la racchetta da un bordo all'altro |
 | `game.vsync`, `game.keep_aspect`, `game.serve_delay` | | sincronia verticale, bande nere, attesa alla battuta |
-| `crt_effects.resolution_scale` | `2.5` | versione Rust: righe emulate dal filtro CRT: 3 × altezza del campo / valore (576 a 480 righe). Il default di prima, `1.0`, passa da solo a `2.5` |
+| `crt_effects.resolution_scale` | `2.5` | versione Rust: righe emulate dal filtro CRT: 3 × altezza del campo / valore (576 a 480 righe; menu **LINES**: 240, 288, 360, 480, 576, 720). Il default di prima, `1.0`, passa da solo a `2.5` |
+| `crt_effects.hard_scan`, `hard_pix` | `-8`, `-3` | versione Rust: durezza delle scanline e nitidezza orizzontale (menu **SCANLINES** e **SHARPNESS**, in percento del default: 25-300) |
+| `crt_effects.warp_x`, `warp_y` | `0.01172`, `0.015625` | versione Rust: bombatura dello schermo (menu **CURVATURE**, in percento del default: 0-200, tutte e due insieme) |
+| `crt_effects.mask_dark`, `mask_light` | `0.5`, `1.5` | versione Rust: maschera dei fosfori (menu **MASK**, in percento del default: 0-150). **DEFAULTS** rimette i default del codice a tutti i parametri |
 
 Le altre sezioni (`ball`, `paddle`, `boost`, `encoder`, `crt_effects`, `colors`) sono nel
 `padd_config.json` del pacchetto, che in qualche punto si scosta dai default del codice (filtro CRT

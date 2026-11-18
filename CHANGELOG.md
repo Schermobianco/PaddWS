@@ -14,6 +14,11 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+### Aggiunto
+- PC, Raspberry e web: pagina **CRT SETTINGS** nel menu, con il filtro acceso o spento,
+  SCANLINES, SHARPNESS, CURVATURE, MASK (in percento del default), LINES (righe emulate) e
+  DEFAULTS; le modifiche si vedono subito e si salvano in `crt_effects`.
+
 ## [4.4.1] - 2026-11-16
 
 ### Aggiunto

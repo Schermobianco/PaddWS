@@ -13,7 +13,7 @@ use paddws_core::{
 
 use crate::attract::{self, Attract, AttractArt, Hud};
 use crate::challenge_ui::{self, Challenger, Clear, Continue, Initials, Intro, Run, Scores, Warning};
-use crate::config::{self, Config, Rgb};
+use crate::config::{self, Config, CrtKnob, Rgb};
 use crate::encoder::{self, Action, Encoders};
 use crate::ending_ui::Ending;
 use crate::gamepad::{self, Control};
@@ -446,6 +446,21 @@ impl App {
         config::save_preferences(&self.config_path, &self.cfg);
     }
 
+    /// Un passo di una regolazione del filtro CRT (`step` come in `Menu::change`): si vede
+    /// subito, `Renderer::update_layout` segue i parametri.
+    pub fn step_crt(&mut self, knob: CrtKnob, step: i8) {
+        let rows = self.renderer.world_h;
+        self.cfg.crt_effects.step(knob, step, rows);
+        config::save_preferences(&self.config_path, &self.cfg);
+    }
+
+    /// I parametri del filtro CRT tornano quelli di default; il filtro resta acceso o spento.
+    pub fn reset_crt(&mut self) {
+        let enabled = self.cfg.crt_effects.enabled;
+        self.cfg.crt_effects = config::Crt { enabled, ..config::Crt::default() };
+        config::save_preferences(&self.config_path, &self.cfg);
+    }
+
     /// Passa al livello di difficoltà successivo (vale dalla prossima partita).
     pub fn next_difficulty(&mut self) {
         self.cfg.game.difficulty = (self.cfg.game.difficulty.min(DIFFICULTY_LEVELS - 1) + 1) % DIFFICULTY_LEVELS;
@@ -775,6 +790,14 @@ enum Item {
     Zoom,
     Fullscreen,
     Crt,
+    /// apre la pagina CRT SETTINGS
+    CrtSettings,
+    /// nella pagina CRT SETTINGS: una regolazione del filtro
+    CrtKnob(CrtKnob),
+    /// nella pagina CRT SETTINGS: i parametri di default
+    CrtDefaults,
+    /// nella pagina CRT SETTINGS: torna al menu principale
+    Back,
     /// punteggi dritti o rivolti ai giocatori (tavolo)
     Scores,
     /// il mouse come spinner del giocatore 1: non con il touch né con gli encoder del cabinato
@@ -839,9 +862,13 @@ struct Drag {
 
 /// Menu principale a ruota: la voce scelta al centro, gialla e grande, le altre sopra e sotto su un
 /// rullo, sempre più piccole e scure con la distanza. Su e giù (o la manopola, o il dito) girano la
-/// ruota, sinistra e destra cambiano il valore, Invio (o Start, A, il click) conferma.
+/// ruota, sinistra e destra cambiano il valore, Invio (o Start, A, il click) conferma. CRT SETTINGS
+/// apre una seconda pagina sulla stessa ruota (`crt_page`), con le regolazioni del filtro; Esc (o
+/// B) e BACK tornano alla prima.
 pub struct Menu {
     items: Vec<Item>,
+    /// la pagina CRT SETTINGS al posto del menu principale
+    crt_page: bool,
     selected: usize,
     /// voce al centro della ruota (frazionaria durante lo scorrimento), da dove parte lo
     /// scorrimento in corso e da quanto
@@ -863,11 +890,12 @@ impl Menu {
     /// Menu con o senza la voce RESUME (`resume`: la partita che si lascia ora, non ancora in
     /// `App::suspended`); la voce al centro è RESUME se c'è, altrimenti PLAY.
     fn with_resume(app: &App, resume: bool) -> Self {
-        let items = Self::items(app, resume);
+        let items = Self::items(app, resume, false);
         let start = if resume { Item::Resume } else { Item::Play };
         let selected = items.iter().position(|i| *i == start).unwrap_or(0);
         Self {
             items,
+            crt_page: false,
             selected,
             pos: selected as f32,
             from: selected as f32,
@@ -878,8 +906,15 @@ impl Menu {
         }
     }
 
-    /// Voci del menu (le mosse speciali di NEXT sono sempre accese: non hanno una voce).
-    fn items(app: &App, resume: bool) -> Vec<Item> {
+    /// Voci del menu (le mosse speciali di NEXT sono sempre accese: non hanno una voce), o della
+    /// pagina CRT SETTINGS (`crt_page`).
+    fn items(app: &App, resume: bool, crt_page: bool) -> Vec<Item> {
+        if crt_page {
+            let mut items = vec![Item::Crt];
+            items.extend(CrtKnob::ALL.map(Item::CrtKnob));
+            items.extend([Item::CrtDefaults, Item::Back]);
+            return items;
+        }
         let mut items = mode_items(app.next, app.cfg.game.training);
         items.extend([
             Item::Difficulty,
@@ -890,6 +925,7 @@ impl Menu {
             Item::Zoom,
             Item::Fullscreen,
             Item::Crt,
+            Item::CrtSettings,
             Item::Scores,
         ]);
         if !app.touch && (app.encoders.is_none() || app.mouse_spinner()) {
@@ -927,7 +963,7 @@ impl Menu {
     /// Dopo un cambio di modalità le voci possono cambiare (PLAYERS e OPPONENT seguono GAME TYPE):
     /// la ruota resta sulla stessa voce (`keep_selection`).
     fn refresh_items(&mut self, app: &App) {
-        let items = Self::items(app, app.suspended.is_some());
+        let items = Self::items(app, app.suspended.is_some(), self.crt_page);
         if items != self.items {
             let selected = keep_selection(&self.items, self.selected, &items);
             let shift = selected as f32 - self.selected as f32;
@@ -936,6 +972,19 @@ impl Menu {
             self.items = items;
             self.knobs_ready = false; // gli encoder ripartono con il nuovo numero di voci
         }
+    }
+
+    /// Apre la pagina CRT SETTINGS (`crt`), con la ruota ferma sulla prima voce, o torna al menu
+    /// principale con la ruota su CRT SETTINGS.
+    pub fn open_page(&mut self, app: &App, crt: bool) {
+        self.crt_page = crt;
+        self.items = Self::items(app, app.suspended.is_some(), crt);
+        let at = if crt { Item::Crt } else { Item::CrtSettings };
+        let i = self.items.iter().position(|&it| it == at).unwrap_or(0);
+        self.selected = i;
+        (self.pos, self.from, self.t) = (i as f32, i as f32, WHEEL_SCROLL);
+        self.drag = None;
+        self.knobs_ready = false; // gli encoder ripartono con le voci della pagina
     }
 
     /// Porta la voce `i` al centro, con lo scorrimento.
@@ -1066,6 +1115,19 @@ impl Menu {
             Item::Zoom => format!("ZOOM : {}%", app.cfg.game.zoom),
             Item::Fullscreen => format!("FULLSCREEN : {}", on_off(app.fullscreen())),
             Item::Crt => format!("CRT FILTER : {}", on_off(app.cfg.crt_effects.enabled)),
+            Item::CrtSettings => "CRT SETTINGS".into(),
+            Item::CrtKnob(knob) => {
+                let v = app.cfg.crt_effects.level(knob, app.renderer.world_h).round().max(0.0) as u32;
+                match knob {
+                    CrtKnob::Scanlines => format!("SCANLINES : {v}%"),
+                    CrtKnob::Sharpness => format!("SHARPNESS : {v}%"),
+                    CrtKnob::Curvature => format!("CURVATURE : {v}%"),
+                    CrtKnob::Mask => format!("MASK : {v}%"),
+                    CrtKnob::Lines => format!("LINES : {v}"),
+                }
+            }
+            Item::CrtDefaults => "DEFAULTS".into(),
+            Item::Back => "BACK".into(),
             Item::Scores => format!("SCORES : {}", if app.cfg.game.scores_upright { "UPRIGHT" } else { "FACING" }),
             Item::MouseSpinner => format!("MOUSE SPINNER : {}", on_off(app.mouse_spinner())),
             Item::Resume => "RESUME".into(),
@@ -1146,6 +1208,7 @@ impl Menu {
             }
             Item::Fullscreen => app.toggle_fullscreen(),
             Item::Crt => app.toggle_crt(),
+            Item::CrtKnob(knob) => app.step_crt(knob, step),
             Item::Scores => {
                 app.cfg.game.scores_upright = !app.cfg.game.scores_upright;
                 config::save_preferences(&app.config_path, &app.cfg);
@@ -1157,10 +1220,21 @@ impl Menu {
     }
 
     /// Usa la voce al centro: cambia il valore di un'opzione o fa l'azione.
-    fn use_item(&self, app: &mut App) -> Option<Scene> {
+    fn use_item(&mut self, app: &mut App) -> Option<Scene> {
         let item = self.items[self.selected];
         if Self::change(app, item, 0) {
             return None;
+        }
+        match item {
+            Item::CrtSettings | Item::Back => {
+                self.open_page(app, item == Item::CrtSettings);
+                return None;
+            }
+            Item::CrtDefaults => {
+                app.reset_crt();
+                return None;
+            }
+            _ => {}
         }
         if item == Item::Play {
             app.drop_suspended();
@@ -1256,6 +1330,10 @@ impl Menu {
         self.refresh_items(app);
         self.scroll(dt);
         if input::pressed(KeyCode::Escape) {
+            if self.crt_page {
+                self.open_page(app, false);
+                return None;
+            }
             app.drop_suspended();
             return Some(Scene::Attract(Attract::new(&app.attract, false)));
         }
@@ -1270,7 +1348,7 @@ impl Menu {
         // con GAME TYPE: NEXT il titolo prende il colore di accento
         let title = if app.next { colors.accent } else { colors.white };
 
-        if app.next {
+        if app.next && !self.crt_page {
             // in NEXT il logo PADD con le strisce, dove nel campo 320x240 era MAIN MENU
             let logo = &app.assets.titles.menu_logo;
             let (_, top) = crate::titles::LOGO_POSITION;
@@ -1278,13 +1356,14 @@ impl Menu {
             let paint = crate::titles::logo_paint(colors);
             r.art_centered(logo, 1.0, w / 2.0, cy, 0.0, crate::render::ArtPart::Whole, &paint);
         } else {
+            let heading = if self.crt_page { "CRT SETTINGS" } else { "MAIN MENU" };
             let title_y = 100.0 * s; // in coordinate di disegno (dall'alto)
             // riquadro attorno alla scritta a 1x, con un carattere di margine ai lati
-            let half = r.text_width("MAIN MENU", &app.assets.font_text, r.text_1x()) / 2.0 + r.text_1x();
+            let half = r.text_width(heading, &app.assets.font_text, r.text_1x()) / 2.0 + r.text_1x();
             let half_h = r.text_1x();
             draw_rectangle(w / 2.0 - half, title_y - half_h, 2.0 * half, 2.0 * half_h, App::color(title));
             r.text_centered(
-                "MAIN MENU",
+                heading,
                 &app.assets.font_text,
                 r.text_1x(),
                 w / 2.0,
@@ -1485,6 +1564,7 @@ mod menu_tests {
     fn the_wheel_eases_into_the_chosen_item_and_stops_at_the_ends() {
         let mut m = Menu {
             items: vec![Item::GameType, Item::Players, Item::Difficulty, Item::Play, Item::Quit],
+            crt_page: false,
             selected: 3,
             pos: 3.0,
             from: 3.0,

@@ -17,7 +17,8 @@ in the current folder and in its parent; the Python version in the folder that c
 ignored (the Python version reports them in the log); the Rust version adds new keys to the file,
 with their defaults.
 Sizes and speeds are given for the 800×480 reference resolution and scaled to `resolution`. The
-menu changes and saves mode and players, full screen, CRT filter, difficulty, music and effects
+menu changes and saves mode and players, full screen, CRT filter and its parameters (**CRT
+SETTINGS** page), difficulty, music and effects
 volumes, attract sound, white level, zoom, scores and mouse as a spinner.
 
 With `resolution.width = 0` (the default) the playfield takes the monitor's aspect ratio at the
@@ -48,7 +49,10 @@ different aspect ratio, black bars appear (`game.keep_aspect`) instead of stretc
 | `mouse.spinner` | `false` | the mouse as the left player's spinner (menu **MOUSE SPINNER**); ignored with the cabinet encoders |
 | `mouse.travel_pixels` | `1000` | mouse movement in pixels to take the paddle from one edge to the other |
 | `game.vsync`, `game.keep_aspect`, `game.serve_delay` | | vertical sync, black bars, wait before the serve |
-| `crt_effects.resolution_scale` | `2.5` | Rust version: lines emulated by the CRT filter: 3 × playfield height / value (576 at 480 lines). The old default, `1.0`, is changed to `2.5` automatically |
+| `crt_effects.resolution_scale` | `2.5` | Rust version: lines emulated by the CRT filter: 3 × playfield height / value (576 at 480 lines; menu **LINES**: 240, 288, 360, 480, 576, 720). The old default, `1.0`, is changed to `2.5` automatically |
+| `crt_effects.hard_scan`, `hard_pix` | `-8`, `-3` | Rust version: scanline hardness and horizontal sharpness (menu **SCANLINES** and **SHARPNESS**, in percent of the default: 25-300) |
+| `crt_effects.warp_x`, `warp_y` | `0.01172`, `0.015625` | Rust version: screen curvature (menu **CURVATURE**, in percent of the default: 0-200, both together) |
+| `crt_effects.mask_dark`, `mask_light` | `0.5`, `1.5` | Rust version: phosphor mask (menu **MASK**, in percent of the default: 0-150). **DEFAULTS** puts all the parameters back to the code defaults |
 
 The other sections (`ball`, `paddle`, `boost`, `encoder`, `crt_effects`, `colors`) are in the
 `padd_config.json` of the package, which differs from the code defaults in a few places (CRT filter
