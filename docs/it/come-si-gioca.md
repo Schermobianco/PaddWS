@@ -362,7 +362,7 @@ menu. Solo PAL; finora provata in VICE. Dettagli in [c64/README.md](../../c64/RE
 | ![NEXT: scelta della racchetta con i personaggi](../screenshots/next-paddles.png) | ![NEXT: BLASTER contro GUARDIAN](../screenshots/next-kinds.png) |
 | NEXT: scelta della racchetta, con i personaggi | Le racchette dei personaggi: BLASTER contro GUARDIAN |
 | ![NEXT: lo schermo VS della scalata](../screenshots/challenge-intro.png) | ![NEXT: nuovo sfidante](../screenshots/challenge-challenger.png) |
-| NEXT: lo schermo VS prima del sesto avversario, RUSH | NEXT: entra un secondo giocatore |
+| NEXT: lo schermo VS prima dell'ultimo avversario, GUARDIAN | NEXT: entra un secondo giocatore |
 | ![Finale: la sfilata degli avversari battuti](../screenshots/ending-parade.png) | ![Commodore 64: scelta della racchetta](../screenshots/c64-paddles.png) |
 | Finale della scalata: gli avversari battuti, timbrati DEFEATED | Commodore 64: scelta della racchetta, con i personaggi |
 | ![Core MiSTer: titolo](../screenshots/mister-title.png) | ![Core MiSTer: scelta della racchetta](../screenshots/mister-pick.png) |

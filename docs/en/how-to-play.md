@@ -368,7 +368,7 @@ used with `F` / `C` (left) and `.` / `-` (right). Key **5** coin, fire or **RETU
 | ![NEXT: paddle pick with the characters](../screenshots/next-paddles.png) | ![NEXT: BLASTER against GUARDIAN](../screenshots/next-kinds.png) |
 | NEXT: paddle pick, with the characters | The characters' paddles: BLASTER against GUARDIAN |
 | ![NEXT: the ladder's VS screen](../screenshots/challenge-intro.png) | ![NEXT: new challenger](../screenshots/challenge-challenger.png) |
-| NEXT: the VS screen before the sixth opponent, RUSH | NEXT: a second player joins in |
+| NEXT: the VS screen before the last opponent, GUARDIAN | NEXT: a second player joins in |
 | ![Ending: the parade of the beaten opponents](../screenshots/ending-parade.png) | ![Commodore 64: paddle pick](../screenshots/c64-paddles.png) |
 | Ladder ending: the beaten opponents, stamped DEFEATED | Commodore 64: paddle pick, with the characters |
 | ![MiSTer core: title](../screenshots/mister-title.png) | ![MiSTer core: paddle pick](../screenshots/mister-pick.png) |
