@@ -35,6 +35,8 @@ module pong_render (
     input  wire        field_off,       // fine partita con GAME OVER: il campo si spegne (con over_age)
     input  wire [7:0]  over_age,        // GAME OVER: frame dall'inizio (fermi a 255)
     input  wire        ball_accent,     // NEXT: palla del SUPER in volo nel colore di accento
+    input  wire        ball_relief,     // NEXT: palla in rilievo (ombra portata, retro e fondo in ombra)
+    input  wire        ball_right,      // verso della palla: l'ombra va dietro
     input  wire [1:0]  pad_hide,        // NEXT: racchetta disegnata da next_render (SUPER, TELEPORT, TWIST)
     input  wire [1:0]  pad_gray,        // NEXT: racchetta con un bonus armato (lampeggia) o rallentata dal BULLET
     input  wire        field_gray,      // NEXT: bullet time, palla e linea centrale grigie
@@ -67,6 +69,9 @@ localparam [23:0] BLACK = 24'h000000;
 localparam [23:0] ACCENT = 24'hFFD225;            // colore di accento di NEXT, come in next_render
 // alone del bullet time: grigi sempre più scuri a 1, 2 e 3 pixel dal bordo (anche in next_render)
 localparam [23:0] HALO1 = 24'h6E6E6E, HALO2 = 24'h404040, HALO3 = 24'h1E1E1E;
+// palla in rilievo di NEXT, come draw_relief_ball di next_ui.rs: ombra portata grigio scuro e i
+// colori della palla in ombra (per 212, 214, 224 / 255)
+localparam [23:0] SHADOW = 24'h30303A, WHITE_SH = 24'hD4D6E0, ACCENT_SH = 24'hD4B021, GRAY_SH = 24'h9697A2;
 
 // --------------------------------------------------------- limiti dei rettangoli
 
@@ -104,7 +109,7 @@ reg signed [11:0] r1 [0:4];
 reg               on [0:4];
 reg signed [11:0] r2 [0:4];             // r1 + 1 (fine esclusiva, per l'alone)
 
-reg       flash_q, ball_accent_q, field_gray_q;
+reg       flash_q, ball_accent_q, field_gray_q, relief_q, right_q;
 reg [1:0] blur_q, blur_pads_q;
 
 wire signed [31:0] pad_hw = P_PAD_WIDTH >>> 1;
@@ -133,6 +138,8 @@ always @(posedge clk) begin
         on[4] <= ball_visible;
         flash_q <= flash;
         ball_accent_q <= ball_accent;
+        relief_q <= ball_relief;
+        right_q <= ball_right;
         field_gray_q <= field_gray;
         blur_q <= blur;
         blur_pads_q <= blur_pads;
@@ -314,12 +321,18 @@ function pad_in(input integer i, input signed [11:0] px, input signed [11:0] py)
              !(ov_off && (py < r0[i] + $signed({6'd0, pad_cut}) || py > r1[i] - $signed({6'd0, pad_cut})));
 endfunction
 wire ball_in = in_rect(4, x, y) && !(ov_off && field_ball_off);
+// rilievo: colonna del retro e fila di fondo della palla in ombra; ombra portata 1 pixel in basso e 1
+// dietro (fuori dalla palla)
+wire ball_shade = relief_q && (y == r1[4] || x == (right_q ? c0[4] : c1[4] - 12'sd1));
+wire ball_shadow = relief_q && !(ov_off && field_ball_off) &&
+                   in_rect(4, right_q ? x + 12'sd1 : x - 12'sd1, y - 12'sd1);
 
 always @(posedge clk) begin
     if (flash_q)
         rgb <= WHITE;
     else if (ball_in)
-        rgb <= ball_accent_q ? ACCENT : field_gray_q ? GRAY : WHITE;
+        rgb <= ball_shade ? (ball_accent_q ? ACCENT_SH : field_gray_q ? GRAY_SH : WHITE_SH)
+                          : (ball_accent_q ? ACCENT : field_gray_q ? GRAY : WHITE);
     else if (pad_in(2, x, y) || pad_in(3, x, y))
         rgb <= GRAY;
     else if ((pad_in(0, x, y) && !pad_hide[0] && pad_gray[0]) || (pad_in(1, x, y) && !pad_hide[1] && pad_gray[1]))
@@ -328,6 +341,8 @@ always @(posedge clk) begin
         rgb <= WHITE;
     else if (ui_c)
         rgb <= ui_c_rgb;
+    else if (ball_shadow)
+        rgb <= SHADOW;
     else if (line_px)
         rgb <= field_gray_q ? GRAY : WHITE;
     else if (net_acc)
@@ -337,7 +352,7 @@ always @(posedge clk) begin
     else
         rgb <= BLACK;
     bg <= !flash_q && !ball_in && !pad_in(2, x, y) && !pad_in(3, x, y) && !(pad_in(0, x, y) && !pad_hide[0]) &&
-          !(pad_in(1, x, y) && !pad_hide[1]) && !ui_c && !line_px && !net_acc && halo_q == 2'd0;
+          !(pad_in(1, x, y) && !pad_hide[1]) && !ui_c && !ball_shadow && !line_px && !net_acc && halo_q == 2'd0;
     ball <= !flash_q && ball_in;
 end
 

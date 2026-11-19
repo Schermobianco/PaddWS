@@ -43,12 +43,12 @@
 // presentazione anche le racchette degli avversari di tutti i livelli (ch_lvl1..7.ppm, e due rivolte
 // a destra, ch_lvl5_right e ch_lvl6_right).
 // Argomento "anim": come "challenge", ma nella prima presentazione i sette avversari a più frame
-// della loro entrata (an_in<livello>_<frame>.ppm, con _r se il giocatore è a destra), poi nella prima
+// dello schermo VS (an_in<livello>_<frame>.ppm, con _r se il giocatore è a destra), poi nella prima
 // partita la fine partita animata forzata a più frame: YOU WIN con la palla sulle lettere, PERFECT con
 // il timbro, CPU WINS scritto, GAME OVER con il campo che si spegne e la chiusura (an_<tipo>_<frame>.ppm).
 // Argomento "challenger": CHALLENGE in corso, durante la partita del primo livello gettone e Start sul
 // joystick 2: HERE COMES A NEW CHALLENGER!, scelta dello sfidante (solo joystick 2), sfida tra i due
-// giocatori automatici vinta dallo sfidante a destra, iniziali del campione (solo joystick 1, il suo
+// giocatori automatici (dopo lo schermo VS della sfida, chl_vs) vinta dallo sfidante a destra, iniziali del campione (solo joystick 1, il suo
 // punteggio si forza alto), poi la scalata riprende con lo sfidante a destra e la CPU a sinistra fino
 // al livello superato: salva chl_*.ppm e stampa lato, sfida e punti a ogni cambio di modo.
 // In "challenge" e "challenger" si stampa anche la canzone del SID a ogni cambio e, in partita, si
@@ -103,7 +103,7 @@
 // a ogni cambio di modo e conta gli errori.
 // Argomento "duelstart": la sfida subito dall'attract, con le mosse speciali. Dal titolo due gettoni
 // (joystick 1 e 2) e lo Start del joystick 2: scelta di tutti e due senza CPU (ds_pick), HOW TO PLAY
-// vista da tutti e due, sfida senza CPU (ds_duel) vinta da P2, poi la presentazione del livello 1 con
+// vista da tutti e due, lo schermo VS della sfida (ds_vs), sfida senza CPU (ds_duel) vinta da P2, poi la presentazione del livello 1 con
 // P2 campione a destra, "1 WINS" e il premio del livello (ds_intro). Stampa lo stato e conta gli errori.
 // Argomento "egg": l'easter egg delle iniziali. Dal titolo (giallo) le iniziali di un record forzato:
 // il giocatore scrive "RED" con il joystick (su dalla A porta al "!") e la classifica che segue ha
@@ -431,7 +431,7 @@ int main(int argc, char** argv) {
     // anche il firmware (le schermate sono sue) e le ROM dello schermo a oggetti: si leggono
     // all'avvio del modello, quindi cambiano senza ricompilare
     for (const char* f : {"../../rtl/gen/pong_fw_b0.hex", "../../rtl/gen/pong_fw_b1.hex", "../../rtl/gen/pong_fw_b2.hex",
-                          "../../rtl/gen/pong_fw_b3.hex", "../../rtl/gen/ui_font.hex", "../../rtl/gen/ui_gfx.hex"})
+                          "../../rtl/gen/pong_fw_b3.hex", "../../rtl/gen/ui_font.hex", "../../rtl/gen/ui_gfx.hex", "../../rtl/gen/ui_gfx2.hex"})
         key = key ? hash_file(f, key) : 0;
     for (const char c : arg + (kinds_test ? kinds_arg : std::string()))
         key = (key ^ static_cast<unsigned char>(c)) * 0x100000001b3ULL;
@@ -1199,6 +1199,11 @@ int main(int argc, char** argv) {
                     if (t == 40) chal_joy0 = 0x04;
                     if (t == 45) { chal_shot = true; chal_name = "chl_initials"; }
                 }
+                if (m == 8 && r->pong_top__DOT__duel) {
+                    // schermo VS della sfida tra i due (P1 e P2, CHALLENGE), poi A lo salta
+                    if (t == 120) { chal_shot = true; chal_name = "chl_vs"; }
+                    if (t == 125) chal_joy0 = 0x10;
+                }
                 if (m == 8 && ch_games >= 2) {
                     if (t == 65) { chal_shot = true; chal_name = "chl_intro2"; }
                     if (t == 70) chal_joy1 = 0x10;
@@ -1538,7 +1543,7 @@ int main(int argc, char** argv) {
                 const int m = r->pong_top__DOT__mode;
                 const int wins = r->pong_top__DOT__ch_wins;
                 if (m != ch_mode) {
-                    if (m == 8) {
+                    if (m == 8 && !r->pong_top__DOT__duel) {
                         // presentazione dopo il duello d: contatore atteso
                         static const int want[4] = {0x00, 0x01, 0x02, 0x01};
                         const int side = r->pong_top__DOT__ch_side, want_side = w_duels == 3;
@@ -1559,12 +1564,15 @@ int main(int argc, char** argv) {
                 if (m == 7) {
                     if (r->pong_top__DOT__duel) w_joy1 = pick_tap; else w_joy0 = pick_tap;
                 }
-                if (m == 8 && t == 65) { w_shot = true; w_name = "w_intro" + ds; }
-                if (m == 8 && w_duels == 3 && t == 66) r->pong_top__DOT__ch_wins = 0x12;
-                if (m == 8 && w_duels == 3 && t == 68) { w_shot = true; w_name = "w_intro3_12"; }
-                if (m == 8 && w_duels == 3 && t == 69) break;
-                if (m == 8 && t == 70) w_joy1 = 0x200;
-                if (m == 8 && t == 75) w_joy1 = 0x100;
+                // schermo VS prima della sfida: A lo salta
+                const bool w_vs = m == 8 && r->pong_top__DOT__duel;
+                if (w_vs && t == 65) w_joy0 = 0x10;
+                if (m == 8 && !w_vs && t == 65) { w_shot = true; w_name = "w_intro" + ds; }
+                if (m == 8 && !w_vs && w_duels == 3 && t == 66) r->pong_top__DOT__ch_wins = 0x12;
+                if (m == 8 && !w_vs && w_duels == 3 && t == 68) { w_shot = true; w_name = "w_intro3_12"; }
+                if (m == 8 && !w_vs && w_duels == 3 && t == 69) break;
+                if (m == 8 && !w_vs && t == 70) w_joy1 = 0x200;
+                if (m == 8 && !w_vs && t == 75) w_joy1 = 0x100;
                 if (m == 14 && t == 2) r->pong_top__DOT__mframe = 178;
                 if (m == 5 && t == 1) r->pong_top__DOT__mframe = 179;
                 if (m == 5 && r->pong_top__DOT__duel && t == 60) {
@@ -1601,7 +1609,9 @@ int main(int argc, char** argv) {
                     if (m == 7 && ch_games == 0) ok = r->pong_top__DOT__ch_active && duel && cred == 0 && !pcpu && lock == 0;
                     if (m == 13) ok = duel != 0;
                     if (m == 5 && ch_games == 1) ok = duel && !mcpu && seen == 3;
-                    if (m == 8) ok = !duel && side == 1 && wins == 1 && pts > 0;
+                    // prima lo schermo VS della sfida, poi la presentazione del livello 1 con il vincitore
+                    if (m == 8 && ch_games == 0) ok = duel && side == 0 && !mcpu && seen == 3;
+                    if (m == 8 && ch_games > 0) ok = !duel && side == 1 && wins == 1 && pts > 0;
                     std::printf("frame %d: modo %d, sfida %d, campione a %s, crediti %d, CPU %d, scelta: CPU %d fermi %d, "
                                 "HOW TO PLAY vista %d, WINS %x, punti %d%s\n", frames, m, duel, side ? "destra" : "sinistra",
                                 cred, mcpu, pcpu, lock, seen, wins, pts, ok ? "" : " ERRORE");
@@ -1634,8 +1644,10 @@ int main(int argc, char** argv) {
                 }
                 if (m == 6 && t == 100) { ds_shot = true; ds_name = "ds_over"; }
                 if (m == 6 && t == 110) r->pong_top__DOT__mframe = 295;
-                if (m == 8 && t == 65) { ds_shot = true; ds_name = "ds_intro"; }
-                if (m == 8 && t == 66) break;
+                if (m == 8 && ch_games == 0 && t == 120) { ds_shot = true; ds_name = "ds_vs"; }
+                if (m == 8 && ch_games == 0 && t == 125) ds_joy1 = 0x100;   // lo Start del giocatore 2 salta il VS
+                if (m == 8 && ch_games > 0 && t == 65) { ds_shot = true; ds_name = "ds_intro"; }
+                if (m == 8 && ch_games > 0 && t == 66) break;
             }
             // canzone del SID: a ogni cambio; in partita (dopo un secondo) il tema dell'avversario del
             // livello, SID_SONG_THEME0 + rung_kind, contro la CPU; nella sfida uno dei sette temi

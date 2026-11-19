@@ -470,6 +470,8 @@ fn verilog_params(p: &Params, a: &Args) -> String {
     if p.blaster_dash {
         fail("il core MiSTer ha solo il BLASTER senza scatto (spara con il tasto dello scatto)");
     }
+    // HAMMER: il boost del colpo potente (le scintille della racchetta sul MiSTer)
+    param("P_HAMMER_MUL", p.hammer_mul as i64);
     param("P_GUARDIAN_BARRIER_X", p.guardian_barrier_x as i64);
     // muro del GUARDIAN: inizio e confini tra i settori (pixel interi), per il disegno
     param("P_GUARDIAN_TOP", p.guardian_top as i64);

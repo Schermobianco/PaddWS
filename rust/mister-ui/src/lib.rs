@@ -12,6 +12,7 @@
 #[rustfmt::skip] // generato da tools/gen_mister_ui.py così com'è
 pub mod assets;
 mod attract;
+mod cast;
 mod challenge;
 pub mod dl;
 mod ending;
@@ -20,7 +21,6 @@ mod howto;
 mod intro;
 mod jukebox;
 mod omega;
-mod paddle;
 pub mod pal;
 mod pick;
 pub mod regs;
@@ -90,6 +90,8 @@ pub mod map {
 pub struct Ui {
     seq: u32,
     game: game::GameState,
+    /// colori del corpo di OMEGA già scritti nella tavolozza delle racchette: con l'easter egg o no
+    pad_egg: Option<bool>,
 }
 
 impl Default for Ui {
@@ -103,6 +105,7 @@ impl Ui {
         Self {
             seq: 0,
             game: game::GameState { glint_ph: 0 },
+            pad_egg: None,
         }
     }
 
@@ -111,6 +114,18 @@ impl Ui {
     pub fn init(&mut self, p: &mut dyn Port) {
         for (i, c) in pal::COLORS.iter().enumerate() {
             p.write(map::PAL + i as u32, *c);
+        }
+        // i colori dei ruoli dei ritratti, personaggio per personaggio
+        for (k, roles) in assets::portraits::PAL.iter().enumerate() {
+            for (j, c) in roles.iter().enumerate() {
+                p.write(map::PAL + pal::PORTRAIT as u32 + 8 * k as u32 + 1 + j as u32, *c);
+            }
+        }
+        // le racchette dei personaggi: due copie, la seconda con il corpo di OMEGA (scritto da `poll`)
+        for base in [pal::PADS, pal::PADS_OMEGA] {
+            for (j, c) in assets::pads::PAL.iter().enumerate() {
+                p.write(map::PAL + base as u32 + 1 + j as u32, *c);
+            }
         }
     }
 
@@ -128,6 +143,13 @@ impl Ui {
             return true;
         }
         let r = Regs::read(p);
+        // corpo di OMEGA nelle racchette: rosso, viola con l'easter egg
+        if self.pad_egg != Some(r.egg) {
+            self.pad_egg = Some(r.egg);
+            for (j, c) in assets::pads::OMEGA_BODY[r.egg as usize].iter().enumerate() {
+                p.write(map::PAL + pal::PADS_OMEGA as u32 + 1 + j as u32, *c);
+            }
+        }
         let mut d = Dl::new(p);
         self.draw(&r, &mut d);
         d.finish();
@@ -155,7 +177,7 @@ impl Ui {
             regs::M_INTRO => intro::draw(r, d),
             regs::M_PICK => pick::draw(r, d),
             regs::M_HOWTO => howto::draw(r, d),
-            regs::M_ENDING if om.won && om.shatter < omega::SHATTER => omega::shatter(r, &om, d),
+            regs::M_ENDING if om.won && om.shatter < omega::SHATTER => omega::shatter(&om, d),
             regs::M_ENDING => ending::draw(r, &om, d),
             regs::M_CLEAR | regs::M_CONT | regs::M_INITIALS | regs::M_SCORES | regs::M_CHALLENGER => {
                 challenge::screen(r, d)

@@ -91,7 +91,7 @@ Python. Non si modificano a mano: si cambia il generatore e si rilancia.
 | `pong_next.vh` | `tools/gen_next_assets.py` |
 | `howto_*.hex`, `pong_howto.vh` | `tools/gen_howto_assets.py` |
 | `ending_*.hex`, `pong_ending.vh` | `tools/gen_ending_assets.py` |
-| `ui_font.hex`, `ui_gfx.hex`, `ui_gfx.vh` (e `rust/mister-ui/src/assets.rs`) | `tools/gen_mister_ui.py` (da `assets/titles`, `pong_*.vh`, `howto_*`, `ending_*`) |
+| `ui_font.hex`, `ui_gfx.hex`, `ui_gfx2.hex`, `ui_gfx.vh` (e `rust/mister-ui/src/assets.rs`) | `tools/gen_mister_ui.py` (da `assets/titles`, `pong_*.vh`, `howto_*`, `ending_*`) |
 | `sid_music.hex`, `sid_music.vh` | `tools/gen_sid_music.py` |
 | `sid_voices.hex`, `sid_voices.vh` | `tools/gen_voices.py --mister` |
 

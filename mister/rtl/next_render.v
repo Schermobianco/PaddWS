@@ -64,10 +64,19 @@ module next_render (
     input  wire signed [31:0] pad0_motion,
     input  wire signed [31:0] pad1_motion,
     input  wire [3:0]  rush_fade,           // RUSH: intensità delle immagini dello scatto (2 bit per lato, 0 = niente)
-    input  wire [1:0]  barrier_flash,       // GUARDIAN: settore del muro appena colpito, lampeggia
+    // racchette dei personaggi (contatori di pong_top, frame che restano, 5 o 6 bit per lato): rottura
+    // dell'ultimo settore del muro del GUARDIAN, sparo del BLASTER, colpo della racchetta (scintille
+    // dell'HAMMER, onda del TWIST, corso del GUARDIAN che rientra) con la riga del colpo dalla cima;
+    // conto alla rovescia (il GUARDIAN costruisce il muro) e frame dall'inizio
+    input  wire [11:0] barrier_age,
+    input  wire [9:0]  fire_age,
+    input  wire [9:0]  hit_age,
+    input  wire [11:0] hit_rows,
+    input  wire        building,
+    input  wire [7:0]  build_f,
     input  wire [4:0]  wall0,               // GUARDIAN: settori del muro in piedi (5, bit 0 in alto)
     input  wire [4:0]  wall1,
-    input  wire [4:0]  wall_hit0,           // GUARDIAN: settore che lampeggia (con barrier_flash)
+    input  wire [4:0]  wall_hit0,           // GUARDIAN: settore dell'ultima rottura (con barrier_age)
     input  wire [4:0]  wall_hit1,
     // mosse speciali: accese nella partita, stato dei giocatori (super0/1 di pong_logic_rv: barra nei
     // bit 0-7, livello di STRAIGHT SHOT armato nei bit 8-9 e di RISING STRIKE nei bit 10-11, 2 = MAX),
@@ -103,6 +112,7 @@ module next_render (
 `include "pong_params.vh"
 `include "pong_fonts.vh"
 `include "pong_next.vh"
+`include "pong_paddles.vh"
 
 localparam integer W = P_WIDTH >>> 16;
 localparam integer H = P_HEIGHT >>> 16;
@@ -117,11 +127,7 @@ localparam [23:0] RGB_DETAIL = 24'hA9B0B8, RGB_DIM = 24'h3F3F3F;
 // tipi di racchetta (come `PaddleKind`)
 localparam [2:0] K_ARCADE = 3'd0, K_TITAN = 3'd1, K_HAMMER = 3'd2, K_TWIST = 3'd3, K_BLASTER = 3'd4,
                  K_RUSH = 3'd5, K_GUARDIAN = 3'd6, K_NONE = 3'd7;
-// codici di un pixel di racchetta: corpo, segno del tipo (accento), dettaglio grigio, taglio nero
-localparam [2:0] KP_NONE = 3'd0, KP_BODY = 3'd1, KP_MARK = 3'd2, KP_DETAIL = 3'd3, KP_CUT = 3'd4;
-// RUSH: immagini della racchetta dietro di lei, dalla più lontana (la più scura) alla più vicina:
-// l'accento al 18, 36 e 54% (come su PC, alpha 0,18 * k sul nero)
-localparam [2:0] KP_GHOST1 = 3'd5, KP_GHOST2 = 3'd6, KP_GHOST3 = 3'd7;
+// immagini gialle a 18, 36 e 54% (come su PC, alpha 0,18 * k sul nero): le immagini della MAX
 localparam [23:0] RGB_GHOST1 = 24'h2E2607, RGB_GHOST2 = 24'h5C4C0D, RGB_GHOST3 = 24'h8A7114;
 // colpo di una mossa (draw_kick di next_ui.rs), KICK_FRAMES frame come in pong_top: l'onda d'urto
 // sfuma con l'accento a 2/3 e 1/3; le immagini della racchetta della MAX all'accento al 50 e 25%
@@ -136,14 +142,20 @@ localparam [6:0] T_COL = 7'd13, T_ACC = 7'd25, T_LONG_GRAY = 7'd37, T_LONG_ACC =
 // OMEGA: il rosso del gioco e, con l'easter egg RED (giallo e rosso scambiati), il viola
 localparam [6:0] OMEGA_RED = 7'd81, OMEGA_PURPLE = 7'd82;
 localparam [23:0] RGB_OMEGA_RED = 24'hE62828, RGB_OMEGA_PURPLE = 24'hA040E0;
+// racchette dei personaggi (pong_paddles.vh): ombra portata, corpo in ombra (bianco, grigio, giallo,
+// rosso e viola di OMEGA), grigi, i tre toni di ogni personaggio (P_MARK + 3 * tipo), le immagini
+// dello scatto del RUSH e il muro del GUARDIAN in campo
+localparam [6:0] P_SHADOW = 7'd83, P_WHITE_SH = 7'd84, P_GRAY_SH = 7'd85, P_ACCENT_SH = 7'd86, P_RED_SH = 7'd87,
+                 P_PURPLE_SH = 7'd88, P_GRAY = 7'd89, P_GRAY_LIGHT = 7'd90, P_DARK = 7'd91, P_DARK_DEEP = 7'd92,
+                 P_MARK = 7'd93, P_RGHOST1 = 7'd114, P_RGHOST2 = 7'd115, P_RGHOST3 = 7'd116,
+                 P_WALL = 7'd117, P_WALL_LIGHT = 7'd118, P_WALL1 = 7'd119, P_WALL2 = 7'd120;
 // TWIST: inclinazione a gradini (fino a circa 20 gradi) dalla velocità della racchetta
 localparam signed [31:0] TILT1 = P_PAD_MAX_SPEED / 6, TILT2 = P_PAD_MAX_SPEED / 2,
                          TILT3 = P_PAD_MAX_SPEED * 5 / 6;
 localparam integer BARRIER_X = P_GUARDIAN_BARRIER_X >>> 16;
 // GUARDIAN: muro a 5 settori da WALL_TOP (sotto la banda delle riserve) al fondo, confini WALL_B1..4,
-// in righe dello schermo (i parametri sono y del core, verso l'alto, pixel interi); in ogni settore
-// tratti di 5 righe ogni 8 da 2 righe dopo l'inizio a 2 righe prima della fine, così tra un
-// settore e l'altro resta uno spazio (come next_ui.rs)
+// in righe dello schermo (i parametri sono y del core, verso l'alto, pixel interi). In campo non si
+// vede: dove la palla lo colpisce, il blocco del settore lampeggia e si sbriciola (come next_ui.rs)
 localparam integer WALL_TOP = H - (P_GUARDIAN_TOP >>> 16), WALL_B1 = H - (P_GUARDIAN_BOUND1 >>> 16),
                    WALL_B2 = H - (P_GUARDIAN_BOUND2 >>> 16), WALL_B3 = H - (P_GUARDIAN_BOUND3 >>> 16),
                    WALL_B4 = H - (P_GUARDIAN_BOUND4 >>> 16);
@@ -156,7 +168,6 @@ localparam integer TRAIL = 6;
 // mosse speciali: barra di METER pixel (uno per unità) più la cornice, tacca al costo; nella banda in
 // alto da BAR_X dal bordo, con la cornice da BAR_Y (le tacche sporgono di 2 righe sopra e sotto)
 localparam integer METER = P_SUPER_METER_MAX, COST = P_SUPER_COST, BAR_X = 6, BAR_Y = 22;
-localparam integer WALL_TOP_SUP = BAR_Y + 7;      // GUARDIAN: primo tratto del muro con le barre
 // presentazione di CHALLENGE: riga del centro della racchetta; munizioni del BLASTER (caricatore
 // pieno, 4 righe per colpo come in partita)
 localparam integer INTRO_Y = 82, AMMO_ROWS = 4 * P_BLASTER_SHOTS;
@@ -219,6 +230,44 @@ function [23:0] pal(input [6:0] i);
             KICK_IMG2: pal = RGB_KICK_IMG2;
             OMEGA_RED: pal = RGB_OMEGA_RED;
             OMEGA_PURPLE: pal = RGB_OMEGA_PURPLE;
+            P_SHADOW:     pal = PD_SHADOW;
+            P_WHITE_SH:   pal = PD_WHITE_SH;
+            P_GRAY_SH:    pal = PD_GRAY_SH;
+            P_ACCENT_SH:  pal = PD_ACCENT_SH;
+            P_RED_SH:     pal = PD_OMEGA_RED_SH;
+            P_PURPLE_SH:  pal = PD_OMEGA_PURPLE_SH;
+            P_GRAY:       pal = PD_GRAY;
+            P_GRAY_LIGHT: pal = PD_GRAY_LIGHT;
+            P_DARK:       pal = PD_DARK;
+            P_DARK_DEEP:  pal = PD_DARK_DEEP;
+            P_MARK:       pal = PD_MARK0;
+            P_MARK + 7'd1:  pal = PD_MARK_DARK0;
+            P_MARK + 7'd2:  pal = PD_MARK_LIGHT0;
+            P_MARK + 7'd3:  pal = PD_MARK1;
+            P_MARK + 7'd4:  pal = PD_MARK_DARK1;
+            P_MARK + 7'd5:  pal = PD_MARK_LIGHT1;
+            P_MARK + 7'd6:  pal = PD_MARK2;
+            P_MARK + 7'd7:  pal = PD_MARK_DARK2;
+            P_MARK + 7'd8:  pal = PD_MARK_LIGHT2;
+            P_MARK + 7'd9:  pal = PD_MARK3;
+            P_MARK + 7'd10: pal = PD_MARK_DARK3;
+            P_MARK + 7'd11: pal = PD_MARK_LIGHT3;
+            P_MARK + 7'd12: pal = PD_MARK4;
+            P_MARK + 7'd13: pal = PD_MARK_DARK4;
+            P_MARK + 7'd14: pal = PD_MARK_LIGHT4;
+            P_MARK + 7'd15: pal = PD_MARK5;
+            P_MARK + 7'd16: pal = PD_MARK_DARK5;
+            P_MARK + 7'd17: pal = PD_MARK_LIGHT5;
+            P_MARK + 7'd18: pal = PD_MARK6;
+            P_MARK + 7'd19: pal = PD_MARK_DARK6;
+            P_MARK + 7'd20: pal = PD_MARK_LIGHT6;
+            P_RGHOST1:    pal = PD_RUSH_GHOST1;
+            P_RGHOST2:    pal = PD_RUSH_GHOST2;
+            P_RGHOST3:    pal = PD_RUSH_GHOST3;
+            P_WALL:       pal = PD_WALL;
+            P_WALL_LIGHT: pal = PD_WALL_LIGHT;
+            P_WALL1:      pal = PD_WALL1;
+            P_WALL2:      pal = PD_WALL2;
             default:   pal = RGB_BLACK;
         endcase
         for (j = 1; j <= 2 * TRAIL; j = j + 1) begin
@@ -255,70 +304,6 @@ localparam integer WARP_STEP = 32, WARP_SUNK = W / 2, WARP_RISE = 3 * WARP_STEP,
 
 wire [9:0] x = hc;
 wire [9:0] y = vc;
-
-// Pixel (t, r) di una racchetta di tipo `kind`, larga w e alta h: t è la colonna contata dal
-// retro (0) verso la faccia (w - 1, oltre: davanti, sotto 0: dietro), r la riga dall'alto.
-// Come draw_paddle in rust/game/src/paddle_ui.rs. `tilt` inclina TWIST (positivo: faccia verso
-// l'alto), `preview` il pezzo di muro del GUARDIAN, `ghosts` le immagini del RUSH attaccate dietro
-// (il suo segno nella scelta; in partita le disegna il blocco delle immagini dello scatto).
-// Solo confronti, shift e somme.
-function [2:0] kind_px(input [2:0] kind, input signed [11:0] t, input signed [11:0] r, input [9:0] h,
-                       input signed [2:0] tilt, input preview, input ghosts);
-    reg signed [11:0] hh, d, sh, ts;
-    reg [2:0] m;
-    reg body;
-    begin
-        kind_px = KP_NONE;
-        hh = $signed({2'b0, h});
-        body = t >= 0 && t < PW && r >= 0 && r < hh;
-        case (kind)
-            K_TWIST: begin
-                // scorrimento orizzontale delle righe: (r - h/2) * tilt / 8
-                d = r - (hh >>> 1);
-                m = tilt[2] ? -tilt : tilt;
-                sh = (m[0] ? d : 12'sd0) + (m[1] ? d <<< 1 : 12'sd0);
-                sh = tilt[2] ? -(sh >>> 3) : (sh >>> 3);
-                ts = t - sh;
-                if (ts >= 0 && ts < PW && r >= 0 && r < hh) kind_px = KP_BODY;
-            end
-            K_HAMMER: begin
-                // più spessa verso il retro, con le bande grigie del peso
-                if (t >= -(PW / 2) && t < PW && r >= 0 && r < hh)
-                    kind_px = (r == (hh >>> 1) - 10 || r == (hh >>> 1) - 9 ||
-                               r == (hh >>> 1) + 8 || r == (hh >>> 1) + 9) ? KP_DETAIL : KP_BODY;
-            end
-            K_BLASTER: begin
-                if (body) begin
-                    kind_px = KP_BODY;
-                    // spigoli del davanti smussati
-                    if (((r == 0 || r == hh - 1) && t >= PW - 2) || ((r == 1 || r == hh - 2) && t == PW - 1))
-                        kind_px = KP_CUT;
-                end
-                // due canne grigie davanti, sopra e sotto il centro
-                if (t >= PW && t < PW + 2 &&
-                    (r == (hh >>> 1) - 4 || r == (hh >>> 1) - 3 || r == (hh >>> 1) + 2 || r == (hh >>> 1) + 3))
-                    kind_px = KP_DETAIL;
-            end
-            K_TITAN: begin
-                if (body) kind_px = (t == 0 && (r < (hh >>> 3) || r >= hh - (hh >>> 3))) ? KP_MARK : KP_BODY;
-            end
-            K_RUSH: begin
-                if (body) kind_px = KP_BODY;
-                // tre immagini dietro, più scure verso il retro, con una colonna vuota tra l'una e l'altra
-                if (ghosts && r >= 0 && r < hh && t < -1 && t >= -3 * PW && t != -PW - 1 && t != -2 * PW - 1)
-                    kind_px = (t >= -PW) ? KP_GHOST3 : (t >= -2 * PW) ? KP_GHOST2 : KP_GHOST1;
-            end
-            K_GUARDIAN: begin
-                if (body) kind_px = KP_BODY;
-                // nella scelta un pezzo di muro dietro (in partita è un muro a settori)
-                if (preview && (t == -8 || t == -7) && r >= -(hh >>> 2) && r < hh + (hh >>> 2) &&
-                    ((r + (hh >>> 2)) & 12'sd7) < 5)
-                    kind_px = KP_MARK;
-            end
-            default: if (body) kind_px = KP_BODY;
-        endcase
-    end
-endfunction
 
 // inclinazione di TWIST dalla velocità della racchetta (motion), a gradini da -3 a 3
 function signed [2:0] twist_tilt(input signed [31:0] m);
@@ -426,9 +411,33 @@ reg [1:0]  kfade [0:1];               // RUSH: intensità delle immagini dello s
 reg signed [11:0] kg [0:5];           // RUSH: colonna sinistra delle immagini, 3 * lato + (k - 1)
 reg signed [11:0] gd;
 reg [4:0]  kwall [0:1];               // GUARDIAN: settori del muro in piedi
-reg [4:0]  khit [0:1];                // GUARDIAN: settore che lampeggia (con kflash)
-reg        kflash [0:1];
+reg [4:0]  khit [0:1];                // GUARDIAN: settore dell'ultima rottura (con kba)
 reg        kgray [0:1];
+// racchette dei personaggi: frame che restano (rottura del muro, sparo, colpo), riga del colpo e
+// corso del GUARDIAN che ci sta; posa (8 al secondo, dal tick) e gettone dell'ARCADE (pose 0-23);
+// conto alla rovescia con i corsi del muro che cadono (visibile, spostamento)
+reg [5:0]  kba [0:1];
+reg [4:0]  kfa [0:1];
+reg [4:0]  kha [0:1];
+reg [5:0]  khr [0:1];
+reg [2:0]  krc [0:1];
+reg [7:0]  kpose = 8'd0;
+reg [4:0]  coin_s = 5'd0;
+reg        kbuild = 1'b0;
+reg        gbv [0:4];
+reg signed [11:0] gbd [0:4];
+// TITAN: polvere del passo, 8 per lato (4 per estremità): colonna, riga, grande (2x2 grigio), c'è
+reg signed [11:0] dpx [0:15];
+reg signed [11:0] dpy [0:15];
+reg        dpb [0:15];
+reg        dpv [0:15];
+// RUSH e BLASTER: lembi, riga di ogni segmento (10 per lato: 5 della striscia alta, 5 della bassa) e
+// segmenti per striscia (2 per lato), calcolati da un piccolo sequenziatore dopo la fotografia
+reg signed [11:0] tdy [0:19];
+reg [2:0]  ktn [0:3];
+reg        kdash [0:1];
+reg signed [11:0] tbend [0:1];        // piega dei lembi (1/256 di pixel per segmento)
+reg [9:0]  tamp [0:1];                // ampiezza dello sventolio (1/256)
 // mosse speciali
 reg        msup;
 reg [7:0]  mtr [0:1];                 // barra
@@ -443,24 +452,6 @@ reg        ckm [0:1];                 // ... con la MAX
 reg        rbon;                      // RISING STRIKE impennata: quadrato in (rbx, rby)
 reg [9:0]  rbx, rby;
 
-// GUARDIAN: settore del muro della riga y (0 in alto: comprende la banda, dove il muro non si
-// disegna), riga del primo tratto e riga dopo l'ultima del settore; la riga è in un tratto del muro.
-// Con le mosse speciali la barra sotto la riserva (righe BAR_Y..BAR_Y+4) esce dalla banda: allora il
-// primo settore comincia 2 righe sotto la barra, per non toccarla
-wire [2:0] wall_sec = (y >= WALL_B4) ? 3'd4 : (y >= WALL_B3) ? 3'd3 : (y >= WALL_B2) ? 3'd2 :
-                      (y >= WALL_B1) ? 3'd1 : 3'd0;
-reg  [9:0] wall_lo, wall_hi;
-always @* begin
-    case (wall_sec)
-        3'd0: begin wall_lo = msup ? WALL_TOP_SUP : WALL_TOP + 2; wall_hi = WALL_B1 - 2; end
-        3'd1: begin wall_lo = WALL_B1 + 2;  wall_hi = WALL_B2 - 2; end
-        3'd2: begin wall_lo = WALL_B2 + 2;  wall_hi = WALL_B3 - 2; end
-        3'd3: begin wall_lo = WALL_B3 + 2;  wall_hi = WALL_B4 - 2; end
-        default: begin wall_lo = WALL_B4 + 2; wall_hi = H - 2; end
-    endcase
-end
-wire [9:0] wall_dy = y - wall_lo;
-wire       wall_row = y >= wall_lo && y < wall_hi && wall_dy[2:0] < 3'd5;
 // BULLET: scattato, armato, chi l'ha attivato, rampa, alone; immagini della palla (gx, gy, gv) e fase
 // del campionamento
 reg        bon, barm, bsd, bramp;
@@ -657,7 +648,18 @@ always @(posedge clk) begin
             kg[3*i + 2] <= left_col(i ? P_WIDTH - P_PAD_START_POS : P_PAD_START_POS) + gd - (gd >>> 2);
             kwall[i] <= i ? wall1 : wall0;
             khit[i] <= i ? wall_hit1 : wall_hit0;
-            kflash[i] <= barrier_flash[i];
+            kba[i] <= i ? barrier_age[11:6] : barrier_age[5:0];
+            kfa[i] <= i ? fire_age[9:5] : fire_age[4:0];
+            kha[i] <= i ? hit_age[9:5] : hit_age[4:0];
+            khr[i] <= i ? hit_rows[11:6] : hit_rows[5:0];
+            krc[i] <= hit_course(i ? hit_rows[11:6] : hit_rows[5:0]);
+            // lembi: piega (verso opposto alla velocità, 0,6 px per segmento per px/frame, fino a
+            // 1,2) e sventolio (pieno da ferma); nello scatto del RUSH 2 segmenti in più, dritti
+            tbend[i] <= tail_bend(i ? pad1_motion : pad0_motion);
+            tamp[i] <= tail_amp(tail_bend(i ? pad1_motion : pad0_motion));
+            kdash[i] <= (i ? rush_fade[3:2] : rush_fade[1:0]) != 2'd0;
+            ktn[2 * i] <= ((i ? rush_fade[3:2] : rush_fade[1:0]) != 2'd0) ? 3'd5 : 3'd3;
+            ktn[2 * i + 1] <= ((i ? rush_fade[3:2] : rush_fade[1:0]) != 2'd0) ? 3'd4 : 3'd2;
             // la racchetta con un bonus armato lampeggia in grigio, come in pong_render; nel bullet
             // time è grigia quella dell'avversario di chi l'ha attivato
             kgray[i] <= (nxt && (i ? player1[19:16] : player0[19:16]) != B_NONE && !tick[4]) ||
@@ -673,6 +675,21 @@ always @(posedge clk) begin
             ckm[i] <= i ? kick1[6] : kick0[6];
         end
         msup <= nxt && sup;
+        // posa a 8 al secondo (il tick va a 240 Hz: 32 tick sono 7,5 pose al secondo) e gettone
+        kpose <= tick[12:5];
+        if (tick[5] != kpose[0]) coin_s <= (coin_s == 5'd23) ? 5'd0 : coin_s + 5'd1;
+        // GUARDIAN: nel conto alla rovescia i corsi cadono dal basso, uno ogni 18 frame
+        kbuild <= nxt && building;
+        for (i = 0; i < 5; i = i + 1) begin
+            gbv[i] <= build_course_v(build_f, 8'd24 + 8'd18 * (8'd4 - i));
+            gbd[i] <= build_course_dy(build_f, 8'd24 + 8'd18 * (8'd4 - i));
+        end
+        for (i = 0; i < 16; i = i + 1) begin
+            dpx[i] <= dust_x[i];
+            dpy[i] <= dust_y[i];
+            dpb[i] <= dust_b[i];
+            dpv[i] <= dust_v[i];
+        end
         // impennata di RISING STRIKE: il punto è dove si trova la palla nel primo frame
         rbon <= nxt && sup && rise_flash;
         if (!rbon) begin
@@ -745,6 +762,393 @@ always @(posedge clk) begin
     end
 end
 
+
+// GUARDIAN: corso della riga `row` dalla cima (floor(row * 5 / h)), quello che rientra al colpo
+function [2:0] hit_course(input [5:0] row);
+    hit_course = ({row, 2'b0} + row < HT_G) ? 3'd0 : ({row, 2'b0} + row < 2 * HT_G) ? 3'd1 :
+                 ({row, 2'b0} + row < 3 * HT_G) ? 3'd2 : ({row, 2'b0} + row < 4 * HT_G) ? 3'd3 : 3'd4;
+endfunction
+// GUARDIAN: corso che cade nel conto alla rovescia, `f` frame dall'inizio, che si posa al frame `land`:
+// visibile da 15 frame prima, poi rimbalza di 1 pixel per 6 frame
+function build_course_v(input [7:0] f, input [7:0] land);
+    build_course_v = f + 8'd15 >= land;
+endfunction
+function signed [11:0] build_course_dy(input [7:0] f, input [7:0] land);
+    reg [7:0] d;
+    begin
+        d = f + 8'd15 - land;
+        // pd_build_dy è con segno: nel condizionale con segno si estende da sé
+        build_course_dy = (f + 8'd15 < land) ? 12'sd0 : (f < land) ? pd_build_dy(d[3:0]) :
+                          (f < land + 8'd6) ? -12'sd1 : 12'sd0;
+    end
+endfunction
+// lembi: piega per segmento in 1/256 di pixel dalla velocità (motion: px/tick in Q16.16, verso l'alto):
+// -0,6 * vy con vy = -4 * motion px/frame, fino a +-1,2
+function signed [11:0] tail_bend(input signed [31:0] m);
+    reg signed [47:0] b;
+    begin
+        b = (m * 48'sd615) >>> 16;
+        tail_bend = (b > 48'sd307) ? 12'sd307 : (b < -48'sd307) ? -12'sd307 : b[11:0];
+    end
+endfunction
+// ampiezza dello sventolio in 1/256: (0,3 + 0,7 * calma) * 1,4, con calma = 1 - min(|piega|, 1)
+function [9:0] tail_amp(input signed [11:0] b);
+    reg [8:0] calm;
+    reg [17:0] t;
+    begin
+        calm = (b >= 256 || b <= -256) ? 9'd0 : 9'd256 - ((b < 0) ? -b : b);
+        t = (18'd77 + ((calm * 18'd179) >> 8)) * 18'd359;
+        tail_amp = t[17:8];
+    end
+endfunction
+
+// TITAN: polvere del passo, dalla posa e dal movimento (in movimento 4 per estremità, ferma 2): la
+// particella k di un'estremità è a p = frac(posa * 0,1125 + k / m (+ 0,37 in alto)), si allontana
+// dietro (fino a 9 pixel) e in fuori (fino a 4); grigia 2x2 fino a 0,45, poi un puntino scuro;
+// sparisce oltre 0,85. Indice: 8 * lato + 4 * estremità (0 in basso, 1 in alto) + k
+reg signed [11:0] dust_x [0:15];
+reg signed [11:0] dust_y [0:15];
+reg        dust_b [0:15];
+reg        dust_v [0:15];
+reg [7:0]  dust_p;
+reg [11:0] dust_o;
+reg        dust_m;
+integer    dk;
+always @(*) begin
+    for (dk = 0; dk < 16; dk = dk + 1) begin
+        dust_m = ((dk >= 8) ? pad1_motion : pad0_motion) > 32'sd8192 ||
+                 ((dk >= 8) ? pad1_motion : pad0_motion) < -32'sd8192;
+        dust_p = tick[12:5] * 8'd29 + (dust_m ? (dk % 4) * 64 : (dk % 4) * 128) + ((dk % 8 >= 4) ? 8'd95 : 8'd0);
+        dust_o = ((dust_p + 12'd32) >> 6) + ((dk % 2 == 1) ? 12'd2 : 12'd0);
+        dust_v[dk] = (dust_m || dk % 4 < 2) && dust_p <= 8'd217;
+        dust_b[dk] = dust_p < 8'd115;
+        dust_x[dk] = -12'sd8 - $signed({4'd0, (({4'd0, dust_p} * 12'd9 + 12'd128) >> 8)});
+        dust_y[dk] = (dk % 8 >= 4) ? 12'sd2 - $signed(dust_o) : HT_T - 3 + $signed(dust_o);
+    end
+end
+
+// lembi: riga di ogni segmento, uno per ciclo dopo la fotografia (20 in tutto: lato, striscia,
+// segmento j da 1 a 5). Come tails di paddle_ui.rs: dal nodo (riga 3), la striscia alta sale di 0,5
+// pixel per segmento, la bassa parte 2 righe sotto e scende di 0,6 (un quarto nello scatto), più la
+// piega e lo sventolio sin(posa * 5/8 + 1,3 j + 2 striscia) * ampiezza * j / n
+reg [4:0]  tq = 5'd31;
+reg        tp, ti;
+reg [2:0]  tj, tn;
+reg signed [15:0] tbase, twave, tsum;
+reg signed [23:0] tmul;
+reg [8:0]  tjn;
+reg [5:0]  tph;
+always @(*) begin
+    tp = tq >= 5'd10;
+    ti = (tq >= 5'd10 ? tq - 5'd10 : tq) >= 5'd5;
+    tj = (tq >= 5'd10 ? tq - 5'd10 : tq) - (ti ? 5'd5 : 5'd0) + 3'd1;
+    tn = ktn[{tp, ti}];
+    tbase = ti ? (16'sd1280 + (kdash[tp] ? 16'sd38 : 16'sd154) * $signed({13'd0, tj}))
+               : (16'sd768 - (kdash[tp] ? 16'sd32 : 16'sd128) * $signed({13'd0, tj}));
+    // j / n in 1/256 (n = 3 o 2: nello scatto niente sventolio)
+    tjn = (tn == 3'd3) ? ((tj == 3'd1) ? 9'd85 : (tj == 3'd2) ? 9'd171 : 9'd256) : ((tj == 3'd1) ? 9'd128 : 9'd256);
+    tph = ((kpose * 16'd51) >> 3) + 6'd13 * tj + (ti ? 6'd20 : 6'd0);
+    tmul = $signed({1'b0, ({8'd0, tamp[tp]} * {9'd0, tjn}) >> 8}) * sin_q8(tph);
+    twave = kdash[tp] ? 16'sd0 : {{4{tmul[19]}}, tmul[19:8]};
+    tsum = tbase + $signed({{4{tbend[tp][11]}}, tbend[tp]}) * $signed({13'd0, tj}) + twave + 16'sd128;
+end
+always @(posedge clk) begin
+    if (snapshot)
+        tq <= 5'd0;
+    else if (tq < 5'd20) begin
+        tdy[{tp, 1'b0} * 5 + (ti ? 5 : 0) + tj - 1] <= tsum >>> 8;
+        tq <= tq + 5'd1;
+    end
+end
+// ------------------------------------------------- racchette dei personaggi
+// Come draw_paddle e kind_ops di rust/game/src/paddle_ui.rs, sul corpo largo 4 (tools/paddle_shapes.py,
+// il modello in Python con le stesse regole). Coordinate del tipo: u la colonna, 0 la faccia, il corpo
+// da -3 a 0, negativa verso il retro (la racchetta destra è speculare); v la riga dall'alto. Un pixel
+// prende il ruolo dell'ultimo pezzo che lo copre; sopra vanno le luci e le ombre dei bordi dei pezzi
+// alti e larghi almeno 2 (l'ultimo vince): retro e fondo del corpo in ombra, bordo alto schiarito e
+// basso scurito sui segni e sui grigi; poi il bordo scuro di HAMMER. Fuori dalla forma, l'ombra portata
+// (la stessa forma 1 pixel verso il retro e 1 in basso: una seconda chiamata). Le animazioni usano i
+// contatori di pong_top e le tabelle di pong_paddles.vh (tools/gen_mister_paddles.py).
+localparam [3:0] KR_NONE = 4'd0, KR_BODY = 4'd1, KR_SHADE = 4'd2, KR_MARK = 4'd3, KR_MARK_DARK = 4'd4,
+                 KR_MARK_LIGHT = 4'd5, KR_GRAY = 4'd6, KR_GRAY_LIGHT = 4'd7, KR_DARK = 4'd8, KR_DARK_DEEP = 4'd9,
+                 KR_BLACK = 4'd10, KR_SIGNAL = 4'd11, KR_SHADOW = 4'd12;
+// altezze dei tipi (pixel)
+localparam integer HT_A = kind_px_h(3'd0), HT_T = kind_px_h(3'd1), HT_H = kind_px_h(3'd2), HT_W = kind_px_h(3'd3),
+                   HT_B = kind_px_h(3'd4), HT_R = kind_px_h(3'd5), HT_G = kind_px_h(3'd6);
+// GUARDIAN: righe dei 5 corsi (round(h * i / 5)), come paddle_ui.rs
+localparam integer GY1 = (HT_G * 2 + 5) / 10, GY2 = (HT_G * 4 + 5) / 10, GY3 = (HT_G * 6 + 5) / 10,
+                   GY4 = (HT_G * 8 + 5) / 10;
+// BLASTER: metà altezza e prima riga della cinghia; TITAN: riga della cintura; HAMMER: centro dell'occhio
+localparam integer BMID = HT_B / 2, BSTRAP = HT_B / 2 - 9, TBELT = (HT_T + 1) / 2 - 2, HEYE = (HT_H + 1) / 2;
+
+// il pixel (u, v) è nel rettangolo [X0, X0 + WW) x [Y0, Y0 + HH)
+`define KIN(X0, Y0, WW, HH) ((u) >= (X0) && (u) < (X0) + (WW) && (v) >= (Y0) && (v) < (Y0) + (HH))
+// pezzo senza bordi (largo o alto 1, o un colore senza toni: nero, giallo, schiarito)
+`define KF(X0, Y0, WW, HH, R) if (`KIN(X0, Y0, WW, HH)) fill = R;
+// corpo: colonna del retro (se è il retro della racchetta) e fondo in ombra
+`define KB(X0, Y0, WW, HH) if (`KIN(X0, Y0, WW, HH)) begin fill = KR_BODY; \
+    if (((X0) <= -3 && (u) == (X0)) || ((v) == (Y0) + (HH) - 1 && (u) > (X0) && (u) < (X0) + (WW) - 1)) rel = KR_SHADE; end
+// pezzo con il bordo alto in luce e il basso in ombra (largo e alto almeno 2)
+`define KT(X0, Y0, WW, HH, R, RL, RD) if (`KIN(X0, Y0, WW, HH)) begin fill = R; \
+    if ((v) == (Y0)) rel = RL; else if ((v) == (Y0) + (HH) - 1) rel = RD; end
+`define KM(X0, Y0, WW, HH) `KT(X0, Y0, WW, HH, KR_MARK, KR_MARK_LIGHT, KR_MARK_DARK)
+`define KG(X0, Y0, WW, HH) `KT(X0, Y0, WW, HH, KR_GRAY, KR_GRAY_LIGHT, KR_DARK)
+`define KD(X0, Y0, WW, HH) `KT(X0, Y0, WW, HH, KR_DARK, KR_GRAY, KR_DARK_DEEP)
+
+// TWIST e BLASTER: lembi della fascia e della bandana, segmento del pixel della colonna u (0: nessuno)
+function [2:0] tail_seg(input signed [11:0] u, input wide);
+    tail_seg = wide ? ((u >= -6 && u < -3) ? 3'd1 : (u >= -9 && u < -6) ? 3'd2 : (u >= -12 && u < -9) ? 3'd3 :
+                       (u >= -15 && u < -12) ? 3'd4 : (u >= -18 && u < -15) ? 3'd5 : 3'd0)
+                    : ((u >= -5 && u < -3) ? 3'd1 : (u >= -7 && u < -5) ? 3'd2 : (u >= -9 && u < -7) ? 3'd3 :
+                       (u >= -11 && u < -9) ? 3'd4 : (u >= -13 && u < -11) ? 3'd5 : 3'd0);
+endfunction
+
+// TWIST: il pixel (du, dv) dal centro dell'estremità è sull'onda (anello fra lo e hi, arco fra due
+// direzioni: in alto da 150 a 300 gradi, in basso da 60 a 210, con la y verso il basso)
+function ring_px(input signed [11:0] du, input signed [11:0] dv, input top, input [12:0] lo, input [12:0] hi);
+    reg [12:0] d2;
+    begin
+        d2 = (du * du + dv * dv) << 4;
+        ring_px = du > -16 && du < 16 && dv > -16 && dv < 16 && d2 >= lo && d2 < hi &&
+                  (top ? (-7 * dv - 4 * du >= 0 && -7 * du - 4 * dv >= 0)
+                       : (4 * dv - 7 * du >= 0 && 7 * dv - 4 * du >= 0));
+    end
+endfunction
+
+// Ruolo del pixel (u0, v0) della racchetta del lato p, del tipo kind (KR_NONE fuori dalla forma).
+function [3:0] kind_px(input p, input [2:0] kind, input signed [11:0] u0, input signed [11:0] v0);
+    reg signed [11:0] u, v, d, sh, ff, row, slot, y0, y1, ys, hh;
+    reg [3:0] fill, rel, late;
+    reg [2:0] m, sg;
+    reg [4:0] f;
+    reg [5:0] ka, ca;
+    reg [2:0] alive;
+    reg        hit, fire, recent;
+    integer    c, j;
+    begin
+        fill = KR_NONE;
+        rel = KR_NONE;
+        late = KR_NONE;
+        u = u0;
+        v = v0;
+        hit = kha[p] != 5'd0;
+        f = PD_HIT_FRAMES - kha[p];                 // frame dal colpo
+        fire = kfa[p] != 5'd0;
+        ff = PD_FIRE_FRAMES - $signed({7'd0, kfa[p]});   // frame dallo sparo
+        row = $signed({6'd0, khr[p]});
+        case (kind)
+            K_ARCADE: begin
+                `KB(-3, 0, 4, HT_A)
+                // fessura della gettoniera e gettone che ci entra (pose 0-5 giù, 6-8 di taglio, 10-13 lampi)
+                `KF(-1, HT_A / 2 - 4, 1, 8, (coin_s == 5'd10 || coin_s == 5'd12) ? KR_MARK : KR_DARK)
+                if (coin_s <= 5'd5) begin
+                    `KF(-2, HT_A / 2 - 10 + $signed({7'd0, coin_s}), 2, 1, KR_MARK)
+                    `KF(-1, HT_A / 2 - 11 + $signed({7'd0, coin_s}), 1, 3, KR_MARK)
+                end else if (coin_s <= 5'd8) begin
+                    `KF(-1, HT_A / 2 - 4, 1, (coin_s == 5'd6) ? 6 : (coin_s == 5'd7) ? 4 : 2, KR_MARK)
+                end
+            end
+            K_TITAN: begin
+                // più spessa verso il retro, cintura con i fori, fibbia che sporge, polvere del passo
+                `KB(-6, 0, 7, HT_T)
+                `KM(-6, TBELT, 6, 4)
+                `KF(-4, TBELT + 1, 1, 1, KR_MARK_DARK)
+                `KF(-2, TBELT + 1, 1, 1, KR_MARK_DARK)
+                `KG(-9, TBELT - 1, 3, 6)
+                `KF(-8, TBELT, 1, 4, KR_DARK)
+                for (c = 0; c < 8; c = c + 1)
+                    if (dpv[8 * p + c]) begin
+                        if (dpb[8 * p + c]) begin
+                            `KG(dpx[8 * p + c] - 1, dpy[8 * p + c], 2, 2)
+                        end else begin
+                            `KF(dpx[8 * p + c], dpy[8 * p + c], 1, 1, KR_DARK)
+                        end
+                    end
+            end
+            K_HAMMER: begin
+                // testa della mazza dall'alto: piano bianco, occhio con la punta del manico e il cuneo;
+                // il bordo scuro del retro dopo il rilievo; scintille dalla faccia al colpo potente
+                `KB(-6, 0, 7, HT_H)
+                `KD(-4, HEYE - 4, 4, 8)
+                `KM(-3, HEYE - 3, 2, 6)
+                `KF(-3, HEYE - 1, 2, 1, KR_MARK_DARK)
+                if (hit && pd_spark(pd_spark_pose(f), u, v - row))
+                    fill = (pd_spark_pose(f) >= 2'd2) ? KR_MARK_DARK : KR_MARK;
+                if (u == -6 && v >= 0 && v < HT_H) late = KR_DARK;
+            end
+            K_TWIST: begin
+                // inclinata: righe spostate di (v - h/2) * tilt / 8 verso la faccia
+                d = v - HT_W / 2;
+                m = ktilt[p][2] ? -ktilt[p] : ktilt[p];
+                sh = (m[0] ? d : 12'sd0) + (m[1] ? d <<< 1 : 12'sd0);
+                sh = ktilt[p][2] ? -(sh >>> 3) : (sh >>> 3);
+                u = u0 - sh;
+                `KB(-3, 0, 4, HT_W)
+                `KF(-1, 2, 1, HT_W - 4, KR_MARK)
+                `KM(-2, HT_W / 2 - 2, 2, 4)
+                // onda del colpo attorno alle due estremità, mai sul corpo
+                if (hit && !(u >= -3 && u <= 0 && v >= 0 && v < HT_W) &&
+                    (ring_px(u + 1, v - 2, 1'b1, pd_ring_lo(f), pd_ring_hi(f)) ||
+                     ring_px(u + 1, v - (HT_W - 2), 1'b0, pd_ring_lo(f), pd_ring_hi(f))))
+                    fill = (f < 5'd15) ? KR_MARK : KR_MARK_DARK;
+            end
+            K_BLASTER: begin
+                // allo sparo tutta la racchetta arretra di 1 pixel per 3 frame, le canne rientrano e
+                // tornano in 8, lampo alla bocca, il bossolo vola dietro
+                if (fire && ff < 3) u = u0 + 1;
+                `KB(-3, 0, 3, HT_B)
+                `KF(0, 2, 1, HT_B - 4, KR_BODY)
+                if (fire && ff < 3) begin
+                    `KF(1, BMID - 3, 1, 2, KR_GRAY)
+                    `KF(1, BMID + 1, 1, 2, KR_GRAY)
+                    `KF(2, BMID - 4, 1, 3, KR_SIGNAL)
+                    `KF(2, BMID + 1, 1, 3, KR_SIGNAL)
+                    `KF(3, BMID - 2, 2, 4, KR_SIGNAL)
+                    `KF(5, BMID - 1, 1, 2, KR_SIGNAL)
+                end else if (fire && ff < 8) begin
+                    `KG(1, BMID - 3, 2, 2)
+                    `KG(1, BMID + 1, 2, 2)
+                end else begin
+                    `KG(1, BMID - 3, 3, 2)
+                    `KG(1, BMID + 1, 3, 2)
+                end
+                // lembi della bandana
+                sg = tail_seg(u, 1'b0);
+                if (sg != 3'd0) begin
+                    if (sg <= ktn[2 * p] && v == tdy[10 * p + sg - 1]) fill = KR_MARK;
+                    if (sg <= ktn[2 * p + 1] && v == tdy[10 * p + 4 + sg])
+                        fill = (sg == ktn[2 * p + 1]) ? KR_MARK_DARK : KR_MARK;
+                end
+                // cinghia e cartuccera (dal basso), poi il bossolo del colpo appena vuotato
+                `KF(-4, BSTRAP, 1, 21, KR_DARK)
+                for (c = 0; c < 4; c = c + 1)
+                    if (c + kammo[p] >= 4) begin
+                        `KF(-6, BSTRAP + 1 + 5 * c, 2, 3, KR_SIGNAL)
+                    end
+                slot = (kammo[p] >= 3'd3) ? 12'sd0 : 12'sd3 - $signed({9'd0, kammo[p]});
+                if (fire && ff >= 2) begin
+                    `KF(pd_case_x(ff[4:0]), BSTRAP + 1 + 5 * slot + pd_case_y(ff[4:0]), 2, 1, KR_SIGNAL)
+                end
+            end
+            K_RUSH: begin
+                // fascia in cima con i lembi che escono dietro dal nodo
+                `KB(-3, 0, 4, HT_R)
+                `KM(-3, 3, 3, 2)
+                sg = tail_seg(u, 1'b1);
+                if (sg != 3'd0) begin
+                    if (sg <= ktn[2 * p] && v == tdy[10 * p + sg - 1]) fill = KR_MARK;
+                    if (sg <= ktn[2 * p + 1] && v == tdy[10 * p + 4 + sg])
+                        fill = (sg == ktn[2 * p + 1]) ? KR_MARK_DARK : KR_MARK;
+                end
+            end
+            K_GUARDIAN: begin
+                // tutta la racchetta è un muro: 5 corsi (uno per settore) con le fughe nel suo colore e
+                // i giunti sfalsati; il corso del settore perso si crepa, poi è grigio e perde le schegge;
+                // l'ultimo rimasto lampeggia; il corso colpito rientra; nel conto alla rovescia i corsi
+                // cadono dal basso
+                alive = {2'd0, kwall[p][0]} + kwall[p][1] + kwall[p][2] + kwall[p][3] + kwall[p][4];
+                ka = PD_BARRIER_FRAMES - kba[p];               // frame dalla rottura dell'ultimo settore
+                ca = ka - PD_CRACK_FRAMES;
+                for (c = 0; c < 5; c = c + 1) begin
+                    // il corso, spostato dal rientro (verso il retro) e dalla caduta
+                    u = u0 + ((hit && f < 5'd6 && krc[p] == c) ? 12'sd1 : 12'sd0);
+                    v = v0 - (kbuild ? gbd[c] : 12'sd0);
+                    y0 = (c == 0) ? 0 : (c == 1) ? GY1 : (c == 2) ? GY2 : (c == 3) ? GY3 : GY4;
+                    y1 = (c == 0) ? GY1 : (c == 1) ? GY2 : (c == 2) ? GY3 : (c == 3) ? GY4 : HT_G;
+                    ys = (c > 0) ? y0 + 1 : y0;                // righe sotto la fuga
+                    hh = y1 - ys;
+                    recent = !kwall[p][c] && khit[p][c] && kba[p] != 6'd0;
+                    if (!kbuild || gbv[c]) begin
+                        `KB(-6, y0, 7, y1 - y0)
+                        if (kwall[p][c] || (recent && ka < PD_CRACK_FRAMES)) begin
+                            if (kwall[p][c] && alive == 3'd1 && !kpose[1]) begin
+                                `KF(-6, ys, 7, hh, KR_MARK_LIGHT)
+                            end
+                            // giunti sfalsati
+                            if (c % 2 == 1) begin
+                                `KF(-5, ys, 1, hh, KR_MARK)
+                                `KF(-1, ys, 1, hh, KR_MARK)
+                            end else begin
+                                `KF(-3, ys, 1, hh, KR_MARK)
+                            end
+                        end else begin
+                            `KD(-6, ys, 7, hh)
+                        end
+                        if (!kwall[p][c]) begin
+                            // crepa, poi le schegge che saltano via dietro
+                            `KF(-4, ys + 1, 1, 2, KR_BLACK)
+                            `KF(-3, ys + 3, 1, 1, KR_BLACK)
+                            `KF(-2, ys + 4, 1, 2, KR_BLACK)
+                            if (recent && ka >= PD_CRACK_FRAMES && ka < PD_BREAK_FRAMES)
+                                for (j = 0; j < 4; j = j + 1) begin
+                                    if (j % 2 == 1) begin
+                                        `KF(pd_chip_x(ca[4:0], j), ys + pd_chip_y(ca[4:0], j), 1, 1, KR_GRAY)
+                                    end else begin
+                                        `KF(pd_chip_x(ca[4:0], j), ys + pd_chip_y(ca[4:0], j), 2, 1, KR_DARK)
+                                    end
+                                end
+                        end
+                        if (c > 0) begin
+                            `KF(-6, y0, 7, 1, KR_MARK)                 // fuga, anche sulla faccia
+                        end
+                    end
+                end
+                u = u0;
+                v = v0;
+            end
+            default: begin
+                // senza tipo (solo con una mossa di livello 2: la racchetta gialla)
+                `KF(-3, 0, 4, $signed({2'b0, kh[p]}), KR_BODY)
+            end
+        endcase
+        kind_px = (late != KR_NONE) ? late : (rel != KR_NONE) ? rel : fill;
+    end
+endfunction
+
+// colore del ruolo r della racchetta del lato p: il corpo come la racchetta di prima (grigio con un
+// bonus armato o dell'avversario nel bullet time, giallo con la mossa di livello 2, rosso o viola di
+// OMEGA) e il suo tono in ombra; i segni nel colore del personaggio
+function [6:0] kr_col(input [3:0] r, input p);
+    reg [2:0] b;
+    begin
+        b = mmax[p] ? (bcold[p] ? 3'd1 : 3'd2) : kgray[p] ? 3'd1 :
+            (!omega_pad[p] || omega_flash) ? 3'd0 : omega_egg ? 3'd4 : 3'd3;
+        case (r)
+            KR_BODY:       kr_col = (b == 3'd0) ? WHITE : (b == 3'd1) ? GRAY : (b == 3'd2) ? ACCENT :
+                                    (b == 3'd4) ? OMEGA_PURPLE : OMEGA_RED;
+            KR_SHADE:      kr_col = (b == 3'd0) ? P_WHITE_SH : (b == 3'd1) ? P_GRAY_SH : (b == 3'd2) ? P_ACCENT_SH :
+                                    (b == 3'd4) ? P_PURPLE_SH : P_RED_SH;
+            KR_MARK:       kr_col = P_MARK + 7'd3 * kd[p];
+            KR_MARK_DARK:  kr_col = P_MARK + 7'd3 * kd[p] + 7'd1;
+            KR_MARK_LIGHT: kr_col = P_MARK + 7'd3 * kd[p] + 7'd2;
+            KR_GRAY:       kr_col = P_GRAY;
+            KR_GRAY_LIGHT: kr_col = P_GRAY_LIGHT;
+            KR_DARK:       kr_col = P_DARK;
+            KR_DARK_DEEP:  kr_col = P_DARK_DEEP;
+            KR_SIGNAL:     kr_col = ACCENT;
+            KR_SHADOW:     kr_col = P_SHADOW;
+            default:       kr_col = BLACK;
+        endcase
+    end
+endfunction
+
+// muro del GUARDIAN in campo: prima e ultima riga dei settori, e righe delle schegge del blocco (j da 0 a 7)
+function [9:0] wall_s0(input [2:0] k);
+    wall_s0 = (k == 3'd0) ? WALL_TOP : (k == 3'd1) ? WALL_B1 : (k == 3'd2) ? WALL_B2 : (k == 3'd3) ? WALL_B3 : WALL_B4;
+endfunction
+function [9:0] wall_s1(input [2:0] k);
+    wall_s1 = (k == 3'd0) ? WALL_B1 : (k == 3'd1) ? WALL_B2 : (k == 3'd2) ? WALL_B3 : (k == 3'd3) ? WALL_B4 : H;
+endfunction
+function [9:0] wall_chip_y(input [2:0] k, input [2:0] j);
+    case (k)
+        3'd0: wall_chip_y = WALL_TOP + 5 + j * (WALL_B1 - WALL_TOP - 10) / 7;
+        3'd1: wall_chip_y = WALL_B1 + 5 + j * (WALL_B2 - WALL_B1 - 10) / 7;
+        3'd2: wall_chip_y = WALL_B2 + 5 + j * (WALL_B3 - WALL_B2 - 10) / 7;
+        3'd3: wall_chip_y = WALL_B3 + 5 + j * (WALL_B4 - WALL_B3 - 10) / 7;
+        default: wall_chip_y = WALL_B4 + 5 + j * (H - WALL_B4 - 10) / 7;
+    endcase
+endfunction
+
 // ------------------------------------------------------------------- pixel
 
 // capsula di lato CAP con l'angolo in (sx, sy): 1 = bordo o icona, in negativo se `inv`
@@ -772,7 +1176,6 @@ reg signed [10:0] sdx, sdy;
 reg signed [21:0] u8, v8;
 reg signed [11:0] sy;
 reg        w_col, w_line;
-reg [2:0]  kc;
 reg signed [11:0] kx, ky, kq, kr, ka;
 reg signed [11:0] ke, kf, kv, kb, ko;  // colpo di una mossa: frame dal colpo, davanti, dal centro, dietro
 integer    k, p, r;
@@ -788,11 +1191,20 @@ reg [3:0]  rv_b;
 reg [6:0]  rv_col;
 // chiamate condivise tra le schermate (vedi il pixel)
 reg        sh_name;
-reg [2:0]  sh_ka, sh_kb;
-reg signed [11:0] sh_x0, sh_x1;
-// pixel delle due racchette in partita: codice del tipo (kind_px) e dentro il rettangolo
-reg [2:0]  kcp [0:1];
+reg        sh_p, sh_occ;
+reg [3:0]  sh_kr;
+reg signed [11:0] sh_u, sh_v;
+// pixel delle due racchette in partita: ruolo (kind_px, con l'ombra portata) e dentro il rettangolo
+reg [3:0]  kcp [0:1];
 reg        kin [0:1];
+// muro del GUARDIAN in campo: frame dalla rottura, settore, colonna del blocco, schegge
+reg [5:0]  wa;
+reg [2:0]  wk;
+reg [9:0]  ws0, ws1, wbx, wy;
+reg [4:0]  wf;
+reg [3:0]  wdx, wdy;
+reg [1:0]  wsz;
+integer    wj;
 
 always @(*) begin
     on = 1'b0;
@@ -808,7 +1220,6 @@ always @(*) begin
     u8 = 22'sd0;
     v8 = 22'sd0;
     sy = $signed({2'b0, y});
-    kc = KP_NONE;
     kx = 12'sd0;
     ky = 12'sd0;
     kq = 12'sd0;
@@ -833,8 +1244,18 @@ always @(*) begin
     rv_sel = 1'b0;
     rv_on = 1'b0;
     rv_col = BLACK;
-    kcp[0] = KP_NONE;
-    kcp[1] = KP_NONE;
+    kcp[0] = KR_NONE;
+    kcp[1] = KR_NONE;
+    wa = 6'd0;
+    wk = 3'd0;
+    ws0 = 10'd0;
+    ws1 = 10'd0;
+    wbx = 10'd0;
+    wy = 10'd0;
+    wf = 5'd0;
+    wdx = 4'd0;
+    wdy = 4'd0;
+    wsz = 2'd0;
     kin[0] = 1'b0;
     kin[1] = 1'b0;
     // barre nella banda in alto: la sinistra da BAR_X, la destra speculare
@@ -844,12 +1265,16 @@ always @(*) begin
     mv_on = move_lit({2'd0, mv_code}, mv_dx, mv_dy);
     bq = bar_px(bq_x, bq_y, bq_lvl);
 
-    // pixel delle due racchette in partita (kind_px, una chiamata per racchetta) e nome del bonus della
-    // scritta
-    sh_x0 = $signed({2'b0, x}) - kl[0];
-    sh_x1 = $signed({2'b0, x}) - kl[1];
-    sh_ka = kind_px(kd[0], sh_x0, $signed({2'b0, y}) - kt[0], kh[0], ktilt[0], 1'b0, 1'b0);
-    sh_kb = kind_px(kd[1], PW - 1 - sh_x1, $signed({2'b0, y}) - kt[1], kh[1], ktilt[1], 1'b0, 1'b0);
+    // pixel delle racchette in partita: le due stanno ciascuna nella sua metà dello schermo, quindi una
+    // sola chiamata a kind_px (quella del lato del pixel), più quella dell'ombra portata (la forma 1
+    // pixel verso il retro e 1 in basso); e nome del bonus della scritta
+    sh_p = x >= W / 2;
+    sh_u = sh_p ? kl[1] - $signed({2'b0, x}) : $signed({2'b0, x}) - kl[0] - 12'sd3;
+    sh_v = $signed({2'b0, y}) - kt[sh_p];
+    sh_kr = kind_px(sh_p, kd[sh_p], sh_u, sh_v);
+    sh_occ = sh_kr != KR_NONE && kd[sh_p] != K_NONE;
+    if (!sh_occ && kd[sh_p] != K_NONE && sh_up)
+        sh_kr = KR_SHADOW;
     sh_name = name_lit(label_bonus, ldx - (NX_P1_W + 9), y - LABEL_TOP);
 
     if (nxt) begin
@@ -889,7 +1314,7 @@ always @(*) begin
         for (k = 0; k < 2; k = k + 1) begin
             kx = $signed({2'b0, x}) - kl[k];
             kr = $signed({2'b0, y}) - kt[k];
-            kcp[k] = (k == 0) ? sh_ka : sh_kb;
+            kcp[k] = (sh_p == k) ? sh_kr : KR_NONE;
             kin[k] = kx >= 0 && kx < PW && kr >= 0 && kr < $signed({2'b0, kh[k]});
         end
         for (p = 0; p < 2; p = p + 1) begin
@@ -911,40 +1336,15 @@ always @(*) begin
                 on = 1'b1;
                 col = bcold[p] ? GRAY : ACCENT;
             end
-            // tipi di racchetta: segni sopra il rettangolo di pong_render (TWIST intera, perché è
-            // inclinata), non durante la rotazione del SUPER e il salto del TELEPORT; con una mossa
-            // di livello 2 armata la racchetta è gialla (anche senza tipo)
-            if ((kd[p] != K_NONE || mmax[p]) && !spin[p] && !(wv && wsd == p)) begin
-                kc = kcp[p];
-                if (kc == KP_BODY && (kd[p] == K_TWIST || kd[p] == K_HAMMER || mmax[p] || omega_pad[p])) begin
-                    on = 1'b1;
-                    col = mmax[p] ? (bcold[p] ? GRAY : ACCENT) : kgray[p] ? GRAY :
-                          !omega_pad[p] || omega_flash ? WHITE : omega_egg ? OMEGA_PURPLE : OMEGA_RED;
-                end
-                if (kc == KP_MARK) begin
-                    on = 1'b1;
-                    col = ACCENT;
-                end
-                if (kc == KP_DETAIL) begin
-                    on = 1'b1;
-                    col = DETAIL;
-                end
-                if (kc == KP_CUT) begin
-                    on = 1'b1;
-                    col = BLACK;
-                end
+            // racchette dei personaggi (pong_render non le disegna): tutti i pixel della forma, l'ombra
+            // portata compresa; non durante la rotazione del SUPER e il salto del TELEPORT; con una
+            // mossa di livello 2 armata la racchetta è gialla (anche senza tipo)
+            if ((kd[p] != K_NONE || mmax[p]) && !spin[p] && !(wv && wsd == p) && kcp[p] != KR_NONE) begin
+                on = 1'b1;
+                col = kr_col(kcp[p], p);
             end
-            // BLASTER: munizioni dietro la racchetta, lontano dalla palla: dal basso, una riga sopra il
-            // fondo, un rettangolino giallo di 3 righe (passo 4) per colpo nel caricatore, come
-            // next_ui.rs; spariscono a ogni colpo e tornano tutti con la ricarica. I colpi in volo
-            // sono due tratti gialli paralleli
+            // BLASTER: i colpi in volo, due tratti gialli paralleli (la cartuccera è nella racchetta)
             if (kd[p] == K_BLASTER) begin
-                kx = $signed({2'b0, x}) - ((p == 0) ? kl[p] - 4 : kl[p] + PW + 2);
-                ky = kt[p] + $signed({2'b0, kh[p]}) - 2 - sy;          // riga dal basso, da quella sopra il fondo
-                if (kx >= 0 && kx < 2 && ky >= 0 && ky < $signed({7'd0, kammo[p], 2'b00}) && ky[1:0] != 2'd3) begin
-                    on = 1'b1;
-                    col = ACCENT;
-                end
                 for (k = 0; k < 4; k = k + 1)
                     if (kshot[4*p + k] && span(x, ksx[4*p + k], 3, 7) && (y == ksy[4*p + k] - 2 || y == ksy[4*p + k] + 2)) begin
                         on = 1'b1;
@@ -953,14 +1353,14 @@ always @(*) begin
             end
             // RUSH: tre immagini della racchetta tra casa e dove si trova mentre scatta in avanti, più
             // scure verso casa e che sfumano (kfade da 3 a 1); non sopra la racchetta
-            if (kd[p] == K_RUSH && kfade[p] != 2'd0 && !spin[p] && !(wv && wsd == p) &&
+            if (kd[p] == K_RUSH && kfade[p] != 2'd0 && !spin[p] && !(wv && wsd == p) && (kcp[p] == KR_NONE || kcp[p] == KR_SHADOW) &&
                 sy - kt[p] >= 0 && sy - kt[p] < $signed({2'b0, kh[p]}) &&
                 !($signed({2'b0, x}) - kl[p] >= 0 && $signed({2'b0, x}) - kl[p] < PW))
                 for (k = 0; k < 3; k = k + 1)
                     if ($signed({2'b0, x}) - kg[3*p + k] >= 0 && $signed({2'b0, x}) - kg[3*p + k] < PW &&
                         k + kfade[p] >= 3) begin
                         on = 1'b1;
-                        col = (k + kfade[p] == 5) ? GHOST3 : (k + kfade[p] == 4) ? GHOST2 : GHOST1;
+                        col = (k + kfade[p] == 5) ? P_RGHOST3 : (k + kfade[p] == 4) ? P_RGHOST2 : P_RGHOST1;
                     end
             // colpo di una mossa (draw_kick di next_ui.rs; il rinculo è già nella x di pong_top):
             // davanti alla faccia l'onda d'urto, due righe per STRAIGHT SHOT o un gallone a 45 gradi
@@ -1004,12 +1404,35 @@ always @(*) begin
                     col = (ckm[p] && ke[1]) ? WHITE : ACCENT;
                 end
             end
-            // GUARDIAN: muro tratteggiato a settori sotto la banda delle riserve, solo i settori in
-            // piedi; quello che rimanda la palla lampeggia, poi sparisce
-            if (kd[p] == K_GUARDIAN && x - ((p == 0) ? BARRIER_X - 1 : W - BARRIER_X - 1) < 2 && wall_row &&
-                (kwall[p][wall_sec] || (kflash[p] && khit[p][wall_sec]))) begin
-                on = 1'b1;
-                col = (kflash[p] && khit[p][wall_sec]) ? (tick[3] ? ACCENT : DIM) : ACCENT;
+            // GUARDIAN: il muro in campo non si vede (è nei corsi della racchetta); dove la palla lo
+            // colpisce, sulla sua linea, il blocco del settore lampeggia (PD_BLINK_FRAMES), poi si
+            // sbriciola in 8 schegge che vanno verso il fondo e cadono
+            if (kd[p] == K_GUARDIAN && kba[p] != 6'd0) begin
+                wa = PD_BARRIER_FRAMES - kba[p];
+                wk = khit[p][0] ? 3'd0 : khit[p][1] ? 3'd1 : khit[p][2] ? 3'd2 : khit[p][3] ? 3'd3 : 3'd4;
+                ws0 = wall_s0(wk);
+                ws1 = wall_s1(wk);
+                wbx = (p == 0) ? BARRIER_X - 2 : W - BARRIER_X - 2;
+                if (wa < PD_BLINK_FRAMES) begin
+                    if (x - wbx < 4 && y >= ws0 + 3 && y < ws1 - 3) begin
+                        on = 1'b1;
+                        col = (y == ws0 + 11 || y == ws0 + 20 || y == ws0 + 29 || y == ws0 + 38) ? BLACK :
+                              wa[2] ? P_WALL : P_WALL_LIGHT;
+                    end
+                end else begin
+                    wf = wa - PD_BLINK_FRAMES;
+                    wdy = pd_crumble_dy(wf);
+                    for (wj = 0; wj < 8; wj = wj + 1) begin
+                        wdx = pd_crumble_dx(wf, wj % 3);
+                        wsz = (wj % 2 == 1) ? 2'd1 : 2'd2;
+                        wy = wall_chip_y(wk, wj) + wdy;
+                        if (x - ((p == 0) ? BARRIER_X - 1 - wdx : W - BARRIER_X + 1 + wdx - wsz) < wsz &&
+                            y - wy < wsz) begin
+                            on = 1'b1;
+                            col = (pd_crumble_tone(wf) == 2'd0) ? P_WALL : (pd_crumble_tone(wf) == 2'd1) ? P_WALL1 : P_WALL2;
+                        end
+                    end
+                end
             end
             // STEER: chi guida ha la racchetta ferma, grigia, con il volante giallo accanto
             if (steer_on && steer_side == p) begin
@@ -1131,7 +1554,7 @@ always @(*) begin
         // le racchette stanno sopra alla scritta: sui pixel della racchetta (il rettangolo di
         // pong_render e quelli del suo tipo, anche la HAMMER più spessa) la scritta non si disegna e
         // restano pong_render e i segni qui sopra; accanto la scritta resta intera
-        pad_box = kcp[0] != KP_NONE || kin[0] || kcp[1] != KP_NONE || kin[1];
+        pad_box = kcp[0] != KR_NONE || kin[0] || kcp[1] != KR_NONE || kin[1];
         if (pad_box) ;
         else if (label_on && label_kind == LK_ARMED) begin
             // solo i trattini: l'ultimo disegnato bianco, poi grigi che si accendono mentre la palla arriva
@@ -1222,6 +1645,24 @@ always @(*) begin
             on = 1'b1;
             col = GRAY;
         end
+    end
+end
+
+// ombra portata delle racchette: la forma nella riga sopra, 1 pixel verso il retro (x + 1 per la
+// sinistra, x - 1 per la destra). Un bit per pixel della forma (sh_occ) in due righe alternate;
+// sh_up si legge durante il pixel x (hc resta fermo 3 cicli) e vale per lo stesso pixel (con x + 2
+// e x l'ombra veniva 2 pixel a sinistra della racchetta sinistra e sotto la destra)
+reg        sh_lb0 [0:511];
+reg        sh_lb1 [0:511];
+reg        sh_up = 1'b0;
+wire [9:0] sh_rx = (x >= W / 2) ? x - 10'd1 : x + 10'd1;
+always @(posedge clk) begin
+    if (y[0]) begin
+        sh_lb1[x[8:0]] <= sh_occ;
+        sh_up <= sh_lb0[sh_rx[8:0]] && y != 10'd0;
+    end else begin
+        sh_lb0[x[8:0]] <= sh_occ;
+        sh_up <= sh_lb1[sh_rx[8:0]] && y != 10'd0;
     end
 end
 

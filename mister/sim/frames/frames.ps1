@@ -26,7 +26,7 @@ try {
         -Wno-fatal -Wno-lint -Wno-style -Wno-SELRANGE '-GSID_ROM=\"../../rtl/gen/sid_music.hex\"' `
         '-GVOICE_ROM=\"../../rtl/gen/sid_voices.hex\"' `
         '-GENDING_FW_ROM=\"../../rtl/gen/ending_fw.hex\"' `
-        '-GUI_FONT_ROM=\"../../rtl/gen/ui_font.hex\"' '-GUI_GFX_ROM=\"../../rtl/gen/ui_gfx.hex\"' `
+        '-GUI_FONT_ROM=\"../../rtl/gen/ui_font.hex\"' '-GUI_GFX_ROM=\"../../rtl/gen/ui_gfx.hex\"' '-GUI_GFX_ROM2=\"../../rtl/gen/ui_gfx2.hex\"' `
         '-GFW_ROM0=\"../../rtl/gen/pong_fw_b0.hex\"' '-GFW_ROM1=\"../../rtl/gen/pong_fw_b1.hex\"' `
         '-GFW_ROM2=\"../../rtl/gen/pong_fw_b2.hex\"' '-GFW_ROM3=\"../../rtl/gen/pong_fw_b3.hex\"' `
         '-I../../rtl/gen' --top-module pong_top --Mdir obj -o frames.exe public.vlt $rtl frames.cpp 2>&1 |

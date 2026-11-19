@@ -612,7 +612,10 @@ fn game_over(r: &Regs, g: &Game, st: &GameState, age: i32, d: &mut Dl) {
     if upright {
         if up_visible {
             let b = [up_box[0] + ox, up_box[1] + ox, up_box[2] + oy, up_box[3] + oy];
-            d.rect(b[0], b[2], b[1] - b[0], b[3] - b[2], BLACK);
+            // (YOU WIN senza riquadro: le lettere direttamente sopra la partita, come sul PC)
+            if ov != HOP {
+                d.rect(b[0], b[2], b[1] - b[0], b[3] - b[2], BLACK);
+            }
             // chi ha vinto (colori della palla di YOU WIN lettera per lettera)
             if win_up && ov == HOP {
                 hop_letters(d, g, age, win_base, ws, &wl1, b, ox, oy, win_c_hop);
@@ -677,8 +680,10 @@ fn game_over(r: &Regs, g: &Game, st: &GameState, age: i32, d: &mut Dl) {
                 [PFR_XL - 5, PFR_XL + PF_H + 5, PFR_YL - 6, PFR_YL + PF_W + 6]
             });
         }
-        for b in all.iter().flatten() {
-            fill(d, *b, BLACK);
+        if ov != HOP {
+            for b in all.iter().flatten() {
+                fill(d, *b, BLACK);
+            }
         }
         // scritte visibili solo dentro i riquadri
         let in_boxes = |d: &mut Dl, o: Obj| {

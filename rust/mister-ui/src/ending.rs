@@ -1,21 +1,23 @@
-//! Finale della scalata (come il vecchio ending_render.v più la sfilata di next_render.v): le scritte
-//! sono righe di bitmap scelte riga per riga dalla mappa (tabella delle righe), le cifre del
-//! punteggio celle della striscia delle cifre, i timbri DEFEATED (inclinati, già ruotati nella ROM,
-//! sfalsati in altezza) e le racchette della sfilata oggetti. I tempi (parti, conteggi, scorrimento
+//! Finale della scalata (come il vecchio ending_render.v): le scritte sono righe di bitmap scelte riga
+//! per riga dalla mappa (tabella delle righe), le cifre del punteggio celle della striscia delle cifre;
+//! la sfilata ha i ritratti medi dei personaggi (normali e sconfitti) e i timbri DEFEATED (inclinati,
+//! già ruotati nella ROM). I tempi (parti, conteggi, scorrimento
 //! dei titoli) e i fuochi d'artificio
 //! restano in hardware (ending_render): qui arrivano dai registri.
 
 use crate::assets::ending as e;
-use crate::assets::game::{BLASTER_SHOTS, KIND_H, KIND_NAMES, PW};
+use crate::assets::game::KIND_NAMES;
+use crate::assets::portraits;
+use crate::cast::{OMEGA, centered, portrait};
 use crate::dl::{CLASS_A, Dl, Kind, Obj, text_w};
-use crate::paddle::{Colors, Pad};
-use crate::pal::{ACCENT, NDIM, RED, WHITE, YELLOW};
+use crate::pal::{GRAY, OMEGA_Q, RED, WHITE, YELLOW};
 use crate::regs::{Omega, Regs, field};
 
 const P_PARADE: u32 = 1;
 const P_CREDITS: u32 = 4;
 const P_THE_END: u32 = 5;
-const COLS: [i32; 7] = [e::COL0, e::COL1, e::COL2, e::COL3, e::COL4, e::COL5, e::COL6];
+/// tipi della scala nell'ordine dei livelli (PaddleKind)
+const LADDER: [usize; 7] = [0, 3, 2, 1, 4, 5, 6];
 
 /// Parola della mappa della riga y nella parte in corso (0 = riga vuota).
 fn entry(part: u32, y: i32, scroll: i32) -> u32 {
@@ -51,9 +53,9 @@ fn dec7(v: u32) -> [u8; 7] {
 pub fn draw(r: &Regs, om: &Omega, d: &mut Dl) {
     let w = r.w[41];
     let part = field(w, 11, 3);
-    let beats = field(w, 14, 4) as i32;
-    let stage = field(w, 18, 2);
-    let fl = field(w, 20, 1) != 0;
+    let beats = field(w, 14, 5) as i32;
+    let stage = field(w, 19, 2);
+    let fl = field(w, 21, 1) != 0;
     let disp = [
         r.w[42] & 0xFF_FFFF,
         r.w[43] & 0xFF_FFFF,
@@ -146,100 +148,38 @@ pub fn draw(r: &Regs, om: &Omega, d: &mut Dl) {
     if part != P_PARADE {
         return;
     }
-    // ---- sfilata: le racchette (una per colonna, rivolte a destra) e i nomi sotto, su due righe
-    let parade_n = (beats + 1) >> 1;
-    let parade_ko = beats >> 1;
-    let mid = |k: usize| (COLS[k] + COLS[k + 1]) / 2;
-    for k in 0..7usize {
-        if k as i32 >= parade_n {
-            continue;
-        }
-        let x0 = if k == 0 { 0 } else { mid(k - 1) };
-        let x1 = if k == 6 { 320 } else { mid(k) };
-        let ko = (k as i32) < parade_ko;
-        let (lit, acc) = if ko { (NDIM, NDIM) } else { (WHITE, ACCENT) };
-        let h = KIND_H[k];
-        let top = e::PARADE_Y - (h >> 1);
-        let pad = Pad {
-            kind: k as u32,
-            xa: COLS[k] - PW / 2,
-            xb: COLS[k] - PW / 2 + PW - 1,
-            right: true,
-            y: top,
-            h,
-            tilt: if k == 3 { 3 } else { 0 },
-            preview: true,
-            ghosts: true,
-            half: false,
-        };
-        let colors = Colors {
-            body: lit,
-            mark: acc,
-            detail: acc,
-            ghost: [acc, acc, acc],
-            pattern: true,
-        };
-        let old = d.clip;
-        d.clip = [x0, x1, 0, 240];
-        pad.draw(d, &colors);
-        if k == 4 {
-            // BLASTER: il caricatore pieno dietro la racchetta, dal basso
-            for j in 0..BLASTER_SHOTS {
-                d.rect(COLS[k] - PW / 2 - 4, top + h - 4 - 4 * j, 2, 3, acc);
-            }
-        }
-        d.clip = old;
-    }
-    for k in 0..7usize {
-        if k as i32 >= parade_n {
-            continue;
-        }
-        let odd = k & 1 == 1;
-        let name = KIND_NAMES[k];
-        let ny = e::PARADE_NAME_Y - 4 + if odd { e::PARADE_NAME_DY } else { 0 };
-        let row_y = e::PARADE_NAME_Y - 4 + e::PARADE_NAME_DY;
-        // colonne dei nomi della stessa riga: i confini sono a metà fra due nomi della riga
-        let (x0, x1) = if odd {
-            match k {
-                1 => (0, (COLS[1] + COLS[3]) / 2),
-                3 => ((COLS[1] + COLS[3]) / 2, (COLS[3] + COLS[5]) / 2),
-                _ => ((COLS[3] + COLS[5]) / 2, 320),
-            }
-        } else {
-            match k {
-                0 => (0, (COLS[0] + COLS[2]) / 2),
-                2 => ((COLS[0] + COLS[2]) / 2, (COLS[2] + COLS[4]) / 2),
-                4 => ((COLS[2] + COLS[4]) / 2, (COLS[4] + COLS[6]) / 2),
-                _ => ((COLS[4] + COLS[6]) / 2, 320),
-            }
-        };
-        let (y0, y1) = if odd { (row_y, 240) } else { (0, row_y) };
-        let base = d.tiles(name, WHITE);
-        let o = d
-            .text_obj(COLS[k] - text_w(name) / 2, ny, base, name.len(), 0)
-            .clip(x0, x1, y0, y1);
-        d.push(&o);
-    }
-    // timbri DEFEATED sulle racchette battute: pari più su, dispari più giù (i vicini non si toccano)
-    let mut lt = [0i32; 64];
-    for (v, l) in lt.iter_mut().enumerate().take(e::STAMP_H as usize) {
+    // ---- sfilata (draw_parade di ending_ui.rs): otto posti nell'ordine della scala, due file da
+    // quattro ritratti medi; ognuno entra normale e al timbro passa all'immagine sconfitta, con il nome
+    // grigio. L'ultimo è OMEGA: svelato se è stato battuto, se no la sua sagoma con il punto di
+    // domanda, senza timbro
+    let entered = (beats + 1) >> 1;
+    let stamped = beats >> 1;
+    let mut lt = [0i32; e::STAMP_H as usize];
+    for (v, l) in lt.iter_mut().enumerate() {
         *l = 10 * (e::STAMP_ROW0 + v as i32);
     }
-    let lt = d.lines(&lt[..e::STAMP_H as usize]);
-    for (k, col) in COLS.iter().enumerate() {
-        if (k as i32) < beats >> 1 {
-            let dy = if k % 2 == 0 {
-                -e::STAMP_STAGGER
-            } else {
-                e::STAMP_STAGGER
-            };
-            let mut o = Obj::new(
-                Kind::Img,
-                col - 1 - e::STAMP_W / 2,
-                e::STAMP_Y0 + dy,
-                e::STAMP_W,
-                e::STAMP_H,
-            );
+    let lt = d.lines(&lt);
+    for i in 0..entered.min(8) {
+        let k = if i < 7 { LADDER[i as usize] } else { OMEGA };
+        let x = e::PARADE_X0 + e::PARADE_DX * (i % 4);
+        let (y, ny) = if i < 4 {
+            (e::PARADE_ROW0, e::PARADE_NAME0)
+        } else {
+            (e::PARADE_ROW1, e::PARADE_NAME1)
+        };
+        let cx = x + e::PARADE_W / 2;
+        if k == OMEGA && !om.won {
+            portrait(d, &portraits::MID_LOCKED, OMEGA, x, y);
+            centered(d, b"?", cx, ny, OMEGA_Q);
+            continue;
+        }
+        let ko = i < stamped;
+        portrait(d, &portraits::MID[k][ko as usize], k, x, y);
+        let name: &[u8] = if k == OMEGA { b"OMEGA" } else { KIND_NAMES[k] };
+        centered(d, name, cx, ny, if ko { GRAY } else { WHITE });
+        if ko {
+            let cy = y + e::PARADE_H - e::PARADE_STAMP_UP;
+            let mut o = Obj::new(Kind::Img, cx - e::STAMP_W / 2, cy - e::STAMP_H / 2, e::STAMP_W, e::STAMP_H);
             o.base = e::TEXT_BASE;
             o.lt = Some(lt);
             o.ltrow = true;

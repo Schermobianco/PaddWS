@@ -1,12 +1,15 @@
-//! Schermate di scelta di NEXT (come il vecchio next_render.v): prima la racchetta, poi i bonus.
-//! Ogni colonna sta nella sua metà dello schermo (il renderer sceglieva il lato dal pixel): gli
-//! oggetti di un lato sono ritagliati sulla sua metà.
+//! Schermate di scelta di NEXT: prima la racchetta (con i ritratti dei personaggi, come
+//! `PaddlePick` di paddle_ui.rs), poi i bonus (come il vecchio next_render.v: ogni colonna sta nella
+//! sua metà dello schermo, gli oggetti di un lato sono ritagliati sulla sua metà).
 
-use crate::Img;
-use crate::assets::game::{BONUS_NAMES, CAP, KIND_H, KIND_NAMES, KIND_TAGS, PW};
-use crate::assets::{IMG_CAP_FRAME, IMG_ICON, IMG_PICK_NET, pads};
+use crate::assets::game::{BONUS_NAMES, CAP, KIND_TAGS};
+use crate::assets::{IMG_CAP_FRAME, IMG_ICON, IMG_NAME, IMG_PICK_NET, IMG_SCORE, portraits};
+use crate::cast::{
+    Cast, HALF_X, OMEGA, PADDLE_X, PORTRAIT_W, PORTRAIT_X, TOP, centered, frame, line, name_art, name_x, net,
+    paddle, portrait,
+};
 use crate::dl::{CLASS_A, Dl, code, text_w};
-use crate::pal::{ACCENT, BLACK, GRAY, PAD, PAD_OFF, WHITE};
+use crate::pal::{ACCENT, BLACK, CELL_FRAME, GRAY, OMEGA_Q, TL, WHITE};
 use crate::regs::{Regs, field};
 
 const W: i32 = 320;
@@ -50,7 +53,7 @@ fn text_in(d: &mut Dl, x: i32, y: i32, s: &[u8], c: u8, half: (i32, i32)) {
     d.push(&o);
 }
 
-/// Titolo, secondi rimasti e mezzeria, comuni alle due schermate.
+/// Titolo, secondi rimasti e mezzeria della scelta dei bonus.
 #[inline(never)]
 fn common(d: &mut Dl, p: &Pick, title: &[u8]) {
     d.text((W - text_w(title)) / 2, 8, title, ACCENT, 0);
@@ -65,73 +68,10 @@ pub fn draw(r: &Regs, d: &mut Dl) {
     d.class = CLASS_A;
     d.rect(0, 0, W, 240, BLACK);
     if p.paddle {
-        common(d, &p, b"PICK YOUR PADDLE");
-        for side in 0..2usize {
-            let half = if side == 0 { (0, W / 2) } else { (W / 2, W) };
-            let cxl = if side == 0 { W / 4 } else { 3 * W / 4 };
-            let kcur = p.kcur[side];
-            let chosen = p.chosen >> side & 1 != 0;
-            let head: &[u8] = if side == 0 {
-                b"P1"
-            } else if p.cpu {
-                b"CPU"
-            } else {
-                b"P2"
-            };
-            text_in(d, cxl - 50, 58, head, WHITE, half);
-            if chosen {
-                text_in(d, cxl + 26, 58, b"OK", ACCENT, half);
-            }
-            // anteprima a grandezza reale, verso la mezzeria (immagine rivolta a destra, specchiata a destra)
-            let h = KIND_H[kcur as usize];
-            let kcx = cxl - 60;
-            pad_img(
-                d,
-                &pads::PREVIEW[kcur as usize],
-                kcx - PW / 2,
-                kcx - PW / 2 + PW - 1,
-                side == 0,
-                144 - (h >> 1),
-                PAD,
-                half,
-                (0, 240),
-            );
-            // sette righe ogni 20 pixel: cursore, miniatura e nome
-            for row in 0..7u32 {
-                let y0 = 74 + 20 * row as i32;
-                let band = (y0, y0 + 20);
-                let sel = kcur == row;
-                if sel && !chosen && !p.ready {
-                    let base = d.tiles(b">", ACCENT);
-                    let o = d
-                        .text_obj(cxl - 42, y0 + 5, base, 1, 0)
-                        .clip(half.0, half.1, band.0, band.1);
-                    d.push(&o);
-                }
-                let mh = KIND_H[row as usize];
-                pad_img(
-                    d,
-                    &pads::MINI[row as usize],
-                    cxl - 25,
-                    cxl - 24,
-                    side == 0,
-                    y0 + 9 - (mh >> 2),
-                    if sel { PAD } else { PAD_OFF },
-                    half,
-                    band,
-                );
-                let name = KIND_NAMES[row as usize];
-                let c = if sel { if chosen { ACCENT } else { WHITE } } else { GRAY };
-                let base = d.tiles(name, c);
-                let o = d
-                    .text_obj(cxl - 14, y0 + 5, base, name.len(), 0)
-                    .clip(half.0, half.1, band.0, band.1);
-                d.push(&o);
-            }
-            let tag = KIND_TAGS[kcur as usize];
-            text_in(d, cxl - text_w(tag) / 2, 218, tag, GRAY, half);
-        }
-    } else {
+        paddles(r, d, &p);
+        return;
+    }
+    {
         common(d, &p, b"PICK 3 BONUSES");
         for side in 0..2usize {
             let half = if side == 0 { (0, W / 2) } else { (W / 2, W) };
@@ -180,25 +120,99 @@ pub fn draw(r: &Regs, d: &mut Dl) {
     }
 }
 
-/// Racchetta della scelta da un'immagine (t0, r0: la sua prima colonna e riga nelle coordinate del
-/// tipo): verso destra x = xa + t, verso sinistra x = xb - t; y = y0 + r.
-#[allow(clippy::too_many_arguments)]
+// Scelta della racchetta (PaddlePick::draw di paddle_ui.rs), sulle righe di caratteri del C64: riga
+// 0 il titolo, 1-3 il tempo, 4 P1/P2 e OK, 5-17 i ritratti grandi (colonne 0-10 e 29-39, quello di
+// destra girato verso il centro), 5-12 la griglia 4x2 di caselle 4x4 (colonne 12-27, l'ultima è
+// OMEGA, che non si sceglie), 13-21 il campo con le due racchette a grandezza reale, 18-21 i nomi
+// disegnati, 22 le frasi, 24 i comandi o READY!.
+const PORTRAIT_Y: i32 = TOP + 5 * 8;
+const GRID_X: i32 = 12 * 8;
+const GRID_Y: i32 = PORTRAIT_Y;
+const CELL: i32 = 32;
+const TIMER_Y: i32 = TOP + 8 + 12;
+const COURT_Y: i32 = TOP + 13 * 8;
+const COURT_H: i32 = 9 * 8;
+const NAME_Y: i32 = TOP + 18 * 8 + 16;
+
+/// Angolo della casella `i` della griglia (prima riga ARCADE-TWIST, seconda BLASTER-OMEGA).
+fn cell_xy(i: u32) -> (i32, i32) {
+    (GRID_X + (i % 4) as i32 * CELL, GRID_Y + (i / 4) as i32 * CELL)
+}
+
 #[inline(never)]
-fn pad_img(
-    d: &mut Dl,
-    p: &(Img, i32, i32),
-    xa: i32,
-    xb: i32,
-    right: bool,
-    y0: i32,
-    pal: u8,
-    half: (i32, i32),
-    band: (i32, i32),
-) {
-    let (img, t0, r0) = p;
-    let x = if right { xa + t0 } else { xb - t0 - img.w as i32 + 1 };
-    let mut o = d.img_obj(x, y0 + r0, img, pal);
-    o.fx = !right;
-    let o = o.clip(half.0, half.1, band.0, band.1);
-    d.push(&o);
+fn paddles(r: &Regs, d: &mut Dl, p: &Pick) {
+    let mut cast = Cast::new();
+    let f = r.frame;
+    centered(d, b"PICK YOUR PADDLE", 160, line(0), ACCENT);
+    // i secondi con le cifre del punteggio, grigi a tratti negli ultimi tre
+    let secs = p.secs.min(10);
+    let dim = secs <= 3 && (f / 15) % 2 == 1;
+    let c = if dim { GRAY } else { WHITE };
+    d.img(160 - 22, TIMER_Y - 11, &IMG_SCORE[(secs / 10) as usize], c);
+    d.img(160, TIMER_Y - 11, &IMG_SCORE[(secs % 10) as usize], c);
+    // griglia: le caselle dei sette tipi e quella di OMEGA in sagoma con il punto di domanda
+    for i in 0..8u32 {
+        let (x, y) = cell_xy(i);
+        portrait(d, &portraits::SMALL[i as usize], i as usize, x, y);
+        frame(d, x, y, CELL, CELL, 1, CELL_FRAME);
+        if i as usize == OMEGA {
+            centered(d, b"?", x + CELL / 2, y + CELL - 6, OMEGA_Q);
+        }
+    }
+    net(d, COURT_Y, COURT_Y + COURT_H, WHITE);
+    for side in 0..2usize {
+        let kind = p.kcur[side];
+        let chosen = p.chosen >> side & 1 != 0;
+        let fixed = p.lock >> side & 1 != 0;
+        cast.big(d, kind as usize, PORTRAIT_X[side], PORTRAIT_Y, side == 1);
+        let mid = PORTRAIT_X[side] + PORTRAIT_W / 2;
+        let head: &[u8] = match side {
+            0 => b"P1",
+            _ if p.cpu && fixed => b"CPU",
+            _ => b"P2",
+        };
+        centered(d, head, mid, line(4), WHITE);
+        if chosen {
+            centered(d, b"OK", mid + if side == 0 { 28 } else { -28 }, line(4), ACCENT);
+        }
+        let img = &IMG_NAME[kind as usize];
+        name_art(d, kind, name_x(mid, img.w as i32), NAME_Y, TL);
+        paddle(d, kind, PADDLE_X[side], COURT_Y + COURT_H / 2, side == 0);
+        centered(d, KIND_TAGS[kind as usize], HALF_X[side], line(22), WHITE);
+    }
+    // cursori sopra la griglia, gialli con la sigla del giocatore; lampeggiano finché si sceglie
+    let on = (f / 15) % 4 != 3;
+    for side in 0..2usize {
+        let chosen = p.chosen >> side & 1 != 0;
+        let fixed = p.lock >> side & 1 != 0;
+        if !chosen && !fixed && !p.ready && !on {
+            continue;
+        }
+        let (x, y) = cell_xy(p.kcur[side]);
+        frame(d, x, y, CELL, CELL, 2, ACCENT);
+        let tag: &[u8] = match side {
+            0 => b"1P",
+            _ if p.cpu && fixed => b"CPU",
+            _ => b"2P",
+        };
+        let tw = tag.len() as i32 * 8 + 2;
+        let tx = if side == 0 { x + 2 } else { x + CELL - 2 - tw };
+        // sulla stessa casella la sigla di destra va in alto, 1P resta in basso
+        let ty = if side == 1 && p.kcur[0] == p.kcur[1] { y + 1 } else { y + CELL - 10 };
+        d.rect(tx, ty, tw, 9, BLACK);
+        d.text(tx + 1, ty + 1, tag, ACCENT, 0);
+    }
+    if p.ready {
+        if (f / 10) % 2 == 0 {
+            centered(d, b"READY!", 160, line(24), ACCENT);
+        }
+    } else {
+        // i comandi sotto la metà di chi sceglie (con il paddle o lo spinner si gira)
+        let hint: &[u8] = if field(r.w[7], 27, 2) == 0 { b"STICK + A" } else { b"TURN + A" };
+        for (side, x) in HALF_X.iter().enumerate() {
+            if p.lock >> side & 1 == 0 {
+                centered(d, hint, *x, line(24), GRAY);
+            }
+        }
+    }
 }

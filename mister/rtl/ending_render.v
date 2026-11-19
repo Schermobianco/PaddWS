@@ -1,14 +1,15 @@
 // Finale della CHALLENGE, quando si batte l'ultimo avversario (come rust/game/src/ending_ui.rs, su uno
 // schermo 320x240), al posto della schermata CHAMPION e prima delle iniziali. Sei parti in sequenza:
 // 0 CONGRATULATIONS! (lampeggia) e, dopo un secondo, YOU WIN! (la voce la fa partire pong_top);
-// 1 la sfilata dei sette avversari, uno al secondo, con il KO rosso mezzo secondo dopo;
+// 1 la sfilata degli avversari (i sette della scala, poi OMEGA), uno al secondo, con il timbro DEFEATED
+// mezzo secondo dopo (OMEGA non battuto arriva in sagoma, senza timbro);
 // 2 il punteggio: SCORE che sale in 3 s, CHAMPION BONUS in 1 s, poi TOTAL;
 // 3 YOU ARE THE PADD WS CHAMPION con i fuochi d'artificio;
 // 4 i titoli di coda, che salgono dal basso; 5 THE END (lampeggia).
 //
 // Qui restano i tempi (parti, battute della sfilata, conteggi, scorrimento dei titoli: pong_top ne usa
-// gli impulsi per voce, suoni e cambio di modo) e i fuochi d'artificio; scritte, cifre, KO e racchette
-// della sfilata le disegna lo schermo a oggetti (rust/mister-ui, ending.rs) dallo stato `st_*`.
+// gli impulsi per voce, suoni e cambio di modo) e i fuochi d'artificio; scritte, cifre, ritratti e
+// timbri della sfilata le disegna lo schermo a oggetti (rust/mister-ui, ending.rs) dallo stato `st_*`.
 //
 // Fuochi d'artificio (tools/gen_ending_assets.py, ending_fw.hex): i punti di ending_ui.rs per ogni fuoco
 // e frame a 15 Hz, già sulla griglia di celle 2x2 pixel. Un disegnatore li scrive in un framebuffer
@@ -29,6 +30,7 @@ module ending_render #(
     input  wire [8:0]  vc,
     input  wire [23:0] score,          // punti prima del premio del campione
     input  wire [23:0] bonus,          // premio del campione (vittoria e partita perfetta dell'ultimo livello)
+    input  wire        omega,          // OMEGA battuto: anche lui ha il timbro nella sfilata
     output reg  [23:0] rgb,            // fuochi d'artificio (o nero)
     output reg         say,            // impulso: la voce "YOU WIN!"
     output reg  [1:0]  beat,           // impulso della sfilata: bit 0 entra un avversario, bit 1 un timbro
@@ -57,7 +59,7 @@ reg  [1:0]  stage = 2'd0;            // scritte a comparsa visibili (gruppo <= s
 reg  [5:0]  fl_cnt = 6'd0;           // lampeggio: frame nella fase, fase (0 giallo, 1 bianco)
 reg         fl = 1'b0;
 reg  [4:0]  beat_sub = 5'd0;         // sfilata: frame nella battuta e battute (avversari + timbri)
-reg  [3:0]  beats = 4'd0;
+reg  [4:0]  beats = 5'd0;
 reg  [23:0] disp_s = 24'd0, disp_b = 24'd0;    // SCORE e CHAMPION BONUS che salgono
 reg  [9:0]  scroll = 10'd0;          // titoli: pixel di scorrimento, 7/12 di pixel per frame
 reg  [3:0]  scroll_acc = 4'd0;
@@ -96,7 +98,7 @@ always @(posedge clk) begin
         stage <= 2'd0;
         fl_cnt <= 6'd0;
         fl <= 1'b0;
-        beats <= 4'd0;
+        beats <= 5'd0;
     end else if (active && frame_start) begin
         if (last_f && part == P_THE_END) begin
             done <= 1'b1;                              // resta sull'ultimo frame finché pong_top cambia modo
@@ -117,16 +119,17 @@ always @(posedge clk) begin
         stage <= (part_n == P_CONGRATS) ? {1'b0, pf_n >= END_YOU_WIN_AT} :
                  (part_n == P_SCORE) ? {1'b0, pf_n >= END_SCORE_COUNT} + {1'b0, pf_n >= END_TOTAL_AT} : 2'd0;
         if (part_n == P_CONGRATS && pf_n == END_YOU_WIN_AT) say <= 1'b1;
-        // sfilata: una battuta ogni mezzo secondo, dispari = entra un avversario, pari = il suo timbro
+        // sfilata: una battuta ogni mezzo secondo, dispari = entra un avversario, pari = il suo timbro;
+        // otto avversari, l'ultimo (OMEGA) senza timbro se non è stato battuto
         if (part_n == P_PARADE) begin
             if (pf_n == 11'd0) begin
                 beat_sub <= 5'd0;
-                beats <= 4'd1;
+                beats <= 5'd1;
                 beat <= 2'b01;
             end else if (beat_sub == END_BEAT - 1) begin
                 beat_sub <= 5'd0;
-                if (beats != 4'd14) begin
-                    beats <= beats + 4'd1;
+                if (beats != (omega ? 5'd16 : 5'd15)) begin
+                    beats <= beats + 5'd1;
                     beat <= beats[0] ? 2'b10 : 2'b01;
                 end
             end else
@@ -173,7 +176,7 @@ always @(posedge clk) begin
     end
 end
 
-assign st_seq = {11'd0, fl, stage, beats, part, pf};
+assign st_seq = {10'd0, fl, stage, beats, part, pf};
 assign st_score = disp_s;
 assign st_bonus = disp_b;
 assign st_scroll = scroll;

@@ -21,6 +21,7 @@ localparam signed [31:0] P_BULLET_RAMP_TICKS = 60;
 localparam signed [31:0] P_SUPER_METER_MAX = 64;
 localparam signed [31:0] P_SUPER_COST = 32;
 localparam signed [31:0] P_BLASTER_SHOTS = 4;
+localparam signed [31:0] P_HAMMER_MUL = 81920;
 localparam signed [31:0] P_GUARDIAN_BARRIER_X = 524288;
 localparam signed [31:0] P_GUARDIAN_TOP = 14155776;
 localparam signed [31:0] P_GUARDIAN_BOUND1 = 11337728;

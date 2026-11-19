@@ -42,7 +42,8 @@
 
 module ui_render #(
     parameter FONT_ROM = "rtl/gen/ui_font.hex",
-    parameter GFX_ROM = "rtl/gen/ui_gfx.hex"
+    parameter GFX_ROM = "rtl/gen/ui_gfx.hex",
+    parameter GFX_ROM2 = "rtl/gen/ui_gfx2.hex"
 ) (
     input  wire        clk,            // 20 MHz: video
     input  wire        clk_cpu,        // 60 MHz dalla stessa PLL: firmware e motore
@@ -71,7 +72,10 @@ reg [15:0] tile_ram [0:2047];      // {banco, indice}
 reg [15:0] lt_ram   [0:1023];      // {banco, voce}
 reg [23:0] pal_ram  [0:255];
 reg [7:0]  font_rom [0:2047];      // {codice, riga}
-reg [31:0] gfx_rom  [0:UI_GFX_WORDS-1];
+// ROM grafica in due memorie (tools/gen_mister_ui.py): con una sola oltre l'indirizzo a 15 bit
+// Quartus metteva in logica le RAM del framework
+reg [31:0] gfx_rom  [0:UI_GFX1_WORDS-1];
+reg [31:0] gfx_rom2 [0:UI_GFX2_WORDS-1];
 reg [9:0]  lb       [0:1023];      // line buffer: {riga pari/dispari, x} -> {classe, colore}
 localparam integer GRAM_WORDS = 512;
 reg [31:0] gram     [0:GRAM_WORDS-1];  // immagine scrivibile dal firmware (base 0xC000)
@@ -79,6 +83,7 @@ integer    n;
 initial begin
     $readmemh(FONT_ROM, font_rom);
     $readmemh(GFX_ROM, gfx_rom);
+    $readmemh(GFX_ROM2, gfx_rom2);
     for (n = 0; n < 1024; n = n + 1) lb[n] = 10'd0;
     for (n = 0; n < 256; n = n + 1) pal_ram[n] = 24'd0;
     for (n = 0; n < 2048; n = n + 1) obj_ram[n] = 32'd0;
@@ -171,7 +176,9 @@ reg [4:0]  p2_ub;                  // bit del pixel nella parola dell'immagine
 reg [10:0] p2_ta;                  // indirizzo dei caratteri
 reg [15:0] p2_ga;                  // indirizzo della ROM grafica
 reg [15:0] tile_q;
-reg [31:0] gfx_q;
+wire [31:0] gfx_q;
+reg  [31:0] gfx_q1, gfx_q2;
+reg         gfx_hi;
 wire [31:0] gfx_d;                 // la parola dell'immagine (ROM grafica o immagine scrivibile)
 reg [4:0]  p3_ub;
 reg [2:0]  p3_vlo;
@@ -362,7 +369,12 @@ always @(posedge clk_cpu) begin
 end
 
 always @(posedge clk_cpu) tile_q <= tile_ram[{front, p2_ta[9:0]}];
-always @(posedge clk_cpu) gfx_q <= gfx_rom[p2_ga[UI_GFX_AW-1:0]];
+always @(posedge clk_cpu) begin
+    gfx_q1 <= gfx_rom[p2_ga[14:0]];
+    gfx_q2 <= gfx_rom2[p2_ga[UI_GFX2_AW-1:0]];
+    gfx_hi <= UI_GFX_AW > 15 && p2_ga[15];
+end
+assign gfx_q = gfx_hi ? gfx_q2 : gfx_q1;
 // immagine scrivibile: base da 0xC000
 reg [31:0] gram_q;
 reg        gram_sel = 1'b0;

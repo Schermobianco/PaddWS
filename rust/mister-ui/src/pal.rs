@@ -41,14 +41,27 @@ pub const WIN_DIM: u8 = 87;
 pub const NDIM: u8 = 88;
 /// rosso del finale (KO)
 pub const RED: u8 = 89;
-/// racchette della scelta (immagini a 4 bit: 1 corpo, 2 segno, 3 dettaglio, 5-7 immagini del RUSH):
-/// anteprima e miniatura sotto il cursore, miniature degli altri tipi
+/// racchette disegnate a rettangoli di prima (1 corpo, 2 segno, 3 dettaglio, 5-7 immagini del RUSH),
+/// non più usate; da 98 i colori delle miniature di prima
 pub const PAD: u8 = 90;
-pub const PAD_OFF: u8 = 98;
 /// OMEGA con l'easter egg RED: la sua racchetta viola
 pub const PURPLE: u8 = 106;
 /// titoli disegnati tutti bianchi (il sigillo di OMEGA che lampeggia): ruoli 1-8 bianchi
 pub const TL_WHITE: u8 = 106;
+
+/// viola del punto di domanda di OMEGA (casella della scelta, sfilata del finale), come gli occhi
+/// della sua sagoma
+pub const OMEGA_Q: u8 = 115;
+/// bordo delle caselle della griglia della scelta
+pub const CELL_FRAME: u8 = 116;
+/// Ritratti dei personaggi (assets::portraits, 4 bit per pixel: il ruolo + 1): la base della tavolozza
+/// del personaggio k (i sette tipi, poi OMEGA) è PORTRAIT + 8 k; i colori li scrive `Ui::init`.
+pub const PORTRAIT: u8 = 120;
+/// Racchette dei personaggi fuori dalla partita (assets::pads, 8 bit per pixel: il colore è la base più
+/// il valore del pixel, da 1 a `pads::PAL.len()`): PADS con il corpo bianco, PADS_OMEGA con quello di
+/// OMEGA (rosso, viola con l'easter egg). I colori li scrive `Ui`.
+pub const PADS: u8 = 183;
+pub const PADS_OMEGA: u8 = PADS + crate::assets::pads::PAL.len() as u8;
 
 /// Titoli disegnati (4 bit per pixel: il ruolo del colore, 0 trasparente): basi della tavolozza per
 /// il ruolo 1-8 (nero, bianco, giallo, giallo scuro, grigio, grigio scuro, rosso, rosso scuro). HI:
@@ -70,7 +83,7 @@ const DR: u32 = 0x5A0A0A;
 const GH: u32 = 0x7F6912;
 
 /// Colori RGB a 24 bit, nell'ordine degli indici.
-pub const COLORS: [u32; 115] = [
+pub const COLORS: [u32; 117] = [
     0x000000, 0x000000, K, W, Y, 0xD4F7C8, 0xB4B4B4, DG, 0x8C1414, GH, 0x9A9A9A, 0x5E5E5E, 0x303030, 0xA9B0B8,
     0x2E2607, 0x5C4C0D, // TL
     0, K, W, Y, DY, TG, DG, R, // TL_HI (la voce 24 è il rosso scuro di TL)
@@ -85,5 +98,6 @@ pub const COLORS: [u32; 115] = [
     0x4A4A4A, 0x3F3F3F, R, // 90: racchette della scelta
     0, W, Y, 0xA9B0B8, 0, 0x2E2607, 0x5C4C0D, 0x8A7114, 0, 0xB4B4B4, 0x3F3F3F, 0x3F3F3F, 0, 0x2E2607, 0x2E2607,
     0x5C4C0D, // 106: viola di OMEGA, poi TL_WHITE (ruoli 1-8)
-    0xA040E0, W, W, W, W, W, W, W, W,
+    0xA040E0, W, W, W, W, W, W, W, W, // 115: punto di domanda di OMEGA, bordo delle caselle
+    0xE040FF, 0x464646,
 ];

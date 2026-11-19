@@ -5,12 +5,11 @@
 //! La racchetta rossa in partita, il suo lampo e la rete stessa sono di next_render e pong_render:
 //! qui si calcolano solo gli spostamenti dei trattini (scritti in pong_top, `map::NET`).
 
-use crate::assets::game::{KIND_H, PW};
 use crate::assets::{IMG_NAME, IMG_WARNING};
 use crate::dl::{CLASS_A, CLASS_C, Dl, Kind, Obj};
 use crate::map;
-use crate::paddle::{Colors, Pad};
-use crate::pal::{BLACK, DETAIL, PGHOST1, PGHOST2, PGHOST3, PURPLE, RED, TL, WHITE, YELLOW};
+use crate::cast::plain_paddle;
+use crate::pal::{BLACK, RED, TL, WHITE};
 use crate::regs::{Omega, Regs};
 
 const W: i32 = 320;
@@ -35,10 +34,6 @@ pub fn warning(r: &Regs, d: &mut Dl) {
     }
 }
 
-/// Colore della racchetta di OMEGA: rosso, viola con l'easter egg (giallo e rosso scambiati).
-pub fn body(egg: bool) -> u8 {
-    if egg { PURPLE } else { RED }
-}
 
 // ------------------------------------------------------------------ rete e oscilloscopi
 
@@ -192,41 +187,20 @@ const DIRS: [(i32, i32); 7] = [
 const LADDER: [u32; 7] = [0, 3, 2, 1, 4, 5, 6];
 
 #[inline(never)]
-pub fn shatter(r: &Regs, o: &Omega, d: &mut Dl) {
+pub fn shatter(o: &Omega, d: &mut Dl) {
     let at = o.shatter;
     d.class = CLASS_A;
     d.rect(0, 0, W, 240, BLACK);
     let (cx, cy) = (W / 2, 120);
-    let pad = |d: &mut Dl, kind: u32, x: i32, y: i32, body: u8| {
-        let h = KIND_H[kind as usize];
-        let p = Pad {
-            kind,
-            xa: x - PW / 2,
-            xb: x - PW / 2 + PW - 1,
-            right: false,
-            y: y - h / 2,
-            h,
-            tilt: 0,
-            preview: false,
-            ghosts: false,
-            half: false,
-        };
-        let c = Colors {
-            body,
-            mark: YELLOW,
-            detail: DETAIL,
-            ghost: [PGHOST1, PGHOST2, PGHOST3],
-            pattern: false,
-        };
-        p.draw(d, &c);
-    };
+    // le racchette guardano a sinistra; OMEGA rossa (o viola), bianca nei lampi
+    let pad = |d: &mut Dl, kind: u32, x: i32, y: i32, omega: bool| plain_paddle(d, kind, x, y, false, omega);
     if at < SHATTER_AT + SHATTER_FLASH {
         // trema avanti e indietro, di più verso la fine, con lampi sempre più fitti
         let k = at.min(SHATTER_AT);
         let dx = if at % 4 < 2 { 1 } else { -1 } * ((3 * k + SHATTER_AT / 2) / SHATTER_AT);
         let every = (16 - 12 * k / SHATTER_AT).max(2);
         let lit = at >= SHATTER_AT || (at > 24 && at % every == 0);
-        pad(d, 0, cx + dx, cy, if lit { WHITE } else { body(r.egg) });
+        pad(d, 0, cx + dx, cy, !lit);
         return;
     }
     // escono in fretta e rallentano: d = 1 - (1 - k)^2, k da 0 a 1 (su 256)
@@ -236,7 +210,7 @@ pub fn shatter(r: &Regs, o: &Omega, d: &mut Dl) {
     for (i, &(sx, sy)) in DIRS.iter().enumerate() {
         let x = cx + sx * reach / 256 * dd / 256;
         let y = cy + sy * reach / 256 * dd / 256 * 4 / 5;
-        pad(d, LADDER[i], x, y, WHITE);
+        pad(d, LADDER[i], x, y, false);
     }
     // schegge: quadratini più veloci, che si diradano (rossi e bianchi)
     let mut seed = 0x0E6A_0001u32;

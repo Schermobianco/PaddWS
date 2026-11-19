@@ -9,14 +9,18 @@ Uscite (vanno nel repository, così la sintesi e il firmware non richiedono Pyth
   mister/rtl/gen/ui_gfx.hex    ROM grafica a parole da 32 bit: le immagini una dopo l'altra, righe a
                                passo potenza di due (in parole), pixel da sinistra a destra a partire
                                dai bit alti della parola (1, 2, 4 o 8 bit per pixel); in fondo le righe
-                               delle scritte di HOW TO PLAY e del finale, scelte riga per riga dal firmware
-  mister/rtl/gen/ui_gfx.vh     dimensione della ROM grafica
+                               delle scritte di HOW TO PLAY e del finale, scelte riga per riga dal firmware.
+                               Le prime 32.768 parole; il resto in ui_gfx2.hex (almeno una parola): con
+                               una sola memoria oltre l'indirizzo a 15 bit Quartus metteva in logica le
+                               RAM del framework (circa 18.000 ALM in più)
+  mister/rtl/gen/ui_gfx.vh     dimensioni delle due parti della ROM grafica
   rust/mister-ui/src/assets.rs codici del font (tabella ASCII), posto, misure e formato di ogni immagine,
                                costanti e tabelle delle schermate
 
 Immagini: logo e WS dell'attract, cifre dei punteggi (pong-score.ttf), icone dei bonus, titoli disegnati
 (assets/titles: il ruolo del colore a 4 bit, come faceva tools/gen_mister_titles.py), figurine di HOW TO
-PLAY, trame della sfilata del finale.
+PLAY, ritratti dei personaggi (assets/characters/portraits: scelta della racchetta, schermo VS,
+sfilata del finale).
 
 Codici del font: 0-9 le cifre, 10-35 A-Z, 36 spazio, 37 "+", 38 ".", 39 "x", 40 "!" (gli stessi delle
 iniziali della classifica), poi gli altri caratteri ASCII stampabili e "©" (0x7F nella tabella ASCII).
@@ -100,6 +104,30 @@ class Gfx:
                 words[k] |= v << (32 - bpp * (s + 1))
             self.words += words
         self.images.append((name, base, w, h, bpp_sh, stride_sh))
+
+    def drop_last(self) -> None:
+        """Toglie l'ultima immagine aggiunta (con `add`), e le sue parole in fondo alla ROM."""
+        name, base, w, h, bpp_sh, stride_sh = self.images.pop()
+        del self.words[base:]
+
+    def add_packed(self, name: str, px: list[list[int]], bpp: int) -> int:
+        """Immagine con le righe una dopo l'altra, senza il passo potenza di due: il firmware la legge
+        con la tabella delle righe (riga della sorgente in parole dalla base). Restituisce le parole
+        per riga."""
+        h, w = len(px), len(px[0])
+        per_word = 32 // bpp
+        assert w % per_word == 0, (name, w)
+        row_words = w // per_word
+        base = len(self.words)
+        for row in px:
+            words = [0] * row_words
+            for u, v in enumerate(row):
+                assert 0 <= v < (1 << bpp), (name, v)
+                k, s = divmod(u, per_word)
+                words[k] |= v << (32 - bpp * (s + 1))
+            self.words += words
+        self.images.append((name, base, w, h, {1: 0, 2: 1, 4: 2, 8: 3}[bpp], 0))
+        return row_words
 
 
 def mask_px(mask: Image.Image) -> list[list[int]]:
@@ -192,77 +220,81 @@ def howto_assets(gfx: Gfx) -> list[str]:
     return out
 
 
-def kind_px(kind: int, t: int, r: int, h: int, tilt: int, preview: bool, ghosts: bool, pw: int) -> int:
-    """Pixel (t, r) di una racchetta del tipo `kind` (come kind_px del vecchio next_render.v e
-    rust/mister-ui/src/paddle.rs): 0 niente (o taglio), 1 corpo, 2 segno, 3 dettaglio, 5-7 immagini
-    del RUSH dalla più scura."""
-    body = 0 <= t < pw and 0 <= r < h
-    if kind == 3:
-        d = r - (h >> 1)
-        m = abs(tilt)
-        sh = (d if m & 1 else 0) + ((d << 1) if m & 2 else 0)
-        sh = -(sh >> 3) if tilt < 0 else (sh >> 3)
-        return 1 if 0 <= t - sh < pw and 0 <= r < h else 0
-    if kind == 2:
-        if -(pw // 2) <= t < pw and 0 <= r < h:
-            return 3 if r in ((h >> 1) - 10, (h >> 1) - 9, (h >> 1) + 8, (h >> 1) + 9) else 1
-        return 0
-    if kind == 4:
-        c = 0
-        if body:
-            c = 1
-            if ((r == 0 or r == h - 1) and t >= pw - 2) or ((r == 1 or r == h - 2) and t == pw - 1):
-                c = 0
-        if pw <= t < pw + 2 and r in ((h >> 1) - 4, (h >> 1) - 3, (h >> 1) + 2, (h >> 1) + 3):
-            c = 3
-        return c
-    if kind == 1:
-        return (2 if t == 0 and (r < (h >> 3) or r >= h - (h >> 3)) else 1) if body else 0
-    if kind == 5:
-        c = 1 if body else 0
-        if ghosts and 0 <= r < h and -3 * pw <= t < -1 and t not in (-pw - 1, -2 * pw - 1):
-            c = 7 if t >= -pw else 6 if t >= -2 * pw else 5
-        return c
-    if kind == 6:
-        c = 1 if body else 0
-        q = h >> 2
-        if preview and t in (-8, -7) and -q <= r < h + q and ((r + q) & 7) < 5:
-            c = 2
-        return c
-    return 1 if body else 0
-
-
 def paddle_images(gfx: Gfx) -> list[str]:
-    """Racchette della scelta, rivolte a destra (a sinistra si specchiano): l'anteprima a grandezza
-    reale (con il pezzo di muro del GUARDIAN e le immagini del RUSH) e la miniatura a metà, un pixel
-    ogni due. 4 bit per pixel: i codici di kind_px, i colori dalla tavolozza."""
+    """Racchette dei personaggi fuori dalla partita, ferme (tools/paddle_shapes.py, le forme di
+    kind_px di next_render.v), rivolte a destra (a sinistra si specchiano), a grandezza reale.
+    PREVIEW per la scelta e lo schermo VS: TWIST inclinata e le immagini dello scatto del RUSH;
+    PLAIN per le forme di OMEGA e la sua rottura nel finale (le stesse, tranne TWIST dritta e RUSH
+    senza le immagini). 8 bit per pixel: il colore è la base
+    della tavolozza (pal::PADS, o pal::PADS_OMEGA con il corpo di OMEGA) più il valore del pixel, da
+    1 a PAL_COLORS (PAL: i colori comuni, poi i tre toni di ogni personaggio)."""
+    import json
     import re
+    import paddle_shapes as ps
     vh = (OUT / "pong_params.vh").read_text(encoding="utf-8")
     heights = [int(re.search(rf"3'd{k}: kind_px_h = (\d+);", vh).group(1)) for k in range(7)]
     pw = int(re.search(r"P_PAD_WIDTH = (\d+);", vh).group(1)) >> 16
-    out = ["", "/// Racchette della scelta: immagine, prima colonna t e prima riga r (coordinate del tipo).",
+    assert pw in (4, 5), "corpo largo 4 (MiSTer) o 5 (PC)"
+    spec = json.loads((PORTRAITS / "portraits.json").read_text(encoding="utf-8"))
+    accents = [tuple(spec["accent"][k]) for k in KINDS]
+    # valori dei pixel: i ruoli comuni, poi i tre toni del personaggio k da 13 + 3 k
+    shared = [ps.BODY, ps.SHADE, ps.GRAY, ps.GRAY_LIGHT, ps.DARK, ps.DARK_DEEP, ps.BLACK, ps.SIGNAL, ps.SHADOW,
+              ps.GHOST1, ps.GHOST2, ps.GHOST3]
+    marks = [ps.MARK, ps.MARK_DARK, ps.MARK_LIGHT]
+    rush = accents[ps.RUSH]
+    colors = [ps.RGB[r] for r in shared[:9]]
+    # immagini dello scatto del RUSH: il suo colore al 18, 36 e 54% sul nero, come su PC
+    colors += [tuple(round(c * 0.18 * k) for c in rush) for k in (1, 2, 3)]
+    for a in accents:
+        ramp = ps.mark_ramp(a)
+        colors += [ramp[m] for m in marks]
+
+    def value(kind: int, role: int) -> int:
+        if role in marks:
+            return 1 + len(shared) + 3 * kind + marks.index(role)
+        return 1 + shared.index(role)
+
+    out = ["", "/// Racchette fuori dalla partita: immagine, prima colonna t (0 = retro del corpo) e prima riga r.",
            "pub mod pads {", "    use crate::Img;"]
-    for name, half in (("PREVIEW", False), ("MINI", True)):
+    for name, preview in (("PREVIEW", True), ("PLAIN", False)):
         entries = []
         for k in range(7):
             h = heights[k]
-            tilt = 3 if k == 3 else 0
-            pts = {}
-            for t in range(-20, 20):
-                for r in range(-h, 2 * h):
-                    tt, rr = (2 * t, 2 * r) if half else (t, r)
-                    c = kind_px(k, tt, rr, h, tilt, not half, True, pw)
-                    if c:
-                        pts[(t, r)] = c
-            t0, t1 = min(p[0] for p in pts), max(p[0] for p in pts) + 1
-            r0, r1 = min(p[1] for p in pts), max(p[1] for p in pts) + 1
-            px = [[pts.get((t, r), 0) for t in range(t0, t1)] for r in range(r0, r1)]
-            gfx.add(f"pad_{name.lower()}_{k}", px, 4)
+            px = ps.render(k, h, tilt=3 if preview and k == ps.TWIST else 0, pw=pw)
+            if preview and k == ps.RUSH:
+                # immagini dello scatto dietro, come la scelta del PC (sotto la racchetta)
+                for g, role in ((1, ps.GHOST1), (2, ps.GHOST2), (3, ps.GHOST3)):
+                    u0 = -3 - 2 * pw * (4 - g)
+                    for u in range(u0, u0 + pw):
+                        for v in range(h):
+                            px.setdefault((u, v), role)
+            u0, u1 = min(p[0] for p in px), max(p[0] for p in px) + 1
+            v0, v1 = min(p[1] for p in px), max(p[1] for p in px) + 1
+            img = [[value(k, px[(u, v)]) if (u, v) in px else 0 for u in range(u0, u1)] for v in range(v0, v1)]
+            gfx.add(f"pad_{name.lower()}_{k}", img, 8)
             n, base, w, hh, bs, ss = gfx.images[-1]
-            entries.append(f"(Img {{ base: {base}, w: {w}, h: {hh}, bpp_sh: {bs}, stride_sh: {ss} }}, {t0}, {r0})")
+            entries.append(f"(Img {{ base: {base}, w: {w}, h: {hh}, bpp_sh: {bs}, stride_sh: {ss} }}, {u0 + 3}, {v0})")
+            if not preview and k not in (ps.TWIST, ps.RUSH):
+                entries[-1] = previews[k]
+                gfx.drop_last()
+        if preview:
+            previews = entries
         out.append(f"    pub const {name}: [(Img, i32, i32); 7] = [")
         out += [f"        {e}," for e in entries]
         out.append("    ];")
+    out.append(f"    /// Colori dei valori 1..={len(colors)} dei pixel (a partire da pal::PADS + 1).")
+    out.append(f"    pub const PAL: [u32; {len(colors)}] = [")
+    for i in range(0, len(colors), 8):
+        out.append("        " + " ".join(f"0x{r:02X}{g:02X}{b:02X}," for r, g, b in colors[i:i + 8]))
+    out.append("    ];")
+    # corpo di OMEGA: rosso, viola con l'easter egg; e il suo tono in ombra
+    omega = [(0xE6, 0x28, 0x28), (0xA0, 0x40, 0xE0)]
+    out.append("    /// Corpo e corpo in ombra di OMEGA (valori 1 e 2): rosso, e viola con l'easter egg.")
+    out.append("    pub const OMEGA_BODY: [[u32; 2]; 2] = [")
+    for c in omega:
+        s = ps.body_shade(c)
+        out.append(f"        [0x{c[0]:02X}{c[1]:02X}{c[2]:02X}, 0x{s[0]:02X}{s[1]:02X}{s[2]:02X}],")
+    out.append("    ];")
     out.append("}")
     return out
 
@@ -380,8 +412,74 @@ def game_consts() -> list[str]:
     ]
 
 
+# parole della prima memoria della ROM grafica (indirizzo a 15 bit)
+GFX_SPLIT = 32768
+
 # nomi degli avversari nell'ordine di PaddleKind
 KINDS = ["arcade", "titan", "hammer", "twist", "blaster", "rush", "guardian"]
+PORTRAITS = ROOT / "assets" / "characters" / "portraits"
+
+
+def portrait_px(name: str, size: tuple[int, int]) -> list[list[int]]:
+    """Ritratto a ruoli (tools/gen_portraits.py, la variante dei PC): l'indice del PNG è il ruolo del
+    colore; qui il ruolo + 1, perché 0 è trasparente."""
+    im = Image.open(PORTRAITS / f"{name}.png")
+    assert im.mode == "P" and im.size == size, (name, im.mode, im.size)
+    return [[im.getpixel((x, y)) + 1 for x in range(im.size[0])] for y in range(im.size[1])]
+
+
+def portrait_assets(gfx: Gfx) -> list[str]:
+    """Ritratti della scelta della racchetta, dello schermo VS e della sfilata del finale: grandi
+    (88x104, i sette tipi e OMEGA svelato) con le righe una dopo l'altra (11 parole: il firmware le
+    sceglie con la tabella delle righe, senza il passo di 16 parole), caselle della griglia (32x32, i
+    sette tipi e OMEGA in sagoma), medi della sfilata (64x72, normali e sconfitti, e OMEGA in sagoma).
+    4 bit per pixel: il ruolo + 1; i colori dei ruoli di ogni personaggio vanno nella tavolozza."""
+    import json
+    spec = json.loads((PORTRAITS / "portraits.json").read_text(encoding="utf-8"))
+    roles = spec["roles"]
+    big, small, mid = tuple(spec["big"]), (spec["small"], spec["small"]), tuple(spec["mid"])
+    names = KINDS + ["omega"]
+    row_words = {gfx.add_packed(f"pt_big_{n}", portrait_px(n, big), 4) for n in names}
+    assert len(row_words) == 1
+    for n in KINDS:
+        gfx.add(f"pt_small_{n}", portrait_px(f"{n}_small", small), 4)
+    gfx.add("pt_small_omega", portrait_px("omega_small", small), 4)
+    for n in names:
+        gfx.add(f"pt_mid_{n}", portrait_px(f"{n}_mid", mid), 4)
+        gfx.add(f"pt_mid_{n}_defeated", portrait_px(f"{n}_mid_defeated", mid), 4)
+    gfx.add("pt_mid_omega_locked", portrait_px("omega_mid_locked", mid), 4)
+
+    def rgb(c: list[int]) -> str:
+        return f"0x{c[0]:02X}{c[1]:02X}{c[2]:02X}"
+
+    pal = []
+    for n in names:
+        accent = spec["accent"][n]
+        cols = []
+        for role in roles:
+            if role == "accent":
+                cols.append(rgb(accent))
+            elif role == "accent_dark":
+                cols.append(rgb([int(c * spec["dark"] + 0.5) for c in accent]))  # come round() di Rust
+            else:
+                cols.append(rgb(spec["grays"][role]))
+        pal.append("[" + ", ".join(cols) + "]")
+    out = ["", "/// Ritratti dei personaggi (assets/characters/portraits, tools/gen_portraits.py): 4 bit per pixel,",
+           "/// il ruolo del colore + 1; i tipi nell'ordine di PaddleKind, poi OMEGA.", "pub mod portraits {",
+           "    use crate::Img;", "    use crate::assets::*;",
+           "    /// grandi: righe di BIG_ROW_WORDS parole una dopo l'altra (tabella delle righe); OMEGA svelato",
+           "    pub const BIG: [Img; 8] = [" + ", ".join(rust_name(f"pt_big_{n}") for n in names) + "];",
+           f"    pub const BIG_ROW_WORDS: i32 = {row_words.pop()};",
+           "    /// caselle della griglia; OMEGA in sagoma",
+           "    pub const SMALL: [Img; 8] = [" + ", ".join(rust_name(f"pt_small_{n}") for n in names) + "];",
+           "    /// sfilata del finale: normale e sconfitto",
+           "    pub const MID: [[Img; 2]; 8] = [" + ", ".join(
+               f"[{rust_name(f'pt_mid_{n}')}, {rust_name(f'pt_mid_{n}_defeated')}]" for n in names) + "];",
+           "    pub const MID_LOCKED: Img = IMG_PT_MID_OMEGA_LOCKED;",
+           f"    /// colori RGB dei ruoli 1-{len(roles)} di ogni personaggio",
+           f"    pub const PAL: [[u32; {len(roles)}]; 8] = [{', '.join(pal)}];",
+           "}"]
+    return out
 
 
 def rust_name(name: str) -> str:
@@ -411,21 +509,29 @@ def main() -> None:
     gfx.add("pick_net", [[1, 1] if y % 8 < 4 else [0, 0] for y in range(160)], 1)
     cap = 12
     gfx.add("cap_frame", [[1 if x in (0, cap - 1) or y in (0, cap - 1) else 0 for x in range(cap)] for y in range(cap)], 1)
-    # trame a scacchi delle immagini del RUSH nella sfilata del finale (x e y dispari; x + y dispari)
-    gfx.add("pat_a", [[1 if (u & 1 and v & 1) else 0 for u in range(32)] for v in range(64)], 1)
-    gfx.add("pat_b", [[1 if (u ^ v) & 1 else 0 for u in range(32)] for v in range(64)], 1)
+    # VS dello schermo VS a scala 3 (lo schermo a oggetti ingrandisce solo di 2, 4 e 8)
+    vs = [glyphs["V"][y // 3] << 8 | glyphs["S"][y // 3] for y in range(24)]
+    gfx.add("vs3", [[(vs[y] >> (15 - x // 3)) & 1 for x in range(48)] for y in range(24)], 1)
     howto = howto_assets(gfx)
     ending = ending_assets(gfx)
+    portraits = portrait_assets(gfx)
 
     OUT.mkdir(parents=True, exist_ok=True)
     font_rom = [glyphs[c][y] if i < len(CHARS) else 0 for i, c in enumerate(CHARS + "\0" * (256 - len(CHARS)))
                 for y in range(8)]
     (OUT / "ui_font.hex").write_text("".join(f"{b:02x}\n" for b in font_rom), encoding="ascii", newline="\n")
-    (OUT / "ui_gfx.hex").write_text("".join(f"{w:08x}\n" for w in gfx.words), encoding="ascii", newline="\n")
+    # due memorie: le prime GFX_SPLIT parole e il resto (vedi l'intestazione)
+    low, high = gfx.words[:GFX_SPLIT], gfx.words[GFX_SPLIT:] or [0]
+    (OUT / "ui_gfx.hex").write_text("".join(f"{w:08x}\n" for w in low), encoding="ascii", newline="\n")
+    (OUT / "ui_gfx2.hex").write_text("".join(f"{w:08x}\n" for w in high), encoding="ascii", newline="\n")
     (OUT / "ui_gfx.vh").write_text(
         "// Generato da tools/gen_mister_ui.py: non modificare a mano.\n"
         f"localparam integer UI_GFX_WORDS = {len(gfx.words)};\n"
-        f"localparam integer UI_GFX_AW = {max(1, (len(gfx.words) - 1).bit_length())};\n",
+        f"localparam integer UI_GFX_AW = {max(1, (len(gfx.words) - 1).bit_length())};\n"
+        f"// prima parte (ui_gfx.hex) e seconda (ui_gfx2.hex, dall'indirizzo {GFX_SPLIT})\n"
+        f"localparam integer UI_GFX1_WORDS = {len(low)};\n"
+        f"localparam integer UI_GFX2_WORDS = {len(high)};\n"
+        f"localparam integer UI_GFX2_AW = {max(1, (len(high) - 1).bit_length())};\n",
         encoding="ascii", newline="\n")
 
     # il carattere 0x7F (DEL) è "©"
@@ -464,6 +570,7 @@ def main() -> None:
     lines += howto
     lines += paddles
     lines += ending
+    lines += portraits
     lines.append("/// Icone 9x9 dei bonus (codici dei bonus).")
     lines.append("pub const IMG_ICON: [Img; 8] = [" + ", ".join(rust_name(f"icon_{b}") for b in range(8)) + "];")
     lines.append("/// Nomi disegnati degli avversari (PaddleKind).")

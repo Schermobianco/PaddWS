@@ -23,8 +23,8 @@
 //! - 29: punteggi (sinistro nei bit bassi); 30: record del singolo
 //! - 31-36: x disegnata e y delle racchette sinistra e destra, altezze (Q16.16, come pong_render)
 //! - 37: scritta del bonus o della mossa (label_* di pong_top); 38, 39: punti e premio del finale
-//! - 40: next_flags (hit-stop del SUPER); 41: finale ([10:0] frame della parte, [13:11] parte, [17:14]
-//!   battute della sfilata, [19:18] scritte a comparsa, [20] lampeggio); 42, 43: SCORE e premio che
+//! - 40: next_flags (hit-stop del SUPER); 41: finale ([10:0] frame della parte, [13:11] parte, [18:14]
+//!   battute della sfilata, [20:19] scritte a comparsa, [21] lampeggio); 42, 43: SCORE e premio che
 //!   salgono; 44: scorrimento dei titoli di coda
 //! - 45: OMEGA e JUKEBOX: [7:0] prossimo posto degli oscilloscopi (sid_scope), [8] JUKEBOX acceso, [9]
 //!   contro OMEGA (livello 7), [10] allarme, [11] OMEGA battuto (finale speciale), [14:12] forma della
@@ -32,6 +32,8 @@
 //!   JUKEBOX, [29:27] sezione di OMEGA, [30] il brano suona, [31] musica a 0%
 //! - 46: [8:0] frame della racchetta di OMEGA che si spezza (prima del finale), [12:9] volume della
 //!   musica (passo dell'OSD, 0 = 100%)
+//! - 47: schermo VS: [8:0] bonus e [11:9] racchetta del giocatore della scalata; bonus dei due nella
+//!   sfida, [20:12] il sinistro e [29:21] il destro (3 bit per bonus, il primo nei bit bassi)
 
 use crate::{Port, map};
 

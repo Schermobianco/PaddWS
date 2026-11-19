@@ -49,7 +49,8 @@ module pong_top #(
     parameter ENDING_FW_ROM = "rtl/gen/ending_fw.hex",
     // schermo a oggetti (tools/gen_mister_ui.py): font 8x8 e ROM grafica
     parameter UI_FONT_ROM = "rtl/gen/ui_font.hex",
-    parameter UI_GFX_ROM = "rtl/gen/ui_gfx.hex"
+    parameter UI_GFX_ROM = "rtl/gen/ui_gfx.hex",
+    parameter UI_GFX_ROM2 = "rtl/gen/ui_gfx2.hex"
 ) (
     input  wire        clk,            // 20 MHz
     input  wire        clk_cpu,        // 60 MHz dalla stessa PLL: processore di pong_logic_rv
@@ -133,7 +134,13 @@ localparam [10:0]  CH_NEWCH_FRAMES = 11'd180;   // 3 s di HERE COMES A NEW CHALL
 localparam [10:0]  HOWTO_FRAMES = 11'd480;      // 8 s, poi la partita parte da sola
 localparam [10:0]  HOWTO_SKIP_FRAMES = 11'd20;  // Start o A la saltano dopo un terzo di secondo
 localparam [10:0]  CH_INTRO_FRAMES = 11'd240;   // 4 s di presentazione
-localparam [10:0]  CH_OMEGA_INTRO_FRAMES = 11'd315;   // 5,25 s quella di OMEGA (OMEGA_INTRO_SECONDS)
+localparam [10:0]  CH_OMEGA_INTRO_FRAMES = 11'd300;   // 5 s quella di OMEGA (OMEGA_INTRO_SECONDS)
+// schermo VS della presentazione (Stage::vs di rust/game/src/challenge_ui.rs): un colpo quando i
+// ritratti si posano (VS_LAND), il punto quando si posa il VS (VS_STAMP_AT + VS_STAMP_SETTLE); per
+// OMEGA dopo la sua parte speciale (OMEGA_VS_AT)
+localparam [10:0]  CH_VS_LAND = 11'd22;
+localparam [10:0]  CH_VS_STAMP = 11'd31;
+localparam [10:0]  CH_OMEGA_VS_AT = 11'd150;
 // allarme prima di OMEGA (Warning di rust/game/src/challenge_ui.rs): 3,5 s, la targa accesa 0,5 s e
 // spenta 0,25 s per tre volte, poi ferma; un colpo a ogni accensione
 localparam [10:0]  CH_WARNING_FRAMES = 11'd210;
@@ -384,7 +391,7 @@ reg        pick_ready = 1'b0;
 reg        pick_cpu = 1'b0;     // a destra la CPU (scritta CPU invece di P2)
 reg [1:0]  pick_lock = 2'b00;   // lati che non scelgono: la CPU, o il campione quando entra uno sfidante
 reg [10:0] ready_at = 11'd0;
-reg [2:0]  pk_q [0:1];          // {su, giù, A} al ciclo precedente, per i fronti
+reg [4:0]  pk_q [0:1];          // {sinistra, destra, su, giù, A} al ciclo precedente, per i fronti
 reg        pick_go = 1'b0;      // scelta finita: parte la partita
 // scelta della racchetta, dopo quella dei bonus (stesso modo M_PICK, con il timer da capo)
 reg        pick_paddle = 1'b0;
@@ -705,12 +712,15 @@ always @(posedge clk) begin
         attract_sound <= SND_PONG;
         attract_trigger <= 1'b1;
         attract_auto <= 1'b0;
-    end else if (pick_done && ch_active && !duel) begin
-        // CHALLENGE: bonus e racchetta valgono per tutta la scala; prima l'avversario
+    end else if (pick_done && ch_active) begin
+        // CHALLENGE: bonus e racchetta valgono per tutta la scala; prima l'avversario. Nella sfida tra
+        // due giocatori lo schermo VS con tutti e due, poi la sfida
         mode <= M_INTRO;
         mframe <= 11'd0;
-        ch_lo <= loadout_of(pick_mask[0]);
-        ch_kind <= kind_cur[0];
+        if (!duel) begin
+            ch_lo <= loadout_of(pick_mask[0]);
+            ch_kind <= kind_cur[0];
+        end
     end else if (mode == M_INTRO && omega_warn && ((frame_start && mframe >= CH_WARNING_FRAMES) ||
                                                   ((a_press || start_press) && mframe >= CH_SKIP_FRAMES))) begin
         // fine dell'allarme: la presentazione di OMEGA
@@ -718,21 +728,24 @@ always @(posedge clk) begin
         mframe <= 11'd0;
         blink <= 6'd0;
     end else if (mode == M_INTRO && !omega_warn && ((frame_start && mframe >= (omega_lvl ? CH_OMEGA_INTRO_FRAMES : CH_INTRO_FRAMES)) ||
-                                                   ((a_press || start_press) && mframe >= CH_SKIP_FRAMES))) begin
+                                                   ((a_press || start_press || (duel && side_start[1])) && mframe >= CH_SKIP_FRAMES))) begin
+        // (il VS della sfida lo salta anche il tasto 2, lo Start del giocatore 2, come SIDE_START su PC)
         // partita del livello: racchetta, bonus e livello della CPU, velocità della palla; il
-        // giocatore dal suo lato, la CPU dall'altro
+        // giocatore dal suo lato, la CPU dall'altro. Dopo lo schermo VS della sfida, la sfida tra i
+        // due (con le loro scelte, alla velocità della palla del livello)
         mode <= M_GAME;
         mframe <= 11'd0;
         match_two <= 1'b1;
         match_evo <= 1'b0;
         match_next <= 1'b1;
-        match_cpu <= 1'b1;
-        match_lo0 <= ch_side ? rung_loadout(ch_level) : ch_lo;
-        match_lo1 <= ch_side ? ch_lo : rung_loadout(ch_level);
-        match_kinds <= ch_side ? {ch_kind, rung_kind(ch_level)} : {rung_kind(ch_level), ch_kind};
+        match_cpu <= !duel;
+        match_lo0 <= duel ? loadout_of(pick_mask[0]) : ch_side ? rung_loadout(ch_level) : ch_lo;
+        match_lo1 <= duel ? loadout_of(pick_mask[1]) : ch_side ? ch_lo : rung_loadout(ch_level);
+        match_kinds <= duel ? {kind_cur[1], kind_cur[0]} :
+                       ch_side ? {ch_kind, rung_kind(ch_level)} : {rung_kind(ch_level), ch_kind};
         match_level <= speed_at(rung_speed(ch_level), difficulty);
-        match_cpu_level <= rung_cpu_at(ch_level, difficulty);   // spostata dalla difficoltà (Rung::cpu_at)
-        match_morph <= !omega_lvl ? 2'b00 : ch_side ? 2'b01 : 2'b10;   // OMEGA: la CPU cambia forma
+        match_cpu_level <= duel ? {2'd0, difficulty} : rung_cpu_at(ch_level, difficulty);   // spostata dalla difficoltà (Rung::cpu_at)
+        match_morph <= (!omega_lvl || duel) ? 2'b00 : ch_side ? 2'b01 : 2'b10;   // OMEGA: la CPU cambia forma
         match_supers <= super_moves;
         match_reset <= 1'b1;
         attract_sound <= SND_PING;
@@ -823,8 +836,8 @@ always @(posedge clk) begin
         ch_letter <= up_press ? ((ch_letter == 6'd0) ? LETTER_LAST : ch_letter - 6'd1)
                               : ((ch_letter == LETTER_LAST) ? 6'd0 : ch_letter + 6'd1);
     end else if (pick_done) begin
-        // bonus scelti: parte la partita NEXT, con il conto alla rovescia (la sfida di CHALLENGE con
-        // la velocità della palla del livello in corso)
+        // bonus scelti: parte la partita NEXT, con il conto alla rovescia (la sfida di CHALLENGE passa
+        // prima dallo schermo VS, qui sopra)
         mode <= M_GAME;
         mframe <= 11'd0;
         match_two <= 1'b1;
@@ -833,7 +846,7 @@ always @(posedge clk) begin
         match_lo0 <= loadout_of(pick_mask[0]);
         match_lo1 <= loadout_of(pick_mask[1]);
         match_kinds <= {kind_cur[1], kind_cur[0]};
-        match_level <= duel ? speed_at(rung_speed(ch_level), difficulty) : difficulty;
+        match_level <= difficulty;
         match_cpu_level <= {2'd0, difficulty};
         match_supers <= super_moves;
         match_reset <= 1'b1;
@@ -949,6 +962,14 @@ always @(posedge clk) begin
             attract_trigger <= 1'b1;
             attract_auto <= 1'b1;
         end
+        // schermo VS: un colpo quando si posano i ritratti, il punto quando si posa il VS
+        if (mode == M_INTRO && !omega_warn &&
+            (next_frame == (omega_lvl && !duel ? CH_OMEGA_VS_AT : 11'd0) + CH_VS_LAND ||
+             next_frame == (omega_lvl && !duel ? CH_OMEGA_VS_AT : 11'd0) + CH_VS_STAMP)) begin
+            attract_sound <= next_frame == (omega_lvl && !duel ? CH_OMEGA_VS_AT : 11'd0) + CH_VS_LAND ? SND_PONG : 8'h08;
+            attract_trigger <= 1'b1;
+            attract_auto <= 1'b0;
+        end
         // allarme di OMEGA: il suono del punto a ogni accensione della targa
         if (mode == M_INTRO && omega_warn && (mframe == 11'd0 || mframe == CH_WARNING_PERIOD ||
                                               mframe == 2 * CH_WARNING_PERIOD)) begin
@@ -999,15 +1020,16 @@ end
 
 // ------------------------------------------------------ scelta della racchetta e dei bonus
 
-// Prima la racchetta (pick_paddle alto): su e giù scorrono i tipi, A conferma o annulla; la CPU
+// Prima la racchetta (pick_paddle alto): nella griglia 4x2 destra e sinistra scorrono i tipi, su e
+// giù passano all'altra riga nella stessa colonna (sotto TWIST c'è OMEGA: fermo), A conferma o annulla; la CPU
 // sceglie a caso; dopo 10 s vale quella sotto il cursore. Poi i bonus: su e giù muovono il cursore,
 // A prende o lascia il bonus; la CPU sceglie subito, a caso. Dopo 10 s (o con tutti e due a 3 bonus)
 // si completa con le scelte predefinite e "READY!", poi la partita (o HOW TO PLAY).
 always @(posedge clk) begin
     pick_go <= 1'b0;
     pick_restart <= 1'b0;
-    pk_q[0] <= {joy0[3], joy0[2], joy0[4]};
-    pk_q[1] <= {joy1[3], joy1[2], joy1[4]};
+    pk_q[0] <= {joy0[1], joy0[0], joy0[3], joy0[2], joy0[4]};
+    pk_q[1] <= {joy1[1], joy1[0], joy1[3], joy1[2], joy1[4]};
     if ((start_press || duel_start) && in_attract && want_next) begin
         // nella sfida subito (duel_start) a destra sceglie P2, come lo sfidante
         pick_cur[0] <= 3'd0;
@@ -1038,10 +1060,13 @@ always @(posedge clk) begin
     end else if (mode == M_PICK && pick_paddle) begin
         for (pp = 0; pp < 2; pp = pp + 1) begin
             if (!pick_lock[pp] && !pick_ready) begin
-                if ((pp == 0 ? joy0[3] : joy1[3]) && !pk_q[pp][2] && !kind_chosen[pp])
+                if ((pp == 0 ? joy0[1] : joy1[1]) && !pk_q[pp][4] && !kind_chosen[pp])
                     kind_cur[pp] <= (kind_cur[pp] == 3'd0) ? 3'd6 : kind_cur[pp] - 3'd1;
-                if ((pp == 0 ? joy0[2] : joy1[2]) && !pk_q[pp][1] && !kind_chosen[pp])
+                if ((pp == 0 ? joy0[0] : joy1[0]) && !pk_q[pp][3] && !kind_chosen[pp])
                     kind_cur[pp] <= (kind_cur[pp] == 3'd6) ? 3'd0 : kind_cur[pp] + 3'd1;
+                if ((((pp == 0 ? joy0[3] : joy1[3]) && !pk_q[pp][2]) || ((pp == 0 ? joy0[2] : joy1[2]) && !pk_q[pp][1]))
+                    && !kind_chosen[pp] && kind_cur[pp] != 3'd3)
+                    kind_cur[pp] <= kind_cur[pp] ^ 3'd4;
                 if ((pp == 0 ? joy0[4] : joy1[4]) && !pk_q[pp][0])
                     kind_chosen[pp] <= !kind_chosen[pp];
             end
@@ -1709,16 +1734,32 @@ always @(posedge clk) begin
 end
 wire [1:0] warp_hide = {warp_on && warp_side, warp_on && !warp_side};
 
-// Tipi di racchetta a schermo: RUSH, quando scatta in avanti, lascia per 15 frame (0,25 s) le
-// immagini della racchetta tra casa e dove si trova, che sfumano in tre passi, e vibra di un pixel; il settore del muro del GUARDIAN che rimanda la palla lampeggia per
-// 18 frame, poi non c'è più: è quello sparito dalla maschera (aux, bit 0-4) nel frame dell'evento;
-// TWIST, inclinata, la disegna next_render.
-localparam [2:0] K_TWIST = 3'd3, K_RUSH = 3'd5;
+// Tipi di racchetta a schermo (le racchette dei personaggi le disegna tutte next_render): RUSH,
+// quando scatta in avanti, lascia per 15 frame (0,25 s) le immagini della racchetta tra casa e dove
+// si trova, che sfumano in tre passi, e vibra di un pixel; il settore del muro del GUARDIAN che
+// rimanda la palla (quello sparito dalla maschera, aux bit 0-4, nel frame dell'evento) lampeggia sulla
+// linea del muro e si sbriciola, e il suo corso sulla racchetta si rompe, per BARRIER_FRAMES frame.
+// Come NextFx di rust/game/src/next_ui.rs: lo sparo del BLASTER (la cartuccera perde un colpo) per
+// FIRE_FRAMES frame; il colpo della racchetta (la palla riparte dall'altra parte) per HIT_FRAMES frame,
+// con la riga del colpo dalla cima della racchetta: scintille dell'HAMMER (solo il colpo potente, con
+// il suo boost), onda del TWIST, corso del GUARDIAN che rientra.
+localparam [2:0] K_HAMMER = 3'd2, K_TWIST = 3'd3, K_BLASTER = 3'd4, K_RUSH = 3'd5, K_GUARDIAN = 3'd6;
+localparam [5:0] BARRIER_FRAMES = 6'd42;
+localparam [4:0] FIRE_FRAMES = 5'd26, HIT_FRAMES = 5'd30;
 reg [3:0] rush_frames [0:1];
 reg [1:0] rush_home = 2'b11;
-reg [4:0] barrier_frames [0:1];
+reg [5:0] barrier_frames [0:1];
 reg [4:0] wall_last [0:1];      // maschera dei 5 settori al frame prima
 reg [4:0] wall_hit [0:1];       // settore appena colpito (lampeggia)
+reg [4:0] fire_frames [0:1];
+reg [2:0] ammo_last [0:1];
+reg [4:0] hit_frames [0:1];
+reg [5:0] hit_row [0:1];
+wire       hit_event = sound_events[1] || sound_events[2] || sound_events[6];
+wire       hitter = ball_vx < 0;   // la palla riparte verso il lato opposto di chi ha colpito
+wire [2:0] hit_kind = hitter ? kind1[2:0] : kind0[2:0];
+wire signed [31:0] hit_dy = (hitter ? pad1_y + (pad1_h >>> 1) : pad0_y + (pad0_h >>> 1)) - ball_y;
+wire [5:0] hit_at = (hit_dy < 0) ? 6'd0 : (hit_dy >= 32'sd4128768) ? 6'd63 : hit_dy[21:16];
 wire [4:0] wall0 = aux0[4:0], wall1 = aux1[4:0];
 // lo scatto che ha intercettato la palla nel frame: la racchetta a schermo arriva subito
 reg [1:0] dash_snap = 2'b00;
@@ -1727,7 +1768,10 @@ always @(posedge clk) begin
     if (match_reset) begin
         for (rk = 0; rk < 2; rk = rk + 1) begin
             rush_frames[rk] <= 4'd0;
-            barrier_frames[rk] <= 5'd0;
+            barrier_frames[rk] <= 6'd0;
+            fire_frames[rk] <= 5'd0;
+            hit_frames[rk] <= 5'd0;
+            ammo_last[rk] <= 3'd0;
         end
         rush_home <= 2'b11;
         dash_snap <= 2'b00;
@@ -1736,7 +1780,9 @@ always @(posedge clk) begin
             dash_snap <= 2'b00;
             for (rk = 0; rk < 2; rk = rk + 1) begin
                 if (rush_frames[rk] != 4'd0) rush_frames[rk] <= rush_frames[rk] - 4'd1;
-                if (barrier_frames[rk] != 5'd0) barrier_frames[rk] <= barrier_frames[rk] - 5'd1;
+                if (barrier_frames[rk] != 6'd0) barrier_frames[rk] <= barrier_frames[rk] - 6'd1;
+                if (fire_frames[rk] != 5'd0) fire_frames[rk] <= fire_frames[rk] - 5'd1;
+                if (hit_frames[rk] != 5'd0) hit_frames[rk] <= hit_frames[rk] - 5'd1;
             end
         end
         if (sound_trigger) begin
@@ -1749,25 +1795,38 @@ always @(posedge clk) begin
             wall_last[0] <= wall0;
             wall_last[1] <= wall1;
             if (nxt && sound_events[9] && (wall_last[0] & ~wall0) != 5'd0) begin
-                barrier_frames[0] <= 5'd18;
+                barrier_frames[0] <= BARRIER_FRAMES;
                 wall_hit[0] <= wall_last[0] & ~wall0;
             end
             if (nxt && sound_events[9] && (wall_last[1] & ~wall1) != 5'd0) begin
-                barrier_frames[1] <= 5'd18;
+                barrier_frames[1] <= BARRIER_FRAMES;
                 wall_hit[1] <= wall_last[1] & ~wall1;
+            end
+            ammo_last[0] <= kind0[10:8];
+            ammo_last[1] <= kind1[10:8];
+            if (nxt && kind0[2:0] == K_BLASTER && kind0[10:8] < ammo_last[0]) fire_frames[0] <= FIRE_FRAMES;
+            if (nxt && kind1[2:0] == K_BLASTER && kind1[10:8] < ammo_last[1]) fire_frames[1] <= FIRE_FRAMES;
+            if (nxt && hit_event && ((hit_kind == K_HAMMER && ball_boost == P_HAMMER_MUL) ||
+                                     hit_kind == K_TWIST || hit_kind == K_GUARDIAN)) begin
+                hit_frames[hitter] <= HIT_FRAMES;
+                hit_row[hitter] <= hit_at;
             end
         end
     end
 end
 wire [1:0] rush_kind = {nxt && kind1[2:0] == K_RUSH, nxt && kind0[2:0] == K_RUSH};
-wire [1:0] twist_kind = {nxt && kind1[2:0] == K_TWIST, nxt && kind0[2:0] == K_TWIST};
+// racchette dei personaggi (un tipo): le disegna tutte next_render, anche il corpo
+wire [1:0] typed_kind = {nxt && kind1[2:0] != 3'd7, nxt && kind0[2:0] != 3'd7};
 // intensità delle immagini del RUSH: 3 appena partito, poi 2, 1 e 0 (niente)
 function [1:0] rush_level(input [3:0] f);
     rush_level = (f > 4'd10) ? 2'd3 : (f > 4'd5) ? 2'd2 : (f != 4'd0) ? 2'd1 : 2'd0;
 endfunction
 wire [3:0] rush_fade = {rush_kind[1] ? rush_level(rush_frames[1]) : 2'd0,
                         rush_kind[0] ? rush_level(rush_frames[0]) : 2'd0};
-wire [1:0] barrier_flash = {barrier_frames[1] != 5'd0, barrier_frames[0] != 5'd0};
+wire [11:0] barrier_age = {barrier_frames[1], barrier_frames[0]};
+wire [9:0]  fire_age = {fire_frames[1], fire_frames[0]};
+wire [9:0]  hit_age = {hit_frames[1], hit_frames[0]};
+wire [11:0] hit_rows = {hit_row[1], hit_row[0]};
 wire [4:0] wall_hit0 = wall_hit[0], wall_hit1 = wall_hit[1];
 // vibrazione del RUSH: un pixel avanti e indietro, (tick / 8) % 2 come nel gioco Rust
 wire signed [31:0] rush_shake = logic_tick[3] ? 32'sd65536 : 32'sd0;
@@ -1795,9 +1854,13 @@ integer di;
 reg  [89:0]  omega_net_w = 90'd0, omega_net = 90'd0;
 always @(posedge clk) if (snapshot) omega_net <= omega_net_w;
 wire         omega_net_on = omega_lvl && ch_active && !duel && (mode == M_GAME || mode == M_GAME_OVER);
+// parola della rete (0-2) su 2 bit: scritta dentro l'indice, la sottrazione si allargherebbe a 32
+// bit con il 30 e 0xB04 (bit bassi 0) darebbe un indice fuori dal vettore, cioè i trattini 20-29,
+// la parte bassa della rete, mai aggiornati
+wire [1:0]   omega_net_word = ui_addr[1:0] - 2'd2;
 always @(posedge clk_cpu)
     if (ui_wr && ui_addr >= 14'h0B02 && ui_addr <= 14'h0B04)
-        omega_net_w[30 * (ui_addr[1:0] - 2'd2) +: 30] <= ui_wdata[29:0];
+        omega_net_w[30 * omega_net_word +: 30] <= ui_wdata[29:0];
 always @(posedge clk) begin
     if (match_reset) begin
         for (di = 0; di < DASHES; di = di + 1) dash_kick[di] <= 8'sd0;
@@ -1955,7 +2018,8 @@ pong_render render (
     .field_off(over_closes), .over_age(over_age),
     .net_kind(net_kind), .net_t(net_t), .net_shake(hammer_net != 4'd0 && hammer_net[1]), .net_shake_dir(hammer_net[2]),
     .ball_accent(nxt && (next_flags[2] || next_flags[10:9] != 2'd0)),
-    .pad_hide(pad_spin | warp_hide | twist_kind), .pad_gray(pad_gray), .dash_off(dash_off), .field_gray(bul_on),
+    .ball_relief(nxt && (mode == M_GAME || mode == M_GAME_OVER || mode == M_DEMO)), .ball_right(ball_vx > 0),
+    .pad_hide(pad_spin | warp_hide | typed_kind), .pad_gray(pad_gray), .dash_off(dash_off), .field_gray(bul_on),
     .blur(bul_blur), .blur_pads(bul_cold),
     .ui_c(ui_idx != 8'd0 && ui_class == 2'd2), .ui_c_rgb(ui_rgb),
     .rgb(game_rgb), .bg(game_bg), .ball(game_ball)
@@ -1975,7 +2039,8 @@ next_render next_draw (
     .warp_on(warp_on), .warp_side(warp_side), .warp_from(warp_from),
     .omega_pad(omega_pad), .omega_flash(omega_flash), .omega_egg(egg),
     .kind0(kind0), .kind1(kind1), .shots_x(shots_x), .shots_y(shots_y),
-    .pad0_motion(pad0_motion), .pad1_motion(pad1_motion), .rush_fade(rush_fade), .barrier_flash(barrier_flash),
+    .pad0_motion(pad0_motion), .pad1_motion(pad1_motion), .rush_fade(rush_fade), .barrier_age(barrier_age),
+    .fire_age(fire_age), .hit_age(hit_age), .hit_rows(hit_rows), .building(counting), .build_f(mframe[7:0]),
     .wall0(wall0), .wall1(wall1), .wall_hit0(wall_hit0), .wall_hit1(wall_hit1),
     .sup(sup), .super0(super0), .super1(super1), .move_ok({move_avail(1'b1), move_avail(1'b0)}),
     .rise_flash(rise_frames != 4'd0), .label_move(label_move), .label_max(label_max),
@@ -2004,7 +2069,7 @@ wire [23:0] end_disp_s, end_disp_b;
 wire [9:0]  end_scroll;
 ending_render #(.FW_ROM(ENDING_FW_ROM)) ending_draw (
     .clk(clk), .start(end_go && !end_q), .active(end_go), .frame_start(frame_start),
-    .hc(hc), .vc(vc), .score(end_score), .bonus(end_bonus),
+    .hc(hc), .vc(vc), .score(end_score), .bonus(end_bonus), .omega(omega_won),
     .rgb(end_rgb),
     .say(end_say), .beat(end_beat), .skip_ok(end_skip_ok), .done(end_done),
     .st_seq(end_seq), .st_score(end_disp_s), .st_bonus(end_disp_b), .st_scroll(end_scroll)
@@ -2015,7 +2080,7 @@ wire [7:0]  ui_idx;
 wire [1:0]  ui_class;
 wire [23:0] ui_rgb;
 wire [31:0] ui_status;
-ui_render #(.FONT_ROM(UI_FONT_ROM), .GFX_ROM(UI_GFX_ROM)) ui (
+ui_render #(.FONT_ROM(UI_FONT_ROM), .GFX_ROM(UI_GFX_ROM), .GFX_ROM2(UI_GFX_ROM2)) ui (
     .clk(clk), .clk_cpu(clk_cpu), .clear(reset), .ce_pix(ce_pix), .hc(hc), .vc(vc),
     .cpu_wr(ui_wr), .cpu_addr(ui_addr), .cpu_wdata(ui_wdata), .status(ui_status),
     .px_idx(ui_idx), .px_class(ui_class), .px_rgb(ui_rgb)
@@ -2278,7 +2343,7 @@ pong_sid #(.ROM_FILE(SID_ROM), .VOICE_FILE(VOICE_ROM)) sid (
     .slow(sfx_slow),
     .music_fast(music_fast),
     .music_slow(bul_on),
-    .voice_go(frame_start && mode == M_INTRO && !omega_warn && mframe == CH_VOICE_FRAME),
+    .voice_go(frame_start && mode == M_INTRO && !omega_warn && !duel && mframe == CH_VOICE_FRAME),
     .voice_id(omega_lvl ? VOICE_OMEGA : {1'b0, rung_kind(ch_level)}),
     .voice_stop(mode != M_INTRO),
     .voice_on(),
@@ -2439,6 +2504,8 @@ always @(posedge clk) begin
             uis[45] <= {music_off, jb_play, jb_sec, jb_track, morph_age, omega_kind, omega_won, omega_warn, omega_lvl,
                         jb_on, scope_wptr};
             uis[46] <= {19'd0, music_vol, shat_f};
+            // schermo VS: racchetta e bonus del giocatore della scalata, bonus dei due nella sfida
+            uis[47] <= {2'd0, loadout_of(pick_mask[1]), loadout_of(pick_mask[0]), ch_kind, ch_lo};
             for (ui_k = 0; ui_k < 10; ui_k = ui_k + 1) begin
                 uis[8 + 2 * ui_k] <= {10'd0, tb_level[ui_k], tb_name[ui_k]};
                 uis[9 + 2 * ui_k] <= {4'd0, tb_bcd[ui_k]};

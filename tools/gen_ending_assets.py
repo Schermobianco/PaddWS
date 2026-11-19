@@ -9,7 +9,7 @@ Uscite in mister/rtl/gen/:
   sinistra), un byte per riga del file. Le scritte sono in Press Start 2P a 8 px (`text_mask` di
   tools/gen_attract_assets.py, celle di 8x8 pixel), a scala 1 o, per i titoli grandi, 2; le righe
   uguali si tengono una volta sola. In fondo, contigue, le cifre "0123456789+" in celle larghe
-  END_CELL e il segno KO della sfilata (64x36);
+  END_CELL e il timbro DEFEATED della sfilata (inclinato, END_STAMP_W x END_STAMP_H);
 - ending_map.hex: la mappa delle righe, una parola da 32 bit per riga dello schermo di ogni parte
   (le finestre END_WIN_* delle parti fisse, poi i titoli di coda, che scorrono): riga della bitmap,
   riga del glifo, x della scritta, scala, colore, gruppo (le scritte che compaiono dopo) e numero
@@ -199,29 +199,31 @@ def stamp_bitmap() -> list[list[int]]:
 
 # parti: 0 congratulazioni, 1 sfilata, 2 punteggio, 3 campione, 4 titoli, 5 THE END
 # righe (centro della scritta a 320x240), scala, colore, gruppo, numero
-PARADE_Y = 92                     # centro delle racchette (185 a 480 righe)
-PARADE_NAME_Y = 145               # centro dei nomi pari; i dispari PARADE_NAME_DY righe più in basso
-PARADE_NAME_DY = 12
+# sfilata (draw_parade di ending_ui.rs, sulle righe di caratteri del C64 da PARADE_TOP): otto posti, due
+# file da quattro ritratti medi PARADE_W x PARADE_H, colonne da PARADE_X0 ogni PARADE_DX, ritratti alle
+# righe 3 e 14, nomi alle righe 12 e 23, il titolo alla riga 1
+PARADE_TOP = 20
+PARADE_X0, PARADE_DX = 8, 80
+PARADE_W, PARADE_H = 64, 72
+PARADE_ROWS = (PARADE_TOP + 3 * 8, PARADE_TOP + 14 * 8)
+PARADE_NAMES = (PARADE_TOP + 12 * 8 + 4, PARADE_TOP + 23 * 8 + 4)    # centro dei nomi
+PARADE_TITLE = PARADE_TOP + 8 + 4
 # timbro DEFEATED (stamp_bitmap): riquadro attorno alla scritta a scala 1 (mezza larghezza = metà
 # della scritta + 4, mezza altezza 7,5 come stamp_size di ending_ui.rs a 240 righe), inclinato come
 # STAMP_ANGLE; STAMP_W x STAMP_H è il riquadro dell'immagine ruotata
 STAMP_BOX_W, STAMP_BOX_H = 72, 15
 STAMP_ANGLE = -8.0
 STAMP_W, STAMP_H = 76, 26
-# centro dei timbri: sotto il centro delle racchette (cy + 15 unità a 480 righe), uno più su e uno più
-# giù di STAMP_STAGGER righe (metà altezza del timbro ruotato più una riga, come ParadeLayout), così i
-# vicini non si toccano; quelli a due colonne di distanza stanno alla stessa altezza
-STAMP_CY = PARADE_Y + 8
-STAMP_STAGGER = 14
-# colonne della sfilata: da PARADE_X0 a PARADE_X1, così i timbri dei due estremi (74 pixel) e
-# GUARDIAN (63 pixel) stanno dentro lo schermo e i timbri a due colonne di distanza non si toccano
-# (su PC le colonne si stringono allo stesso modo, parade_layout); i nomi vicini stanno su due righe
-PARADE_X0, PARADE_X1 = 40, 280
+# centro dei timbri: al centro del ritratto in larghezza, PARADE_STAMP_UP righe sopra il suo fondo (i
+# timbri vicini, a PARADE_DX pixel, non si toccano)
+PARADE_STAMP_UP = 14
+assert STAMP_W < PARADE_DX
 SCORE_SCALE = 1                   # righe del punteggio: etichette e cifre
 
 
-def column_x(i: int) -> int:
-    return round(PARADE_X0 + (PARADE_X1 - PARADE_X0) * i / 6)
+def parade_slot(i: int) -> tuple[int, int]:
+    """Angolo in alto a sinistra del ritratto del posto i della sfilata."""
+    return PARADE_X0 + PARADE_DX * (i % 4), PARADE_ROWS[i // 4]
 
 
 def score_columns(t: Text) -> tuple[int, int]:
@@ -240,7 +242,7 @@ def static_parts(t: Text) -> dict[int, list[tuple]]:
     return {
         0: [("CONGRATULATIONS!", 110, 1, C_FLASH, 0, N_NONE, None),
             ("YOU WIN!", 136, BIG, C_WHITE, 1, N_NONE, None)],
-        1: [("YOUR OPPONENTS", 25, 1, C_YELLOW, 0, N_NONE, None)],
+        1: [("YOUR OPPONENTS", PARADE_TITLE, 1, C_YELLOW, 0, N_NONE, None)],
         2: [("FINAL SCORE", 50, 1, C_YELLOW, 0, N_NONE, None),
             ("SCORE", 90, s, C_WHITE, 0, N_SCORE, lx),
             ("CHAMPION BONUS", 110, s, C_YELLOW, 1, N_BONUS, lx),
@@ -538,11 +540,13 @@ def main() -> None:
          f"localparam integer END_FW_SIZE = {len(fw_words)};   // {ndots} punti",
          f"localparam integer END_GLYPH_H = {t.gh}, END_CELL = {t.cell};",
          f"localparam integer END_STRIP_ROW0 = {strip_row0}, END_STAMP_ROW0 = {stamp_row0};",
-         f"localparam integer END_STAMP_W = {STAMP_W}, END_STAMP_H = {STAMP_H}, END_STAMP_Y0 = {STAMP_CY - STAMP_H // 2}, END_STAMP_STAGGER = {STAMP_STAGGER};",
+         f"localparam integer END_STAMP_W = {STAMP_W}, END_STAMP_H = {STAMP_H};",
          f"localparam integer END_DIG_X0 = {dig_x0};",
-         f"localparam integer END_PARADE_Y = {PARADE_Y}, END_PARADE_NAME_Y = {PARADE_NAME_Y}, "
-         f"END_PARADE_NAME_DY = {PARADE_NAME_DY};",
-         *[f"localparam integer END_COL{i} = {column_x(i)};" for i in range(7)],
+         f"localparam integer END_PARADE_X0 = {PARADE_X0}, END_PARADE_DX = {PARADE_DX}, "
+         f"END_PARADE_W = {PARADE_W}, END_PARADE_H = {PARADE_H};",
+         f"localparam integer END_PARADE_ROW0 = {PARADE_ROWS[0]}, END_PARADE_ROW1 = {PARADE_ROWS[1]}, "
+         f"END_PARADE_NAME0 = {PARADE_NAMES[0]}, END_PARADE_NAME1 = {PARADE_NAMES[1]};",
+         f"localparam integer END_PARADE_STAMP_UP = {PARADE_STAMP_UP};",
          ]
     for part in (0, 1, 2, 3, 5):
         top, h, base = windows[part]
@@ -604,14 +608,20 @@ def preview(out: Path, t: Text, b: Builder, words: list[int], windows: dict, cre
         for y in range(top, top + h):
             draw_text(img, y, words[base + y - top])
         if part == 1:
-            # i timbri, sfalsati in altezza (pari più su, dispari più giù)
-            for i in range(7):
-                dy = -STAMP_STAGGER if i % 2 == 0 else STAMP_STAGGER
+            # i riquadri dei ritratti e i timbri (i ritratti li disegna lo schermo a oggetti)
+            for i in range(8):
+                x0, y0 = parade_slot(i)
+                for xx in range(PARADE_W):
+                    img.putpixel((x0 + xx, y0), (70, 70, 70))
+                    img.putpixel((x0 + xx, y0 + PARADE_H - 1), (70, 70, 70))
+                if i == 7:
+                    continue
+                cx, cy = x0 + PARADE_W // 2, y0 + PARADE_H - PARADE_STAMP_UP
                 for yy in range(STAMP_H):
                     for xx in range(STAMP_W):
-                        x = column_x(i) - 1 - STAMP_W // 2 + xx
+                        x = cx - STAMP_W // 2 + xx
                         if stamp[yy][xx] and 0 <= x < W:
-                            img.putpixel((x, STAMP_CY + dy - STAMP_H // 2 + yy), pal[2])
+                            img.putpixel((x, cy - STAMP_H // 2 + yy), pal[2])
         if part == 3:
             f = 40
             for i, fw in enumerate(fws):

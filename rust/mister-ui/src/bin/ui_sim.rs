@@ -296,7 +296,11 @@ fn main() -> ExitCode {
         uis: [0; 64],
         seq: 0,
         font: read_hex(&rtl_gen.join("ui_font.hex"), |s| u8::from_str_radix(s, 16).unwrap()),
-        gfx: read_hex(&rtl_gen.join("ui_gfx.hex"), |s| u32::from_str_radix(s, 16).unwrap()),
+        // la ROM grafica è in due file (le prime 32.768 parole e il resto)
+        gfx: [rtl_gen.join("ui_gfx.hex"), rtl_gen.join("ui_gfx2.hex")]
+            .iter()
+            .flat_map(|f| read_hex(f, |s| u32::from_str_radix(s, 16).unwrap()))
+            .collect(),
         gram: vec![0; map::GRAM_WORDS as usize],
     };
     let refs: HashMap<i64, (u32, u64)> = fs::read_to_string(&pos[1])
