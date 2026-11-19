@@ -14,6 +14,8 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+## [4.5.0] - 2026-11-19
+
 ### Aggiunto
 - **I personaggi** (PC, web, Deck, MiSTer e C64): ogni racchetta di NEXT ha un volto.
   - La scelta della racchetta diventa quella di un picchiaduro: ritratti grandi ai lati, la
@@ -1321,7 +1323,8 @@ Ricostruite dalle cartelle di backup in `archive/` (date indicative).
 - **1.5** (2020-08) – versione per Raspberry Pi con encoder rotativi.
 - **1.1 – 1.4** (2020-08) – prime versioni pygame: menu, modalità CLASSIC ed EVO, suoni, splash.
 
-[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.4.1...HEAD
+[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.5.0...HEAD
+[4.5.0]: https://github.com/Schermobianco/PaddWS/compare/v4.4.1...v4.5.0
 [4.4.1]: https://github.com/Schermobianco/PaddWS/compare/v4.4.0...v4.4.1
 [4.4.0]: https://github.com/Schermobianco/PaddWS/compare/v4.3.0...v4.4.0
 [4.3.0]: https://github.com/Schermobianco/PaddWS/compare/v4.2.0...v4.3.0
