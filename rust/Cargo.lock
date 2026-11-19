@@ -567,7 +567,7 @@ dependencies = [
 
 [[package]]
 name = "paddws-mister-ui"
-version = "4.4.1"
+version = "4.5.0"
 
 [[package]]
 name = "paddws-sid"

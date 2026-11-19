@@ -58,8 +58,9 @@ Ogni capsula mostra il simbolo del suo bonus:
 
 ## Tipi di racchetta (NEXT)
 
-Prima dei bonus ognuno sceglie la sua racchetta (ogni avversario della scalata ha la sua). Ogni tipo ha un vantaggio, un piccolo prezzo e un segno che lo fa riconoscere in partita (in
-giallo nell'immagine, con le racchette in proporzione). I tipi sono bilanciati perché ognuno vinca
+Prima dei bonus ognuno sceglie la sua racchetta (ogni avversario della scalata ha la sua). Ogni tipo ha un vantaggio, un piccolo prezzo e il disegno del suo personaggio, che lo fa
+riconoscere in partita (nell'immagine le racchette sono in proporzione; sul C64 i segni sono fermi
+e con i colori di sempre). I tipi sono bilanciati perché ognuno vinca
 circa metà dei punti contro la racchetta normale.
 
 ![I sette tipi di racchetta, in proporzione, con i loro segni](../icons/paddles.png)

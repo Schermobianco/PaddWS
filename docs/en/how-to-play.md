@@ -60,8 +60,9 @@ Each capsule shows the symbol of its power-up:
 
 ## Paddle types (NEXT)
 
-Before the power-ups each player picks a paddle (each opponent of the ladder has its own). Each type has an advantage, a small price and a mark that makes it recognisable in
-play (in yellow in the picture, with the paddles to scale). The types are balanced so that each
+Before the power-ups each player picks a paddle (each opponent of the ladder has its own). Each type has an advantage, a small price and its character's design, which makes it
+recognisable in play (the paddles in the picture are to scale; on the C64 the marks are still and
+keep the usual colours). The types are balanced so that each
 wins about half of the points against the normal paddle.
 
 ![The seven paddle types, to scale, with their marks](../icons/paddles.png)
