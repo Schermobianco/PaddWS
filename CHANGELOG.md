@@ -15,9 +15,37 @@ crea il commit e il tag `vX.Y.Z`.
 ## [Non rilasciato]
 
 ### Aggiunto
+- **I personaggi** (PC, web, Deck, MiSTer e C64): ogni racchetta di NEXT ha un volto.
+  - La scelta della racchetta diventa quella di un picchiaduro: ritratti grandi ai lati, la
+    griglia dei volti (OMEGA è un "?" finché non lo batti), i cursori 1P/2P e le due racchette
+    vere nel campo.
+  - Prima di ogni livello della scalata c'è lo schermo VS animato, al posto delle entrate dei
+    singoli avversari, anche nelle sfide tra due giocatori. OMEGA si mostra prima con le sue
+    forme e il sigillo, poi si svela nel VS.
+  - Nel finale sfilano i ritratti degli avversari battuti, timbrati DEFEATED; OMEGA è svelato
+    se l'hai battuto, se no resta in sagoma.
+- **Racchette dei personaggi** in NEXT (PC, web, Deck, MiSTer e C64): ogni tipo ha il suo
+  disegno, come i segni del suo personaggio visti dall'alto. La zona che colpisce la palla non
+  cambia. Su PC e MiSTer le racchette sono in rilievo, con l'ombra, e hanno piccoli effetti: le
+  scintille dell'HAMMER sul colpo potente, l'anello della TWIST a ogni colpo, il rinculo del
+  BLASTER quando spara, il muro del GUARDIAN che si crepa e crolla. Sul PC anche la palla di NEXT
+  è in rilievo. Sul C64 i disegni sono fermi, con i colori di sempre.
+- **C64 NTSC**: nella release c'è anche la cartuccia `paddws-ntsc.crt` per i C64 NTSC, a 60
+  frame al secondo con i parametri del core a 60 Hz. Finora è stata provata solo in VICE.
 - PC, Raspberry e web: pagina **CRT SETTINGS** nel menu, con il filtro acceso o spento,
   SCANLINES, SHARPNESS, CURVATURE, MASK (in percento del default), LINES (righe emulate) e
   DEFAULTS; le modifiche si vedono subito e si salvano in `crt_effects`.
+
+### Modificato
+- Scelta della racchetta (PC, MiSTer e C64): con il joystick destra e sinistra scorrono le
+  racchette, su e giù passano all'altra riga della griglia (mai sulla casella di OMEGA).
+- PC e MiSTer: la scritta YOU WIN non ha più il riquadro nero, sta direttamente sopra il campo.
+- C64: frame più leggeri nelle partite con il BLASTER e il TELEPORT e contro OMEGA. I colpi del
+  BLASTER costano circa la metà, e la CPU non rifà a ogni tick i conti della battuta.
+
+### Corretto
+- MiSTer: l'ombra della racchetta di sinistra era larga 2 pixel e quella di destra finiva sotto
+  la racchetta; ora è 1 pixel dietro e 1 sotto per tutte e due.
 
 ## [4.4.1] - 2026-11-16
 

@@ -50,14 +50,18 @@ if [ -z "$NOCHECK" ]; then
     grep -E "test result" /tmp/test.log | awk '{ p += $4; f += $6 } END { print "  test: " p " passati, " f " falliti" }'
     cd ..
 
-    step "controlli C64: banco di prova contro il core Rust"
-    before=$(md5sum c64/gen/params.inc)
+    step "controlli C64: banco di prova contro il core Rust (PAL e NTSC)"
+    before=$(md5sum c64/gen/params.inc c64/gen/ntsc/params.inc)
     (cd rust && cargo run --release -q -p paddws-c64 -- params --check > /dev/null)
-    [ "$(md5sum c64/gen/params.inc)" = "$before" ] || { echo "c64/gen/params.inc non aggiornato"; exit 1; }
+    [ "$(md5sum c64/gen/params.inc c64/gen/ntsc/params.inc)" = "$before" ] || { echo "c64/gen/params.inc o c64/gen/ntsc/params.inc non aggiornato"; exit 1; }
     sh c64/build.sh
-    for c in math game sid ui frames; do
-        (cd rust && cargo run --release -q -p paddws-c64 -- $c) > /tmp/c64.log 2>&1 || { cat /tmp/c64.log; exit 1; }
-        echo "  $c: $(tail -1 /tmp/c64.log)"
+    sh c64/build.sh --ntsc
+    for tv in "" --ntsc; do
+        for c in math game sid ui frames; do
+            # shellcheck disable=SC2086
+            (cd rust && cargo run --release -q -p paddws-c64 -- $tv $c) > /tmp/c64.log 2>&1 || { cat /tmp/c64.log; exit 1; }
+            echo "  ${tv:+NTSC }$c: $(tail -1 /tmp/c64.log)"
+        done
     done
 
     step "controlli MiSTer: tracce contro il core Rust"
@@ -107,6 +111,8 @@ zipdir "paddws-$version-web"
 
 step "C64"
 sh c64/build.sh
+sh c64/build.sh --ntsc
+cp c64/build/ntsc/paddws.crt /tmp/paddws-ntsc.crt
 # il C64 scrive con il font della ROM della macchina: nessun font di terzi nella cartuccia
-stage c64 c64/build/paddws.crt LICENSE THIRD_PARTY.md
+stage c64 c64/build/paddws.crt /tmp/paddws-ntsc.crt LICENSE THIRD_PARTY.md
 zipdir "paddws-$version-c64"

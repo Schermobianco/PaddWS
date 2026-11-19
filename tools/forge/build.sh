@@ -55,6 +55,7 @@ if [ -z "$nomister" ] && { [ -z "$checkonly" ] || [ -n "$synth" ]; }; then
     echo "== core MiSTer: sintesi con Quartus (circa 16 minuti)"
     sh "$src/mister/synth.sh" > "$HOME/forge/synth.log" 2>&1 || { tail -30 "$HOME/forge/synth.log"; exit 1; }
     grep -E "Logic utilization" "$HOME/forge/synth.log" | sed 's/^/  /'
+    grep -E "^Total (RAM Blocks|DSP Blocks)" "$src/mister/output_files/PaddWS.fit.summary" | sed 's/^/  /'
     LC_ALL=C awk -F: '/^Slack/ { v = $2 + 0; if (n == 0 || v < m) m = v; n++ } END { printf "  slack peggiore %.3f ns su %d controlli\n", m, n }' \
         "$src/mister/output_files/PaddWS.sta.summary"
 fi

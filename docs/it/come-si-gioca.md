@@ -249,7 +249,9 @@ del SID (il basso di HAMMER, il titolo, TITAN, il finale) e sono pensate per l'8
 Doppio tocco su o giù = accelerazione rapida. `5` gettone, `Invio` / `Spazio` / `1` Start,
 `P` pausa, `Esc` menu e uscita, `F11` schermo intero, `C` filtro CRT (non durante NEXT).
 Il menu è una ruota: `↑` / `↓` la girano (la voce scelta resta al centro, gialla), `←` / `→`
-cambiano il valore, `Invio` conferma.
+cambiano il valore, `Invio` conferma. Nella scelta della racchetta `W` `A` `S` `D` (a sinistra) e le
+frecce (a destra), come il joystick, muovono il cursore nella griglia: destra e sinistra scorrono le
+racchette, su e giù passano all'altra riga; `C` / `-` conferma.
 
 **Gamepad e stick arcade** (PC, Raspberry e web): il primo collegato è del giocatore di sinistra,
 il secondo di quello di destra; se si gioca da soli con un solo gamepad, è di chi gioca. Levetta o
@@ -316,7 +318,7 @@ spinner e la sua velocità) sono nell'OSD. Dettagli in [mister/README.md](../../
 ### Commodore 64
 
 Versione in assembly 6502 che gioca la stessa partita del core Rust, bit per bit: un tick per
-frame a 50 Hz, campo di 320×200 pixel, musiche ed effetti sul SID vero. La cartuccia EasyFlash `paddws.crt` (C64 Ultimate, EasyFlash vera scritta con EasyProg, VICE):
+frame (50 Hz, sull'NTSC 60), campo di 320×200 pixel, musiche ed effetti sul SID vero. La cartuccia EasyFlash `paddws.crt`, o `paddws-ntsc.crt` per i C64 NTSC (C64 Ultimate, EasyFlash vera scritta con EasyProg, VICE):
 tutto in un file, avvio immediato e voce delle presentazioni della scalata senza caricamenti; la classifica si salva
 nella flash della cartuccia e resta anche da spenti (in VICE con `-easyflashcrtwrite`).
 

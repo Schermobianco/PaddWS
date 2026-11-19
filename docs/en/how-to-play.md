@@ -253,7 +253,9 @@ and are meant for the 8580.
 Double tap up or down = fast acceleration. `5` coin, `Enter` / `Space` / `1` Start, `P` pause,
 `Esc` menu and quit, `F11` full screen, `C` CRT filter (not during NEXT).
 The menu is a wheel: `↑` / `↓` turn it (the selected item stays in the middle, in yellow), `←` /
-`→` change the value, `Enter` confirms.
+`→` change the value, `Enter` confirms. In the paddle pick `W` `A` `S` `D` (left) and the arrows
+(right), like the joystick, move the cursor in the grid: right and left go through the paddles, up
+and down switch row; `C` / `-` confirms.
 
 **Gamepads and arcade sticks** (PC, Raspberry and web): the first one connected belongs to the left
 player, the second to the right one; if you play alone with a single gamepad, it is yours. Stick or
@@ -320,8 +322,8 @@ in [mister/README.en.md](../../mister/README.en.md).
 ### Commodore 64
 
 A version in 6502 assembly that plays the same match as the Rust core, bit for bit: one tick per
-frame at 50 Hz, a 320×200 pixel playfield, music and effects on the real SID. The EasyFlash
-cartridge `paddws.crt` (C64 Ultimate, a real EasyFlash written with EasyProg, VICE): everything in
+frame (50 Hz, 60 on NTSC), a 320×200 pixel playfield, music and effects on the real SID. The EasyFlash
+cartridge `paddws.crt`, or `paddws-ntsc.crt` for NTSC machines (C64 Ultimate, a real EasyFlash written with EasyProg, VICE): everything in
 one file, instant start and the ladder introduction voices without loading; the high-score table is saved in
 the cartridge flash and survives power-off (in VICE with `-easyflashcrtwrite`).
 
