@@ -481,6 +481,27 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         app.paddles = [None; 2];
         Scene::Game(Box::new(play))
     }
+    // come `kinds`, con gli effetti delle racchette (sparo, colpo potente, corso del muro che si
+    // rompe) a `at` secondi dopo i 30 frame del ciclo qui sotto
+    fn kinds_fx(app: &mut App, pair: [paddws_core::PaddleKind; 2], at: f32) -> Scene {
+        let mut scene = kinds(app, pair);
+        if let Scene::Game(play) = &mut scene {
+            play.show_paddle_fx(at - 0.5);
+        }
+        scene
+    }
+    // partita NEXT con questi tipi di racchetta nel conto alla rovescia, dopo i 30 frame del ciclo
+    // qui sotto (il GUARDIAN costruisce il muro)
+    fn kinds_countdown(app: &mut App, pair: [paddws_core::PaddleKind; 2]) -> Scene {
+        app.players = 2;
+        app.next = true;
+        app.paddles = pair.map(Some);
+        let mut play = Play::new(app);
+        play.fill_kinds_demo();
+        app.next = false;
+        app.paddles = [None; 2];
+        Scene::Game(Box::new(play))
+    }
     // scalata di NEXT al livello `level` (da 0), con una partita a metà
     fn challenge(app: &mut App, level: usize) {
         app.players = 2;
@@ -620,7 +641,7 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         app.set_egg(true);
         scene
     }
-    let shots: [(&str, MakeScene); 132] = [
+    let shots: [(&str, MakeScene); 137] = [
         ("1_demo_classic", |app| demo_at(app, DemoMode::Classic)),
         ("1_demo_evo", |app| demo_at(app, DemoMode::Evo)),
         ("1_demo_next", |app| demo_at(app, DemoMode::Next)),
@@ -869,6 +890,11 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         }),
         ("7_next_kinds_titan_twist", |app| kinds(app, [K::Titan, K::Twist])),
         ("7_next_kinds_hammer_rush", |app| kinds(app, [K::Hammer, K::Rush])),
+        ("7_next_kinds_fire_spark", |app| kinds_fx(app, [K::Blaster, K::Hammer], 1.0 / 60.0)),
+        ("7_next_kinds_casing_spark", |app| kinds_fx(app, [K::Blaster, K::Hammer], 0.2)),
+        ("7_next_kinds_wall_crack", |app| kinds_fx(app, [K::Guardian, K::Twist], 0.05)),
+        ("7_next_kinds_wall_break", |app| kinds_fx(app, [K::Guardian, K::Twist], 0.25)),
+        ("7_next_kinds_wall_build", |app| kinds_countdown(app, [K::Guardian, K::Guardian])),
         ("7_next_game", |app| {
             app.players = 2;
             app.next = true;

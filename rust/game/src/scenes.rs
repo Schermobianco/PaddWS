@@ -2469,7 +2469,7 @@ impl Play {
 
         let pos = self.positions(s);
         if let Some(fx) = &self.fx {
-            fx.draw_field(app, &self.game, &pos, shake, bullet.map(|b| b.side));
+            fx.draw_field(app, &self.game, &pos, shake, bullet.map(|b| b.side), self.wall_build());
         }
         for (pad, &(x, y)) in self.game.paddles.iter().zip(&pos).filter(|_| self.fx.is_none()) {
             r.rect_centered(x, y, to_f32(pad.width), to_f32(pad.height), white);
@@ -2599,7 +2599,7 @@ impl Play {
         }
         if let Some(fx) = &self.fx {
             if let Some(b) = bullet {
-                fx.draw_pad(app, &self.game, pos[b.side], shake, b.side);
+                fx.draw_pad(app, &self.game, pos[b.side], shake, b.side, self.wall_build());
             }
             fx.draw_labels(app, &self.game, &pos, shake);
         }
@@ -2936,6 +2936,11 @@ impl Play {
         matches!(self.winner(), Some("you_win" | "p1_wins" | "p2_wins")) && left.min(right) == 0 && left.max(right) > 0
     }
 
+    /// Secondi dall'inizio del conto alla rovescia, mentre c'è: il GUARDIAN costruisce il muro.
+    fn wall_build(&self) -> Option<f32> {
+        (self.countdown > 0.0).then_some((COUNTDOWN_TIME - self.countdown) as f32)
+    }
+
     /// Per la verifica automatica e il benchmark: niente conto alla rovescia.
     pub fn skip_countdown(&mut self) {
         self.countdown = 0.0;
@@ -2972,6 +2977,16 @@ impl Play {
             bonus: Bonus::Ghost,
         });
         self.game.score = [4, 6];
+    }
+
+    /// Per la verifica automatica: effetti delle racchette dei personaggi già avanti di `seconds`
+    /// (`NextFx::show_paddle_fx`).
+    pub fn show_paddle_fx(&mut self, seconds: f32) {
+        if let Some(fx) = &mut self.fx {
+            for side in 0..2 {
+                fx.show_paddle_fx(&self.game, side, seconds);
+            }
+        }
     }
 
     /// Per la verifica automatica: segni dei tipi di racchetta in azione (colpo del BLASTER in

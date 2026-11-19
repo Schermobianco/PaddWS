@@ -791,8 +791,9 @@ pub fn draw_crt_close(r: &Renderer, t: f64, total: f64) {
 /// - PERFECT è la grafica `perfect` (con i colori dei ruoli `paint`, `titles`): si stampa a 3x e
 ///   2x (a scale intere, mai più larga del campo), si posa a 1x e il riquadro trema; poi ogni
 ///   secondo un riflesso bianco attraversa le lettere;
-/// - YOU WIN: la palla, larga `ball`, parte da `from` (la racchetta di chi ha vinto, coordinate di
-///   disegno) e salta da una lettera all'altra accendendole, poi la scritta lampeggia;
+/// - YOU WIN, senza riquadro (sfondo trasparente, si vede la partita): la palla, larga `ball`, parte
+///   da `from` (la racchetta di chi ha vinto, coordinate di disegno) e salta da una lettera
+///   all'altra accendendole, poi la scritta lampeggia;
 /// - CPU WINS (livello perso della CHALLENGE) si scrive con il cursore, subito.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_game_over_anim(
@@ -862,7 +863,7 @@ pub fn draw_game_over_anim(
         return;
     }
     if hop {
-        view.rect(o.back.x, o.back.y, o.back.w, o.back.h, black);
+        // (senza riquadro: le lettere direttamente sopra la partita)
         let bm = o.label;
         let spans = letters(bm);
         let n = spans.len();

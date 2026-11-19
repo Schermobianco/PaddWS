@@ -59,6 +59,9 @@ pub struct Portraits {
     /// sfilata del finale: (normale, sconfitto) per tipo e poi OMEGA; OMEGA in sagoma
     mid: [(Texture2D, Texture2D); PaddleKind::COUNT + 1],
     pub omega_mid_locked: Texture2D,
+    /// colore di ogni personaggio (`accent` di `portraits.json`): anche quello dei segni della
+    /// sua racchetta
+    accent: [Color; PaddleKind::COUNT],
 }
 
 impl Portraits {
@@ -76,7 +79,16 @@ impl Portraits {
                 (texture(&spec, name, MID[i].0), texture(&spec, name, MID[i].1))
             }),
             omega_mid_locked: texture(&spec, "omega", portrait_png!("omega_mid_locked")),
+            accent: std::array::from_fn(|i| {
+                let [r, g, b] = rgb(&spec["accent"][&names[i]]);
+                Color::from_rgba(r, g, b, 255)
+            }),
         }
+    }
+
+    /// Colore del personaggio `kind`.
+    pub fn accent(&self, kind: PaddleKind) -> Color {
+        self.accent[kind as usize]
     }
 
     pub fn big(&self, kind: PaddleKind) -> &Texture2D {
@@ -94,12 +106,14 @@ impl Portraits {
     }
 }
 
+/// Colore RGB di `portraits.json`.
+fn rgb(v: &Value) -> [u8; 3] {
+    let a = v.as_array().expect("colore RGB");
+    std::array::from_fn(|i| a[i].as_u64().expect("componente del colore") as u8)
+}
+
 /// Colori dei ruoli per il personaggio `name`, nell'ordine di `roles` di `portraits.json`.
 fn role_colors(spec: &Value, name: &str) -> Vec<[u8; 3]> {
-    let rgb = |v: &Value| -> [u8; 3] {
-        let a = v.as_array().expect("colore RGB");
-        std::array::from_fn(|i| a[i].as_u64().expect("componente del colore") as u8)
-    };
     let accent = rgb(&spec["accent"][name]);
     let dark = spec["dark"].as_f64().expect("fattore del colore scuro");
     spec["roles"]

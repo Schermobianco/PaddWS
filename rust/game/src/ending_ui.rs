@@ -19,7 +19,7 @@ use paddws_core::{Event, PaddleKind, Rng};
 use crate::challenge_ui::{self, T1};
 use crate::input;
 use crate::next_ui::unit;
-use crate::paddle_ui::{self, Look, Shape, draw_paddle};
+use crate::paddle_ui::{self, Anim, Shape, draw_paddle};
 use crate::scenes::{App, START_KEYS, Scene};
 use crate::touch;
 
@@ -461,7 +461,7 @@ impl Ending {
         let (white, yellow) = (App::color(colors.white), App::color(colors.accent));
         let flash = |period: f64| if (at / period) as i64 % 2 == 0 { yellow } else { white };
         match part {
-            Part::Shatter => draw_shatter(app, at, white, yellow),
+            Part::Shatter => draw_shatter(app, at, white),
             Part::Congrats => {
                 text(app, "CONGRATULATIONS!", T1, 216.0, flash(0.5));
                 if at >= YOU_WIN_AT {
@@ -586,7 +586,7 @@ impl Ending {
 /// lampi bianchi, a `SHATTER_AT` diventa bianca per 8 frame e si spezza: le sette racchette della
 /// scala, ognuna con il suo tipo e la sua misura, si allontanano dal centro in tutte le direzioni,
 /// con qualche scheggia rossa e bianca.
-fn draw_shatter(app: &App, at: f64, white: Color, yellow: Color) {
+fn draw_shatter(app: &App, at: f64, white: Color) {
     let r = &app.renderer;
     let (sc, u) = (app.scale(), unit(app));
     let p = &app.params;
@@ -603,13 +603,9 @@ fn draw_shatter(app: &App, at: f64, white: Color, yellow: Color) {
             tilt: 0.0,
             dash: None,
             preview: false,
+            anim: Anim::still(at as f32),
         };
-        let look = Look {
-            body,
-            mark: yellow,
-            detail: yellow,
-        };
-        draw_paddle(r, &shape, u * zoom, look);
+        draw_paddle(r, &shape, u * zoom, paddle_ui::look(app, Some(kind), body));
     };
     let frame = (at * 60.0) as i32;
     if at < SHATTER_AT + SHATTER_FLASH {

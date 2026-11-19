@@ -32,7 +32,7 @@ use crate::gamepad::Control;
 use crate::input::{self, PadKeys};
 use crate::next_ui::{draw_capsule, unit};
 use crate::paddle_ui::{
-    self, HALF_X, Look, PADDLE_X, PORTRAIT_H, PORTRAIT_W, PORTRAIT_X, PaddlePick, Shape, TOP, TWIST_MAX_TILT, draw_paddle, line,
+    self, Anim, HALF_X, PADDLE_X, PORTRAIT_H, PORTRAIT_W, PORTRAIT_X, PaddlePick, Shape, TOP, TWIST_MAX_TILT, draw_paddle, line,
     tagline,
 };
 use crate::platform;
@@ -982,14 +982,10 @@ impl<'a> Stage<'a> {
                     tilt: if kind == PaddleKind::Twist { TWIST_MAX_TILT } else { 0.0 },
                     dash: None,
                     preview: true,
+                    anim: Anim::still(get_time() as f32),
                 };
                 let body = if self.omega && side != me { crate::next_ui::omega_color(app) } else { self.white };
-                let look = Look {
-                    body,
-                    mark: self.accent,
-                    detail: self.gray,
-                };
-                draw_paddle(r, &shape, u, look);
+                draw_paddle(r, &shape, u, paddle_ui::look(app, Some(kind), body));
             }
         }
         // nomi, motti e bonus: prima il giocatore, poi l'avversario `VS_THEIRS` frame dopo
@@ -1053,13 +1049,9 @@ impl<'a> Stage<'a> {
                 tilt: 0.0,
                 dash: None,
                 preview: false,
+                anim: Anim::still(get_time() as f32),
             };
-            let look = Look {
-                body,
-                mark: self.accent,
-                detail: self.gray,
-            };
-            draw_paddle(r, &shape, self.u, look);
+            draw_paddle(r, &shape, self.u, paddle_ui::look(self.app, Some(kind), body));
         }
         // il sigillo: bianco per qualche frame, poi un lampeggio, poi i suoi colori
         if f >= OMEGA_NAME_AT {

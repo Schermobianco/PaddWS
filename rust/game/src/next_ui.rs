@@ -16,7 +16,7 @@ use paddws_core::{
 use crate::encoder::Action;
 use crate::gamepad::Control;
 use crate::input::{self, PadKeys};
-use crate::paddle_ui::{self, Look, Shape};
+use crate::paddle_ui::{self, Anim, Shape};
 use crate::render::Renderer;
 use crate::scenes::{App, Menu, Scene};
 use crate::touch;
@@ -160,8 +160,10 @@ pub fn special_title(special: Special, level: u8) -> String {
     }
 }
 
-/// Lampo del settore del muro del GUARDIAN che rimanda la palla, prima di sparire.
-const BARRIER_FLASH_SECONDS: f64 = 0.3;
+/// Lampo del blocco del muro del GUARDIAN che rimanda la palla (0,25 s), poi si sbriciola in
+/// schegge (0,45 s).
+const BARRIER_FLASH_SECONDS: f64 = 0.7;
+const BARRIER_BLINK_SECONDS: f64 = 0.25;
 /// Durata della scritta "P1 SMASH!": si accende e si spegne come un vecchio televisore. Una riga
 /// bianca si allarga (`CRT_STEP`) e si apre in altezza (`CRT_STEP`) mostrando la scritta; alla fine
 /// si richiude in una riga, la riga si stringe e resta un puntino (`CRT_DOT`).
@@ -272,6 +274,19 @@ pub const PICK_KEYS: [(KeyCode, KeyCode, KeyCode); 2] = [
 
 /// Tasti NEXT in partita per giocatore: (seleziona, attiva).
 pub const BONUS_KEYS: [(KeyCode, KeyCode); 2] = [(KeyCode::F, KeyCode::C), (KeyCode::Period, KeyCode::Minus)];
+
+/// La palla quadrata di lato `size` centrata in (x, y) (coordinate del core) con il rilievo delle
+/// racchette (`paddle_ui`): ombra portata grigio scuro 1 pixel in basso e 1 dietro rispetto al
+/// moto, colonna del retro e fila di fondo un tono sotto il colore. Solo colori pieni.
+fn draw_relief_ball(r: &Renderer, (x, y): (f32, f32), size: f32, u: f32, color: Color, rightward: bool) {
+    let back = if rightward { -1.0 } else { 1.0 };
+    let (x0, y0) = (x - size / 2.0, r.screen_y(y) - size / 2.0);
+    draw_rectangle(x0 + back * u, y0 + u, size, size, Color::from_rgba(48, 48, 58, 255));
+    draw_rectangle(x0, y0, size, size, color);
+    let shade = Color::new(color.r * 212.0 / 255.0, color.g * 214.0 / 255.0, color.b * 224.0 / 255.0, color.a);
+    draw_rectangle(if rightward { x0 } else { x0 + size - u }, y0, u, size, shade);
+    draw_rectangle(x0, y0 + size - u, size, u, shade);
+}
 
 /// Lato di un pixel "arcade" (lo schermo a 320x240 del core MiSTer).
 pub fn unit(app: &App) -> f32 {
@@ -859,6 +874,16 @@ pub struct NextFx {
     morph_flash: [f64; 2],
     /// OMEGA: nome della forma nuova, lato di OMEGA e secondi che restano
     morph_name: Option<(PaddleKind, usize, f64)>,
+    /// racchette dei personaggi (`paddle_ui::Anim`): colpi della cartuccera e muro del GUARDIAN
+    /// prima del tick; secondi dallo sparo, dal colpo potente di HAMMER e dal colpo che fa
+    /// rientrare un corso del GUARDIAN (con l'altezza del colpo, 0 in cima e 1 in fondo); secondi
+    /// dalla rottura di ogni corso
+    ammo_before: [u8; 2],
+    wall_before: [u8; 2],
+    fire: [Option<f32>; 2],
+    spark: [Option<(f32, f32)>; 2],
+    recoil: [Option<(f32, f32)>; 2],
+    wall_age: [[f32; GUARDIAN_SECTORS]; 2],
 }
 
 impl NextFx {
@@ -883,6 +908,12 @@ impl NextFx {
             kinds_before: [None; 2],
             morph_flash: [0.0; 2],
             morph_name: None,
+            ammo_before: [0; 2],
+            wall_before: [0; 2],
+            fire: [None; 2],
+            spark: [None; 2],
+            recoil: [None; 2],
+            wall_age: [[paddle_ui::BREAK_SECONDS; GUARDIAN_SECTORS]; 2],
         }
     }
 
@@ -896,6 +927,31 @@ impl NextFx {
     /// schermate di verifica; in partita parte quando il tipo cambia).
     pub fn show_morph(&mut self, side: usize, seconds: f64) {
         self.morph_flash[side] = MORPH_FLASH_SECONDS - seconds;
+    }
+
+    /// Effetti della racchetta del giocatore `side` già avanti di `seconds` (per le schermate di
+    /// verifica; in partita partono dagli eventi): sparo del BLASTER, scintille di HAMMER, onda di TWIST, rientro
+    /// del corso del GUARDIAN colpito a metà altezza, rottura dei settori già persi con il lampo
+    /// sul muro del primo.
+    pub fn show_paddle_fx(&mut self, game: &Match, side: usize, seconds: f32) {
+        let Some(n) = &game.next else { return };
+        let pl = &n.players[side];
+        match pl.kind {
+            Some(PaddleKind::Blaster) => self.fire[side] = Some(seconds),
+            Some(PaddleKind::Hammer | PaddleKind::Twist) => self.spark[side] = Some((seconds, 0.5)),
+            Some(PaddleKind::Guardian) => {
+                self.recoil[side] = Some((seconds, 0.5));
+                for (i, age) in self.wall_age[side].iter_mut().enumerate() {
+                    if pl.barrier & (1 << i) == 0 {
+                        *age = seconds;
+                    }
+                }
+                if let Some(hit) = (0..GUARDIAN_SECTORS).find(|&i| pl.barrier & (1 << i) == 0) {
+                    self.barrier_flash[side] = (BARRIER_FLASH_SECONDS - f64::from(seconds), hit);
+                }
+            }
+            _ => {}
+        }
     }
 
     /// Scritta di un bonus al centro in basso (come "P1 SMASH!").
@@ -933,6 +989,8 @@ impl NextFx {
             self.rise_pending = n.rise_break.is_some();
             self.bullet_before = n.bullet;
             self.kinds_before = [n.players[0].kind, n.players[1].kind];
+            self.ammo_before = n.players.each_ref().map(|pl| pl.ammo);
+            self.wall_before = n.players.each_ref().map(|pl| pl.barrier);
         }
     }
 
@@ -1026,6 +1084,35 @@ impl NextFx {
                 self.trail.pop_front();
             }
         }
+        // racchette dei personaggi: sparo del BLASTER (la cartuccera perde un colpo), corsi del
+        // GUARDIAN appena rotti, colpo della racchetta (la palla riparte dall'altra parte)
+        let hit = events.has(Event::Hit) || events.has(Event::Boost) || events.has(Event::Super);
+        let hitter = if b.vx > 0 { 0 } else { 1 };
+        for (side, pl) in n.players.iter().enumerate() {
+            if pl.kind == Some(PaddleKind::Blaster) && pl.ammo < self.ammo_before[side] {
+                self.fire[side] = Some(0.0);
+            }
+            for (i, age) in self.wall_age[side].iter_mut().enumerate() {
+                if self.wall_before[side] & !pl.barrier & (1 << i) != 0 {
+                    *age = 0.0;
+                }
+            }
+            if hit && side == hitter {
+                let pad = &game.paddles[side];
+                let top = to_f32(pad.y) + to_f32(pad.height) / 2.0;
+                let at = ((top - to_f32(b.y)) / to_f32(pad.height)).clamp(0.0, 1.0);
+                match pl.kind {
+                    // il colpo potente è quello che prende il boost di HAMMER
+                    Some(PaddleKind::Hammer) if b.boost == game.params.hammer_mul => {
+                        self.spark[side] = Some((0.0, at));
+                    }
+                    // TWIST: l'onda a ogni colpo
+                    Some(PaddleKind::Twist) => self.spark[side] = Some((0.0, at)),
+                    Some(PaddleKind::Guardian) => self.recoil[side] = Some((0.0, at)),
+                    _ => {}
+                }
+            }
+        }
         // GUARDIAN: la palla rimbalzata va ora verso l'avversario di chi aveva il muro, alla
         // stessa altezza del settore colpito
         if events.has(Event::Barrier) {
@@ -1075,6 +1162,31 @@ impl NextFx {
         let flashes = self.barrier_flash.iter_mut().map(|(t, _)| t).chain(&mut self.rush_ghost);
         for t in flashes.chain(&mut self.morph_flash) {
             *t = (*t - dt).max(0.0);
+        }
+        let step = dt as f32;
+        let advance = |t: &mut f32, limit: f32| {
+            *t += step;
+            *t < limit
+        };
+        for side in 0..2 {
+            if let Some(t) = &mut self.fire[side]
+                && !advance(t, paddle_ui::FIRE_SECONDS)
+            {
+                self.fire[side] = None;
+            }
+            if let Some((t, _)) = &mut self.spark[side]
+                && !advance(t, paddle_ui::SPARK_SECONDS.max(paddle_ui::RING_SECONDS))
+            {
+                self.spark[side] = None;
+            }
+            if let Some((t, _)) = &mut self.recoil[side]
+                && !advance(t, paddle_ui::RECOIL_SECONDS)
+            {
+                self.recoil[side] = None;
+            }
+            for age in &mut self.wall_age[side] {
+                *age = (*age + step).min(paddle_ui::BREAK_SECONDS);
+            }
         }
         if let Some((_, t)) = &mut self.label {
             *t -= dt;
@@ -1139,7 +1251,16 @@ impl NextFx {
 
     /// Racchette, palla ed effetti di NEXT (al posto del disegno normale); la racchetta `skip`
     /// no (nel bullet time quella di chi l'ha attivato si disegna a parte, nitida: `draw_pad`).
-    pub fn draw_field(&self, app: &App, game: &Match, pos: &[(f32, f32); 3], shake: f32, skip: Option<usize>) {
+    /// `build`: secondi dall'inizio del conto alla rovescia, mentre c'è (il GUARDIAN costruisce il muro).
+    pub fn draw_field(
+        &self,
+        app: &App,
+        game: &Match,
+        pos: &[(f32, f32); 3],
+        shake: f32,
+        skip: Option<usize>,
+        build: Option<f32>,
+    ) {
         let Some(n) = &game.next else { return };
         let r = &app.renderer;
         let u = unit(app);
@@ -1152,40 +1273,45 @@ impl NextFx {
         let cold = |c: Color| slowed_color(c, owner.is_some(), white, gray);
         let tint = |side: usize, c: Color| if owner == Some(side) { c } else { cold(c) };
 
-        // GUARDIAN: muro tratteggiato a settori dietro la racchetta, sotto la banda delle
-        // riserve; il settore che rimanda la palla lampeggia e sparisce
+        // GUARDIAN: il muro non si vede in campo (è nei corsi della racchetta); dove la palla lo
+        // colpisce, sulla sua linea, il blocco del settore lampeggia e poi si sbriciola in schegge
+        // che cadono verso il fondo
         for (side, pl) in n.players.iter().enumerate() {
-            if pl.kind != Some(PaddleKind::Guardian) {
+            let (flash, hit) = self.barrier_flash[side];
+            if pl.kind != Some(PaddleKind::Guardian) || flash <= 0.0 {
                 continue;
             }
             let p = &game.params;
             let bx = to_f32(p.guardian_barrier_x);
             let lx = if side == 0 { bx } else { to_f32(p.width) - bx } + shake;
-            let (flash, hit) = self.barrier_flash[side];
-            let mut edges = [to_f32(p.guardian_top); GUARDIAN_SECTORS + 1];
-            for (e, &b) in edges[1..].iter_mut().zip(&p.guardian_bounds) {
-                *e = to_f32(b);
-            }
-            edges[GUARDIAN_SECTORS] = 0.0;
-            // dall'alto dello schermo: la y del core cresce verso l'alto
-            let edges = edges.map(|e| r.screen_y(e));
-            for (i, e) in edges.windows(2).enumerate() {
-                let color = if flash > 0.0 && i == hit {
-                    if (get_time() * 30.0) as i64 % 2 == 0 {
-                        accent
-                    } else {
-                        Color { a: 0.3, ..accent }
-                    }
-                } else if pl.barrier & (1 << i) != 0 {
-                    Color { a: 0.9, ..accent }
-                } else {
-                    continue;
-                };
-                let color = tint(side, color);
-                let mut dy = e[0] + 2.0 * u;
-                while dy < e[1] - 2.0 * u {
-                    draw_rectangle(lx - u, dy, 2.0 * u, (5.0 * u).min(e[1] - 2.0 * u - dy), color);
-                    dy += 8.0 * u;
+            let back = if side == 0 { -1.0 } else { 1.0 };
+            let top = if hit == 0 { to_f32(p.guardian_top) } else { to_f32(p.guardian_bounds[hit - 1]) };
+            let bottom = p.guardian_bounds.get(hit).map_or(0.0, |&b| to_f32(b));
+            // dall'alto dello schermo, in pixel arcade (la y del core cresce verso l'alto)
+            let (s0, s1) = (r.screen_y(top) / u, r.screen_y(bottom) / u);
+            let blue = app.assets.portraits.accent(PaddleKind::Guardian);
+            let age = (BARRIER_FLASH_SECONDS - flash) as f32;
+            let blink = BARRIER_BLINK_SECONDS as f32;
+            if age < blink {
+                let color = if (age * 16.0) as i64 % 2 == 1 { blue } else { Color::from_rgba(190, 214, 255, 255) };
+                draw_rectangle(lx - 2.0 * u, (s0 + 3.0) * u, 4.0 * u, (s1 - s0 - 6.0) * u, tint(side, color));
+                let mut y = s0 + 11.0;
+                while y < s1 - 3.0 {
+                    draw_rectangle(lx - 2.0 * u, y * u, 4.0 * u, u, BLACK);
+                    y += 9.0;
+                }
+            } else {
+                let k = (age - blink) / (BARRIER_FLASH_SECONDS as f32 - blink);
+                let fade = 1.0 - 0.5 * k;
+                let color = Color::new(blue.r * fade, blue.g * fade, blue.b * fade, 1.0);
+                for j in 0..8 {
+                    let jf = j as f32;
+                    let y = s0 + 5.0 + jf * (s1 - s0 - 10.0) / 7.0;
+                    let (dx, dy) = (k * (3.0 + (j % 3) as f32 * 3.0), k * k * 10.0);
+                    let size = if j % 2 == 1 { 1.0 } else { 2.0 };
+                    // le schegge vanno verso il fondo dietro il muro
+                    let x = (lx / u + back * (1.0 + dx)).round() - if side == 0 { 0.0 } else { size };
+                    draw_rectangle(x * u, (y + dy).round() * u, size * u, size * u, tint(side, color));
                 }
             }
         }
@@ -1202,7 +1328,7 @@ impl NextFx {
 
         for (side, &at) in pos.iter().take(2).enumerate() {
             if skip != Some(side) {
-                self.draw_pad(app, game, at, shake, side);
+                self.draw_pad(app, game, at, shake, side, build);
             }
         }
 
@@ -1313,7 +1439,7 @@ impl NextFx {
                     let lx = bx + back * (d + len / 2.0);
                     r.rect_centered(lx, by + dy, len, u, Color { a: 0.8, ..accent });
                 }
-                r.rect_centered(bx, by, size, size, ball_color);
+                draw_relief_ball(r, (bx, by), size, u, ball_color, ball.vx > 0);
             }
             // RISING STRIKE: la palla girata di 45 gradi, un rombo
             Some(Special::Rise) => {
@@ -1329,7 +1455,7 @@ impl NextFx {
                     },
                 );
             }
-            None => r.rect_centered(bx, by, size, size, ball_color),
+            None => draw_relief_ball(r, (bx, by), size, u, ball_color, ball.vx > 0),
         }
         if n.slow_timer > 0 && blink {
             draw_rectangle_lines(bx - d * 1.5, r.screen_y(by) - d * 1.5, d * 3.0, d * 3.0, u, gray);
@@ -1338,7 +1464,7 @@ impl NextFx {
 
     /// La racchetta del giocatore `side` in (x, y) (coordinate del core, x già interpolata), con i
     /// segni dei bonus, del tipo e del BULLET.
-    pub fn draw_pad(&self, app: &App, game: &Match, (x, y): (f32, f32), shake: f32, side: usize) {
+    pub fn draw_pad(&self, app: &App, game: &Match, (x, y): (f32, f32), shake: f32, side: usize, build: Option<f32>) {
         let Some(n) = &game.next else { return };
         let r = &app.renderer;
         let u = unit(app);
@@ -1414,7 +1540,20 @@ impl NextFx {
         } else {
             0.0
         };
-        // la racchetta con il segno del suo tipo
+        // la racchetta con il segno del suo tipo e lo stato delle sue animazioni (l'orologio è
+        // quello della partita: si ferma con la pausa)
+        let hz = paddws_core::TICK_HZ as f32;
+        let anim = Anim {
+            t: game.tick as f32 / hz,
+            vy: -to_f32(pad.motion) * hz / 60.0 / u,
+            ammo: pl.ammo,
+            fire: self.fire[side],
+            spark: self.spark[side],
+            wall: std::array::from_fn(|i| (pl.barrier & (1 << i) == 0).then_some(self.wall_age[side][i])),
+            build,
+            recoil: self.recoil[side].map(|(_, at)| at),
+            dashing: self.rush_ghost[side] > 0.0,
+        };
         let body = |color: Color| {
             let shape = Shape {
                 kind: pl.kind,
@@ -1426,25 +1565,12 @@ impl NextFx {
                 tilt,
                 dash,
                 preview: false,
+                anim,
             };
-            let look = Look {
-                body: color,
-                mark: accent,
-                detail: gray,
-            };
+            let mut look = paddle_ui::look(app, pl.kind, color);
+            look.signal = accent;
             paddle_ui::draw_paddle(r, &shape, u, look);
         };
-        // BLASTER: munizioni dietro la racchetta, lontano dalla palla: un rettangolino giallo per
-        // colpo nel caricatore, dal basso, in un tratto corto della racchetta; spariscono a ogni
-        // colpo e tornano tutte insieme con la ricarica
-        if pl.kind == Some(PaddleKind::Blaster) {
-            let bx = x + if side == 0 { -1.0 } else { 1.0 } * (pw / 2.0 + 3.0 * u);
-            let (h, step) = (3.0 * u, 4.0 * u);
-            let base = y - ph / 2.0 + u + h / 2.0;
-            for k in 0..pl.ammo as usize {
-                r.rect_centered(bx, base + k as f32 * step, 2.0 * u, h, accent);
-            }
-        }
         // colpo di una mossa: lampo della racchetta (giallo; con la MAX giallo e bianco a scatti)
         let mut flash = None;
         if let Some((special, max, t)) = kick {
@@ -1745,7 +1871,7 @@ impl NextFx {
             let (pw, ph) = (to_f32(pad.width) * 3.0, to_f32(pad.height));
             let at = Rect::new(x + shake - pw / 2.0, r.screen_y(y) - ph / 2.0, pw, ph);
             if boxes.iter().flatten().any(|b| b.overlaps(&at)) {
-                self.draw_pad(app, game, (x, y), shake, side);
+                self.draw_pad(app, game, (x, y), shake, side, None);
             }
         }
         if near(ball) || self.trail.iter().any(|&p| near(p)) {
