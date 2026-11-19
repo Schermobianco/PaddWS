@@ -83,7 +83,7 @@ ch_letter: .res 1
 ch_name:   .res 3
 ch_hl:     .res 1               ; riga della classifica in evidenza ($ff nessuna)
 ch_timer:  .res 2
-ch_phase:  .res 1               ; 1: schermo da pulire, 2: da disegnare
+ch_phase:  .res 1               ; 1-2: schermo da pulire (caratteri, colori), 3: da disegnare
 ch_elapsed: .res 1              ; frame dall'inizio della schermata (fino a 255)
 ch_more:   .res 1               ; il disegno continua al prossimo frame
 ch_digit:  .res 1
@@ -541,7 +541,7 @@ found:
 ; ------------------------------------------------------------------------------------ schermate
 
 ; Prepara una schermata della scala: scena A, durata in X:Y frame; lo schermo si pulisce e si
-; disegna nei due frame dopo (ch_phase).
+; disegna nei tre frame dopo (ch_phase).
 .proc ch_screen
     sta state
     stx ch_timer
@@ -552,8 +552,8 @@ found:
     sta $d01b
     sta sh_enable
     sta sh_bg
-    lda #MODE_TEXT
-    sta sh_mode
+    lda #MODE_OFF               ; spento finché lo schermo di testo è pulito (ch_phases): lo schermo di
+    sta sh_mode                 ; prima non si vede, nemmeno nel frame senza scena dell'NTSC
     lda #1
     sta ch_phase
     lda #0
@@ -565,11 +565,19 @@ found:
 .proc ch_phases
     lda ch_phase
     beq none
-    cmp #1
-    bne draw
+    cmp #3
+    bcs draw
+    ; lo schermo in due frame (insieme non ci stanno nel frame NTSC con la musica): prima i
+    ; caratteri, che lo vuotano, poi i colori, che a schermo vuoto non si vedono
     inc ch_phase
+    lsr a                       ; C = 1 alla fase 1
+    bcc colors
+    jmp clear_screen            ; (C resta 1)
+colors:
     lda #COL_WHITE
-    jsr clear_text
+    jsr clear_colors
+    lda #MODE_TEXT              ; pulito: si accende
+    sta sh_mode
     sec
     rts
 draw:
@@ -1313,9 +1321,10 @@ WARN_FRAMES = 175               ; 3,5 s (WARNING_SECONDS)
 .proc challenger_scene
     jsr ch_phases
     bcs done
-    jsr challenger_colors
-    jsr ch_timeout
-    bcc done
+    jsr ch_timeout              ; (prima: nel frame dell'uscita i colori no, c'è la copia della
+    bcs leave                   ; scelta, 4 pagine)
+    jmp challenger_colors
+leave:
     jsr CHC_RUN + 3             ; via gli sprite della targa
     jmp pick_challenger
 done:

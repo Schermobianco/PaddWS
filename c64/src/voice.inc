@@ -44,7 +44,7 @@ WIN_PERFECT = $80 + WIN_PAGES   ; prima pagina dell'immagine di PERFECT nella RO
 ; Conto alla rovescia (play.s): jsr VOICE_COUNT a ogni frame con A = frame rimasti (da COUNT_FRAMES
 ; a 1). È un RTS (start_game) finché il file del primo livello non ci mette il salto al suo conto:
 ; così fuori da CHALLENGE, e prima del file del primo livello, non succede nulla.
-COUNT_FRAMES = 3 * 50           ; conto alla rovescia di 3 secondi prima della prima battuta
+COUNT_FRAMES = 3 * TV_HZ        ; conto alla rovescia di 3 secondi prima della prima battuta
 VOICE_COUNT = $FFC0             ; 3 byte nella RAM sotto il KERNAL, dopo i caratteri del BULLET
 
 ; Volume del SID scelto nel menu (VOLUME, 0-15; sid_vol in video.s): finita la voce, il SID torna

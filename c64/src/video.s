@@ -94,12 +94,6 @@ row_hi:
     .repeat 25, i
     .byte >(SCREEN + 40 * i)
     .endrepeat
-; durante l'attesa della battuta la palla lampeggia: nascosta se (attesa * 8 / tick al secondo) è
-; dispari, come nel gioco su PC
-serve_blink:
-    .repeat P_SERVE_TICKS + 1, i
-    .byte (i * 8 / P_TICK_HZ) & 1
-    .endrepeat
 
 .segment "ZEROPAGE"
 ptr:   .res 2
@@ -160,7 +154,6 @@ pi_k:      .res 1
 .segment "ZEROPAGE"
 pi_c:      .res 1
 .segment "BSS"
-pi_s:      .res 1
 pi_out:    .res 1
 .segment "ZEROPAGE"
 pi_half:   .res 1
@@ -178,7 +171,6 @@ pi_basey:  .res 3
 pi_tsign:  .res 1               ; TWIST: inclinazione con il segno, |t| e (k - n/2) * |t|
 pi_tabs:   .res 1
 pi_acc:    .res 1
-pi_flags:  .res PAD_ROWS        ; righe con un segno del tipo
 pd_made:   .res 1               ; immagine di racchetta già rifatta in questo frame
 pd_dirty:  .res 2               ; immagine da copiare nella RAM degli sprite
 
@@ -544,17 +536,14 @@ next:
 
 ; ------------------------------------------------------------------------------------ caratteri
 
-; Schermo di testo vuoto e caratteri del colore A (prosegue in clear_screen).
+; Schermo di testo vuoto e caratteri del colore A (prosegue in clear_screen). Le due metà costano
+; circa 6.400 cicli ciascuna: clear_screen e clear_colors da sole in due frame dove non ci stanno
+; insieme (ch_phases).
 .proc clear_text
-    ldx #0
-:   sta $d800,x
-    sta $d900,x
-    sta $da00,x
-    sta $dae8,x
-    inx
-    bne :-
+    jsr clear_colors
 .endproc
 
+; Schermo di testo vuoto. Non tocca C.
 .proc clear_screen
     ldx #0
     lda #CH_BLANK
@@ -562,6 +551,18 @@ next:
     sta SCREEN+$100,x
     sta SCREEN+$200,x
     sta SCREEN+$2e8,x
+    inx
+    bne :-
+    rts
+.endproc
+
+; Caratteri dello schermo di testo del colore A.
+.proc clear_colors
+    ldx #0
+:   sta $d800,x
+    sta $d900,x
+    sta $da00,x
+    sta $dae8,x
     inx
     bne :-
     rts
@@ -1148,21 +1149,13 @@ ham_r: .byte $70, $38, $E0
 
 ; Punteggi: in due ai lati della mezzeria; in singolo i colpi a sinistra, record e palle a destra.
 .proc draw_scores
-    lda score+1
-    ldx score
-    jsr clamp99
-    ldx #11
-    ldy #1
-    jsr draw_score2
+    ldy #0
+    jsr draw_side
     lda m_players
     cmp #2
     bne single
-    lda score+5
-    ldx score+4
-    jsr clamp99
-    ldx #23
-    ldy #1
-    jmp draw_score2
+    ldy #4
+    jmp draw_side
 single:
     jsr print_at
     .byte 24, 1, "TOP ", 0
@@ -1181,6 +1174,20 @@ single:
     ldy #3
     sty v_row
     jmp put_ascii
+.endproc
+
+; Punteggio del lato Y (0: colonna 11, 4: colonna 23). Al punto in due si rifà solo quello di chi
+; ha segnato (play.s): con il tick del punto e il resto del frame, entrambi sforavano sull'NTSC.
+.proc draw_side
+    ldx score,y
+    lda score+1,y
+    jsr clamp99
+    ldx #11
+    cpy #0
+    beq :+
+    ldx #23
+:   ldy #1
+    jmp draw_score2
 .endproc
 
 ; A:X (alto:basso) -> A = valore fino a 99
@@ -1236,11 +1243,23 @@ big:
     ora serve_timer+2
     ora serve_timer+3
     bne ball_on
-    ldx serve_timer
-    cpx #P_SERVE_TICKS + 1
+    lda serve_timer
+    cmp #P_SERVE_TICKS + 1
     bcs ball_on
-    lda serve_blink,x
-    jne pads
+    ; nascosta se (attesa * 8 / tick al secondo) è dispari, come nel gioco su PC (la divisione per
+    ; sottrazioni: al più 8)
+    asl a
+    asl a
+    asl a
+    ldy #0
+:   cmp #P_TICK_HZ
+    bcc :+
+    sbc #P_TICK_HZ
+    iny
+    bne :-
+:   tya
+    lsr a
+    jcs pads
 ball_on:
     sub32 t0, ball_x, ball_r
     add32 t0, t0, {#HALF_PX - 1}
@@ -1817,6 +1836,10 @@ color:
 :   cmp #K_BLASTER
     bne :+
     ldx pi_ammo
+:   cmp #K_GUARDIAN             ; GUARDIAN con un settore perso: l'immagine si rifà, una volta
+    bne :+
+    lda pi_var
+    bne dynamic
 :   lda pi_n
     cmp pp_n,y                  ; (il lato di OMEGA ha pp_n = $FF: prep_slot)
     bne other
@@ -1947,7 +1970,8 @@ no:
 .endproc
 
 ; Tipo della racchetta di pi_side (K_NONE fuori da NEXT) in pi_kind e variante dell'immagine in
-; pi_var: TWIST l'inclinazione + 3, BLASTER i colpi nel caricatore * 32.
+; pi_var: TWIST l'inclinazione + 3, BLASTER i colpi nel caricatore * 32, GUARDIAN i settori persi
+; (un bit per settore: 0 il muro intero, l'immagine preparata).
 .proc pad_variant
     lda #0
     sta pi_var
@@ -1963,7 +1987,12 @@ no:
     beq twist
     cmp #K_BLASTER
     beq blaster
-    rts
+    cmp #K_GUARDIAN
+    bne :+
+    lda nx_barrier,x
+    eor #(1 << G_SECTORS) - 1
+    sta pi_var
+:   rts
 blaster:
     lda nx_ammo,x
     jsr mag_setup
@@ -2027,40 +2056,35 @@ TILT3 = P_PAD_MAX_SPEED * 5 / 6
 .assert P_BLASTER_SHOTS = 4, error, "caricatore del BLASTER: un tratto di n / 4 righe per colpo"
 
 ; Immagine della racchetta di pi_side in sh_img (63 byte, 3 per riga): pi_n righe di corpo con i
-; segni del tipo pi_kind, come kind_px del MiSTer alla risoluzione dello sprite multicolore (2x2
-; pixel). Le colonne si contano dal lato sinistro della racchetta sinistra; per la destra
-; l'immagine si specchia.
-; Immagine della racchetta di pi_side in sh_img (63 byte, 3 per riga): pi_n righe di corpo con i
-; segni del tipo pi_kind, come kind_px del MiSTer alla risoluzione dello sprite multicolore (2x2
-; pixel). Le colonne si contano dal lato sinistro della racchetta sinistra; per la destra
-; l'immagine si specchia. Quasi tutte le righe sono uguali: si copia una riga base (con il
-; caricatore del BLASTER giallo, o il corpo spostato di TWIST da una tabella); solo le
-; poche righe con un segno si fanno colonna per colonna (slow_row).
+; segni del tipo pi_kind alla risoluzione dello sprite multicolore (celle 2x2), le forme della
+; proposta del mockup delle racchette dei personaggi (come rust/game/src/paddle_ui.rs, ma ferme e con
+; i tre colori dello sprite: bianco il corpo, grigio $D025, giallo $D026). Le colonne si contano dal
+; lato sinistro della racchetta sinistra (0-3 dietro, 4-5 il corpo, poi davanti); per la destra
+; l'immagine si specchia. Quasi tutte le righe sono uguali: si copia una riga base (il corpo, con la
+; colonna del retro di TITAN, HAMMER e GUARDIAN; con il caricatore del BLASTER giallo, o il corpo
+; spostato di TWIST da una tabella); il GUARDIAN fa riga per riga il suo muro (guardian_row). Alla
+; fine i segni della tabella del tipo (mk_tab), uno per uno nella loro riga (mark_plot).
 .proc pad_image
     ldy pi_side
     lda img_base,y
     sta pi_out
-    ; righe notevoli: metà, quarto, ottavo
     lda pi_n
     lsr a
     sta pi_half
-    lsr a
-    sta pi_quarter
-    lsr a
-    sta pi_eighth
-    ; riga base: il corpo senza segni
+    ; riga base: il corpo senza segni, con la colonna del retro del tipo
     lda #0
     sta pi_row
     sta pi_row+1
     sta pi_row+2
-    lda #COLOR_WHITE
+    ldx pi_kind
+    lda back_col,x
+    beq :+
     sta pi_c
-    lda pi_kind
-    cmp #K_HAMMER
-    bne :+
     lda #PAD_FAT - 1
     jsr plot
-:   lda #PAD_FAT
+:   lda #COLOR_WHITE
+    sta pi_c
+    lda #PAD_FAT
     jsr plot
     lda #PAD_FAT + 1
     jsr plot
@@ -2110,8 +2134,11 @@ twist_setup:
     jmp :-
 :   sta pi_acc
 rows:
-    jsr pad_special
-    lda #0
+    lda pi_kind
+    cmp #K_GUARDIAN
+    bne :+
+    jsr guardian_init           ; (le sue variabili sono quelle di TWIST)
+:   lda #0
     sta pi_k
 row:
     lda pi_k
@@ -2125,7 +2152,7 @@ row:
 on:
     lda pi_kind
     cmp #K_TWIST
-    bne marks
+    bne fast
     ; TWIST: corpo spostato di (acc >> 3) colonne doppie, con il segno dell'inclinazione
     lda pi_acc
     cmp #$80
@@ -2161,17 +2188,6 @@ on:
     adc pi_tabs
     sta pi_acc
     jmp store
-marks:
-    ldx pi_k
-    lda pi_flags,x
-    beq fast
-    ; riga con un segno: colonna per colonna
-    lda #0
-    sta pi_row
-    sta pi_row+1
-    sta pi_row+2
-    jsr slow_row
-    jmp store
 fast:
     ldx #0                      ; pi_base
     lda pi_kind
@@ -2199,6 +2215,10 @@ copy:
     sta pi_row+1
     lda pi_base+2,x
     sta pi_row+2
+    lda pi_kind
+    cmp #K_GUARDIAN
+    bne store
+    jsr guardian_row
 store:
     ldy pi_out
     lda pi_row
@@ -2215,191 +2235,271 @@ store:
     lda pi_k
     cmp #PAD_ROWS
     jne row
+    jmp mark_plot
+.endproc
+
+; Segni del tipo: 2 byte per segno. Riga: bit 7-6 da dove si conta (MK_TOP dalla prima riga, MK_HALF
+; dalla metà, MK_END da pi_n, una riga dopo l'ultima), bit 5-0 lo scostamento con il segno. Colonna:
+; bit 3-0 la colonna doppia vista dalla racchetta sinistra, bit 5-4 il colore; MK_ROW al posto della
+; colonna: tutte le celle bianche della riga diventano gialle (cintura, gettone, stemma, che così
+; segue l'inclinazione di TWIST).
+MK_TOP  = 0
+MK_HALF = 1
+MK_END  = 2
+MK_ROW  = 15
+.macro pad_mark base, off, col, color
+    .byte (base << 6) | (off & $3F), col | (color << 4)
+.endmacro
+
+; GUARDIAN: corso 0, prima fuga alla riga floor(n / 5), giunto alla prima riga del corso.
+.proc guardian_init
+    lda #0
+    sta g_course
+    lda pi_n
+    sta g_acc
+    jsr div5
+    sta g_cut
+    lda #1
+    sta g_joint
     rts
 .endproc
 
-; Righe con un segno del tipo (strada lenta) in pi_flags: bande di HAMMER, estremità di TITAN,
-; spigoli e canne del BLASTER.
-.proc pad_special
+; Riga del segno all'indice Y di mk_tab (in A; Y resta).
+.proc mark_row
+    lda mk_tab,y
+    and #$3F
+    cmp #$20
+    bcc :+
+    ora #$C0                    ; scostamento negativo
+:   sta m_lo
+    lda mk_tab,y
+    and #$C0
+    beq top
+    bmi end
+    lda pi_half
+    .byte $2c                   ; (bit: salta il lda)
+end:
+    lda pi_n
+    .byte $2c
+top:
     lda #0
-    ldx #PAD_ROWS - 1
-:   sta pi_flags,x
+    clc
+    adc m_lo
+    rts
+.endproc
+
+; I segni del tipo, nell'ordine della tabella, ciascuno nella sua riga dell'immagine (dentro il
+; corpo: righe 0 - pi_n - 1); la riga si carica in pi_row e si riscrive solo quando il segno dopo è
+; in un'altra (nella tabella i segni della stessa riga stanno vicini). Il GUARDIAN non ne ha: le sue
+; variabili (g_*) prendono il posto di quelle dei segni.
+pi_ys = pi_quarter                ; indice del segno durante plot
+pi_ye = pi_eighth                 ; fine dei segni del tipo
+g_course = pi_quarter             ; GUARDIAN: corso della riga, prossima fuga, n * (corso + 1),
+g_cut    = pi_eighth              ; giunto da mettere alla prima riga del corso (TWIST soltanto
+g_acc    = pi_tsign               ; altrimenti usa pi_tsign e pi_tabs)
+g_joint  = pi_tabs
+.proc mark_plot
+    ldx pi_kind
+    lda mk_first+1,x
+    sta pi_ye
+    lda mk_first,x
+    tay
+    lda #$ff
+    sta pi_k                    ; nessuna riga caricata
+next:
+    cpy pi_ye
+    bcs done
+    jsr mark_row                ; A = riga del segno (cambia m_lo)
+    cmp pi_n
+    bcs skip                    ; fuori dal corpo (anche negativa)
+    sty pi_ys
+    cmp pi_k
+    beq same
+    pha
+    jsr row_back
+    pla
+    sta pi_k
+    ; la riga dall'immagine in pi_row
+    sta m_lo
+    asl a
+    adc m_lo                    ; * 3 (C = 0)
+    ldx pi_side
+    adc img_base,x
+    sta pi_out
+    tax
+    lda sh_img,x
+    sta pi_row
+    lda sh_img+1,x
+    sta pi_row+1
+    lda sh_img+2,x
+    sta pi_row+2
+same:
+    lda mk_tab+1,y
+    and #$0F                    ; colonna
+    cmp #MK_ROW
+    beq yellow
+    pha
+    lda mk_tab+1,y
+    lsr a
+    lsr a
+    lsr a
+    lsr a
+    sta pi_c                    ; colore
+    pla
+    jsr plot
+    ldy pi_ys
+    jmp skip
+yellow:
+    ; riga gialla: %10 (bianco) diventa %11 (giallo), gli altri colori restano
+    ldx #2
+:   lda pi_row,x
+    lsr a
+    and #$55
+    ora pi_row,x
+    sta pi_row,x
     dex
     bpl :-
-    lda pi_kind
-    cmp #K_HAMMER
-    bne :+
-    lda pi_half
-    sec
-    sbc #5
-    jsr flag
-    lda pi_half
-    clc
-    adc #4
-    jmp flag
-:   cmp #K_TITAN
-    bne :++
-    ldx pi_eighth
-    beq done
-:   dex
-    txa
-    jsr flag
-    lda pi_n
-    sec
-    sbc pi_eighth
-    stx m_t
-    clc
-    adc m_t
-    jsr flag
-    ldx m_t
-    bne :-
-    rts
-:   cmp #K_BLASTER
-    bne :+
-    lda #0
-    jsr flag
-    ldx pi_n
-    dex
-    txa
-    jsr flag
-    lda pi_half
-    sec
-    sbc #2
-    jsr flag
-    lda pi_half
-    clc
-    adc #1
-    jmp flag
-:
+    ldy pi_ys
+skip:
+    iny
+    iny
+    bne next                    ; (sempre)
 done:
-    rts
-; segna la riga A (se è nell'immagine)
-flag:
-    cmp #PAD_ROWS
-    bcs :+
-    tay
-    lda #1
-    sta pi_flags,y
+row_back:
+    ; la riga caricata (se c'è) di nuovo nell'immagine
+    lda pi_k
+    bmi :+
+    ldx pi_out
+    lda pi_row
+    sta sh_img,x
+    lda pi_row+1
+    sta sh_img+1,x
+    lda pi_row+2
+    sta sh_img+2,x
 :   rts
 .endproc
 
-; Riga pi_k (azzerata dal chiamante) con i segni del tipo, colonna per colonna.
-.proc slow_row
-    ; corpo bianco su due colonne doppie (tre per HAMMER, spostate per TWIST)
-    lda #COLOR_WHITE
-    sta pi_c
-    lda pi_kind
-    cmp #K_TWIST
-    bne :+
-    jsr twist_shift
-    jmp body2
-:   cmp #K_HAMMER
-    bne body
-    ; HAMMER: più spessa verso il retro, con le bande grigie del peso
-    lda pi_half
+; A / 5 (A < 128).
+.proc div5
+    ldx #$ff
     sec
+:   inx
     sbc #5
-    cmp pi_k
-    beq band
-    lda pi_half
-    clc
-    adc #4
-    cmp pi_k
-    bne hammer
-band:
-    lda #COLOR_GRAY
-    sta pi_c
-hammer:
-    lda #PAD_FAT - 1
-    jsr plot
-body:
-    lda #0
-body2:
-    sta pi_s
-    clc
-    adc #PAD_FAT
-    jsr plot
-    lda pi_s
-    clc
-    adc #PAD_FAT + 1
-    jsr plot
-    ; segni
-    lda pi_kind
-    cmp #K_TITAN
-    beq titan
-    cmp #K_BLASTER
-    beq blaster
-    rts
-titan:
-    ; TITAN: estremità gialle sul retro (un ottavo dell'altezza)
-    lda pi_k
-    cmp pi_eighth
-    bcc mark
-    lda pi_n
-    sec
-    sbc pi_eighth
-    cmp pi_k
-    beq mark
-    bcs store
-mark:
-    lda #COLOR_YELLOW
-    sta pi_c
-    lda #PAD_FAT
-    jsr plot
-    rts
-blaster:
-    ; BLASTER: spigoli del davanti smussati
-    lda pi_k
-    beq cut
-    ldx pi_n
-    dex
-    cpx pi_k
-    bne barrels
-cut:
-    lda #COLOR_NONE
-    sta pi_c
-    lda #PAD_FAT + 1
-    jsr plot
-barrels:
-    ; canne grigie davanti, sopra e sotto il centro
-    lda pi_half
-    sec
-    sbc #2
-    cmp pi_k
-    beq barrel
-    lda pi_half
-    clc
-    adc #1
-    cmp pi_k
-    bne ammo
-barrel:
-    lda #COLOR_GRAY
-    sta pi_c
-    lda #PAD_FAT + 2
-    jsr plot
-ammo:
-    ; caricatore dietro: dal basso un tratto giallo per colpo (l'ultima riga di ogni tratto
-    ; spenta)
-    lda pi_n
-    clc
-    sbc pi_k                    ; j = n - 1 - k, riga contata dal basso
-    cmp pi_full
-    bcs store
-:   cmp pi_seg                  ; j % seg
-    bcc :+
-    sbc pi_seg
-    jmp :-
-:   clc
-    adc #1
-    cmp pi_seg
-    beq store                   ; ultima riga del tratto: spenta
-    lda #COLOR_YELLOW
-    sta pi_c
-    lda #PAD_FAT - 2
-    jmp plot
-store:
+    bcs :-
+    txa
     rts
 .endproc
+
+; GUARDIAN: riga pi_k del muro (pi_row ha già il corpo e la colonna del retro): le fughe gialle sulle
+; tre colonne alle righe floor(n * i / 5), i = 1-4; un giunto giallo alla prima riga di ogni corso
+; (colonna del retro nei corsi dispari, del corpo nei pari); i corsi dei settori persi (bit di
+; pi_var, bit 0 il corso in alto) grigi.
+.proc guardian_row
+    lda pi_k
+    cmp g_cut
+    bne course
+    lda g_course
+    cmp #G_SECTORS - 1
+    bcs course
+    lda #COLOR_YELLOW           ; fuga, poi il corso dopo
+    jsr fill3
+    inc g_course
+    lda g_acc
+    clc
+    adc pi_n
+    sta g_acc
+    jsr div5
+    sta g_cut
+    lda #1
+    sta g_joint
+    rts
+course:
+    ldx g_course
+    lda pi_var
+    and bit_of,x
+    beq whole
+    lda #0                      ; settore perso: grigio, senza giunto
+    sta g_joint
+    lda #COLOR_GRAY
+    jmp fill3
+whole:
+    lda g_joint
+    beq done
+    lda #0
+    sta g_joint
+    lda #COLOR_YELLOW
+    sta pi_c
+    lda g_course
+    and #1
+    eor #1
+    clc
+    adc #PAD_FAT - 1            ; dispari: colonna del retro, pari: del corpo
+    jmp plot
+done:
+    rts
+.endproc
+
+; Le tre colonne del muro (retro e corpo) della riga nel colore A.
+.proc fill3
+    sta pi_c
+    lda #PAD_FAT - 1
+    jsr plot
+    lda #PAD_FAT
+    jsr plot
+    lda #PAD_FAT + 1
+    jmp plot
+.endproc
+
+; colonna del retro per tipo (ARCADE, TITAN, HAMMER, TWIST, BLASTER, RUSH, GUARDIAN, nessuno): TITAN e
+; GUARDIAN più spessi, HAMMER con il bordo grigio sul retro
+back_col: .byte 0, COLOR_WHITE, COLOR_GRAY, 0, 0, 0, COLOR_WHITE, 0
+; segni per tipo (mk_first: primo byte in mk_tab di ogni tipo, poi la fine)
+mk_first:
+    .byte mk_arcade - mk_tab, mk_titan - mk_tab, mk_hammer - mk_tab, mk_twist - mk_tab
+    .byte mk_blaster - mk_tab, mk_rush - mk_tab, mk_end - mk_tab, mk_end - mk_tab, mk_end - mk_tab
+mk_tab:
+mk_arcade:                      ; il gettone al centro del corpo
+    pad_mark MK_HALF, -1, MK_ROW, 0
+    pad_mark MK_HALF, 0, MK_ROW, 0
+mk_titan:                       ; cintura e fibbia sul retro
+    pad_mark MK_HALF, -2, 1, COLOR_GRAY
+    pad_mark MK_HALF, -2, 2, COLOR_GRAY
+    pad_mark MK_HALF, -1, MK_ROW, 0
+    pad_mark MK_HALF, -1, 1, COLOR_GRAY
+    pad_mark MK_HALF, -1, 2, COLOR_YELLOW
+    pad_mark MK_HALF, 0, MK_ROW, 0
+    pad_mark MK_HALF, 0, 1, COLOR_GRAY
+    pad_mark MK_HALF, 0, 2, COLOR_YELLOW
+    pad_mark MK_HALF, 1, 1, COLOR_GRAY
+    pad_mark MK_HALF, 1, 2, COLOR_GRAY
+mk_hammer:                      ; la punta del manico al centro
+    pad_mark MK_HALF, -1, PAD_FAT, COLOR_YELLOW
+    pad_mark MK_HALF, 0, PAD_FAT, COLOR_YELLOW
+    pad_mark MK_HALF, 1, PAD_FAT, COLOR_YELLOW
+mk_twist:                       ; lo stemma al centro, inclinato con il corpo
+    pad_mark MK_HALF, -1, MK_ROW, 0
+    pad_mark MK_HALF, 0, MK_ROW, 0
+    pad_mark MK_HALF, 1, MK_ROW, 0
+mk_blaster:                     ; spigoli smussati, lembi della bandana, canne grigie davanti
+    pad_mark MK_TOP, 0, PAD_FAT + 1, COLOR_NONE
+    pad_mark MK_TOP, 0, 3, COLOR_YELLOW
+    pad_mark MK_TOP, 0, 2, COLOR_YELLOW
+    pad_mark MK_TOP, 1, 1, COLOR_YELLOW
+    pad_mark MK_TOP, 1, 0, COLOR_YELLOW
+    pad_mark MK_HALF, -2, PAD_FAT + 2, COLOR_GRAY
+    pad_mark MK_HALF, 1, PAD_FAT + 2, COLOR_GRAY
+    pad_mark MK_END, -1, PAD_FAT + 1, COLOR_NONE
+mk_rush:                        ; fascia in cima con i lembi dietro
+    pad_mark MK_TOP, 1, PAD_FAT, COLOR_YELLOW
+    pad_mark MK_TOP, 1, 3, COLOR_YELLOW
+    pad_mark MK_TOP, 1, 2, COLOR_YELLOW
+    pad_mark MK_TOP, 0, 1, COLOR_YELLOW
+    pad_mark MK_TOP, 0, 0, COLOR_YELLOW
+    pad_mark MK_TOP, 2, 3, COLOR_YELLOW
+    pad_mark MK_TOP, 3, 2, COLOR_YELLOW
+    pad_mark MK_TOP, 3, 1, COLOR_YELLOW
+mk_end:
+.assert K_ARCADE = 0 .and K_TITAN = 1 .and K_HAMMER = 2 .and K_TWIST = 3 .and K_BLASTER = 4 .and K_RUSH = 5 .and K_GUARDIAN = 6, error, "segni delle racchette nell'ordine dei tipi"
 
 ; corpo di TWIST: due colonne doppie bianche dalla colonna f (0-10), 3 byte per f
 body2:
@@ -2409,42 +2509,6 @@ body2:
 
 img_base: .byte 0, IMG_BYTES
 prep_base: .byte SP_PREP0, SP_PREP0 + 7
-
-; TWIST: spostamento orizzontale della riga pi_k in colonne doppie, ((k - n/2) * |t|) >> 3 con il
-; segno dell'inclinazione t = pi_var - 3 (positiva: faccia verso l'alto).
-.proc twist_shift
-    lda pi_var
-    sec
-    sbc #3
-    sta m_t                     ; t
-    bpl :+
-    eor #$ff
-    clc
-    adc #1
-:   tax                         ; |t|
-    lda pi_k
-    sec
-    sbc pi_half
-    sta m_lo                    ; d
-    lda #0
-:   dex
-    bmi :+
-    clc
-    adc m_lo
-    jmp :-
-:   cmp #$80                    ; >> 3 con il segno
-    ror a
-    cmp #$80
-    ror a
-    cmp #$80
-    ror a
-    ldx m_t
-    bpl :+
-    eor #$ff
-    clc
-    adc #1
-:   rts
-.endproc
 
 ; Colonna doppia A (vista dalla racchetta sinistra, 0-9) della riga pi_row nel colore pi_c; per la
 ; racchetta destra la colonna si specchia (9 - A).
@@ -2592,7 +2656,7 @@ SP_RING0  = SP_FX0 + TRAIL_BUFS ; alone di SLOW, palla 4 e 6
 ; quadrati di FX_SQUARES (x, y, lato in pixel; $FF chiude l'immagine), che fx_sp scorre.
 ; Un'immagine si fa solo se il frame resta sotto circa 17.000 cicli.
 FX_COST = 10500
-FX_LATE = (17000 - FX_COST) / 58
+FX_LATE = (TV_BUDGET - (1000 + FX_COST)) / TV_LCYC
 .proc fx_copy
     lda fx_wait                 ; i primi frame della partita hanno già molto da fare
     beq :+
@@ -2846,11 +2910,20 @@ COMET_S    = 3                  ; palla della cometa in pixel doppi (il "lato" d
 COMET_HEAD = 5
 TRAIL_KEY = 2 * (TRAIL_N + 1) + 1   ; firma: tr_qxk, tr_qyk, tr_s (di seguito in memoria)
 ; righe dopo l'inizio del vblank oltre le quali la coda aspetta il frame dopo: la ricerca nella
-; cache costa al massimo circa 1.000 cicli (255: il massimo che frame_after conta), il disegno
+; cache costa al massimo circa 1.500 cicli (firma della cometa e quattro confronti), il disegno
 ; circa 4.000 (misurati con paddws-c64 frames). Il disegno si fa solo se il frame resta sotto
-; circa 16.500 cicli: nei frame più carichi aspetta, intanto c'è la forma della cache più simile
+; circa 16.500 cicli: nei frame più carichi aspetta, intanto c'è la forma della cache più simile.
+; Sul PAL la ricerca si fa sempre (255: il massimo che frame_after conta, e i 18.000 cicli sono
+; quasi tutto il frame); sull'NTSC solo con 1.900 cicli ancora liberi (firma, confronti e lo sprite,
+; fino a circa 1.700), se no dopo sprite e HUD pesanti il frame passava il giro del raster
+.if (TV_BUDGET - 1900) / TV_LCYC > 255
 TRAIL_LATE_FIND = 255
-TRAIL_LATE = (16500 - 4000) / 58
+.else
+TRAIL_LATE_FIND = (TV_BUDGET - 1900) / TV_LCYC
+.endif
+TRAIL_LATE = (TV_BUDGET - (5600)) / TV_LCYC
+; una metà del disegno in sospeso (trail_first o trail_rest con lo sprite: fino a circa 2.700)
+TRAIL_LATE_HALF = (TV_BUDGET - (3300)) / TV_LCYC
 
 ; Posizione della palla sullo schermo (sh_x con il nono bit in sh_msb, sh_y) in testa alle passate.
 ; Nel bullet time la coda dura il doppio, come sul PC: nei tick dispari cambia solo la posizione di
@@ -2913,21 +2986,48 @@ head:
     jeq done
     lda #0
     sta tr_want
+    ; la coda rimasta da disegnare nel frame prima per il tempo (tr_pend: il suo tipo + 1): con la
+    ; firma di allora, se la palla ha ancora lo stesso angolo, subito, senza rifare firma e ricerca
+    ; (circa 1.500 cicli con la cometa). A velocità costante la firma di adesso è quella a meno di
+    ; un pixel, cioè la stessa per trail_match: dal frame dopo la trova nella cache
+    ldx tr_pend
+    sta tr_pend
+    dex
+    cpx tr_cm
+    bne find_it
+    jsr trail_cache
+    jsr trail_dir
+    cmp tr_dir
+    bne find_it
+    ; in due metà, una per frame (circa 2.700 cicli l'una): la prima nello sprite usato meno di
+    ; recente, la seconda nel frame dopo, che lo mostra; senza tempo si riprova al prossimo
+    lda #TRAIL_LATE_HALF
+    jsr frame_after
+    bcs keep
+    ldx tr_half
+    bne second
+    jsr trail_oldest
+    jsr trail_first
+    ldx tr_dbuf
+    inx
+    stx tr_half
+keep:
+    ldx tr_cm
+    inx
+    stx tr_pend
+    rts
+second:
+    lda #0
+    sta tr_half
+    jsr trail_rest
+    jmp show
+find_it:
+    lda #0                      ; (una metà lasciata: lo sprite resta non valido)
+    sta tr_half
     lda #TRAIL_LATE_FIND
     jsr frame_after
     jcs done
-    lda tr_ready                ; prima coda della partita: la cache ha la bitmap dell'attract
-    bne layout
-    ldx #TRAIL_BUFS - 1
-    stx tr_shown
-invalid:
-    lda #0
-    sta tr_valid,x
-    lda #$fe                    ; i più vecchi: si riempiono per primi
-    sta tr_old,x
-    dex
-    bpl invalid
-layout:
+    jsr trail_cache
     jsr trail_layout
     ; nella cache? Prima lo sprite che si vede, quasi sempre quello giusto
     ldx tr_shown
@@ -2944,29 +3044,17 @@ find:
 other:
     dec tr_b
     bpl find
-    ; da disegnare, se c'è tempo, nello sprite usato meno di recente tra quelli che non si vedono
+    ; da disegnare, se c'è tempo, nello sprite usato meno di recente tra quelli che non si vedono;
+    ; se no al prossimo frame, con questa firma
     lda #TRAIL_LATE
     jsr frame_after
-    jcs done
-    ldy #$ff                    ; più vecchio finora (età + 1, 0 = nessuno)
-    lda #0
-    sta tr_t
-    ldx #TRAIL_BUFS - 1
-old:
-    cpx tr_shown
-    beq :+
-    lda tr_old,x
-    clc
-    adc #1
-    cmp tr_t
-    bcc :+
-    sta tr_t
-    txa
-    tay
-:   dex
-    bpl old
-    tya
-    tax
+    bcc draw_it
+    ldx tr_cm
+    inx
+    stx tr_pend
+    rts
+draw_it:
+    jsr trail_oldest
     jsr trail_draw
 show:
     ; età nella cache: questo appena usato, gli altri un frame in più (fino a 255)
@@ -3057,6 +3145,48 @@ more:
     .endif
     .endrepeat
     sec
+    rts
+.endproc
+
+; Prima coda della partita (nessuna ancora mostrata, tr_ready): la cache ha la bitmap dell'attract,
+; tutta da rifare.
+.proc trail_cache
+    lda tr_ready
+    bne done
+    ldx #TRAIL_BUFS - 1
+    stx tr_shown
+invalid:
+    lda #0
+    sta tr_valid,x
+    lda #$fe                    ; i più vecchi: si riempiono per primi
+    sta tr_old,x
+    dex
+    bpl invalid
+done:
+    rts
+.endproc
+
+; X = lo sprite della cache usato meno di recente tra quelli che non si vedono.
+.proc trail_oldest
+    ldy #$ff                    ; più vecchio finora (età + 1, 0 = nessuno)
+    lda #0
+    sta tr_t
+    ldx #TRAIL_BUFS - 1
+old:
+    cpx tr_shown
+    beq :+
+    lda tr_old,x
+    clc
+    adc #1
+    cmp tr_t
+    bcc :+
+    sta tr_t
+    txa
+    tay
+:   dex
+    bpl old
+    tya
+    tax
     rts
 .endproc
 
@@ -3256,10 +3386,49 @@ comet:
 .endproc
 
 ; Disegna la coda (o la cometa) di tr_qxk e tr_qyk nello sprite X della cache, svuotato, e ne salva
-; la firma.
+; la firma. In due metà (una per frame: trail_end) trail_first e trail_rest.
 .proc trail_draw
-    stx tr_dbuf
-    txa                         ; indirizzo: TRAIL_BASE + X * 64
+    jsr trail_first
+.endproc                        ; (prosegue in trail_rest)
+
+; La seconda metà nello sprite tr_dbuf: le posizioni da TRAIL_HALF a 1, la palla, la firma (lo
+; sprite diventa valido). X = tr_dbuf alla fine.
+.proc trail_rest
+    ldx tr_dbuf
+    jsr trail_ptr
+    lda #0
+    sta tr_stop
+    ldx #TRAIL_HALF
+    jsr trail_ages
+    ; la palla, sopra la coda
+    lda tr_qxk
+    sta tr_qx
+    lda tr_qyk
+    sta tr_qy
+    lda #$ff
+    sta tr_age
+    jsr tr_square
+    ; firma nella cache, aumentata di 1 (trail_match)
+    ldx tr_dbuf
+    ldy tr_keyof,x
+    ldx #0
+:   lda tr_qxk,x
+    clc
+    adc #1
+    sta tr_keys,y
+    iny
+    inx
+    cpx #TRAIL_KEY
+    bne :-
+    ldx tr_dbuf
+    lda #1
+    sta tr_valid,x
+    rts
+.endproc
+
+; (ptr) = sprite X della cache (TRAIL_BASE + X * 64); X = 64 * X.
+.proc trail_ptr
+    txa
     lsr a
     lsr a
     clc
@@ -3274,13 +3443,34 @@ comet:
     asl a
     sta ptr
     tax
+    rts
+.endproc
+
+; La prima metà nello sprite X: svuotato e non più valido (non lo trova trail_match finché la
+; seconda metà non lo finisce), le posizioni da TRAIL_N a TRAIL_HALF + 1.
+TRAIL_HALF = 2
+.proc trail_first
+    stx tr_dbuf
     lda #0
-    .repeat 63, i
-    sta TRAIL_BASE + i,x        ; X = 64 * sprite (fino a 192, + 62)
+    sta tr_valid,x
+    jsr trail_ptr
+    lda #0
+    ldy #9                      ; 7 scritture per giro, 9 giri: i byte 0-62 dello sprite (circa
+:   .repeat 7, i                ; 380 cicli; srotolate tutte, 315, ma 160 byte in più)
+    sta TRAIL_BASE + 9 * i,x    ; X = 64 * sprite + giro
     .endrepeat
-    ; dalla più vecchia: la posizione di k frame fa (età 2k - 1), poi quella a metà con k - 1 (età
-    ; 2k - 2), solo se tra le due c'è un buco (distanza maggiore del lato)
+    inx
+    dey
+    bne :-
+    lda #TRAIL_HALF
+    sta tr_stop
     ldx #TRAIL_N
+.endproc                        ; (prosegue in trail_ages)
+
+; Dalla posizione X fino a tr_stop + 1, dalla più vecchia: la posizione di k frame fa (età 2k - 1),
+; poi quella a metà con k - 1 (età 2k - 2), solo se tra le due c'è un buco (distanza maggiore del
+; lato).
+.proc trail_ages
 age:
     stx tr_k
     lda tr_qxk,x
@@ -3331,30 +3521,8 @@ mid:
 next:
     ldx tr_k
     dex
+    cpx tr_stop
     bne age
-    ; la palla, sopra la coda
-    lda tr_qxk
-    sta tr_qx
-    lda tr_qyk
-    sta tr_qy
-    lda #$ff
-    sta tr_age
-    jsr tr_square
-    ; firma nella cache, aumentata di 1 (trail_match)
-    ldx tr_dbuf
-    ldy tr_keyof,x
-    ldx #0
-:   lda tr_qxk,x
-    clc
-    adc #1
-    sta tr_keys,y
-    iny
-    inx
-    cpx #TRAIL_KEY
-    bne :-
-    ldx tr_dbuf
-    lda #1
-    sta tr_valid,x
     rts
 .endproc
 
@@ -3385,19 +3553,18 @@ head:
     sec
     sbc #1
 draw:
-    sta tr_t                    ; sinistra + 16
-    stx tr_t+1                  ; alto + 16
-    ; colonne x0 = max(sinistra, 0), x1 = min(sinistra + lato - 1, 23)
+    ; A = sinistra + 16, X = alto + 16. Colonne x1 = min(sinistra + lato - 1, 23) e
+    ; x0 = max(sinistra, 0); fuori dalla griglia niente
+    tay
     clc
     adc tr_n
-    sec
-    sbc #16 + 1
+    sbc #16                     ; (C = 0: meno 17)
     jcc out
     cmp #24
     bcc :+
     lda #23
 :   sta tr_rm
-    lda tr_t
+    tya
     sec
     sbc #16
     bcs :+
@@ -3406,17 +3573,16 @@ draw:
     jcs out
     sta tr_lm
     ; righe y0 = max(alto, 0), y1 = min(alto + lato - 1, 20)
-    lda tr_t+1
+    txa
     clc
     adc tr_n
-    sec
-    sbc #16 + 1
+    sbc #16
     bcc out
     cmp #21
     bcc :+
     lda #20
 :   sta tr_r0
-    lda tr_t+1
+    txa
     sec
     sbc #16
     bcs :+
@@ -3424,11 +3590,11 @@ draw:
 :   cmp #21
     bcs out
     sta tr_qy
-    eor #$ff                    ; righe: y1 - y0 + 1
+    eor #$ff                    ; righe in X: y1 - y0 + 1
     sec
     adc tr_r0
-    sta tr_n
-    inc tr_n
+    tax
+    inx
     ; maschere: dal pixel x0 a fine byte, da inizio byte al pixel x1 (in un byte solo: insieme)
     lda tr_lm
     and #7
@@ -3470,7 +3636,7 @@ one:
     iny
     iny
     iny
-    dec tr_n
+    dex
     bne one
 out:
     rts
@@ -3484,7 +3650,7 @@ two:
     sta (ptr),y
     iny
     iny
-    dec tr_n
+    dex
     bne two
     rts
 .endproc
@@ -3620,6 +3786,9 @@ tr_sp:   .res 1                 ; lato della palla della firma di prima
 tr_bx:   .res 1                 ; movimento della palla dal frame prima, al contrario
 tr_by:   .res 1
 tr_want: .res 1                 ; coda chiesta in questo frame
+tr_pend: .res 1                 ; coda non disegnata nel frame prima per il tempo: tr_cm + 1, o 0
+tr_half: .res 1                 ; sprite + 1 con la prima metà di quella coda (trail_first), o 0
+tr_stop: .res 1                 ; trail_ages: ultima posizione esclusa
 tr_cm:   .res 1                 ; 1: la coda chiesta è la cometa del SUPER
 tr_shcm: .res 1                 ; 1: lo sprite della coda che si vede è una cometa
 tr_shdir: .res 1                ; angolo della palla nello sprite della coda che si vede (trail_dir)
@@ -3896,9 +4065,9 @@ pp_dst:   .res 1                ; sprite in preparazione
 ; del frame (riserve, SID). Immagini delle racchette e scritte in partita (frame_late, fino a
 ; 8.000 cicli) e posti delle riserve (frame_late_small, fino a 12.000) aspettano allora il frame
 ; dopo.
-LATE_BIG   = 8000 / 58
-LATE_SMALL = 12000 / 58
-LATE_SPIN  = 5000 / 58          ; un'immagine della rotazione del SUPER costa fino a circa 10.400
+LATE_BIG   = (TV_BUDGET - (10000)) / TV_LCYC
+LATE_SMALL = (TV_BUDGET - (6000)) / TV_LCYC
+LATE_SPIN  = (TV_BUDGET - (13000)) / TV_LCYC         ; un'immagine della rotazione del SUPER costa fino a circa 10.400
 
 .proc frame_late
     lda #LATE_BIG
@@ -3908,10 +4077,13 @@ LATE_SPIN  = 5000 / 58          ; un'immagine della rotazione del SUPER costa fi
     lda #LATE_SMALL
 .endproc
 ; C = 1 se sono passate almeno A righe dall'interrupt. Un frame oltre il suo tempo trova il raster
-; di nuovo alle righe 250-311, come appena dopo l'interrupt: lo distingue frame_flag, che
-; l'interrupt della riga 250 ha rialzato (play_main lo azzera prima del frame), e allora è tardi,
-; così un frame già sforato non accetta altro lavoro; sid_time fa lo stesso. (Il banco di prova
-; non esegue l'interrupt: lì un frame così lo segnala come oltre il budget.)
+; di nuovo alle righe dopo l'interrupt: lo distingue frame_flag, che l'interrupt della riga 250 ha
+; rialzato (play_main lo azzera prima del frame), e allora è tardi, così un frame già sforato non
+; accetta altro lavoro; sid_time fa lo stesso. Sull'NTSC, dove un frame di partita può sforare di
+; poco, a qualsiasi riga; sul PAL, che non sfora mai, solo alle righe 250-311 (5 cicli in meno per
+; chiamata: le scritte di HOW TO PLAY ne fanno tante, al limite del frame). frame_flag sempre dopo
+; il raster: letto prima, l'interrupt poteva arrivare in mezzo (flag a 0, raster già a 250: presto).
+; (Il banco di prova alza frame_flag dopo un frame intero, come l'interrupt.)
 .proc frame_after
     sta late_lines
     lda $d011
@@ -3920,12 +4092,18 @@ LATE_SPIN  = 5000 / 58          ; un'immagine della rotazione del SUPER costa fi
     cmp #RASTER_LINE
     bcs early                   ; righe 250-255
     clc
-    adc #312 - RASTER_LINE      ; righe 0-249: passate riga + 62
+    adc #TV_LINES - RASTER_LINE ; righe 0-249: passate riga + 62 (NTSC 13)
     bcs late
     cmp late_lines
+.ifdef NTSC
+    bcs late
+    lda frame_flag              ; di nuovo l'interrupt: il raster ha fatto il giro, tardi
+    bne late
+    clc
+.endif
     rts
 early:
-    lda frame_flag              ; di nuovo l'interrupt: il raster ha fatto il giro, tardi
+    lda frame_flag
     bne late
     clc
     rts
@@ -4141,9 +4319,42 @@ WARP_RISE = 3 * WARP_STEP
 SP_WARP   = SP_SPIN0 + 16       ; immagine del pezzo che esce
 ; Il salto si disegna dopo la scena, quando il frame è già oltre gli 8.000 cicli di frame_late (in
 ; NEXT a circa 10.000-12.500: con frame_late non si disegnava mai). Le due immagini costano circa
-; WARP_COST cicli e si fanno se il frame resta sotto circa 16.000; se no resta l'immagine di prima.
-WARP_COST = 3000
-WARP_LATE = (16000 - WARP_COST) / 58
+; WARP_COST cicli (warp_image circa 1.050 l'una, misurate con paddws-c64 frames) e si fanno se
+; dopo resta il tempo per HUD e controlli (circa 1.200); se no resta l'immagine di prima.
+WARP_COST = 2500
+WARP_LATE = (TV_BUDGET - (1200 + WARP_COST)) / TV_LCYC
+
+; Il salto rimasto da disegnare nel frame prima (wp_pend, frame già avanti): all'inizio di questo,
+; che ha il tempo, sullo stato del tick prima (poi compute_sprites rimette sprite e posizioni). Solo
+; con il salto in corso: events è ancora quello del tick prima, non deve farne partire un altro.
+.proc warp_early
+    lda wp_pend
+    beq done
+    ; chi salta (e riceve la palla) rifà in questo tick la previsione del TELEPORT, o sul PAL quella
+    ; della CPU (senza quella tenuta da parte: circa 1.000-2.800 cicli l'una): con il disegno del
+    ; salto il frame andava oltre il budget (sull'NTSC oltre lo sforamento ammesso). Il disegno
+    ; aspetta il frame dopo
+    lda wp_side
+    asl a
+    asl a
+    tax
+    lda tp_ok,x
+    beq done
+.ifndef NTSC
+    cpx cpu_side
+    bne :+
+    lda cpu_ok,x
+    beq done
+:
+.endif
+    lda #0
+    sta wp_pend
+    lda wp_on
+    beq done
+    jmp warp_fx
+done:
+    rts
+.endproc
 
 .proc warp_fx
     ; inizio: evento del TELEPORT (salta chi riceve la palla)
@@ -4189,9 +4400,12 @@ stop:
     sta pd_n,x                  ; torna subito una di quelle)
     jmp remember
 :   sta wp_d
-    lda #WARP_LATE              ; frame già avanti: resta l'immagine di prima
-    jsr frame_after
-    jcs place
+    lda #WARP_LATE              ; frame già avanti: resta l'immagine di prima, e il disegno si fa
+    jsr frame_after             ; all'inizio del frame dopo (warp_early)
+    bcc :+
+    inc wp_pend
+    jmp place
+:
     ; avanzamento: pixel affondati e usciti (0-32)
     lda #WARP_SUNK
     jsr warp_part
@@ -4557,6 +4771,7 @@ pad_slot: .byte SP_PAD0, SP_PAD1
 
 .segment "BSS"
 wp_on:     .res 1
+wp_pend:   .res 1               ; disegno del salto rimasto dal frame prima (warp_early)
 wp_dir:    .res 1               ; bit 7: il verso della palla all'inizio del salto
 wp_side:   .res 1
 wp_from:   .res 1               ; riga del centro della racchetta prima del salto

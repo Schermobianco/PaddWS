@@ -41,7 +41,14 @@
 SID = $d400
 
 .segment "RODATA"
+.ifdef NTSC
+; NTSC: la tabella delle frequenze per il suo clock (tools/gen_sid_music.py) al posto di quella PAL
+.assert SID_FREQ_BASE = 0, error, "tabella delle frequenze NTSC: all'inizio della ROM"
+sid_rom:    .incbin "sid_freq_ntsc.bin"
+            .incbin "sid_music.bin", 192
+.else
 sid_rom:    .incbin "sid_music.bin"
+.endif
 song_start: .word 0, 0, 0                   ; canzone 0: silenzio
             .repeat 3 * SID_SONGS, i
             .word sid_rom + .mid(i * 2, 1, {SID_SONG_STARTS})
@@ -237,8 +244,15 @@ start:
 .endproc
 
 ; Un frame del player (50 Hz): un passo della canzone e uno degli effetti; al match point ogni 4
-; frame un passo della canzone in più da fare (sid_more).
+; frame un passo della canzone in più da fare (sid_more). Con l'NTSC (60 frame al secondo) un frame su
+; sei non ha il passo (tv_beat), così canzoni ed effetti restano a 50 passi al secondo.
 .proc sid_tick
+.ifdef NTSC
+    bit tv_skip
+    bpl :+
+    rts
+:
+.endif
     bit $fffb                   ; la voce di CHALLENGE ha il SID: il player aspetta e la copia di
     bmi hush                    ; $D417 torna a 0, come lo mette la voce
     jsr song_step

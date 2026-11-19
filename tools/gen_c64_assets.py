@@ -1097,12 +1097,13 @@ HT_SHOT_X1 = 306
 HT_PLUS_X = 124                  # centro del "+" fra i joystick e il pulsante (disegnato)
 HT_LABEL_COL = 20                # FIRE accanto al pulsante
 # scritte: (colonna, riga, 2x, colore del C64, testo); un gruppo per frame del programma (al più
-# una quarantina di lettere: circa 180 cicli l'una)
+# una trentina di lettere, spazi compresi: circa 400 cicli l'una, e fuori dalla partita la musica
+# nello stesso frame; sull'NTSC il frame ha 15.500 cicli)
 HT_TEXTS = [
-    [(14, 0, False, C_YELLOW, "HOW TO PLAY"),
-     (9, 2, False, C_GRAY, "SUPER MOVES - JOYSTICK")],
-    [(2, 4, False, C_YELLOW, "STRAIGHT SHOT"),
-     (2, 6, False, C_WHITE, "NEXT SHOT FLAT AND FAST")],
+    [(14, 0, False, C_YELLOW, "HOW TO PLAY")],
+    [(9, 2, False, C_GRAY, "SUPER MOVES - JOYSTICK")],
+    [(2, 4, False, C_YELLOW, "STRAIGHT SHOT")],
+    [(2, 6, False, C_WHITE, "NEXT SHOT FLAT AND FAST")],
     [(HT_LABEL_COL, 9, False, C_GRAY, "FIRE"),
      (2, 12, False, C_YELLOW, "RISING STRIKE"),
      (HT_LABEL_COL, 17, False, C_GRAY, "FIRE")],
@@ -1111,7 +1112,8 @@ HT_TEXTS = [
      (13, 20, False, C_WHITE, "= MOVE"),
      (20, 20, False, C_WHITE, "FULL"),
      (30, 20, False, C_YELLOW, "= MAX")],
-    [(1, 22, False, C_GRAY, "FIRE: USE THE BONUS     FORWARD: DASH")],
+    [(1, 22, False, C_GRAY, "FIRE: USE THE BONUS     ")],
+    [(25, 22, False, C_GRAY, "FORWARD: DASH")],
     [(11, 24, False, C_GRAY, "PRESS FIRE TO SKIP")],
 ]
 

@@ -8,6 +8,7 @@
 .setcpu "6502"
 .macpack longbranch
 
+.include "tv.inc"
 .include "params.inc"
 .include "assets.inc"
 .include "sid_music.inc"

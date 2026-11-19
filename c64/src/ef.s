@@ -53,14 +53,15 @@ ef_ram:
     stx ef_src+2
     ldx #VOICE_PAGES
     ldy #>VOICE_BASE
-    bne ef_copy
-.endproc
+.endproc                        ; (prosegue in ef_copy)
 
 ; X pagine dal banco A (ROML e ROMH), dalla pagina in ef_src+2 ($80-$BF), alla pagina Y.
 .proc ef_copy
     sta EF_BANK
-    stx pages
     sty dst+2
+    sty dst2+2
+    lda ef_src+2
+    sta src2+2
     php
     sei
     lda #$37
@@ -69,13 +70,18 @@ ef_ram:
     sta EF_MODE
     ldy #0
 loop:
+    lda $8000,y                 ; due byte per giro (12,5 cicli a byte invece di 14: le copie di
+    sta $ff00,y                 ; 4 pagine in un frame stanno anche in quello NTSC con la musica)
+    iny
     lda $8000,y
     sta $ff00,y
     iny
     bne loop
     inc ef_src+2
+    inc src2+2
     inc dst+2
-    dec pages
+    inc dst2+2
+    dex                         ; (X: le pagine che restano)
     bne loop
     lda #EF_OFF
     sta EF_MODE
@@ -86,7 +92,8 @@ loop:
 .endproc
 ef_src = ef_copy::loop
 dst = ef_copy::loop + 3
-pages: .res 1
+src2 = ef_copy::loop + 7
+dst2 = ef_copy::loop + 10
 
 ; Scrive i HI_REC byte da ch_table nel posto a X:Y (byte basso e alto, $8000-$9FFF). C = 1 se un
 ; byte del posto non era cancellato o non si scrive.

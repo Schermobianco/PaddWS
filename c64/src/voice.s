@@ -55,13 +55,15 @@
 ; suo nome è il più lungo: i campioni (voice7.bin) arrivano quasi a VOICE_RES.
 
 .setcpu "6502"
+.include "tv.inc"
 .include "voice.inc"
 .include "sid_music.inc"
 .include "params.inc"
 
 SID           = $d400
-SAMPLE_CYCLES = 197             ; 985.248 Hz (PAL) / 5000
-FRAME_CYCLES  = 63 * 312        ; un NMI a frame nelle attese
+SAMPLE_CYCLES = (TV_CLOCK + 2500) / 5000 ; 197 PAL (985.248 Hz / 5000), 205 NTSC
+FRAME_CYCLES  = TV_FRAME        ; un NMI a frame nelle attese (anche sull'NTSC il conto alla rovescia
+                                ; va un frame alla volta: GO resta al via)
 ATTACK_AT     = 21              ; frame della presentazione: il DC sale, il nome 0,5 s dopo il primo
 ATTACK_FRAMES = 4               ; attacco 6 (68 ms) del DC prima dei campioni
 RELEASE_FRAMES = 6              ; 120 ms: rilascio 4 (114 ms) del DC

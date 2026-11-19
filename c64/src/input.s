@@ -17,8 +17,8 @@ JOY_RIGHT = $08
 JOY_FIRE  = $10
 
 PADDLE_SELECT = $7f             ; bit 6-7 = %01: paddle della porta 1
-TAP_FRAMES = 10                 ; doppio tocco entro 200 ms = rapido, come sul MiSTer
-SCROLL_FRAMES = 50              ; NEXT con il joystick: il bonus selezionato cambia da solo ogni secondo
+TAP_FRAMES = (10 * TV_HZ + 25) / 50 ; doppio tocco entro 200 ms = rapido, come sul MiSTer
+SCROLL_FRAMES = (50 * TV_HZ + 25) / 50 ; NEXT con il joystick: il bonus selezionato cambia da solo ogni secondo
 
 ; tasti: riga (bit azzerato in $DC00) e colonna (bit letto in $DC01)
 ; (riga * 8 + colonna)

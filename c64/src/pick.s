@@ -599,9 +599,30 @@ move:
     sta pk_cursor,x
     jmp moved
 joystick:
+    lda pk_kind
+    beq updown
+    ; racchetta, griglia 4x2 (kpick.s): destra e sinistra la dopo e la prima, da una riga
+    ; all'altra; su e giù l'altra riga, stessa colonna (sotto TWIST c'è OMEGA: fermo)
+    lda joy_edge,x
+    and #JOY_LEFT
+    bne prev
+    lda joy_edge,x
+    and #JOY_RIGHT
+    bne next
+    lda joy_edge,x
+    and #JOY_UP | JOY_DOWN
+    beq fire
+    lda pk_cursor,x
+    eor #4
+    cmp #KINDS
+    bcs fire
+    sta pk_cursor,x
+    bcc moved                   ; (sempre)
+updown:
     lda joy_edge,x
     and #JOY_UP
     beq down
+prev:
     dec pk_cursor,x
     bpl moved
     jsr rows
@@ -613,6 +634,7 @@ down:
     lda joy_edge,x
     and #JOY_DOWN
     beq fire
+next:
     inc pk_cursor,x
     jsr rows
     cmp pk_cursor,x
@@ -1653,14 +1675,14 @@ hw_t:   .res 2                  ; frame da quando si vede
 
 ; ------------------------------------------------------------------------------------ GUARDIAN
 
-; Muro tratteggiato dietro la racchetta del GUARDIAN, sotto le riserve (righe BAR_ROW0-24): i
-; settori (G_SECTORS) di colore alterno (giallo e arancione), disegnati solo quelli ancora in piedi; quello
-; che rimanda la palla lampeggia per BAR_FLASH frame e sparisce. I settori non sono allineati ai
+; Muro del GUARDIAN dietro la racchetta, sotto le riserve (righe BAR_ROW0-24): non si vede (i settori
+; in piedi sono i corsi della racchetta, pad_image); il settore che rimanda la palla lampeggia per
+; BAR_FLASH frame, a tratti di colore alterno per settore (giallo e arancione), e sparisce. I settori non sono allineati ai
 ; caratteri: ogni riga di caratteri prende il settore del suo centro con la regola della logica
 ; (g_sector, sulla y del core che va verso l'alto), quindi il disegno è approssimato al carattere
 ; e la logica no. Si riscrivono solo le righe dei settori cambiati.
 BAR_ROW0   = 3
-BAR_FLASH  = 15                 ; frame del lampeggio (0,3 s)
+BAR_FLASH  = (15 * TV_HZ + 25) / 50 ; frame del lampeggio (0,3 s)
 .assert P_BARRIER_X = 8 << 16, error, "caratteri della barriera fatti per x = 8 (gen_c64_assets.py)"
 ; (P_GUARDIAN_TOP è la y del core dell'estremo alto del muro: a schermo P_HEIGHT - P_GUARDIAN_TOP)
 .assert (BAR_ROW0 - 1) * 8 < (P_HEIGHT - P_GUARDIAN_TOP) >> 16 .and BAR_ROW0 * 8 >= (P_HEIGHT - P_GUARDIAN_TOP) >> 16, error, "muro del GUARDIAN: prima riga sotto la banda delle riserve"
@@ -1678,7 +1700,7 @@ side_loop:
     jne next_side
     ; settori appena caduti (rimandano la palla): lampeggiano
     lda nx_barrier,y
-    sta m_t                     ; settori da mostrare
+    sta m_t
     eor #$ff
     and bar_prev,x
     beq :+
@@ -1687,14 +1709,15 @@ side_loop:
     sta bar_flash,x
 :   lda m_t
     sta bar_prev,x
+    lda #0
+    sta m_t                     ; settori da mostrare: solo quello che lampeggia
     lda bar_flash,x
     beq :+
     dec bar_flash,x
     lda tick
     and #2
     beq :+
-    lda m_t
-    ora bar_fbit,x
+    lda bar_fbit,x
     sta m_t
 :   lda m_t
     eor bar_shown,x
@@ -1782,17 +1805,12 @@ SHOT_MAX_CELLS = 4 * MAX_SHOTS   ; fino a due celle per colpo, tutti e due i gio
     ; fuori dalla partita lo schermo è già un altro: i colpi si dimenticano
     lda state
     cmp #ST_COUNT
-    bcc leave
+    jcc leave
     cmp #ST_OVER + 1
-    bcs leave
+    jcs leave
     jsr shots_erase
     lda m_next
-    beq done
-    lda state
-    cmp #ST_COUNT
-    bcc done
-    cmp #ST_OVER + 1
-    bcs done
+    jeq done
     ldy #0
 shot:
     lda shot_on,y
@@ -1831,27 +1849,39 @@ shot:
     sta v_col
     cmp #40
     bcs skip
+    ; la cella: schermo in ptr, colore in m_a (pagina zero libera a inizio frame)
+    ldy v_row
+    lda row_lo,y
+    clc
+    adc v_col
+    sta ptr
+    sta m_a
+    lda row_hi,y
+    adc #0
+    sta ptr+1
+    adc #>($d800 - SCREEN)      ; (C = 0: SCREEN + 1.000 non passa $FFFF)
+    sta m_a+1
     lda v_n
     and #6
     sta m_t                     ; fase * 2 = indice in shot_chars
     tax
     lda shot_chars,x
+    ldy #0
     jsr shot_cell
     ldx m_t
     lda shot_chars+1,x
     beq skip                    ; fase 0: tutto nel primo carattere
-    inc v_col
-    lda v_col
-    cmp #40
+    ldy v_col
+    cpy #39
     bcs skip
-    lda shot_chars+1,x
+    ldy #1                      ; la cella a destra
     jsr shot_cell
 skip:
     ldy ns_k
 next:
     iny
     cpy #2 * MAX_SHOTS
-    bne shot
+    jne shot
 done:
     rts
 leave:
@@ -1862,36 +1892,28 @@ leave:
 
 shot_chars: .byte SHOT_CHARS
 
-; Carattere A del colpo, giallo, alla colonna v_col della riga v_row, salvando quello che c'è.
+; Carattere A del colpo, giallo, nella cella ptr + Y (colore in m_a + Y), salvando quello che c'è.
 .proc shot_cell
     sta m_lo
     ldx sv_n
     cpx #SHOT_MAX_CELLS
     bcs full
-    ldy v_row
-    lda row_lo,y
+    tya
     clc
-    adc v_col
-    sta ptr
+    adc ptr
     sta sv_lo,x
-    lda row_hi,y
+    lda ptr+1
     adc #0
-    sta ptr+1
     sta sv_hi,x
-    ldy #0
     lda (ptr),y
     sta sv_ch,x
     lda m_lo
     sta (ptr),y
-    lda ptr+1
-    clc
-    adc #>($d800 - SCREEN)
-    sta ptr+1
-    lda (ptr),y
+    lda (m_a),y
     and #$0f                    ; il nibble alto della RAM del colore non esiste
     sta sv_col,x
     lda egg_yel
-    sta (ptr),y
+    sta (m_a),y
     inc sv_n
 full:
     rts
@@ -1937,7 +1959,7 @@ sv_col:    .res SHOT_MAX_CELLS
 ; ------------------------------------------------------------------------------------ effetti
 
 LABEL_ROW    = 23               ; scritta del bonus attivato, in basso
-LABEL_FRAMES = 60               ; 1,2 secondi
+LABEL_FRAMES = (60 * TV_HZ + 25) / 50 ; 1,2 secondi
 ; accensione e spegnimento da vecchio televisore (next_ui.rs, CRT_STEP e CRT_DOT a 50 Hz), al
 ; frame e = 0..LABEL_FRAMES - 2 (label_step): una riga bianca (CH_GRID_T) che si allarga dal centro
 ; in LB_OPEN frame, LB_BLOCK frame di blocchi pieni (la fascia che si apre), la scritta; alla fine

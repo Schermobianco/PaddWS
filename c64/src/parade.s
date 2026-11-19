@@ -413,19 +413,27 @@ done:
     ldx #$34
     stx $01
 page:
-    sta c0+2
-    sta c1+2
+    sta c0+2                    ; (otto scritture per giro: circa 12.300 cicli per 8 pagine, nel
+    sta c1+2                    ; frame NTSC con la musica)
     sta c2+2
     sta c3+2
+    sta c4+2
+    sta c5+2
+    sta c6+2
+    sta c7+2
     lda #0
     tax
 :
 c0: sta $ff00,x
-c1: sta $ff40,x
-c2: sta $ff80,x
-c3: sta $ffc0,x
+c1: sta $ff20,x
+c2: sta $ff40,x
+c3: sta $ff60,x
+c4: sta $ff80,x
+c5: sta $ffa0,x
+c6: sta $ffc0,x
+c7: sta $ffe0,x
     inx
-    cpx #64
+    cpx #32
     bne :-
     lda c0+2
     clc

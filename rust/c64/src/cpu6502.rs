@@ -410,14 +410,26 @@ pub struct Cpu {
     pub write_cycles: Vec<u64>,
     /// cicli spesi per indirizzo di istruzione, durante `call` (vedi `paddws-c64 profile`)
     pub profile: Option<Vec<u64>>,
+    /// profilo inclusivo, durante `call`: cicli per indirizzo di subroutine chiamata con JSR, con
+    /// quelle che chiama (le subroutine aperte e il puntatore dello stack dopo il JSR: una è finita
+    /// quando lo stack torna sopra, anche se esce con un salto o togliendo il ritorno)
+    pub inclusive: Option<Box<Inclusive>>,
+    /// il primo ciclo in cui il PC arriva a `mark_at`, durante `call` (in `mark`)
+    pub mark_at: Option<u16>,
+    pub mark: Option<u64>,
     /// linee dei joystick, bit a 0 = premuto come sul C64: porta 2 in $DC00, porta 1 in $DC01
     /// (si sommano, in AND, a quello che il programma scrive nel registro)
     pub joy_port2: u8,
     pub joy_port1: u8,
     /// ciclo dell'interrupt di raster alla riga 250, se il banco di prova esegue un frame: allora
     /// $D012 (e il bit 7 di $D011) danno la riga a cui sarebbe il VIC, con circa 58 cicli della
-    /// CPU per riga (i 18.000 cicli utili del frame PAL sulle sue 312 righe)
+    /// CPU per riga (i 18.000 cicli utili del frame PAL sulle sue 312 righe; NTSC 59 su 263:
+    /// `crate::raster_lines`)
     pub frame_start: Option<u64>,
+    /// indirizzo di frame_flag: con `frame_start`, letto dopo un frame intero dall'interrupt vale
+    /// almeno 1, come se l'interrupt del frame dopo l'avesse alzato (un frame oltre il suo tempo
+    /// non accetta altro lavoro: frame_after, sid_time)
+    pub frame_flag_at: Option<u16>,
     pub cia2: Cia2,
     /// fronte della linea dell'NMI da servire prima della prossima istruzione
     nmi_pending: bool,
@@ -428,6 +440,24 @@ pub struct Cpu {
     ef_on: bool,
     /// cicli spesi nella RAM della cartuccia ($DF00-$DFFF), durante `call`
     pub ef_cycles: u64,
+}
+
+/// Profilo inclusivo (vedi `Cpu::inclusive`).
+#[derive(Clone)]
+pub struct Inclusive {
+    /// subroutine aperte: stack dopo il JSR, indirizzo, ciclo della chiamata
+    pub open: Vec<(u8, u16, u64)>,
+    pub cycles: Vec<u64>,
+    /// chiamate per indirizzo di subroutine
+    pub calls: Vec<u32>,
+    /// la chiamata più lunga per indirizzo di subroutine (non si azzera tra i frame)
+    pub longest: Vec<u64>,
+}
+
+impl Default for Inclusive {
+    fn default() -> Self {
+        Self { open: Vec::new(), cycles: vec![0; 0x10000], calls: vec![0; 0x10000], longest: vec![0; 0x10000] }
+    }
 }
 
 impl Default for Cpu {
@@ -454,9 +484,13 @@ impl Cpu {
             stamp: false,
             write_cycles: Vec::new(),
             profile: None,
+            inclusive: None,
+            mark_at: None,
+            mark: None,
             joy_port2: 0xFF,
             joy_port1: 0xFF,
             frame_start: None,
+            frame_flag_at: None,
             cia2: Cia2::default(),
             nmi_pending: false,
             nmis: 0,
@@ -499,12 +533,17 @@ impl Cpu {
                 v
             }
             0xD011 | 0xD012 if self.frame_start.is_some() => {
-                let line = (250 + (self.cycles - self.frame_start.unwrap_or(0)) / 58) % 312;
+                let line = (250 + (self.cycles - self.frame_start.unwrap_or(0)) / crate::raster_cycles()) % crate::raster_lines();
                 if addr == 0xD012 {
                     line as u8
                 } else {
                     (self.mem[addr as usize] & 0x7F) | ((line >> 1) as u8 & 0x80)
                 }
+            }
+            a if self.frame_flag_at == Some(a) && self.frame_start.is_some() => {
+                let full = crate::raster_lines() * crate::raster_cycles();
+                let irq = self.cycles - self.frame_start.unwrap_or(0) >= full;
+                self.mem[addr as usize] | irq as u8
             }
             _ => self.mem[addr as usize],
         }
@@ -622,9 +661,30 @@ impl Cpu {
         self.cycles += 6;
         while self.pc != SENTINEL {
             let (pc, before) = (self.pc, self.cycles);
+            let jsr = self.inclusive.is_some() && self.mem[pc as usize] == 0x20;
+            if self.mark_at == Some(pc) && self.mark.is_none() {
+                self.mark = Some(self.cycles);
+            }
             self.step()?;
             if let Some(p) = &mut self.profile {
                 p[pc as usize] += self.cycles - before;
+            }
+            if let Some(inc) = &mut self.inclusive {
+                while let Some(&(sp, target, at)) = inc.open.last()
+                    && self.sp > sp
+                    && !jsr
+                {
+                    inc.open.pop();
+                    let long = &mut inc.longest[target as usize];
+                    *long = (*long).max(self.cycles - at);
+                }
+                for &(_, target, _) in &inc.open {
+                    inc.cycles[target as usize] += self.cycles - before;
+                }
+                if jsr {
+                    inc.calls[self.pc as usize] += 1;
+                    inc.open.push((self.sp, self.pc, before));
+                }
             }
             if (0xDF00..0xE000).contains(&pc) {
                 self.ef_cycles += self.cycles - before;

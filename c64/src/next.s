@@ -79,12 +79,12 @@ nx_reload: .res 8               ; ricarica del caricatore (16 bit)
 nx_barrier: .res 8              ; GUARDIAN: settori del muro in piedi, bit 0 = settore 0
 nx_morph:  .res 1               ; OMEGA: lato (0 o 4) che cambia forma a ogni punto subito ($FF nessuno)
 ; colpi del BLASTER: 8 posti (4 per giocatore, prima il sinistro: posto = lato * 4 + k, cioè
-; X del giocatore + k), passo 4
+; X del giocatore + k), passo 4; la velocità è +P_SHOT_SPEED per il sinistro, -P_SHOT_SPEED per
+; il destro (move_shots)
 MAX_SHOTS = 4
 shot_on:   .res 2 * MAX_SHOTS
 shot_x:    .res 8 * MAX_SHOTS
 shot_y:    .res 8 * MAX_SHOTS
-shot_vx:   .res 8 * MAX_SHOTS
 ; capsule: 4 posti, passo 4
 cap_on:    .res 4
 cap_x:     .res 16
@@ -605,11 +605,14 @@ no:
 
 ; C = 1 se la palla va verso il giocatore X ed è oltre la soglia del suo lato: a sinistra
 ; x < zone_l, a destra x > zone_r. Y = ZONE_HALF: metà campo (TELEPORT); Y = ZONE_BULLET: la
-; zona del BULLET (Next::bullet_trigger), oggi anche lei la metà campo. Le soglie sono pixel interi: a
-; sinistra basta la parte intera di x (x < T se e solo se int(x) < T), a destra la sottrazione
-; T - x è intera. X resta.
-ZONE_HALF   = 0
-ZONE_BULLET = 1
+; zona del BULLET (Next::bullet_trigger), oggi anche lei la metà campo; Y = ZONE_NEAR: a
+; ZONE_NEAR_PX pixel dal bordo, il colpo o il punto a pochi tick (om_early). Le soglie sono pixel
+; interi: a sinistra basta la parte intera di x (x < T se e solo se int(x) < T), a destra la
+; sottrazione T - x è intera. X e Y restano.
+ZONE_HALF    = 0
+ZONE_BULLET  = 1
+ZONE_NEAR    = 2
+ZONE_NEAR_PX = 48
 .proc ball_in_zone
     jsr ball_toward
     bcc no
@@ -619,7 +622,7 @@ ZONE_BULLET = 1
     lda ball_x+2
     sbc zone_l,y
     lda ball_x+3
-    sbc zone_l+2,y
+    sbc zone_l+3,y
     jmp sign
 right:
     sec
@@ -629,7 +632,7 @@ right:
     sbc ball_x+1
     lda zone_r,y
     sbc ball_x+2
-    lda zone_r+2,y
+    lda zone_r+3,y
     sbc ball_x+3
 sign:
     bvc :+
@@ -639,11 +642,11 @@ no:
     rts
 .endproc
 
-; soglie (parte intera, 16 bit): byte bassi delle due, poi byte alti
-zone_l: .byte <(P_WIDTH >> 17), <(P_BULLET_ZONE >> 16)
-        .byte >(P_WIDTH >> 17), >(P_BULLET_ZONE >> 16)
-zone_r: .byte <(P_WIDTH >> 17), <((P_WIDTH - P_BULLET_ZONE) >> 16)
-        .byte >(P_WIDTH >> 17), >((P_WIDTH - P_BULLET_ZONE) >> 16)
+; soglie (parte intera, 16 bit): byte bassi delle tre, poi byte alti
+zone_l: .byte <(P_WIDTH >> 17), <(P_BULLET_ZONE >> 16), <ZONE_NEAR_PX
+        .byte >(P_WIDTH >> 17), >(P_BULLET_ZONE >> 16), >ZONE_NEAR_PX
+zone_r: .byte <(P_WIDTH >> 17), <((P_WIDTH - P_BULLET_ZONE) >> 16), <((P_WIDTH >> 16) - ZONE_NEAR_PX)
+        .byte >(P_WIDTH >> 17), >((P_WIDTH - P_BULLET_ZONE) >> 16), >((P_WIDTH >> 16) - ZONE_NEAR_PX)
 .assert ((P_WIDTH / 2) | P_BULLET_ZONE) & $FFFF = 0 .and P_WIDTH < $40000000, error, "soglie di ball_in_zone: pixel interi"
 
 ; Match::next_fire: il BLASTER X spara se ha colpi, la pausa è finita e c'è un posto libero.
@@ -675,11 +678,9 @@ free:
     cpx #0
     bne right
     add32 {shot_x,y}, {pad_x,x}, {#P_PAD_HALF_W}
-    mov32 {shot_vx,y}, {#P_SHOT_SPEED}
     jmp sy
 right:
     sub32 {shot_x,y}, {pad_x,x}, {#P_PAD_HALF_W}
-    mov32 {shot_vx,y}, {#-P_SHOT_SPEED}
 sy:
     mov32 {shot_y,y}, {pad_y,x}
     ; il primo colpo a caricatore pieno fa partire la ricarica
@@ -1208,65 +1209,130 @@ shot_sx: slow_consts P_SHOT_SPEED
 
 ; Colpi del BLASTER: attraversano la palla, raccolgono la prima capsula che toccano (con la
 ; riserva piena la distruggono) e si fermano sulla racchetta avversaria o fuori dal campo.
+; I colpi di un giocatore vanno tutti alla stessa velocità (+/- P_SHOT_SPEED, rallentata dal
+; BULLET con lo stesso shift): passo, portata e faccia della racchetta avversaria si contano una
+; volta per giocatore, e le capsule in campo una volta per tick (con 8 colpi in volo, BULLET e
+; TELEPORT il tick è il più pesante dell'NTSC).
+ms_v    = m_p                   ; passo dei colpi del giocatore (s_v)
+ms_face = m_p + 4               ; faccia della racchetta avversaria
+ms_rlim = m_p + 8               ; parte intera della portata + 2 (scarto veloce delle capsule)
+ms_y    = m_p + 9               ; posto del colpo * 4
+ms_slot = m_p + 10              ; posto della capsula presa
+ms_band = m_a                   ; metà altezza della racchetta avversaria + metà fascia dei colpi
+ms_opp  = m_b                   ; avversario (0 o 4)
+.assert P_CAP_HALF + P_SHOT_SPEED < $00FD0000, error, "move_shots: portata in meno di 253 pixel"
 .proc move_shots
+    ; capsule in campo (posto * 4), nell'ordine dei posti
+    ldx #0
+    ldy #0
+:   lda cap_on,x
+    beq :+
+    txa
+    asl a
+    asl a
+    sta ms_cap,y
+    iny
+:   inx
+    cpx #4
+    bne :--
+    sty ms_ncap
     lda #0
+    sta n_side
+side:
+    ldx n_side
+    lda shot_on,x
+    ora shot_on+1,x
+    ora shot_on+2,x
+    ora shot_on+3,x
+    jeq next_side
+    ; passo: +P_SHOT_SPEED a sinistra, -P_SHOT_SPEED a destra, rallentato dal BULLET
+    ; dell'avversario (passi rallentati costanti)
+    lda nx_btimer
+    beq plain
+    jsr bullet_shift_x          ; X = n_side
+    beq plain
+    jsr set_ki
+    ldx s_ki
+    lda n_side
+    beq :+
+    inx
+    inx
+    inx
+    inx
+:   mov32 ms_v, {shot_sx,x}
+    jmp reach
+plain:
+    lda n_side
+    bne :+
+    mov32 ms_v, {#P_SHOT_SPEED}
+    jmp reach
+:   mov32 ms_v, {#-P_SHOT_SPEED}
+reach:
+    ; portata: metà capsula + |passo|; scarto veloce oltre parte intera + 2 pixel
+    abs32 n_u, ms_v
+    add32 n_u, n_u, {#P_CAP_HALF}
+    lda n_u+2
+    clc
+    adc #2
+    sta ms_rlim
+    ; racchetta avversaria: faccia e fascia
+    lda n_side
+    eor #4
+    sta ms_opp
+    tax
+    beq left_pad
+    sub32 ms_face, {pad_x,x}, {#P_PAD_HALF_W}
+    jmp band
+left_pad:
+    add32 ms_face, {pad_x,x}, {#P_PAD_HALF_W}
+band:
+    add32 ms_band, {pad_half,x}, {#P_BLASTER_BAND}
+    lda n_side
     sta n_i                     ; posto 0-7 (0-3 sinistro, 4-7 destro)
 shot:
     ldx n_i
     lda shot_on,x
     jeq next
-    ; giocatore del colpo
-    txa
-    and #MAX_SHOTS
-    sta n_side
     txa
     asl a
     asl a
+    sta ms_y
     tay
-    ; passo del colpo, rallentato dal BULLET dell'avversario (velocità +/- P_SHOT_SPEED: passi
-    ; rallentati costanti)
-    lda nx_btimer
-    beq plain
-    ldx n_side
-    jsr bullet_shift_x
-    beq plain
-    jsr set_ki
-    ldy n_i
-    tya
-    asl a
-    asl a
-    tay
-    ldx s_ki
-    lda shot_vx+3,y
-    bpl :+
-    inx
-    inx
-    inx
-    inx
-:   mov32 s_v, {shot_sx,x}
-    jmp step
-plain:
-    mov32 s_v, {shot_vx,y}
-step:
-    add32 {shot_x,y}, {shot_x,y}, s_v
-    ; portata: metà capsula + |passo|, fascia: metà capsula + metà fascia dei colpi
-    abs32 n_u, s_v
-    add32 n_u, n_u, {#P_CAP_HALF}
+    add32 {shot_x,y}, {shot_x,y}, ms_v
+    lda ms_ncap
+    jeq pad
     lda #0
     sta n_j
 cap:
-    ldx n_j
-    lda cap_on,x
-    jeq next_cap
-    txa
-    asl a
-    asl a
-    tax
-    ldy n_i
-    tya
-    asl a
-    asl a
+    ldy n_j
+    lda ms_cap,y
+    tax                         ; X = posto della capsula * 4
+    lsr a
+    lsr a
     tay
+    lda cap_on,y                ; (presa da un colpo prima)
+    jeq next_cap
+    ldy ms_y
+    ; parti intere lontane (|d| >= portata intera + 2: d - 1 pixel è già oltre la portata);
+    ; per d < 0 si prende ~d = |d| - 1, che scarta al più qualcosa di meno
+    lda cap_x+2,x
+    sec
+    sbc shot_x+2,y
+    sta n_t
+    lda cap_x+3,x
+    sbc shot_x+3,y
+    bpl pos
+    eor #$FF
+    jne next_cap
+    lda n_t
+    eor #$FF
+    jmp near
+pos:
+    jne next_cap
+    lda n_t
+near:
+    cmp ms_rlim
+    jcs next_cap
     sub32 n_t, {cap_x,x}, {shot_x,y}
     abs32 n_t, n_t
     cmp32 n_u, n_t
@@ -1275,51 +1341,44 @@ cap:
     abs32 n_t, n_t
     blt32 {#P_CAP_HALF + P_BLASTER_BAND}, n_t, next_cap
     ; preso: nella riserva se c'è posto
-    ldx n_j
+    txa
+    lsr a
+    lsr a
+    tax
+    stx ms_slot
     lda #0
     sta cap_on,x
     ldx n_side
     jsr res_count
     cmp #3
     beq :+
-    ldy n_j
+    ldy ms_slot
     lda cap_bonus,y
     jsr res_push
 :   event EV_COLLECT
-    ldx n_i
-    lda #0
-    sta shot_on,x
-    jmp next
+    jmp stop
 next_cap:
     inc n_j
     lda n_j
-    cmp #4
+    cmp ms_ncap
     jne cap
+pad:
     ; racchetta avversaria o fuori dal campo
-    ldx n_i
-    txa
-    asl a
-    asl a
-    tay
+    ldy ms_y
     lda n_side
-    eor #4
-    tax                         ; X = avversario
-    cpx #0
-    beq hit_left
-    ; colpo del sinistro: x >= bordo sinistro della racchetta destra
-    sub32 n_t, {pad_x,x}, {#P_PAD_HALF_W}
-    cmp32 {shot_x,y}, n_t
-    jmi edge
+    bne hit_left
+    ; colpo del sinistro: x >= faccia della racchetta destra
+    cmp32 {shot_x,y}, ms_face
+    bmi edge
     jmp height
 hit_left:
-    add32 n_t, {pad_x,x}, {#P_PAD_HALF_W}
-    cmp32 n_t, {shot_x,y}
+    cmp32 ms_face, {shot_x,y}
     bmi edge
 height:
+    ldx ms_opp
     sub32 n_t, {shot_y,y}, {pad_y,x}
     abs32 n_t, n_t
-    add32 n_u, {pad_half,x}, {#P_BLASTER_BAND}
-    cmp32 n_u, n_t
+    cmp32 ms_band, n_t
     bpl stop
 edge:
     lda shot_x+3,y
@@ -1333,10 +1392,19 @@ stop:
 next:
     inc n_i
     lda n_i
-    cmp #2 * MAX_SHOTS
+    and #MAX_SHOTS - 1
     jne shot
+next_side:
+    lda n_side
+    eor #4
+    sta n_side
+    jne side
     rts
 .endproc
+.segment "NEXTBSS"
+ms_cap:  .res 4                 ; capsule in campo (posto * 4)
+ms_ncap: .res 1
+.segment "CODE"
 .assert MAX_SHOTS = 4, error, "posti dei colpi: lato * 4 + k (X del giocatore + k)"
 
 ; ------------------------------------------------------------------------------------ palla

@@ -45,15 +45,20 @@ OM_CODE_SRC = $80 + OM_CODE_OFF / 256
 .assert __OMCODE_RUN__ = OM_RUN .and __OMCODE_SIZE__ <= OM_PAGES * 256, lderror, "OMEGA: codice della partita fuori posto o troppo lungo"
 .assert OM_RUN >= VOICE_KEEP .and OM_RUN + OM_PAGES * 256 <= VOICE_END, error, "OMEGA: codice della partita sopra il player delle voci o oltre READY"
 
-OM_FLASH   = 8                  ; frame del lampo bianco della trasformazione (8 a 60 Hz sul PC)
+OM_FLASH   = (8 * TV_HZ + 25) / 50 ; frame del lampo bianco della trasformazione (8 a 60 Hz sul PC)
 OM_CH      = CHARSET_USED       ; rete: 6 caratteri liberi del set
 OM_CHARS   = CHARSET + 8 * OM_CH
-NM_FRAMES  = 50                 ; nome della forma nuova: 1 s, gli ultimi NM_BLINK frame a tratti
-NM_BLINK   = 10
+NM_FRAMES  = (50 * TV_HZ + 25) / 50 ; nome della forma nuova: 1 s, gli ultimi NM_BLINK frame a tratti
+NM_BLINK   = (10 * TV_HZ + 25) / 50
 NM_ROW     = 6                  ; prima riga (sotto le scritte delle mosse, righe 4 e 5)
-OM_LATE_COPY = 11000 / 58       ; una pagina (circa 3.800 cicli) solo prima di qui: dopo om_tick
-OM_LATE_NET  = 13000 / 58       ; c'è solo la musica, che oltre SID_LATE aspetta; la rete (circa
-                                ; 1.600 cicli) solo prima di qui
+OM_LATE_COPY = (TV_BUDGET - (7000)) / TV_LCYC      ; una pagina (circa 3.800 cicli) solo prima di qui: dopo om_tick
+; c'è solo la musica, che oltre SID_LATE aspetta; la rete (circa 1.600 cicli) e il nome (1.800)
+; solo prima di qui: sul PAL con il posto per la musica, sull'NTSC (più carico) senza
+.ifdef NTSC
+OM_LATE_NET  = (TV_BUDGET - (3000)) / TV_LCYC
+.else
+OM_LATE_NET  = (TV_BUDGET - (5000)) / TV_LCYC
+.endif
 .assert OM_CH + 6 <= 256, error, "rete di OMEGA: niente caratteri liberi nel set"
 
 .segment "BSS"
@@ -106,6 +111,43 @@ load:
 done:
     rts
 .endproc
+
+; NTSC: il codice di OMEGA (una pagina per frame) e la parte di om_frame con le copie e i disegni
+; (il nome della forma nuova, circa 3.800 cicli per i caratteri; le pagine della musica; il nome a
+; schermo; la rete) all'inizio del frame, che ha il tempo: dopo gli sprite (om_tick) non c'era quasi
+; mai. Sullo stato del tick prima, come la musica che la rete segue. Solo in
+; partita con il codice di OMEGA copiato (om_on: begin_match lo azzera, nelle altre partite resta 0).
+.ifdef NTSC
+OM_EARLY_NET = (TV_BUDGET - (13000)) / TV_LCYC
+.proc om_early
+    lda state
+    cmp #ST_PLAY
+    bne done
+    lda nx_morph                ; (OMEGA in questa partita)
+    bmi done
+    ; palla a pochi tick da una racchetta: colpo o punto (rimbalzo, CPU, punteggi) fanno già
+    ; pesante il tick, e il resto aspetta
+    ldy #ZONE_NEAR
+    ldx #0
+    jsr ball_in_zone
+    bcs done
+    ldx #4
+    jsr ball_in_zone
+    bcs done
+    lda om_on
+    cmp #OM_PAGES
+    bcs loaded
+    jmp om_tick                 ; il suo codice, una pagina (dopo gli sprite non c'era il tempo)
+loaded:
+    jsr om_rest                 ; caratteri del nome, una pagina della musica o il nome a schermo
+    lda #OM_EARLY_NET           ; poi la rete, se il frame è ancora all'inizio (niente di pesante
+    jsr frame_after             ; prima)
+    bcs done
+    jmp om_net
+done:
+    rts
+.endproc
+.endif
 
 ; Colore della racchetta X (da video.s, al posto del bianco di sempre): quella di OMEGA rossa, viola
 ; con l'easter egg RED (il rosso diventa giallo), bianca nel lampo della trasformazione. Y resta.
@@ -183,8 +225,18 @@ same:
     lda om_flash
     beq :+
     dec om_flash
-:   jsr om_name
+:
+.ifdef NTSC
+stop:
+    rts                         ; (il resto all'inizio del frame dopo: om_early)
+.endif
+rest:
+    jsr om_name
+.ifdef NTSC
+    bcs stop                    ; (all'inizio del frame una cosa sola: caratteri, una pagina della
+.else                           ; musica, nome a schermo o rete)
     bcs net                     ; (ha copiato i caratteri del nome: niente altre copie)
+.endif
     ; una pagina della sezione per frame, se c'è tempo e nessuna voce (READY, GO)
     lda om_left
     beq net
@@ -202,13 +254,22 @@ same:
     ldx #1
     jsr ef_copy
     dec om_left
-    bne net
+    bne copied
     lda #SID_SONG_OMEGA
     jsr sid_song
+copied:
+.ifdef NTSC
+    rts
+.endif
 net:
+.ifdef NTSC
+    jmp nm_show                 ; (la rete la decide om_early)
+.else
     jsr nm_show
     jmp om_net
+.endif
 .endproc
+om_rest = om_frame::rest        ; (om_early)
 
 ; Nome della forma nuova: prima i caratteri (om_name, C = 1 se li ha copiati in questo frame), poi a
 ; schermo (nm_show, dopo la musica) NM_FRAMES frame, gli ultimi NM_BLINK a tratti (2 frame
@@ -317,14 +378,17 @@ done:
     sta nm_r
     ldx #0                      ; cella
 row:
-    ldy nm_r
+    ldy nm_r                    ; schermo in ptr, colore in m_a (libero: nessuna moltiplicazione)
     lda row_lo,y
     clc
     adc nm_col
     sta ptr
+    sta m_a
     lda row_hi,y
     adc #0
     sta ptr+1
+    adc #>($d800 - SCREEN)      ; (C = 0)
+    sta m_a+1
     ldy #0
 cell:
     stx nm_i
@@ -346,18 +410,8 @@ cell:
     tay
     lda (ptr2),y
     jsr egg_color
-    pha
-    lda ptr+1
-    clc
-    adc #>($d800 - SCREEN)
-    sta ptr+1
-    pla
     ldy nm_y
-    sta (ptr),y
-    lda ptr+1
-    sec
-    sbc #>($d800 - SCREEN)
-    sta ptr+1
+    sta (m_a),y
 next:
     ldx nm_i
     inx

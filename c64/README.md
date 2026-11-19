@@ -2,19 +2,21 @@
 
 # PADD WS – versione Commodore 64
 
-PADD WS per C64 PAL, su cartuccia EasyFlash. Gioca la stessa partita del core Rust
-([`rust/core`](../rust/core)) bit per bit: campo 320×200, un tick per frame a 50 Hz, aritmetica
+PADD WS per C64 PAL e NTSC, su cartuccia EasyFlash. Gioca la stessa partita del core Rust
+([`rust/core`](../rust/core)) bit per bit: campo 320×200, un tick per frame (50 Hz, sull'NTSC 60), aritmetica
 Q16.16 a 32 bit in 6502 identica a `fixed.rs` e gli stessi parametri delle altre versioni
 (`Tuning::c64()`). Ci sono Classic, EVO, NEXT con le mosse speciali e la scalata (sfidanti, WINS,
 allenamento, classifica e sblocchi salvati nella flash), il boss segreto OMEGA, il jukebox, il
 singolo, la CPU, l'attract (senza demo) e le musiche del SID. Il logo nel menu di NEXT non c'è:
 resta MAIN MENU.
 
-Solo PAL (NTSC per ora no). Finora è stata provata in VICE, non ancora su un C64 vero.
+Ci sono due cartucce, una per il PAL e una per l'NTSC (con i parametri del core a 60 Hz). Quella
+NTSC finora è stata provata solo in VICE.
 
 ## Avviare
 
-`paddws.crt` è nella release (`paddws-X.Y.Z-c64.zip`) o in `c64\build` dopo la compilazione. Si
+`paddws.crt` (PAL) e `paddws-ntsc.crt` sono nella release (`paddws-X.Y.Z-c64.zip`); dopo la
+compilazione sono `c64\build\paddws.crt` e `c64\build\ntsc\paddws.crt`. Si
 monta in VICE o sul C64 Ultimate, oppure si scrive in una EasyFlash con EasyProg, e parte
 all'accensione. Perché la classifica resti, il `.crt` deve essere scrivibile; in VICE:
 
@@ -47,10 +49,11 @@ Servono cc65 (ca65 e ld65) in `C:\DEV\@Compiler\cc65` e Python (quello di `.venv
 
 ```powershell
 .\c64\build.ps1                 # c64\build\paddws.crt
+.\c64\build.ps1 -Ntsc           # c64\build\ntsc\paddws.crt
 .\c64\shot.ps1 boot.png         # avvia la cartuccia in VICE senza finestra e salva la schermata
 ```
 
-Su Linux: `sh c64/build.sh` (ca65, ld65 e python3 nel PATH).
+Su Linux: `sh c64/build.sh` (con `--ntsc` la versione NTSC; ca65, ld65 e python3 nel PATH).
 
 Oltre alla cartuccia, in `c64\build` restano `paddws.prg` con le etichette (`paddws.lbl`) e la
 mappa (`paddws.map`), il finale della scalata (`paddws.prg.end`), il banco di OMEGA (`paddws.prg.omega`) e i file voce
@@ -95,7 +98,8 @@ cargo run --release -p paddws-c64 -- ui               # scene e menu, voci della
 cargo run --release -p paddws-c64 -- frames           # cicli di ogni frame (attract, partite, finale)
 ```
 
-Sono gli stessi passi della GitHub Action `C64`. In più: `ending` gioca solo il finale della
+Con `--ntsc` prima del comando (`paddws-c64 --ntsc frames`) i passi valgono per la cartuccia
+NTSC, compilata prima con `-Ntsc`. Sono gli stessi passi della GitHub Action `C64`. In più: `ending` gioca solo il finale della
 scalata, `profile` dà i cicli per routine, `--build DIR` usa un'altra cartella di build e
 `game --ticks N` cambia la durata delle partite (5 minuti di default).
 
@@ -129,7 +133,9 @@ scalata, `profile` dà i cicli per routine, `--build DIR` usa un'altra cartella 
   il codice nuovo va di solito nella cartuccia, da copiare in RAM quando serve (come le mosse
   speciali, la classifica e il finale). Lo spazio libero si legge in `c64\build\paddws.map`.
 - **Variabili temporanee condivise.** `m_t` e `ptr` non tengono un valore attraverso una `jsr`.
-- **18.000 cicli per frame.** `paddws-c64 frames` fallisce se un frame li supera. Il suo modello del
+- **18.000 cicli per frame** (NTSC 15.500; in partita, dopo un tick molto pesante, il frame può
+  finire fino a 2.500 cicli dopo l'interrupt e il frame dopo recupera). `paddws-c64 frames`
+  fallisce se un frame li supera. Il suo modello del
   raster (58 cicli per riga) è approssimato: con frame vicini al limite conviene controllare anche
   in VICE. Il lavoro lungo si divide su più frame o aspetta il frame dopo guardando il raster.
 - **Set di caratteri e sprite quasi finiti.** Dei 256 caratteri ne restano liberi pochi (un

@@ -78,11 +78,24 @@ in_mode: .byte 0                ; IM_* (intro_hud)
 in_c:    .byte 0                ; nome: colonna di celle, cella, riga (in_col)
 in_i:    .byte 0
 in_r:    .byte 0
+in_step: .byte 0                ; in_draw: frame del disegno (0-2)
 
-; Disegno (ch_draw), sullo schermo pulito: i caratteri del nome dalla cartuccia (prima della voce,
-; come le copie), punteggio, record e duelli vinti (intro_hud, non nell'allenamento), l'immagine
-; della racchetta dell'avversario (prima della voce: dopo l'I/O resta acceso), poi l'entrata.
+; Disegno (ch_draw), sullo schermo pulito, in tre frame (ch_more; insieme non ci stanno nel frame
+; NTSC). Il primo è vuoto: è il terzo della presentazione, in cui il file voce del primo livello
+; copia GO (VOICE_TICK, circa 12.900 cicli). Poi i caratteri del nome dalla cartuccia (prima della
+; voce, come le copie), punteggio, record e duelli vinti (intro_hud, non nell'allenamento); poi
+; l'immagine della racchetta dell'avversario (prima della voce: dopo l'I/O resta acceso) e
+; l'entrata.
 .proc in_draw
+    lda in_step
+    inc in_step
+    cmp #2
+    beq second
+    inc ch_more
+    cmp #1
+    beq first
+    rts
+first:
     ldx ch_level
     lda rung_kind,x
     sta in_k
@@ -95,6 +108,8 @@ in_r:    .byte 0
     sta in_opp
     jsr intro_hud
     sta in_mode
+    rts
+second:
     ; l'immagine della racchetta, dritta (BLASTER con il caricatore pieno)
     ldx in_k
     stx pi_kind

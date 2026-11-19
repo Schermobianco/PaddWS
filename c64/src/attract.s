@@ -16,15 +16,6 @@ slide_left:  .byte AT_SLIDE_LEFT
 slide_right: .byte AT_SLIDE_RIGHT
 stripe_y:    .byte AT_STRIPE_Y0, AT_STRIPE_Y1, AT_STRIPE_Y2
 ws_off:      .byte AT_WS_OFF
-; indirizzo della riga y della bitmap (colonna 0)
-bm_lo:
-    .repeat 200, line
-    .byte <(BITMAP + (line / 8) * 320 + (line .mod 8))
-    .endrepeat
-bm_hi:
-    .repeat 200, line
-    .byte >(BITMAP + (line / 8) * 320 + (line .mod 8))
-    .endrepeat
 mask_left:  .byte $00, $80, $c0, $e0, $f0, $f8, $fc, $fe   ; i primi n pixel di un byte
 mask_right: .byte $ff, $7f, $3f, $1f, $0f, $07, $03, $01   ; tutti tranne i primi n
 
@@ -57,6 +48,7 @@ at_buf:   .res 11               ; byte di una riga di striscia
 .segment "ZEROPAGE"
 at_shown:   .res 1              ; auto-test: righe a schermo; logo: righe copiate
 .segment "BSS"
+at_drawn:   .res 1              ; strisce ridisegnate in questo frame
 at_acc:     .res 1
 at_clear:   .res 1              ; strisce: parti di bm_clear_part ancora da fare
 at_target:  .res 1              ; logo: righe da mostrare in questo frame
@@ -150,10 +142,14 @@ grid:
     bne done
     lda at_f
     cmp #AT_BOOT_GRID_FROM
-    bne done
+    bne :+
     jsr draw_grid
     lda #EV_BOOST
     jsr at_sound
+    jmp done
+:   cmp #AT_BOOT_GRID_FROM + 1  ; le linee in alto al frame dopo (tutta insieme la griglia non sta
+    bne done                    ; nel frame NTSC)
+    jsr draw_grid_even
     jmp done
 cursor:
     ; cursore a blocco che lampeggia dopo l'ultima riga
@@ -257,8 +253,8 @@ done:
 .endproc
 
 ; Griglia dell'auto-test, bianca: nelle righe pari la linea in alto (e in basso nell'ultima), nelle
-; colonne pari la linea a sinistra. Due passate srotolate: tutto lo schermo come le righe dispari
-; (con i colori), poi le 13 righe pari a indirizzi fissi.
+; colonne pari la linea a sinistra. Due passate srotolate, in due frame: tutto lo schermo come le
+; righe dispari (con i colori), poi le 13 righe pari a indirizzi fissi (draw_grid_even).
 .proc draw_grid
     ldx #0
 odd:
@@ -285,6 +281,11 @@ odd:
     sta $dae8,x
     inx
     bne odd
+    rts
+.endproc
+
+.proc draw_grid_even
+    ldx #0
 even:
     lda #CH_GRID_TL
     .repeat 12, r
@@ -369,11 +370,11 @@ part4:
     stx at_tmp
     tay
 row:
-    lda bm_lo,y
+    jsr bm_row
     clc
     adc at_c0x8
     sta ptr
-    lda bm_hi,y
+    txa
     adc at_c0x8+1
     sta ptr+1
     ; sorgente: title_rows[y / 8] + y % 8 + colonna * 8
@@ -501,6 +502,8 @@ title_rows_hi:
 :   clc
     rts
 run:
+    lda #0
+    sta at_drawn
     ldx #0
 stripe:
     stx at_tmp
@@ -529,6 +532,9 @@ full:
 frame:
     tay
     ldx at_tmp
+    lda at_drawn                ; già AT_DRAWN_MAX strisce in questo frame: questa al prossimo
+    cmp #AT_DRAWN_MAX
+    bcs next
     lda at_tmp
     and #1
     bne right
@@ -536,6 +542,7 @@ frame:
     cmp at_len,x
     beq next                    ; stessa lunghezza: niente da rifare
     sta at_len,x
+    inc at_drawn
     jsr stripe_left
     jmp next
 right:
@@ -543,6 +550,7 @@ right:
     cmp at_len,x
     beq next
     sta at_len,x
+    inc at_drawn
     jsr stripe_right
 next:
     ldx at_tmp
@@ -554,6 +562,10 @@ next:
     cmp #AT_STRIPES_FRAMES
     rts
 .endproc
+
+; strisce ridisegnate al più per frame (circa 2.400 cicli l'una): le 6 insieme, con la canzone
+; dell'easter egg, non ci stanno nemmeno sul PAL (l'ultima aspetta il frame dopo)
+AT_DRAWN_MAX = 5
 
 ; Striscia sinistra lunga A pixel nella riga di at_tmp / 2.
 .proc stripe_left
@@ -638,21 +650,38 @@ store:
     sta v_row
     lda #AT_STRIPE_H
     sta v_n
-row:
     ldy v_row
-    lda bm_lo,y
+    jsr bm_row
     clc
     adc v_col
     sta ptr
-    lda bm_hi,y
+    txa
     adc #0
     sta ptr+1
+row:
     .repeat 11, k
     ldy #k * 8
     lda at_buf + k
     sta (ptr),y
     .endrepeat
+    ; riga dopo: un byte avanti nella cella, o 313 alla fine della cella (la riga di celle dopo)
     inc v_row
+    lda v_row
+    and #7
+    beq cell
+    inc ptr
+    bne next
+    inc ptr+1
+    bne next                    ; (sempre)
+cell:
+    lda ptr
+    clc
+    adc #<313
+    sta ptr
+    lda ptr+1
+    adc #>313
+    sta ptr+1
+next:
     dec v_n
     bne row
     rts
@@ -716,19 +745,19 @@ logo_line_msb: .byte ((LOGO_SX >> 8) & 1) | (((LOGO_SX + 48) >> 8) & 1) << 1 | (
     jsr set_cols
     ldy #AT_WS_Y
 :   sty at_tmp
-    lda bm_lo,y
+    jsr bm_row
     clc
     adc at_c0x8
     sta ptr
-    lda bm_hi,y
+    txa
     adc at_c0x8+1
     sta ptr+1
     ldy #AT_STRIPE_Y2
-    lda bm_lo,y
+    jsr bm_row
     clc
     adc at_c0x8
     sta ptr2
-    lda bm_hi,y
+    txa
     adc at_c0x8+1
     sta ptr2+1
     ldy #0
@@ -855,13 +884,7 @@ done:
     lda #AT_COPYRIGHT_Y
     ldx #AT_COPYRIGHT_H
     jsr copy_rows
-    lda #<s_copy
-    ldx #>s_copy
-    ldy #AT_COPYRIGHT_Y / 8
-    sty v_row
-    ldy #AT_COPYRIGHT_C0
-    jsr bm_print
-    lda #0
+    lda #0                      ; (la scritta del copyright al primo frame del titolo)
     sta at_f
     sta at_f+1
     sta at_label
@@ -898,7 +921,18 @@ done:
 
 ; Un frame del titolo; C = 1 alla fine.
 .proc title_frame
-    ; WS lampeggia due volte all'inizio
+    ; al primo frame la scritta del copyright (con la copia delle righe in title_enter non ci sta
+    ; nel frame NTSC)
+    lda at_f
+    ora at_f+1
+    bne :+
+    lda #<s_copy
+    ldx #>s_copy
+    ldy #AT_COPYRIGHT_Y / 8
+    sty v_row
+    ldy #AT_COPYRIGHT_C0
+    jsr bm_print
+:   ; WS lampeggia due volte all'inizio
     lda at_f+1
     bne ws_lit
     ldx #0
@@ -1006,11 +1040,15 @@ on:
     jsr zero_cells
     ldx at_label
     beq done
-    lda #<s_label
-    cpx #1
-    beq :+
-    lda #<(s_label + 12)
-:   ldx #>s_label
+    dex
+    beq insert
+    lda #<(s_label + 12)        ; PRESS START
+    ldx #>(s_label + 12)
+    bne print                   ; (sempre)
+insert:
+    lda #<s_label               ; INSERT COIN
+    ldx #>s_label
+print:
     ldy #AT_LABEL_R0
     sty v_row
     ldy #AT_LABEL_C0
@@ -1018,7 +1056,6 @@ on:
 done:
     rts
 .endproc
-.assert >s_label = >(s_label + 12), error, "INSERT COIN e PRESS START su due pagine"
 
 ; ptr = cella della riga di celle A, colonna AT_LABEL_C0.
 .proc cells_row
@@ -1098,6 +1135,25 @@ credit:
     sta v_big
     rts
 .endproc
+
+; A = byte basso, X = byte alto dell'indirizzo della riga di pixel Y della bitmap (colonna 0): la
+; riga di celle Y / 8 (byte bassi multipli di 64) più Y % 8. Y resta.
+.proc bm_row
+    tya
+    lsr a
+    lsr a
+    lsr a
+    tax
+    tya
+    and #7
+    ora cell_row_lo,x
+    pha
+    lda cell_row_hi,x
+    tax
+    pla
+    rts
+.endproc
+.assert <BITMAP .mod 64 = 0, error, "bm_row: le righe di celle non a multipli di 64"
 
 cell_row_lo:
     .repeat 25, r
@@ -1338,14 +1394,18 @@ H_PX = 200
     sta at_bc+1
     ldx #AT_BALL_SIZE
 row:
+    txa                         ; (X: le righe che restano)
+    pha
     ldy at_y
-    lda bm_lo,y
+    jsr bm_row
     clc
     adc at_bc
     sta ptr
-    lda bm_hi,y
+    txa
     adc at_bc+1
     sta ptr+1
+    pla
+    tax
     ldy #0
     lda (ptr),y
     and m_t

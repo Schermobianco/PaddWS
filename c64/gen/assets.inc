@@ -162,8 +162,8 @@ TRAIL_SPAN = 48    ; coda: coordinate dei quadrati nello sprite + 16, da 0 a 47
 .define FX_SQUARES 9, 7, 4, 5, 3, 1, 5, 5, 1, 5, 7, 1, 5, 9, 1, 5, 11, 1, 5, 13, 1, 6, 14, 1, 7, 3, 1, 8, 14, 1, 9, 3, 1, 10, 14, 1, 11, 3, 1, 12, 14, 1, 13, 3, 1, 14, 14, 1, 15, 3, 1, 16, 4, 1, 16, 6, 1, 16, 8, 1, 16, 10, 1, 16, 12, 1, 16, 14, 1, 255, 9, 7, 6, 3, 1, 1, 3, 3, 1, 3, 5, 1, 3, 7, 1, 3, 9, 1, 3, 11, 1, 3, 13, 1, 3, 15, 1, 3, 17, 1, 4, 18, 1, 5, 1, 1, 6, 18, 1, 7, 1, 1, 8, 18, 1, 9, 1, 1, 10, 18, 1, 11, 1, 1, 12, 18, 1, 13, 1, 1, 14, 18, 1, 15, 1, 1, 16, 18, 1, 17, 1, 1, 18, 18, 1, 19, 1, 1, 20, 2, 1, 20, 4, 1, 20, 6, 1, 20, 8, 1, 20, 10, 1, 20, 12, 1, 20, 14, 1, 20, 16, 1, 20, 18, 1, 255
 ; HOW TO PLAY: scritte nella bitmap (colonna, con il bit 7 a 2x; riga; testo; 0), $FE
 ; alla fine di ogni frame di disegno, $FF alla fine (i colori sono già in howto.bin)
-HT_GROUPS = 7
-.define HT_TEXTS 14, 0, "HOW TO PLAY", 0, 9, 2, "SUPER MOVES - JOYSTICK", 0, $FE, 2, 4, "STRAIGHT SHOT", 0, 2, 6, "NEXT SHOT FLAT AND FAST", 0, $FE, 20, 9, "FIRE", 0, 2, 12, "RISING STRIKE", 0, 20, 17, "FIRE", 0, $FE, 2, 14, "FLAT SHOT WITH A LATE BREAK", 0, $FE, 2, 20, "HALF", 0, 13, 20, "= MOVE", 0, 20, 20, "FULL", 0, 30, 20, "= MAX", 0, $FE, 1, 22, "FIRE: USE THE BONUS     FORWARD: DASH", 0, $FE, 11, 24, "PRESS FIRE TO SKIP", 0, $FF
+HT_GROUPS = 10
+.define HT_TEXTS 14, 0, "HOW TO PLAY", 0, $FE, 9, 2, "SUPER MOVES - JOYSTICK", 0, $FE, 2, 4, "STRAIGHT SHOT", 0, $FE, 2, 6, "NEXT SHOT FLAT AND FAST", 0, $FE, 20, 9, "FIRE", 0, 2, 12, "RISING STRIKE", 0, 20, 17, "FIRE", 0, $FE, 2, 14, "FLAT SHOT WITH A LATE BREAK", 0, $FE, 2, 20, "HALF", 0, 13, 20, "= MOVE", 0, 20, 20, "FULL", 0, 30, 20, "= MAX", 0, $FE, 1, 22, "FIRE: USE THE BONUS     ", 0, $FE, 25, 22, "FORWARD: DASH", 0, $FE, 11, 24, "PRESS FIRE TO SKIP", 0, $FF
 
 ; titoli disegnati (assets/titles): caratteri hires, un colore per cella. Nomi e PERFECT
 ; da TN_FIRST (una pagina di titles.bin ciascuno), la targa da TC_FIRST (due pagine)

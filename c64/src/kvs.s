@@ -415,6 +415,10 @@ net:
     inc kv_step
     rts
 texts:
+    ; in due frame (insieme non ci stanno nel frame NTSC): punti, poi livello e colori. Tra i due
+    ; v_big resta $40, ed è il segno che il primo è fatto
+    bit v_big
+    bvs second
     lda #$40
     sta v_big
     lda kv_mode
@@ -434,6 +438,8 @@ texts:
 :   ; punti (SCORE e HI nella riga 23, i duelli vinti nella 0) e livello
     jsr intro_hud
     sta kv_mode
+    rts
+second:
     jsr kv_level
     lda #0
     sta v_big
@@ -1044,6 +1050,7 @@ color:
 kv_omega_tag: .byte "IT BECOMES THEM ALL"
 KV_OMEGA_TAG_LEN = * - kv_omega_tag
 kv_omega_col: .byte 1, 21       ; centrato nella metà (19 lettere)
+
 
 
 ; LEVEL n OF 7, FINAL LEVEL, SECRET LEVEL o TRAINING nella riga KV_LEVEL_ROW (kv_mode).

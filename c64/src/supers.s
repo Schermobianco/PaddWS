@@ -52,7 +52,7 @@ SM_CELL    = P_SUPER_METER_MAX / 4  ; barra: quattro celle, due per settore
 BAR_ROW    = 1                  ; barra: riga e prima colonna di ciascun lato, accanto alle riserve
 BAR_COL_L  = 6
 BAR_COL_R  = 30
-SM_FLASH   = 12                 ; frame del lampo dell'impennata
+SM_FLASH   = (12 * TV_HZ + 25) / 50 ; frame del lampo dell'impennata
 SFX_MOVE    = SID_EFFECTS + 1   ; sm_fxp: effetti 6 e 7 del player (sid.s, fx_start)
 SFX_SPECIAL = SID_EFFECTS + 2
 SM_ICON0   = SP_WARP + 1        ; icone: STRAIGHT SHOT sinistro e destro, RISING STRIKE (sm_icon)
@@ -69,8 +69,8 @@ RISE_2 = P_WIDTH - (P_WIDTH >> 3)
 .assert ((RISE_1 | RISE_2) & $FFFF) = 0, error, "soglie di RISING STRIKE: pixel interi"
 
 ; gesto del joystick: tempi a 50 Hz di move_gesture (mister/rtl/pong_top.v)
-STEP_F    = 15                  ; 0,3 s tra due direzioni
-BTN_F     = 13                  ; 0,25 s dall'ultima al fuoco
+STEP_F    = (15 * TV_HZ + 25) / 50 ; 0,3 s tra due direzioni
+BTN_F     = (13 * TV_HZ + 25) / 50 ; 0,25 s dall'ultima al fuoco
 ; colpo di una mossa sulla racchetta di chi l'ha fatto (KICK_SECONDS di next_ui.rs): rinculo e
 ; lampo per 0,3 s; con la MAX il doppio (31 frame: rinculo più ampio, due lampi)
 KICK_FRAMES = 15
@@ -216,11 +216,11 @@ MV_ROW    = 4                   ; sotto i punteggi (righe 1-3)
 MV_COL    = 2                   ; prima colonna a sinistra, a destra MV_COL + 19: 17 celle
 MV_W      = 17                  ; "MAX STRAIGHT SHOT"
 MV_STEP   = 2                   ; armata: un trattino ogni MV_STEP frame (SPECIAL_DASH_STEP)
-MV_BLOCK  = 2                   ; colpo (a 50 Hz): blocchi bianchi (SPECIAL_BLOCK), lettere bianche
-MV_WHITE  = 3                   ; fino a MV_WHITE (SPECIAL_WHITE), trattini accesi fino a MV_LIT
-MV_LIT    = 20                  ; (SPECIAL_DASH_LIT), lampeggio da MV_BLINK (SPECIAL_BLINK, 7 frame
-MV_BLINK  = 37                  ; spenta e 7 accesa), via a MV_END (SPECIAL_HIT_SECONDS)
-MV_END    = 50
+MV_BLOCK  = (2 * TV_HZ + 25) / 50 ; colpo (a 50 Hz): blocchi bianchi (SPECIAL_BLOCK), lettere bianche
+MV_WHITE  = (3 * TV_HZ + 25) / 50 ; fino a MV_WHITE (SPECIAL_WHITE), trattini accesi fino a MV_LIT
+MV_LIT    = (20 * TV_HZ + 25) / 50 ; (SPECIAL_DASH_LIT), lampeggio da MV_BLINK (SPECIAL_BLINK, 7 frame
+MV_BLINK  = (37 * TV_HZ + 25) / 50 ; spenta e 7 accesa), via a MV_END (SPECIAL_HIT_SECONDS)
+MV_END    = (50 * TV_HZ + 25) / 50
 MV_ALL    = 32                  ; mv_key: armata i trattini disegnati (meno di tutti) o MV_ALL +
 MV_HIT    = 64                  ; quelli accesi; al colpo MV_HIT + la fase (mv_r4m)
 .assert MV_COL + 19 + MV_W <= 38 .and MV_COL + MV_W <= 19, error, "scritte delle mosse sul muro o sulla mezzeria"

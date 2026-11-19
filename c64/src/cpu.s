@@ -85,6 +85,14 @@ cpu_ok:       .res 8
 cb_aim:       .res 1
 cb_y:         .res 4
 cb_dist:      .res 4
+.segment "NEXTBSS"
+; velocità e soglia della mancata apposta dell'ultima palla nuova (cpu_input): CPU, vx, vy e boost
+; della palla, velocità, soglia
+cs_side:      .res 1
+cs_key:       .res 12
+cs_speed:     .res 4
+cs_miss:      .res 4
+.assert ball_vy = ball_vx + 4 .and ball_boost = ball_vx + 8, error, "cs_key: vx, vy e boost di seguito"
 .segment "BSS"
 ; ultima previsione di arrival_y, per lato (indice lato + c_tp: prima la CPU, poi il TELEPORT): y
 ; senza i bordi, resto della divisione dei passi e passo orizzontale (solo la CPU)
@@ -97,6 +105,8 @@ pred_dxa:     .res 16
 ; Cpu::new: CPU al livello A per il lato X (0 o 4), con il seme cfg_seed e la difficoltà cfg_diff.
 .proc cpu_init
     stx c_side
+    ldy #$ff                    ; velocità e soglia tenute da parte: da rifare (livello nuovo)
+    sty cs_side
     tay                         ; Y = livello
     lda cpu_reaction_tab,y
     sta cpu_reaction,x
@@ -184,6 +194,20 @@ invalid:
     ; palla nuova in arrivo: tempo di reazione da capo, errore di mira (a volte apposta)
     lda #0
     sta cpu_since,x
+    ; velocità e soglia della mancata apposta dipendono solo dalla palla (vx e boost) e dalla CPU:
+    ; nell'attesa della battuta si rifanno a ogni tick con gli stessi valori, e si tengono da parte
+    ; (cs_*; le estrazioni dopo si fanno sempre, come nel core)
+    ldx c_side
+    cpx cs_side
+    bne fresh
+    ldy #11
+:   lda ball_vx,y               ; vx, vy e boost
+    cmp cs_key,y
+    bne fresh
+    dey
+    bpl :-
+    jmp cached
+fresh:
     ; velocità rispetto alla massima: mul_recip(|mul(vx, boost)|, inv)
     mulq16 ball_vx, ball_boost
     abs32 m_a, m_a
@@ -195,12 +219,26 @@ invalid:
 classic:
     mulq24 m_a, {cpu_inv,x}
 speed:
-    mov32 cpu_speed, m_a
+    mov32 cs_speed, m_a
     ; miss = (per mille * velocità) >> 16
     ldx c_side
+    stx cs_side
     mov32 m_b, {cpu_miss,x}
     jsr umul32                  ; m_a = velocità, m_b = per mille
-    mov32 c_d, {m_p+2}
+    mov32 cs_miss, {m_p+2}
+    ldy #11
+:   lda ball_vx,y
+    sta cs_key,y
+    dey
+    bpl :-
+cached:
+    ldy #3
+:   lda cs_speed,y
+    sta cpu_speed,y
+    lda cs_miss,y
+    sta c_d,y
+    dey
+    bpl :-
     ; rng.below(1000) < miss ?
     lda #<1000
     sta m_b

@@ -1,15 +1,17 @@
-//! Parametri della versione C64 come costanti ca65 (`c64/gen/params.inc`), da `Params::new` con
-//! `Tuning::c64()`: tutto è in Fx (Q16.16) o in tick a 50 Hz. Le grandezze che dipendono dalla
-//! difficoltà sono tabelle di 4 valori.
+//! Parametri della versione C64 come costanti ca65 (`c64/gen/params.inc`, per l'NTSC
+//! `c64/gen/ntsc/params.inc`), da `Params::new` con `Tuning::c64()`: tutto è in Fx (Q16.16) o in
+//! tick a 50 Hz (NTSC 60: un tick per frame). Le grandezze che dipendono dalla difficoltà sono
+//! tabelle di 4 valori.
 
 use std::fmt::Write as _;
 
 use paddws_core::{CPU_LEVELS, CpuLevel, DIFFICULTY_LEVELS, Params, Tuning};
 
-/// Parametri del C64 alla difficoltà `d`.
+/// Parametri del C64 alla difficoltà `d` (a 60 tick al secondo con l'NTSC, `crate::ntsc`).
 pub fn c64_params(d: u8) -> Params {
     Params::new(&Tuning {
         difficulty: d,
+        tick_hz: if crate::ntsc() { 60 } else { Tuning::c64().tick_hz },
         ..Tuning::c64()
     })
 }

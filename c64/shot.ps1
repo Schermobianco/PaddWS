@@ -1,7 +1,8 @@
 # Esegue la versione C64 in VICE (x64sc, senza finestra, a velocità massima tranne con -Wav), dalla
 # cartuccia EasyFlash c64\build\$Prg.crt, e salva la schermata dopo `-Cycles` cicli. Uso:
-#   .\c64\shot.ps1 OUT.png [-Cycles 15000000] [-Prg autostart] [-Sid 6581|8580] [-Wav OUT.wav] [-Write]
+#   .\c64\shot.ps1 OUT.png [-Cycles 15000000] [-Prg autostart] [-Ntsc] [-Sid 6581|8580] [-Wav OUT.wav] [-Write]
 #   -Prg     nome della build (.\c64\build.ps1 -Name ...)
+#   -Ntsc    la build NTSC (c64\build\ntsc, .\c64\build.ps1 -Ntsc) su un C64 NTSC
 #   -Wav     registra il suono (WAV, 48 kHz) di tutta l'esecuzione con il SID scelto da -Sid
 #   -Write   le scritture nella flash (la classifica) restano nel .crt all'uscita di VICE
 # Richiede VICE in C:\DEV\@Compiler\vice (o PADDWS_COMPILERS).
@@ -10,16 +11,18 @@ param(
     [Parameter(Mandatory = $true)][string]$Out,
     [long]$Cycles = 15000000,
     [string]$Prg = "paddws",
+    [switch]$Ntsc,
     [ValidateSet("6581", "8580")][string]$Sid = "6581",
     [string]$Wav = "",
     [switch]$Write
 )
 $compilers = if ($env:PADDWS_COMPILERS) { $env:PADDWS_COMPILERS } else { "C:\DEV\@Compiler" }
 $vice = Join-Path $compilers "vice\bin\x64sc.exe"
-$file = Join-Path $PSScriptRoot "build\$Prg.crt"
+$file = Join-Path $PSScriptRoot $(if ($Ntsc) { "build\ntsc\$Prg.crt" } else { "build\$Prg.crt" })
 $out = [System.IO.Path]::GetFullPath($Out)
 Remove-Item $out -ErrorAction SilentlyContinue
 $args = @("-default", "-sidmodel", $(if ($Sid -eq "8580") { "1" } else { "0" }))
+if ($Ntsc) { $args += @("-model", "ntsc") }
 if ($Wav) {
     # il dispositivo WAV al posto della scheda audio (niente dagli altoparlanti); in warp VICE non
     # registra, quindi si va a velocità normale

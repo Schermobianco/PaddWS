@@ -477,10 +477,13 @@ impl Params {
         let ticks = |seconds: f64| (seconds * t.tick_hz as f64 + 0.5) as u32;
         let guardian_top = t.height as i32 - (n.hud_band * sy + 0.5) as i32;
         let horizon = (1024 * t.tick_hz + TICK_HZ / 2) / TICK_HZ;
-        let (predict_step, arrival_step) = if t.tick_hz >= TICK_HZ {
-            (8 * t.tick_hz / TICK_HZ, 4 * t.tick_hz / TICK_HZ)
+        // con un passo per tick (sotto i 240 Hz: il C64) al più 255 passi, i contatori del 6502 sono
+        // a 8 bit: conta solo per l'NTSC a 60 Hz (256 passi, 4,27 s, diventano 255); PC, MiSTer e
+        // C64 PAL (213) non cambiano
+        let (predict_step, arrival_step, horizon) = if t.tick_hz >= TICK_HZ {
+            (8 * t.tick_hz / TICK_HZ, 4 * t.tick_hz / TICK_HZ, horizon)
         } else {
-            (1, 1)
+            (1, 1, horizon.min(255))
         };
         let k = &n.paddles;
         // il k di 1 - 2^-k più vicino, da 1 (metà) a 8 (no_std: niente log2)

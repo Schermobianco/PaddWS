@@ -70,7 +70,14 @@ E_BONUS_N   = 50                ; il premio in 1 s
 E_TOTAL_AT  = 225               ; TOTAL a 4,5 s
 E_FLASH     = 25                ; CONGRATULATIONS: giallo e bianco ogni 0,5 s
 E_FLASH_END = 33                ; THE END: ogni 0,66 s
-E_LOAD_PAGES = 3                ; pagine copiate per frame (circa 3.800 cicli l'una)
+; pagine copiate per frame (circa 3.200 cicli l'una): nel caricamento (sull'NTSC 2: con il
+; punteggio e la musica 3 non ci stanno) e nell'uscita, il set di caratteri in tre passi
+.ifdef NTSC
+E_LOAD_PAGES = 2
+.else
+E_LOAD_PAGES = 3
+.endif
+E_CH_PAGES   = 3
 FW_CHAMPION = 350
 END_RUN     = $E000             ; pagina 0 del finale (end_enter la copia)
 
@@ -568,10 +575,18 @@ e_bcol:  .byte COL_WHITE
     jsr e_font_rom
     inc e_pg
     rts
-:   bne done
+:   bne clear
     ldy #0
     ldx #BIG2_N
     jsr big2_build
+    inc e_pg
+    rts
+clear:
+    ; schermo vuoto in un frame suo (con l'uscita e la musica non ci sta nel frame NTSC; la
+    ; schermata dopo lo pulisce nel suo primo frame, che si vede già)
+    cmp #11
+    bne done
+    jsr clear_screen
     inc e_pg
     rts
 copy:
@@ -583,18 +598,17 @@ copy:
     tay
     lda e_pg
     clc
-    adc #E_LOAD_PAGES
+    adc #E_CH_PAGES
     sta e_pg
-    ldx #E_LOAD_PAGES
+    ldx #E_CH_PAGES
     cmp #8 + 1
     bcc :+
-    ldx #8 - 2 * E_LOAD_PAGES
+    ldx #8 - 2 * E_CH_PAGES
 :   lda #CHARSET_BANK
     jmp ef_copy
 done:
-    ; finito: schermo vuoto (la schermata dopo lo pulisce nel suo primo frame, che si vede già),
-    ; le tabelle dei quadrati da rifare (qui c'erano i campioni e i fuochi), la musica delle iniziali
-    jsr clear_screen
+    ; finito: le tabelle dei quadrati da rifare (qui c'erano i campioni e i fuochi), la musica delle
+    ; iniziali
     ; i fuochi usano come variabili anche i byte alti dei puntatori dei quadrati (fq2, fthr2, fage,
     ; fn), che fuori dal finale non cambiano mai: di nuovo quelli di math_init, se no ogni prodotto
     ; dopo il finale è sbagliato
@@ -611,7 +625,7 @@ done:
     jsr sid_song
     jmp ch_finish
 .endproc
-.assert 8 - 2 * E_LOAD_PAGES > 0 .and 8 - 2 * E_LOAD_PAGES <= E_LOAD_PAGES, error, "uscita: pagine del set di caratteri"
+.assert 8 - 2 * E_CH_PAGES > 0 .and 8 - 2 * E_CH_PAGES <= E_CH_PAGES, error, "uscita: pagine del set di caratteri"
 
 ; ------------------------------------------------------------------------------------ titoli
 
@@ -1408,23 +1422,47 @@ next:
     lda fw_phase
     bne :+
     ; fase 0: un passo nuovo, il cielo dello schermo nascosto vuoto, il fuoco 0
+.ifdef NTSC
+    lda fw_step                 ; (sull'NTSC il cielo lo pulisce la fase 3, dopo lo scambio: qui
+    bne no_sky                  ; solo al primo passo, quando i fuochi non hanno scintille)
+    jsr sky_clear
+no_sky:
+    jsr launch
+.else
     jsr launch
     jsr sky_clear
+.endif
     ldx #0
     jsr slot_step
     jmp next
-:   cmp #1
+:
+.ifdef NTSC
+    ; NTSC: un fuoco per frame, in 4 frame (due insieme non ci stanno; a 60 Hz il passo dura 67 ms,
+    ; sul PAL 3 frame, 60 ms)
+    cmp #3
+    beq last
+    tax                         ; fasi 1 e 2: i fuochi 1 e 2
+    jsr slot_step
+    jmp next
+last:
+.else
+    cmp #1
     bne :+
     ldx #1
     jsr slot_step
     ldx #2
     jsr slot_step
     jmp next
-:   ldx #3
+:
+.endif
+    ldx #3
     jsr slot_step
     lda fw_front                ; scambio: si vede lo schermo appena disegnato
     eor #SCR_B
     sta fw_front
+.ifdef NTSC
+    jsr sky_clear               ; il cielo dello schermo che si nasconde, per il passo dopo
+.endif
     lda #$ff
     sta fw_phase
 next:
@@ -1964,7 +2002,7 @@ fs_acc:   .byte FW_S_ACC
 
 ; stato (fw_init lo azzera)
 fw_vars:
-fw_phase: .res 1                ; frame del passo (0-2)
+fw_phase: .res 1                ; frame del passo (0-2; NTSC 0-3)
 fw_step:  .res 1                ; passi dall'inizio
 fw_next:  .res 1                ; prossimo fuoco dello spettacolo
 fw_front: .res 1                ; schermo davanti: 0 o SCR_B

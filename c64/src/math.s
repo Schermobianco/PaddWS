@@ -366,8 +366,9 @@ add:
     stx sq_x
     rts
 second:
-    ; f(x - 255) = f(|x - 255|): per x = 0..255 vale f(255 - x), per x = 256 + k vale f(k + 1)
-    ldx #0
+    ; f(x - 255) = f(|x - 255|): per x = 0..255 vale f(255 - x), per x = 256 + k vale f(k + 1). In
+    ; due passi da 128 (circa 6.000 cicli l'uno: con la musica nel frame NTSC), da sq_x
+    ldx sq_x
 :   txa
     eor #$ff                    ; 255 - x
     tay
@@ -380,7 +381,12 @@ second:
     lda square1_hi+1,x
     sta square2_hi+256,x
     inx
+    beq ready
+    cpx #$80
     bne :-
+    stx sq_x                    ; metà: il resto al prossimo passo
+    rts
+ready:
     lda #1
     sta math_ready
     rts

@@ -6,6 +6,7 @@ pub mod params_inc;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use cpu6502::{Cpu, EF_HALF, EasyFlash};
 
@@ -20,9 +21,36 @@ pub fn c64_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../c64")
 }
 
-/// Cartella di build della versione C64 (`c64/build`).
+/// Televisore della versione C64: PAL (50 frame e tick al secondo) o NTSC (60, con i parametri del
+/// core a 60 Hz e la sua cartuccia). Lo sceglie il banco di prova (`--ntsc`) prima di tutto il resto.
+static NTSC: AtomicBool = AtomicBool::new(false);
+
+pub fn set_ntsc(on: bool) {
+    NTSC.store(on, Ordering::Relaxed);
+}
+
+pub fn ntsc() -> bool {
+    NTSC.load(Ordering::Relaxed)
+}
+
+/// Righe del frame e cicli utili per riga del modello del raster (`Cpu::frame_start`): PAL 312 righe
+/// da 63 cicli, NTSC 263 da 65, meno le righe dei caratteri e gli sprite (circa 58 e 59).
+pub fn raster_lines() -> u64 {
+    if ntsc() { 263 } else { 312 }
+}
+
+pub fn raster_cycles() -> u64 {
+    if ntsc() { 59 } else { 58 }
+}
+
+/// Cicli utili di un frame: il budget del banco di prova (PAL 18.000; NTSC 15.500).
+pub fn frame_budget() -> u64 {
+    if ntsc() { 15_500 } else { 18_000 }
+}
+
+/// Cartella di build della versione C64 (`c64/build`, per l'NTSC `c64/build/ntsc`).
 pub fn default_build_dir() -> PathBuf {
-    c64_dir().join("build")
+    if ntsc() { c64_dir().join("build/ntsc") } else { c64_dir().join("build") }
 }
 
 /// Il programma C64 caricato in memoria, con le sue etichette.

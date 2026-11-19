@@ -12,21 +12,23 @@ use std::process::ExitCode;
 
 use paddws_c64::params_inc::{c64_params, params_inc};
 use paddws_c64::cpu6502::{EF_HALF, EF_OFF, EasyFlash};
-use paddws_c64::{Machine, c64_dir, default_build_dir};
+use paddws_c64::{Machine, c64_dir, default_build_dir, frame_budget, ntsc, set_ntsc};
 use paddws_core::fixed::{self, mul, mul_recip};
 use paddws_core::challenge::{OMEGA, OMEGA_LEVEL, RUNGS, Score, TABLE_SIZE, Table};
 use paddws_core::{Bonus, Cpu, Input, Match, PaddleKind, PlayerInput, Rng, Side, Special};
 
 const USAGE: &str =
-    "Uso: paddws-c64 [--build DIR] math [PROVE] | game [--ticks N] | sid | ui | frames | ending | profile | params [--check]";
+    "Uso: paddws-c64 [--ntsc] [--build DIR] math [PROVE] | game [--ticks N] | sid | ui | frames | ending | profile | paddles | params [--check]";
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
-    let mut build = default_build_dir();
+    let mut build = None;
     let mut command = Vec::new();
     while let Some(a) = args.next() {
         match a.as_str() {
-            "--build" => build = PathBuf::from(args.next().unwrap_or_default()),
+            "--build" => build = Some(PathBuf::from(args.next().unwrap_or_default())),
+            // la versione NTSC: parametri a 60 Hz, c64/build/ntsc, budget e raster NTSC
+            "--ntsc" => set_ntsc(true),
             "-h" | "--help" => {
                 println!("{USAGE}");
                 return ExitCode::SUCCESS;
@@ -34,6 +36,7 @@ fn main() -> ExitCode {
             _ => command.push(a),
         }
     }
+    let build = build.unwrap_or_else(default_build_dir);
     let ok = match command.first().map(String::as_str) {
         Some("params") => params(command.iter().any(|a| a == "--check")),
         Some("math") => with_machine(&build, |m| {
@@ -41,11 +44,16 @@ fn main() -> ExitCode {
         }),
         Some("sid") => with_machine(&build, sid),
         Some("ui") => with_machine(&build, ui),
-        Some("frames") => with_machine(&build, frames),
+        Some("frames") => with_machine(&build, |m| {
+            let ok = frames(m);
+            print_heavy(m);
+            ok
+        }),
         Some("ending") => with_machine(&build, ending_alone),
         // (solo la prova dell'easter egg di `frames`, per lavorarci)
         Some("egg") => with_machine(&build, egg_alone),
         Some("profile") => with_machine(&build, profile),
+        Some("paddles") => with_machine(&build, paddles),
         Some("game") => {
             let ticks = command
                 .iter()
@@ -329,7 +337,16 @@ fn ui(m: &mut Machine) -> bool {
     m.write_u8("sh_bg", 0, 0);
     m.write_i32("serve_timer", 0, 0x100);
     m.write_i32("ball_boost", 0, 0x18000);
-    for (ghost, phase, ball, trail) in [(1u8, 0u8, true, false), (1, 4, true, false), (1, 5, false, false), (1, 19, false, false), (0, 10, true, true)] {
+    // fasi dai parametri (in tick: a 60 Hz più che a 50): la prima e l'ultima in cui si vede, la
+    // prima e l'ultima in cui no
+    let (visible, period) = (c64_params(1).ghost_visible as u8, c64_params(1).ghost_period as u8);
+    for (ghost, phase, ball, trail) in [
+        (1u8, 0u8, true, false),
+        (1, visible - 1, true, false),
+        (1, visible, false, false),
+        (1, period - 1, false, false),
+        (0, period / 2, true, true),
+    ] {
         m.write_u8("nx_ghost", 0, ghost);
         m.write_u8("ghost_phase", 0, phase);
         m.write_u8("tr_want", 0, 0);
@@ -518,7 +535,9 @@ fn supers_ui(m: &mut Machine) -> Result<String, String> {
     let row = 0xC000 + 23 * 40;
     let mut steps = Vec::new();
     m.write_u8("lb_key", 0, 0xFF);
-    for left in (1..60u8).rev() {
+    // (LABEL_FRAMES di pick.s: 1,2 secondi, 60 frame sul PAL e 72 sull'NTSC)
+    let label_frames: u8 = if ntsc() { 72 } else { 60 };
+    for left in (1..label_frames).rev() {
         m.write_u8("lb_frames", 0, left);
         m.cpu.frame_start = Some(m.cpu.cycles);
         m.call("label_step");
@@ -602,7 +621,7 @@ fn supers_ui(m: &mut Machine) -> Result<String, String> {
     if m.cpu.mem[r4..r4 + title.len()] != want[..] || letters.iter().any(|&i| m.cpu.read((0xD800 + 4 * 40 + 21 + i) as u16) & 15 != 7) {
         return Err("colpo della mossa: la scritta non è \"MAX RISING STRIKE\" gialla a destra".into());
     }
-    frames(m, 50);
+    frames(m, tv_frames(50));
     if m.read_u8("mv_st", 1) != 0 || m.cpu.mem[r4..r4 + title.len()].iter().chain(&m.cpu.mem[r5..r5 + title.len()]).any(|&c| c != 0) {
         return Err("colpo della mossa: la scritta resta dopo un secondo".into());
     }
@@ -680,15 +699,21 @@ fn supers_ui(m: &mut Machine) -> Result<String, String> {
     ))
 }
 
-/// Cicli di un frame PAL (312 righe da 63 cicli).
-const FRAME_CYCLES: u64 = 19_656;
+/// Cicli di un frame: PAL 312 righe da 63 cicli, NTSC 263 da 65.
+fn frame_cycles() -> u64 {
+    if ntsc() { 263 * 65 } else { 312 * 63 }
+}
 /// Voci di CHALLENGE (c64/src/voice.inc): dove si carica il file voce (VOICE_TICK, poi
 /// VOICE_STOP), dove comincia la parte che resta del file del primo livello, il salto del conto
 /// alla rovescia e i frame del conto.
 const VOICE_BASE: u16 = 0xE000;
 const VOICE_RES: u16 = 0xEB20;
 const VOICE_COUNT: u16 = 0xFFC0;
-const COUNT_FRAMES: u8 = 150;
+/// COUNT_FRAMES di voice.inc: 3 secondi a 60 frame al secondo sull'NTSC (il conto alla rovescia
+/// va un frame alla volta, play.s).
+fn count_frames() -> u8 {
+    if ntsc() { 180 } else { 150 }
+}
 /// voice.s: frame dell'attacco del DC prima dei campioni e del rilascio dopo, un NMI ciascuno
 const ATTACK_FRAMES: u64 = 4;
 const RELEASE_FRAMES: u64 = 6;
@@ -722,7 +747,7 @@ fn load_omega(m: &mut Machine, tracks: &[&[u8]]) -> Result<(), String> {
 fn voice_frame(m: &mut Machine) -> Result<(), String> {
     let start = m.cpu.cycles;
     m.cpu.call(VOICE_BASE, 100_000)?;
-    m.cpu.idle(start + FRAME_CYCLES)
+    m.cpu.idle(start + frame_cycles())
 }
 
 /// Un frame del conto alla rovescia con `left` frame rimasti: VOICE_COUNT come count_scene, poi
@@ -731,13 +756,13 @@ fn count_frame(m: &mut Machine, left: u8) -> Result<(), String> {
     let start = m.cpu.cycles;
     m.cpu.a = left;
     m.cpu.call(VOICE_COUNT, 100_000)?;
-    m.cpu.idle(start + FRAME_CYCLES)
+    m.cpu.idle(start + frame_cycles())
 }
 
 /// Un frame senza chiamate alla voce: solo i suoi NMI.
 fn idle_frame(m: &mut Machine) -> Result<(), String> {
     let start = m.cpu.cycles;
-    m.cpu.idle(start + FRAME_CYCLES)
+    m.cpu.idle(start + frame_cycles())
 }
 
 /// Il SID e l'NMI sono di nuovo del programma: vettore, timer A del CIA2 fermo, voci spente.
@@ -796,10 +821,10 @@ fn countdown_voice(m: &mut Machine, nmi: u16, what: &str) -> Result<usize, Strin
     m.cpu.writes.clear();
     let nmis = m.cpu.nmis;
     let mut before = Vec::new(); // scritture prima di ogni frame del conto, poi alla fine
-    for left in (1..=COUNT_FRAMES).rev() {
+    for left in (1..=count_frames()).rev() {
         before.push(m.cpu.writes.len());
         count_frame(m, left)?;
-        if left == COUNT_FRAMES && m.cpu.read(0xFFFB) & 0x80 == 0 {
+        if left == count_frames() && m.cpu.read(0xFFFB) & 0x80 == 0 {
             return Err(format!("{what}: al primo frame del conto il SID non è della voce (READY)"));
         }
     }
@@ -812,7 +837,7 @@ fn countdown_voice(m: &mut Machine, nmi: u16, what: &str) -> Result<usize, Strin
     let ready_end = before[50];
     same_writes(&got[..ready_end], &ready, &format!("{what}, READY"))?;
     // GO: l'8 dell'attacco ATTACK_FRAMES frame prima del via, poi niente fino al frame del via
-    let via = COUNT_FRAMES as usize - 1;
+    let via = count_frames() as usize - 1;
     let go_at = via - ATTACK_FRAMES as usize;
     if before[go_at] != ready_end || (go_at + 1..=via).any(|f| before[f] != ready_end + 1) {
         return Err(format!(
@@ -875,7 +900,7 @@ fn voice(m: &mut Machine) -> Result<usize, String> {
     if m.cpu.a != 0 {
         return Err("senza file VOICE_STOP cambia A (la musica della partita)".into());
     }
-    for left in (1..=COUNT_FRAMES).rev() {
+    for left in (1..=count_frames()).rev() {
         count_frame(m, left)?;
     }
     if !m.cpu.writes.is_empty() || m.cpu.nmis != nmis {
@@ -949,7 +974,7 @@ fn voice(m: &mut Machine) -> Result<usize, String> {
     m.cpu.watch = Some((0xD400, 0xD418));
     m.cpu.writes.clear();
     let nmis = m.cpu.nmis;
-    for left in (1..=COUNT_FRAMES).rev() {
+    for left in (1..=count_frames()).rev() {
         count_frame(m, left)?;
     }
     if !m.cpu.writes.is_empty() || m.cpu.nmis != nmis {
@@ -1017,7 +1042,7 @@ fn voice(m: &mut Machine) -> Result<usize, String> {
     for _ in 0..120 {
         voice_frame(m)?;
     }
-    for left in (1..=COUNT_FRAMES).rev() {
+    for left in (1..=count_frames()).rev() {
         count_frame(m, left)?;
     }
     if !m.cpu.writes.is_empty() || m.cpu.nmis != nmis {
@@ -1554,7 +1579,7 @@ fn training_level(m: &mut Machine, level: usize) -> Result<String, String> {
         return Err(format!("GAME OVER dell'allenamento con la canzone {}", m.read_u8("sid_song_n", 0)));
     }
     worst = worst.max(frames_until(m, 600, "dopo il GAME OVER", |_| {}, |m| m.read_u8("state", 0) != ST_OVER)?);
-    if worst > FRAME_BUDGET {
+    if worst > FRAME_BUDGET() {
         return Err(format!("un frame di {worst} cicli, oltre il budget"));
     }
     let after: Vec<u8> = (0..80).map(|i| m.read_u8("ch_table", i)).collect();
@@ -1633,6 +1658,17 @@ fn challenger(m: &mut Machine) -> Result<(), String> {
             m.call("run_scene");
         }
     };
+    // una schermata della scala appena entrata: fino alla fine di pulizia e disegno (ch_phase, in
+    // più frame), poi un frame
+    let settle = |m: &mut Machine| {
+        for _ in 0..8 {
+            if m.read_u8("ch_phase", 0) == 0 {
+                break;
+            }
+            step(m, 1);
+        }
+        step(m, 1);
+    };
     // un frame con il fuoco appena premuto sul joystick di un lato (porta 2 a sinistra, 1 a destra)
     let fire = |m: &mut Machine, right: bool| {
         m.cpu.joy_port1 = 0xFF;
@@ -1696,6 +1732,8 @@ fn challenger(m: &mut Machine) -> Result<(), String> {
     m.call("ch_start");
     step(m, 3);
     expect("scena della presentazione", state(m) as i64, ST_INTRO as i64)?;
+    // l'invito dal secondo frame dopo il disegno (ch_elapsed)
+    settle(m);
     // invito sul lato libero (a destra), quando è acceso
     m.write_u8("frame_count", 0, 0x20);
     step(m, 1);
@@ -1816,7 +1854,8 @@ fn challenger(m: &mut Machine) -> Result<(), String> {
     set_scores(m, 5, 3);
     m.call("ch_after");
     expect("campione battuto con un record", state(m) as i64, ST_INITIALS as i64)?;
-    step(m, 3);
+    step(m, 1);
+    settle(m);
     for _ in 0..3 {
         fire(m, false);
     }
@@ -1835,7 +1874,8 @@ fn challenger(m: &mut Machine) -> Result<(), String> {
     set_scores(m, 5, 1);
     m.call("ch_after");
     expect("livello superato", state(m) as i64, ST_CLEAR as i64)?;
-    step(m, 3);
+    step(m, 1);
+    settle(m);
     fire(m, true);
     expect("sfidante nel livello superato", state(m) as i64, ST_CHALLENGER as i64)?;
     expect("livello della sfida", m.read_u8("ch_level", 0) as i64, 3)?;
@@ -1844,7 +1884,8 @@ fn challenger(m: &mut Machine) -> Result<(), String> {
     m.write_u8("ch_level", 0, 6);
     set_scores(m, 5, 0);
     m.call("ch_after");
-    step(m, 3);
+    step(m, 1);
+    settle(m);
     fire(m, true);
     expect("sfidante dopo l'ultimo livello", state(m) as i64, ST_ENDING as i64)?;
     while m.read_u8("e_part", 0) == 0 {
@@ -1877,8 +1918,9 @@ fn challenger(m: &mut Machine) -> Result<(), String> {
     Ok(())
 }
 
-/// Cicli utili di un frame PAL: 312 righe da 63 cicli meno le righe dei caratteri e gli sprite.
-const FRAME_BUDGET: u64 = 18_000;
+/// Cicli utili di un frame: PAL 312 righe da 63 cicli, NTSC 263 da 65, meno le righe dei caratteri e
+/// gli sprite (`paddws_c64::frame_budget`).
+const FRAME_BUDGET: fn() -> u64 = frame_budget;
 /// Set di caratteri del programma (CHARSET di video.s) e due suoi caratteri (gen/assets.inc,
 /// controllati in `frames`)
 const CHARSET: usize = 0xC800;
@@ -2110,10 +2152,15 @@ impl CometCheck {
     const SP_TRAIL0: u8 = 128;
     const TRAIL_BUFS: u8 = 4;
     /// cicli del frame sotto i quali trail_end ha avuto il tempo di disegnare (TRAIL_LATE di video.s:
-    /// comincia entro circa 12.500 cicli)
-    const LIGHT: u64 = 12_000;
+    /// comincia entro il budget meno circa 5.500 cicli; PAL 12.000)
+    fn light() -> u64 {
+        frame_budget() - 6_000
+    }
     /// KEEP_SPRITES_LINE di play.s in cicli: oltre, gli sprite possono restare quelli del frame prima
-    const KEEP_SPRITES: u64 = 14_500;
+    /// (il budget meno KEEP_SPRITES_CYC; PAL 14.500)
+    fn keep_sprites() -> u64 {
+        keep_sprites()
+    }
 
     /// `prev`: cicli del frame prima (è lì che trail_end disegna la cometa che si vede in questo).
     fn check(&mut self, m: &Machine, prev: u64) {
@@ -2123,7 +2170,7 @@ impl CometCheck {
             self.trails += 1;
             // (in un frame oltre KEEP_SPRITES di play.s gli sprite possono essere quelli del frame
             // prima, con la palla dov'era: lì l'angolo è quello di prima, e va bene)
-            self.trails_wrong += (m.read_u8("tr_shdir", 0) != trail_dir(m) && self.cur <= Self::KEEP_SPRITES) as u32;
+            self.trails_wrong += (m.read_u8("tr_shdir", 0) != trail_dir(m) && self.cur <= Self::keep_sprites()) as u32;
         }
         if m.read_u8("nx_super", 0) == 0
             || m.read_u8("nx_super_a", 0) != 2
@@ -2137,9 +2184,11 @@ impl CometCheck {
         let hires = m.read_u8("sh_mc", 0) & 1 == 0;
         let same_dir = m.read_u8("tr_shdir", 0) == trail_dir(m);
         if !(Self::SP_TRAIL0..Self::SP_TRAIL0 + Self::TRAIL_BUFS).contains(&ptr) || !expanded || !hires {
-            if !same_dir {
+            // in attesa anche al lancio del SUPER, finché non c'è una cometa (lo sprite che si vede è
+            // la coda grigia: sull'NTSC la prima cometa arriva in due metà, trail_end)
+            if !same_dir || m.read_u8("tr_shcm", 0) == 0 {
                 self.waiting += 1;
-                self.missed += (waited && prev < Self::LIGHT) as u32;
+                self.missed += (waited && prev < Self::light()) as u32;
                 self.prev_waiting = true;
             }
             return;
@@ -2170,7 +2219,13 @@ impl CometCheck {
             return false;
         }
         let flying = self.frames - self.waiting;
-        if self.wrong > 0 || self.shown * 10 < flying * 9 || self.tailed * 2 < flying || self.missed * 10 > self.frames {
+        // (e in almeno metà del volo: non sempre in attesa)
+        if self.wrong > 0
+            || self.shown * 10 < flying * 9
+            || self.shown * 2 < self.frames
+            || self.tailed * 2 < flying
+            || self.missed * 10 > self.frames
+        {
             println!(
                 "FAIL: NEXT: cometa del SUPER in {} frame su {} ({} in attesa dopo un rimbalzo, {} con il tempo per disegnarla), con la coda in {}, con la palla nell'angolo sbagliato in {}",
                 self.shown, self.frames, self.waiting, self.missed, self.tailed, self.wrong
@@ -2350,25 +2405,178 @@ impl SuperFrames {
     }
 }
 
+/// Le scene del C64 (`state`), per nome.
+const SCENES: [&str; 12] = [
+    "boot",
+    "strisce",
+    "logo",
+    "titolo",
+    "partita, cometa del SUPER", // (4 libero: nel profilo, i frame della partita con la cometa in volo)
+    "menu",
+    "conto",
+    "partita",
+    "game over",
+    "scelta NEXT",
+    "CHALLENGE",
+    "finale",
+];
+
+/// Profilo dei frame pesanti di `frames`, per scena: frame, cicli, cicli per indirizzo di
+/// istruzione, cicli inclusivi per subroutine.
+type Heavy = (u32, u64, Vec<u64>, Vec<u64>, Vec<u64>);
+
+thread_local! {
+    static HEAVY: std::cell::RefCell<Vec<Heavy>> = std::cell::RefCell::new(vec![(0, 0, Vec::new(), Vec::new(), Vec::new()); 12]);
+    /// Per scena, i cicli di ogni frame fino a `mark_label` (scene_done: la parte del frame che non
+    /// si rimanda, cioè comandi, tick, CPU).
+    static FIRM: std::cell::RefCell<Vec<Vec<u64>>> = std::cell::RefCell::new(vec![Vec::new(); 12]);
+    /// la chiamata più lunga per subroutine in tutti i frame profilati
+    static LONGEST: std::cell::RefCell<Vec<u64>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// KEEP_SPRITES_LINE di play.s in cicli: oltre, il frame tiene gli sprite del frame prima (il budget
+/// meno KEEP_SPRITES_CYC: PAL 3.500, NTSC 1.500, dove sprite e HUD si fanno anche sforando).
+fn keep_sprites() -> u64 {
+    frame_budget() - if ntsc() { 1_500 } else { 3_900 }
+}
+
+/// Parte del frame che non si rimanda oltre la quale il tick è pesantissimo: sprite, HUD e il resto
+/// (fino a circa 4.500 cicli) non ci stanno più nel budget, e il frame può sforare (spill_max).
+fn heavy_tick_from() -> u64 {
+    frame_budget() - 4_500
+}
+
+/// Cicli oltre il budget ammessi a un frame di partita con un tick pesantissimo (`frames`): il
+/// frame dopo parte subito, ancora nel bordo in alto, scrive gli sprite prima della prima riga
+/// visibile (la 51) e ha meno tempo per il suo lavoro rimandabile (le soglie contano le righe
+/// dall'interrupt); il ritardo si somma finché un frame lo recupera. Nessun frame perso. Solo
+/// NTSC, dove il tick più pesante non sta sempre nel frame (sul PAL 0). Nelle schermate no: lì
+/// il lavoro si divide, e un frame in ritardo cambierebbe per esempio i colori dei titoli di coda
+/// con il raster già sul testo.
+fn spill_max() -> u64 {
+    if ntsc() { 2_500 } else { 0 }
+}
+
+/// PADDWS_C64_HEAVY=N: profilo dei frame oltre N cicli, scena per scena, per cercare i cicli da
+/// togliere (i tempi dell'NTSC).
+fn heavy_limit() -> Option<u64> {
+    std::env::var("PADDWS_C64_HEAVY").ok().and_then(|v| v.parse().ok())
+}
+
+/// PADDWS_C64_MARK=etichetta: dove finisce la parte del frame contata in FIRM (scene_done se manca;
+/// per esempio trail_layout, dove trail_end comincia la coda della palla).
+fn mark_label() -> String {
+    std::env::var("PADDWS_C64_MARK").unwrap_or_else(|_| "scene_done".into())
+}
+
+/// Soglie di FIRM: il budget meno 4.000, 2.500 e 500 cicli (PAL 14.000, 15.500, 17.500).
+fn firm_limits() -> [u64; 3] {
+    let b = frame_budget();
+    [b - 4_000, b - 2_500, b - 500]
+}
+
+/// Con il profilo inclusivo: le 12 subroutine più pesanti del frame appena eseguito, con quelle che
+/// chiamano.
+fn frame_parts(m: &Machine) -> Option<String> {
+    let inc = m.cpu.inclusive.as_ref()?;
+    let mut rows: Vec<(u64, usize)> = inc.cycles.iter().enumerate().filter(|r| *r.1 > 0).map(|(a, &c)| (c, a)).collect();
+    rows.sort_by_key(|r| std::cmp::Reverse(r.0));
+    let labels = m.sorted_labels();
+    // PADDWS_C64_PARTS=N: le N subroutine più pesanti (12 se manca)
+    let n = std::env::var("PADDWS_C64_PARTS").ok().and_then(|v| v.parse().ok()).unwrap_or(12);
+    let parts: Vec<String> = rows
+        .iter()
+        .take(n)
+        .map(|&(c, a)| {
+            let name = labels.iter().find(|l| l.0 as usize == a).map_or_else(|| format!("${a:04X}"), |l| l.1.clone());
+            format!("{name} {c}")
+        })
+        .collect();
+    Some(parts.join(", "))
+}
+
+/// Stampa il profilo raccolto da `frames` (anche quando un controllo è fallito prima della fine).
+fn print_heavy(m: &mut Machine) {
+    let Some(limit) = heavy_limit() else { return };
+    m.cpu.profile = None;
+    if let Some(inc) = m.cpu.inclusive.take() {
+        LONGEST.set(inc.longest);
+    }
+    // PADDWS_C64_LONGEST=etichetta,...: la chiamata più lunga di quelle subroutine
+    if let Ok(list) = std::env::var("PADDWS_C64_LONGEST") {
+        for l in list.split(',') {
+            let long = LONGEST.with_borrow(|v| v.get(m.addr(l) as usize).copied().unwrap_or(0));
+            println!("  chiamata più lunga di {l}: {long} cicli");
+        }
+    }
+    let labels: Vec<(u16, String)> = m.sorted_labels().to_vec();
+    let routine = |pc: usize| match labels.binary_search_by_key(&(pc as u16), |l| l.0) {
+        Ok(i) => i,
+        Err(i) => i.saturating_sub(1),
+    };
+    FIRM.with_borrow(|firm| {
+        for (scene, f) in firm.iter().enumerate() {
+            if f.is_empty() {
+                continue;
+            }
+            let mut f = f.clone();
+            f.sort_unstable();
+            let at = |q: usize| f[(f.len() - 1) * q / 100];
+            let over: Vec<String> = firm_limits()
+                .iter()
+                .map(|&lim| format!("{lim} in {}", f.iter().filter(|&&c| c > lim).count()))
+                .collect();
+            println!(
+                "  {}: fino a {} {} frame, cicli da {} a {} (mediana {}, 90% {}); oltre {}",
+                SCENES[scene],
+                mark_label(),
+                f.len(),
+                f[0],
+                at(100),
+                at(50),
+                at(90),
+                over.join(", ")
+            );
+        }
+    });
+    HEAVY.with_borrow(|heavy| {
+        for (scene, (n, sum, p, inc, calls)) in heavy.iter().enumerate() {
+            if *n == 0 {
+                continue;
+            }
+            println!("  frame oltre {limit} in {}: {n}, media {} cicli", SCENES[scene], sum / u64::from(*n));
+            let mut by = vec![0u64; labels.len()];
+            for (a, &c) in p.iter().enumerate() {
+                if c > 0 {
+                    by[routine(a)] += c;
+                }
+            }
+            let mut rows: Vec<(u64, &(u16, String))> = by.into_iter().zip(&labels).collect();
+            rows.sort_by_key(|r| std::cmp::Reverse(r.0));
+            for (c, (addr, name)) in rows.iter().take(18).filter(|r| r.0 > 0) {
+                println!("    ${addr:04X} {name:<20} {:6} cicli per frame", c / u64::from(*n));
+            }
+            // inclusivo: le subroutine con quelle che chiamano
+            println!("    con le subroutine chiamate:");
+            let mut inc_rows: Vec<(u64, u16)> = inc.iter().enumerate().filter(|r| *r.1 > 0).map(|(a, &c)| (c, a as u16)).collect();
+            inc_rows.sort_by_key(|r| std::cmp::Reverse(r.0));
+            for (c, addr) in inc_rows.iter().take(70) {
+                let name = labels.iter().find(|l| l.0 == *addr).map_or("?", |l| l.1.as_str());
+                let k = calls[*addr as usize];
+                let long = LONGEST.with_borrow(|l| l.get(*addr as usize).copied().unwrap_or(0));
+                let each = if k > 0 { format!(", {} chiamate di {} cicli (al più {long})", k, c / k) } else { String::new() };
+                println!("    ${addr:04X} {name:<20} {:6} cicli per frame{each}", c / u64::from(*n));
+            }
+        }
+    });
+}
+
 /// Budget del frame: il programma parte come all'accensione e gioca l'attract intero (con la
 /// classifica), poi una partita contro la CPU; per ogni scena cicli per frame (massimo e media) e frame
 /// oltre il budget, che non ce ne devono essere (i lavori lunghi si dividono su più frame).
 /// Nessun comando: joystick e tastiera a riposo.
 fn frames(m: &mut Machine) -> bool {
-    const NAMES: [&str; 12] = [
-        "boot",
-        "strisce",
-        "logo",
-        "titolo",
-        "(4 libero)",
-        "menu",
-        "conto",
-        "partita",
-        "game over",
-        "scelta NEXT",
-        "CHALLENGE",
-        "finale",
-    ];
+    const NAMES: [&str; 12] = SCENES;
     let inc = std::fs::read_to_string(c64_dir().join("gen/assets.inc")).unwrap_or_default();
     if inc_const(&inc, "CH_GRID_T") != Some(ch_grid_t()) || inc_const(&inc, "CH_WALL") != Some(CH_WALL) {
         println!("FAIL: CH_GRID_T o CH_WALL diversi da gen/assets.inc");
@@ -2406,28 +2614,127 @@ fn frames(m: &mut Machine) -> bool {
     // essere 0, in partita un colore della partita)
     let border = std::cell::Cell::new([0u32; 5]);
     let last_writes = std::cell::Cell::new(0usize);
+    // PADDWS_C64_HEAVY=N: profilo dei frame oltre N cicli, scena per scena (frame, cicli, cicli per
+    // indirizzo), per cercare i cicli da togliere (i tempi dell'NTSC)
+    let heavy_limit = heavy_limit();
+    let heavy_firm = std::env::var_os("PADDWS_C64_HEAVY_FIRM").is_some();
+    let scene_done_at = m.addr(&mark_label());
     let rom_glyphs_now = program_glyphs(m);
     m.cpu.watch = Some((0xD418, 0xD418));
     let nmi = m.addr("nmi_handler");
+    // NTSC: un frame di partita può finire dopo l'interrupt del frame dopo, di poco (spill_max): il
+    // frame dopo parte subito, con il raster già avanti, e recupera (vedi spill_max). Ritardo del
+    // prossimo frame, sforamenti ammessi (quanti, il più lungo)
+    let carry = std::cell::Cell::new(0u64);
+    let spills = std::cell::Cell::new((0u32, 0u64));
+    m.cpu.frame_flag_at = Some(m.addr("frame_flag"));
+    let pick_raw = std::env::var_os("PADDWS_C64_PICK_RAW").is_some();
     let frame = |m: &mut Machine,
                  stats: &mut [(u64, u64, u32, u32); 12],
                  voiced: &mut (u32, u32, u64, u32, u64)|
      -> Result<u64, String> {
         let state = m.read_u8("state", 0) as usize;
         let ch = m.read_u8("cg_active", 0) != 0;
-        let first_count = state == ST_COUNT as usize && m.read_u8("timer", 0) == COUNT_FRAMES;
+        let first_count = state == ST_COUNT as usize && m.read_u8("timer", 0) == count_frames();
+        // nella griglia delle racchette (pick.s, pk_kind) su e giù casuali come destra e sinistra,
+        // che scorrono i tipi: le racchette scelte restano distribuite su tutti e sette (su e giù
+        // cambiano riga, e con i comandi a caso si sceglierebbero quasi solo ARCADE e BLASTER).
+        // PADDWS_C64_PICK_RAW: senza, per provare le partite BLASTER (le più pesanti con il TELEPORT)
+        if state == ST_PICK as usize && m.read_u8("pk_kind", 0) != 0 && !pick_raw {
+            for port in [&mut m.cpu.joy_port1, &mut m.cpu.joy_port2] {
+                let held = !*port;
+                let lr = (held & 0x01) << 2 | (held & 0x02) << 2;
+                *port = !(held & !0x0F | lr);
+            }
+        }
         m.cpu.writes.clear();
         let addr = m.addr("frame");
         let (start, nmis) = (m.cpu.cycles, m.cpu.nmis);
         let phase = m.read_u8("sid_phase", 0);
         let voice_before = m.cpu.read(0xFFFB) & 0x80 != 0;
-        m.cpu.frame_start = Some(start); // $D012 dà la riga del raster
+        // $D012 dà la riga del raster, contata dall'interrupt (prima, se il frame prima ha sforato)
+        let late = carry.get();
+        m.cpu.frame_start = Some(start - late);
+        m.write_u8("frame_flag", 0, 0); // play_main lo azzera prima del frame
         let ef = m.cpu.ef_cycles;
+        let flash = m.cpu.ef.as_ref().map_or(0, |e| e.programs + e.erases);
         // sentinella: compute_sprites azzera pd_made; se resta, il frame ha tenuto gli sprite di
         // prima (scene_done, dopo un tick pesantissimo). Non nel GAME OVER (8): lì gli sprite li
         // tiene il suo codice (play.s, ov_scene)
         m.write_u8("pd_made", 0, 0xAA);
-        let c = m.cpu.call(addr, 1_000_000)?;
+        // fine della parte del frame che non si rimanda (scene_done; con PADDWS_C64_MARK un'altra)
+        m.cpu.mark_at = Some(scene_done_at);
+        m.cpu.mark = None;
+        if heavy_limit.is_some() {
+            match &mut m.cpu.profile {
+                Some(p) => p.fill(0),
+                None => m.cpu.profile = Some(vec![0; 0x10000]),
+            }
+            match &mut m.cpu.inclusive {
+                Some(inc) => {
+                    inc.cycles.fill(0);
+                    inc.calls.fill(0);
+                    inc.open.clear();
+                }
+                None => m.cpu.inclusive = Some(Box::default()),
+            }
+        }
+        // cicli dall'interrupt: quelli del frame più il ritardo con cui è partito
+        let c = m.cpu.call(addr, 1_000_000)? + late;
+        let spill = c.saturating_sub(FRAME_BUDGET());
+        // solo in partita dopo un tick pesantissimo: la parte che non si rimanda oltre
+        // KEEP_SPRITES_LINE di play.s, quando il frame tiene gli sprite di prima (il lavoro
+        // rimandabile, code, immagini e scritte, non deve mai far sforare)
+        let heavy_tick = mark_label() != "scene_done"
+            || m.cpu.mark.is_some_and(|at| at - start + late >= heavy_tick_from());
+        let allowed = spill > 0 && state == ST_PLAY as usize && spill <= spill_max() && heavy_tick;
+        carry.set(if allowed { spill } else { 0 });
+        if allowed {
+            let (n, worst) = spills.get();
+            spills.set((n + 1, worst.max(spill)));
+        }
+        // nel profilo, i frame della partita con la cometa del SUPER in volo a parte (scena 4)
+        let scene = if state == 7 && m.read_u8("nx_super", 0) != 0 && m.read_u8("nx_super_a", 0) == 2 {
+            4
+        } else {
+            state
+        };
+        // PADDWS_C64_HEAVY_FIRM: i frame si scelgono per la parte fino a mark_label, non per il totale
+        let weight = if heavy_firm { m.cpu.mark.map_or(0, |at| at - start) } else { c };
+        if let (Some(limit), Some(p)) = (heavy_limit, &m.cpu.profile)
+            && weight > limit
+            && state < 12
+        {
+            HEAVY.with_borrow_mut(|h| {
+                let e = &mut h[scene];
+                e.0 += 1;
+                e.1 += c;
+                if e.2.is_empty() {
+                    e.2 = vec![0; 0x10000];
+                    e.3 = vec![0; 0x10000];
+                    e.4 = vec![0; 0x10000];
+                }
+                for (a, &n) in p.iter().enumerate() {
+                    e.2[a] += n;
+                }
+                if let Some(inc) = &m.cpu.inclusive {
+                    for (a, &n) in inc.cycles.iter().enumerate() {
+                        e.3[a] += n;
+                    }
+                    for (a, &n) in inc.calls.iter().enumerate() {
+                        e.4[a] += u64::from(n);
+                    }
+                }
+            });
+        }
+        // cicli fino a scene_done: dal profilo per istruzione, quelli spesi prima del primo passaggio
+        // (il profilo non ha l'ordine: si usa il ciclo segnato da `mark`)
+        if heavy_limit.is_some()
+            && state < 12
+            && let Some(at) = m.cpu.mark
+        {
+            FIRM.with_borrow_mut(|fm| fm[scene].push(at - start));
+        }
         // CH_GRID_T e il muro (righe e trattini delle scritte animate, pavimento del continue,
         // entrate di TITAN e GUARDIAN) devono restare i loro: la capsula del BULLET prende altri
         // caratteri (bullet_chars), che dopo una partita NEXT restano scambiati
@@ -2481,7 +2788,17 @@ fn frames(m: &mut Machine) -> bool {
         // fermo) è un caricamento, fuori dal budget
         let now = m.read_u8("state", 0);
         let file = m.cpu.ef_cycles - ef >= 50_000;
-        let c = if (now == ST_INTRO && state != ST_INTRO as usize) || file {
+        // la classifica salvata nella flash (hi_save): a schermo fermo, come un caricamento (la
+        // cancellazione di un settore dura circa un secondo), fuori dal budget
+        let saved = m.cpu.ef.as_ref().map_or(0, |e| e.programs + e.erases) != flash;
+        // (un caricamento dura comunque più frame: anche il lavoro che il file voce fa subito dopo,
+        // circa 11.000 cicli, fuori dal budget)
+        let c = if saved || file {
+            if file {
+                voiced.0 += 1;
+            }
+            0
+        } else if now == ST_INTRO && state != ST_INTRO as usize {
             voiced.0 += 1;
             c - (m.cpu.ef_cycles - ef)
         } else {
@@ -2492,10 +2809,12 @@ fn frames(m: &mut Machine) -> bool {
             voiced.2 = voiced.2.max(c);
         }
         // il resto del frame, con gli NMI della voce
-        m.cpu.idle(start + FRAME_CYCLES)?;
-        // (con la voce di CHALLENGE il player aspetta: non è un tick rimandato)
+        m.cpu.idle(start + frame_cycles())?;
+        // (con la voce di CHALLENGE il player aspetta: non è un tick rimandato; sull'NTSC nemmeno
+        // il frame su sei senza il passo, tv_skip)
         let voice = voice_before || m.cpu.read(0xFFFB) & 0x80 != 0;
-        if matches!(m.read_u8("state", 0), 6..=8) && !voice {
+        let no_step = ntsc() && m.read_u8("tv_skip", 0) & 0x80 != 0;
+        if matches!(m.read_u8("state", 0), 6..=8) && !voice && !no_step {
             let (late, all) = late_ticks.get();
             late_ticks.set((late + (m.read_u8("sid_phase", 0) == phase) as u32, all + 1));
         }
@@ -2529,14 +2848,20 @@ fn frames(m: &mut Machine) -> bool {
         s.0 = s.0.max(c);
         s.1 += c;
         s.2 += 1;
-        s.3 += (c > FRAME_BUDGET) as u32;
+        s.3 += (c > FRAME_BUDGET() && !allowed) as u32;
         let now = m.read_u8("state", 0);
-        if c > FRAME_BUDGET {
+        if c > FRAME_BUDGET() && !allowed {
             println!(
-                "  frame oltre il budget: stato {state} -> {now}, {c} cicli ({} NMI, tabelle {})",
+                "  frame oltre il budget: stato {state} -> {now}, {c} cicli ({} NMI, tabelle {}, partito {late} cicli in ritardo, battuta {})",
                 m.cpu.nmis - nmis,
-                if m.read_u8("math_ready", 0) != 0 { "pronte" } else { "da rifare" }
+                if m.read_u8("math_ready", 0) != 0 { "pronte" } else { "da rifare" },
+                m.read_u8("serve_timer", 0)
             );
+            // con PADDWS_C64_HEAVY: le parti del frame (cicli con le subroutine chiamate)
+            if let Some(parts) = frame_parts(m) {
+                let mark = m.cpu.mark.map_or(String::new(), |at| format!("; {} a {}", mark_label(), at - start));
+                println!("    {parts}{mark}");
+            }
         }
         let mut b = border.get();
         let brd = m.read_u8("sh_brd", 0);
@@ -2565,7 +2890,8 @@ fn frames(m: &mut Machine) -> bool {
         border.set(b);
         // READY al primo frame del conto alla rovescia di CHALLENGE, GO al via
         let (mut n, mut ready, mut vias, mut go) = counts.get();
-        if ch && first_count && now == ST_COUNT {
+        // (sull'NTSC non il frame senza scena: il conto comincia in quello dopo)
+        if ch && first_count && now == ST_COUNT && !scene_skipped(m) {
             n += 1;
             ready += (m.cpu.read(0xFFFB) & 0x80 != 0) as u32;
         }
@@ -2833,12 +3159,18 @@ fn frames(m: &mut Machine) -> bool {
     let mut seen = [false; 15];
     let mut play = true;
     let mut ch_pads = PadCheck::default();
-    for _ in 0..50 * 60 * 12 {
+    for f in 0..50 * 60 * 12 {
         let state = m.read_u8("state", 0) as usize;
         seen[state.min(14)] = true;
         play &= !seen[11];
         if state == 7 {
             ch_pads.check(m);
+            // ogni 10 secondi la barra della CPU piena (come quella di P1 nella partita NEXT sopra):
+            // le sue mosse capitano sempre, non solo se la partita la riempie
+            let cpu = m.read_u8("cpu_side", 0);
+            if f % 500 == 499 && cpu < 8 && m.read_u8("sm_arm", cpu as u16) == 0 {
+                m.write_u8("sm_meter", cpu as u16, 64);
+            }
         }
         m.cpu.joy_port2 = match state {
             7 | 9 if play => joy(m, &mut rng),
@@ -3010,7 +3342,8 @@ fn frames(m: &mut Machine) -> bool {
                 m.write_i32("ball_x", 0, 316 << 16);
                 m.write_i32("ball_vx", 0, 4 << 16);
             }
-            if state == 7 && m.read_u8("score", 0) == 6 && m.read_u8("om_left", 0) == 0 && !ended {
+            // (la fine dopo la musica dell'ultima forma, e dopo che la forma si è vista: late_morph)
+            if state == 7 && m.read_u8("score", 0) == 6 && m.read_u8("om_left", 0) == 0 && !late_morph && !ended {
                 ended = true;
                 m.write_u8("score", 0, 7);
                 m.write_u8("over_next", 0, 1);
@@ -3166,15 +3499,20 @@ fn frames(m: &mut Machine) -> bool {
             return false;
         }
     }
+    let (n, worst) = spills.get();
+    if spill_max() > 0 {
+        println!("  frame di partita finiti dopo l'interrupt del frame dopo, ripresi da quelli dopo: {n} (al più {worst} cicli oltre, ammessi {})", spill_max());
+    }
     let mut over = 0;
     for (i, s) in stats.iter().enumerate() {
         if s.2 > 0 {
             println!(
-                "  {:<10} {:5} frame: cicli max {:6}, media {:6}, oltre {FRAME_BUDGET}: {}",
+                "  {:<10} {:5} frame: cicli max {:6}, media {:6}, oltre {}: {}",
                 NAMES[i],
                 s.2,
                 s.0,
                 s.1 / s.2 as u64,
+                FRAME_BUDGET(),
                 s.3
             );
             over += s.3;
@@ -3205,8 +3543,11 @@ fn frames(m: &mut Machine) -> bool {
     println!("  musica in partita: {late} tick rimandati al frame dopo su {all} frame");
     let (kept, all) = kept_sprites.get();
     println!("  sprite del frame prima (dopo un tick pesantissimo) in {kept} frame su {all}");
-    if kept * 500 > all {
-        println!("FAIL: troppi frame con gli sprite del frame prima (oltre lo 0,2%)");
+    // (sull'NTSC i tick più pesanti non stanno nel frame nemmeno sforando: lo scatto accettato, fino
+    // allo 0,5%)
+    let (limit, pct) = if ntsc() { (200, "0,5%") } else { (500, "0,2%") };
+    if kept * limit > all {
+        println!("FAIL: troppi frame con gli sprite del frame prima (oltre lo {pct})");
         return false;
     }
     let (_, _, full, shown, _, slowest) = bonus_labels.get();
@@ -3299,6 +3640,7 @@ fn scores_border(m: &mut Machine) -> Result<String, String> {
     let frame = m.addr("frame");
     let (mut frames, mut worst) = (0u32, 0u64);
     let mut after = None;
+    let mut applied = false;
     for f in 0..600 {
         m.cpu.writes.clear();
         // l'interrupt della riga 250 (qui non c'è): un frame in più
@@ -3309,9 +3651,12 @@ fn scores_border(m: &mut Machine) -> Result<String, String> {
         let before = m.read_u8("state", 0);
         let c = m.cpu.call(frame, 1_000_000)?;
         m.cpu.frame_start = None;
-        m.cpu.idle(start + FRAME_CYCLES)?;
-        // (al primo frame apply_shadows mette ancora il bordo della scena di prima)
-        if before == ST_SCORES && f > 0 {
+        m.cpu.idle(start + frame_cycles())?;
+        // (al primo frame con la scena apply_shadows mette ancora il bordo della scena di prima;
+        // sull'NTSC il frame senza scena non lo scrive e lo rimanda al frame dopo)
+        let first = !applied;
+        applied |= !scene_skipped(m);
+        if before == ST_SCORES && !first {
             frames += 1;
             worst = worst.max(c);
             if let Some(&(_, v)) = m.cpu.writes.iter().find(|w| w.1 & 15 != 0) {
@@ -3327,7 +3672,7 @@ fn scores_border(m: &mut Machine) -> Result<String, String> {
     let Some(left) = after else {
         return Err("la classifica non finisce".into());
     };
-    if frames < 300 || worst > FRAME_BUDGET {
+    if frames < 300 || worst > FRAME_BUDGET() {
         return Err(format!("{frames} frame, cicli max {worst}"));
     }
     Ok(format!("classifica: {frames} frame con il bordo nero, cicli max {worst}; uscita al frame {left}"))
@@ -3436,6 +3781,51 @@ fn border_logic(m: &mut Machine) -> Result<String, String> {
         m.write_u8(n, 0, v);
     }
     Ok(format!("bordo della partita: {cases} casi di border_game come previsto"))
+}
+
+/// Le immagini delle racchette dei tipi (pad_image) come le prepara la scelta, a caratteri: una
+/// cella dello sprite multicolore per carattere ("." niente, "-" grigio $D025, "#" bianco, "o" giallo
+/// $D026); in più TWIST inclinata nei due versi e il GUARDIAN con due settori persi.
+fn paddles(m: &mut Machine) -> bool {
+    const NAMES: [&str; 7] = ["ARCADE", "TITAN", "HAMMER", "TWIST", "BLASTER", "RUSH", "GUARDIAN"];
+    let (rows, vars) = (m.addr("pv_rows"), m.addr("pv_var"));
+    let mut images = Vec::new();
+    let mut cases: Vec<(String, u8, u8)> = (0..7u8).map(|k| (NAMES[k as usize].to_string(), k, m.cpu.read(vars + u16::from(k)))).collect();
+    cases.push(("TWIST giù".into(), 3, 0));
+    cases.push(("TWIST su".into(), 3, 6));
+    cases.push(("GUARDIAN 1, 3".into(), 6, 0b01010));
+    for (name, kind, var) in cases {
+        let n = m.cpu.read(rows + u16::from(kind));
+        m.write_u8("pi_side", 0, 0);
+        m.write_u8("pi_kind", 0, kind);
+        m.write_u8("pi_n", 0, n);
+        m.write_u8("pi_var", 0, var);
+        if kind == 4 {
+            m.cpu.a = 4;
+            m.call("mag_setup");
+        }
+        let c = m.call("pad_image");
+        let base = m.addr("sh_img");
+        let img: Vec<String> = (0..21u16)
+            .map(|r| {
+                (0..12u16)
+                    .map(|cell| {
+                        let b = m.cpu.read(base + 3 * r + cell / 4);
+                        [".", "-", "#", "o"][usize::from((b >> (6 - 2 * (cell % 4))) & 3)]
+                    })
+                    .collect()
+            })
+            .collect();
+        images.push((format!("{name} ({n} righe, {c} cicli)"), img));
+    }
+    for chunk in images.chunks(5) {
+        println!("{}", chunk.iter().map(|(t, _)| format!("{t:<26}")).collect::<String>());
+        for r in 0..21 {
+            println!("{}", chunk.iter().map(|(_, img)| format!("{:<26}", img[r])).collect::<String>());
+        }
+        println!();
+    }
+    true
 }
 
 /// Colori del VIC-II (video.s)
@@ -4022,24 +4412,34 @@ fn ending_song(m: &mut Machine, rom: &[u8], vh: &str, egg: bool) -> Result<Strin
 }
 
 /// Scrive c64/gen/params.inc, o con `check` verifica che sia aggiornato.
+/// Parametri del core per il C64: `c64/gen/params.inc` (PAL, 50 Hz) e `c64/gen/ntsc/params.inc` (NTSC, 60
+/// Hz), che la build NTSC trova prima (`c64/build.ps1 -Ntsc`). Con `check` solo il confronto.
 fn params(check: bool) -> bool {
-    let path = c64_dir().join("gen/params.inc");
-    let text = params_inc();
-    if check {
-        let current = std::fs::read_to_string(&path).unwrap_or_default().replace("\r\n", "\n");
-        if current != text {
-            println!("{} non è aggiornato: rigenerarlo con paddws-c64 params", path.display());
-            return false;
+    let was = ntsc();
+    let mut ok = true;
+    for (tv_ntsc, file) in [(false, "gen/params.inc"), (true, "gen/ntsc/params.inc")] {
+        set_ntsc(tv_ntsc);
+        let path = c64_dir().join(file);
+        let text = params_inc();
+        if check {
+            let current = std::fs::read_to_string(&path).unwrap_or_default().replace("\r\n", "\n");
+            if current != text {
+                println!("{} non è aggiornato: rigenerarlo con paddws-c64 params", path.display());
+                ok = false;
+            } else {
+                println!("{} aggiornato", path.display());
+            }
+            continue;
         }
-        println!("{} aggiornato", path.display());
-        return true;
+        if let Err(e) = std::fs::create_dir_all(path.parent().unwrap()).and_then(|_| std::fs::write(&path, text)) {
+            eprintln!("{}: {e}", path.display());
+            ok = false;
+        } else {
+            println!("{}", path.display());
+        }
     }
-    if let Err(e) = std::fs::create_dir_all(path.parent().unwrap()).and_then(|_| std::fs::write(&path, text)) {
-        eprintln!("{}: {e}", path.display());
-        return false;
-    }
-    println!("{}", path.display());
-    true
+    set_ntsc(was);
+    ok
 }
 
 // ------------------------------------------------------------------------------------ aritmetica
@@ -4658,13 +5058,13 @@ fn compare(m: &Machine, g: &Match, events: u16) -> Vec<(String, i64, i64)> {
     let ev = m.read_u8("events", 0) as i64 | (m.read_u8("events", 1) as i64) << 8;
     f("events", events as i64, ev);
     if let Some(n) = &g.next {
-        compare_next(m, n, &mut f);
+        compare_next(m, n, g.params.blaster_shot_speed, &mut f);
     }
     v
 }
 
 /// Stato di NEXT: giocatori, colpi del BLASTER, capsule, effetti.
-fn compare_next(m: &Machine, n: &paddws_core::Next, f: &mut impl FnMut(&str, i64, i64)) {
+fn compare_next(m: &Machine, n: &paddws_core::Next, shot_speed: i32, f: &mut impl FnMut(&str, i64, i64)) {
     let u8_at = |name: &str, o: u16| m.read_u8(name, o) as i64;
     let u16_at = |name: &str, o: u16| m.read_u8(name, o) as i64 | (m.read_u8(name, o + 1) as i64) << 8;
     // nel 6502 il posto vuoto è B_NONE = 8 (7 è il BULLET)
@@ -4714,10 +5114,12 @@ fn compare_next(m: &Machine, n: &paddws_core::Next, f: &mut impl FnMut(&str, i64
                     sh.y as i64,
                     m.read_i32("shot_y", slot * 4) as i64,
                 );
+                // il 6502 non tiene la velocità: +P_SHOT_SPEED a sinistra, -P_SHOT_SPEED a destra
+                // (move_shots)
                 f(
                     &format!("colpo[{i}][{k}].vx"),
                     sh.vx as i64,
-                    m.read_i32("shot_vx", slot * 4) as i64,
+                    if i == 0 { shot_speed } else { -shot_speed } as i64,
                 );
             }
         }
@@ -5361,18 +5763,34 @@ const ENDING_BONUS: u32 = (1000 + 2000) * 7;
 /// i colori dei titoli scritti allo scambio degli schermi devono arrivare prima (poi le righe dopo
 /// non si raggiungono più: 8 righe del raster per riga di caratteri contro circa 300 cicli per i
 /// colori di una riga).
-const COLORS_BEFORE: u64 = (312 - 250 + 51) * 63;
+fn colors_before() -> u64 {
+    if ntsc() { (263 - 250 + 51) * 65 } else { (312 - 250 + 51) * 63 }
+}
 
 /// Un frame intero: `frame` con il raster, poi gli NMI fino alla fine del frame. Restituisce i
 /// cicli di `frame` (NMI compresi).
 fn full_frame(m: &mut Machine) -> Result<u64, String> {
     let start = m.cpu.cycles;
     m.cpu.frame_start = Some(start);
+    m.write_u8("frame_flag", 0, 0); // play_main lo azzera prima del frame
+    let heavy = heavy_limit().is_some();
+    if heavy {
+        m.cpu.inclusive = Some(Box::default());
+    }
     let addr = m.addr("frame");
     let c = m.cpu.call(addr, 1_000_000);
     m.cpu.frame_start = None;
     let c = c?;
-    m.cpu.idle(start + FRAME_CYCLES)?;
+    if heavy && c > FRAME_BUDGET() {
+        println!("  frame oltre il budget: stato {}, {c} cicli", m.read_u8("state", 0));
+        if let Some(parts) = frame_parts(m) {
+            println!("    {parts}");
+        }
+    }
+    if heavy {
+        m.cpu.inclusive = None;
+    }
+    m.cpu.idle(start + frame_cycles())?;
     Ok(c)
 }
 
@@ -5507,7 +5925,8 @@ fn ending_run(m: &mut Machine, score: u32, fire_at: Option<u32>) -> Result<Endin
         if f > 4000 {
             return Err("il finale non finisce in 4000 frame".into());
         }
-        m.cpu.joy_port2 = if fire_at == Some(f) { !0x10 } else { 0xFF };
+        // (il fuoco per due frame: sull'NTSC un frame su sei di scena è saltato, comandi compresi)
+        m.cpu.joy_port2 = if fire_at.is_some_and(|a| f == a || f == a + 1) { !0x10 } else { 0xFF };
         m.cpu.writes.clear();
         m.cpu.write_cycles.clear();
         let part = m.read_u8("e_part", 0);
@@ -5535,7 +5954,12 @@ fn ending_run(m: &mut Machine, score: u32, fire_at: Option<u32>) -> Result<Endin
                 .writes
                 .iter()
                 .zip(&m.cpu.write_cycles)
-                .any(|(w, &cy)| (0xD800..0xDBE8).contains(&w.0) && cy - start > COLORS_BEFORE);
+                .any(|(w, &cy)| {
+                    // la riga dei colori scritta prima che il raster ci arrivi (8 righe del raster
+                    // per riga di testo, dalla prima, colors_before)
+                    let row = (w.0.wrapping_sub(0xD800) / 40) as u64;
+                    (0xD800..0xDBE8).contains(&w.0) && cy - start > colors_before() + row * 8 * paddws_c64::raster_cycles()
+                });
             r.late += late as u32;
         }
         let now = m.read_u8("e_part", 0);
@@ -5709,7 +6133,7 @@ fn ending_frames(m: &mut Machine) -> Result<String, String> {
         e.dedup();
         return Err(format!("{} ({} controlli falliti)", e.join("; "), r.errors.len()));
     }
-    if r.worst > FRAME_BUDGET {
+    if r.worst > FRAME_BUDGET() {
         return Err(format!("frame di {} cicli nella parte {} (per parte cicli e frame: {:?})", r.worst, r.worst_part, r.part_worst));
     }
     if r.you_win != 1 {
@@ -5757,7 +6181,25 @@ const OV_CPU_WINS: u8 = 4;
 /// c64/gen/assets.inc, da attract.json).
 fn over_black_frames() -> u32 {
     let inc = std::fs::read_to_string(c64_dir().join("gen/assets.inc")).unwrap_or_default();
-    inc_const(&inc, "AT_GAME_OVER_BLACK").unwrap_or(0) as u32
+    scene_frames(inc_const(&inc, "AT_GAME_OVER_BLACK").unwrap_or(0) as u32)
+}
+
+/// N frame a 50 Hz in frame del televisore in partita (le durate del C64 in partita: (n * TV_HZ + 25)
+/// / 50 di tv.inc; sul PAL n).
+fn tv_frames(n: u32) -> u32 {
+    if ntsc() { (n * 60 + 25) / 50 } else { n }
+}
+
+/// Il frame appena eseguito era quello senza la scena (NTSC: tv_skip, play.s).
+fn scene_skipped(m: &Machine) -> bool {
+    let state = m.read_u8("state", 0);
+    ntsc() && m.read_u8("tv_skip", 0) & 0x80 != 0 && state != ST_PLAY && state != ST_COUNT
+}
+
+/// N frame di una scena fuori dalla partita in frame del televisore: sull'NTSC la scena va a
+/// 50 Hz (frame di play.s: uno su sei saltato), cioè 6/5 di frame in più.
+fn scene_frames(n: u32) -> u32 {
+    if ntsc() { (n * 6 + 2) / 5 } else { n }
 }
 
 /// Un GAME OVER animato (play.s, ov_scene), guardato frame per frame: le scritte `labels` (dalla
@@ -5957,8 +6399,14 @@ fn ending_ui(m: &mut Machine) -> Result<String, String> {
         m.write_u8(name, 0, v);
     }
     m.call("enter_cont");
+    // Start una volta, al primo frame in cui vale (CONT_SKIP_FRAMES di challenge.s dalla fine del
+    // disegno, ch_elapsed)
+    const CONT_SKIP_FRAMES: u8 = 13;
+    let mut pressed = false;
     for n in 0..30u32 {
-        m.cpu.joy_port2 = if n == 15 { !0x10 } else { 0xFF };
+        let now = !pressed && m.read_u8("ch_phase", 0) == 0 && m.read_u8("ch_elapsed", 0) >= CONT_SKIP_FRAMES;
+        pressed |= now;
+        m.cpu.joy_port2 = if now { !0x10 } else { 0xFF };
         full_frame(m).map_err(|e| format!("continue con Start, frame {n}: {e}"))?;
         if m.read_u8("state", 0) != ST_CONT {
             break;
@@ -5981,10 +6429,11 @@ fn ending_ui(m: &mut Machine) -> Result<String, String> {
     m.call("enter_cont");
     let (mut floor, mut lowest, mut yellow, mut white) = (0u32, 0u8, 0u32, 0u32);
     let mut n = 0u32;
-    while m.read_u8("state", 0) == ST_CONT && n < 600 {
+    while m.read_u8("state", 0) == ST_CONT && n < scene_frames(600) {
         full_frame(m).map_err(|e| format!("continue, frame {n}: {e}"))?;
         n += 1;
-        if m.read_u8("state", 0) != ST_CONT || m.read_u8("ch_phase", 0) != 0 {
+        // (sull'NTSC solo i frame in cui la scena è andata avanti: scene_frames)
+        if m.read_u8("state", 0) != ST_CONT || m.read_u8("ch_phase", 0) != 0 || scene_skipped(m) {
             continue;
         }
         if m.read_u8("sh_enable", 0) & 1 == 0 {
@@ -6150,7 +6599,7 @@ fn pick_chars_ui(m: &mut Machine) -> Result<String, String> {
     if m.cpu.mem[CHARSET..CHARSET + 0x800] != before[..] {
         return Err("dopo la scelta le lettere 2x non sono quelle di prima".into());
     }
-    if worst > FRAME_BUDGET - 3_000 {
+    if worst > FRAME_BUDGET() - 3_000 {
         return Err(format!("{worst} cicli"));
     }
     Ok(format!("pick_chars: metà delle lettere della scelta dei bonus dai glifi del font, poi di nuovo le lettere 2x (al più {worst} cicli)"))
@@ -6202,6 +6651,7 @@ fn perfect_ui(m: &mut Machine) -> Result<String, String> {
             ("m_next", next),
             ("ch_phase", 0),
             ("lives", 0),
+            ("om_on", 0), // (una partita qualsiasi, non contro OMEGA: begin_match lo azzera)
         ] {
             m.write_u8(name, 0, v);
         }
@@ -6218,7 +6668,7 @@ fn perfect_ui(m: &mut Machine) -> Result<String, String> {
         m.cpu.watch = Some((0xD418, 0xD418));
         m.cpu.writes.clear();
         let c = full_frame(m).map_err(|e| format!("{what}: frame del GAME OVER: {e}"))?;
-        if m.read_u8("state", 0) != ST_OVER || c > FRAME_BUDGET {
+        if m.read_u8("state", 0) != ST_OVER || c > FRAME_BUDGET() {
             return Err(format!("{what}: frame del GAME OVER con lo stato {} e {c} cicli", m.read_u8("state", 0)));
         }
         worst_enter = worst_enter.max(c);
@@ -6249,7 +6699,7 @@ fn perfect_ui(m: &mut Machine) -> Result<String, String> {
             let c = full_frame(m).map_err(|e| format!("{what}, frame {frames} (win_pg {}): {e}", m.read_u8("win_pg", 0)))?;
             // (dopo la sfida la presentazione: la copia del file voce è un caricamento, come in frames)
             let c = if m.read_u8("state", 0) == ST_INTRO { c - (m.cpu.ef_cycles - ef) } else { c };
-            if c > FRAME_BUDGET {
+            if c > FRAME_BUDGET() {
                 return Err(format!("{what}: frame {frames} del GAME OVER di {c} cicli"));
             }
             worst = worst.max(c);
@@ -6522,8 +6972,13 @@ fn screen_colors(m: &Machine) -> Vec<u8> {
         })
         .collect();
     let bitmap = mem[0xD011] & 0x20 != 0;
-    // (nella bitmap hires la RAM dei colori non si vede: conta solo a caratteri o in multicolore)
-    v.extend((0xD800..0xDBE8).map(|a| if bitmap && !mc_text { 0 } else { mem[a] & 15 }));
+    // (nella bitmap hires la RAM dei colori non si vede: conta solo a caratteri o in multicolore;
+    // a caratteri non sotto quelli vuoti, CH_BLANK = 0: la pulizia dello schermo vuota prima i
+    // caratteri e poi, al frame dopo, i colori, ch_phases)
+    let text = 0xC000 + (mem[0xD018] as usize >> 4) * 0x400;
+    v.extend((0xD800..0xDBE8).map(|a| {
+        if (bitmap && !mc_text) || (!bitmap && mem[text + a - 0xD800] == 0) { 0 } else { mem[a] & 15 }
+    }));
     // (le schermate dei personaggi, 4.5.0: scelta della racchetta, VS, sfilata, hanno i colori dei
     // ritratti e delle scritte nei dati, come sul PC senza scambio: lì i colori della bitmap no;
     // nella scelta l'unica altra bitmap è la HOW TO PLAY, con hw_pg)
@@ -6623,7 +7078,15 @@ fn egg_run(m: &mut Machine, what: &str, frames: u32, joy: EggJoy) -> Result<EggR
         m.cpu.joy_port2 = joy(m, &mut rng, f);
         m.cpu.writes.clear();
         let c = egg_frame(m).map_err(|e| format!("{what}, frame {f} (stato {}): {e}", m.read_u8("state", 0)))?;
-        r.worst = r.worst.max(c);
+        // (in partita lo sforamento ammesso dopo un tick pesante, spill_max: il banco frames lo
+        // controlla con il ritardo del frame dopo)
+        let play = m.read_u8("state", 0) == ST_PLAY;
+        r.worst = r.worst.max(if play { c.saturating_sub(spill_max()) } else { c });
+        // (sull'NTSC un primo frame senza scena mostra ancora lo schermo di prima, disegnato prima
+        // del tratto: non conta; i due tratti saltano gli stessi frame)
+        if r.colors.is_empty() && scene_skipped(m) {
+            continue;
+        }
         r.colors.push(screen_colors(m));
         r.states.push((m.read_u8("state", 0), m.read_u8("sid_song_n", 0)));
         r.sid_writes += m.cpu.writes.iter().filter(|w| w.0 >= 0xD400).count();
@@ -6645,7 +7108,14 @@ fn egg_run(m: &mut Machine, what: &str, frames: u32, joy: EggJoy) -> Result<EggR
 /// - la classifica con il record in evidenza, con il bordo nero (i colori scritti in $D020);
 /// - il finale di CHALLENGE da capo (sfilata, timbri, fuochi, titoli), con i suoi controlli.
 fn egg_frames(m: &mut Machine) -> Result<String, String> {
-    let egg_on = |m: &mut Machine| egg_initials(m, b"RED");
+    // (sull'NTSC con il contatore dei frame senza scena di prima: i due tratti saltano gli stessi)
+    let egg_on = |m: &mut Machine| {
+        let six = ntsc().then(|| m.read_u8("tv_six", 0));
+        egg_initials(m, b"RED");
+        if let Some(v) = six {
+            m.write_u8("tv_six", 0, v);
+        }
+    };
     let idle: EggJoy = |_, _, _| 0xFF;
     let play: EggJoy = |m, rng, f| {
         // a metà partita un punto alla vittoria per tutti e due: il match point (bordo rosso)
@@ -6706,7 +7176,11 @@ fn egg_frames(m: &mut Machine) -> Result<String, String> {
             on.sid_writes
         ));
     }
-    let (n, lit) = egg_compare("attract", &off.colors, &on.colors)?;
+    let (n, lit) = egg_compare("attract", &off.colors, &on.colors).map_err(|e| {
+        // (la scena del frame: il numero dopo "frame")
+        let f: usize = e.split("frame ").nth(1).and_then(|t| t.split(':').next()).and_then(|t| t.parse().ok()).unwrap_or(0);
+        format!("{e}; stato {:?} senza, {:?} con", off.states.get(f), on.states.get(f))
+    })?;
     lines.push(format!(
         "attract {n} frame ({lit} con giallo o rosso, la canzone del finale con {} scritture nel SID; cicli max {}, senza l'easter egg {})",
         on.sid_writes, on.worst, off.worst
@@ -6792,7 +7266,7 @@ fn egg_frames(m: &mut Machine) -> Result<String, String> {
     if egg_vars(m) != EGG_OFF {
         return Err("l'easter egg non si spegne".into());
     }
-    if worst > FRAME_BUDGET {
+    if worst > FRAME_BUDGET() {
         return Err(format!("frame di {worst} cicli con l'easter egg: {}", lines.join(", ")));
     }
     Ok(format!(

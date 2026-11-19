@@ -13,7 +13,8 @@
 ; non ci scrive), poi math_invalidate le fa rifare nella scelta dei bonus.
 ;
 ; Lavoro per frame: la copia dello sfondo, 3 pagine per frame a schermo spento; un pannello in tre
-; pezzi da 6 righe di celle (circa 9.000 cicli l'uno), un pezzo per frame; le scritte con i glifi del
+; pezzi da 6 righe di celle (circa 8.000 cicli l'uno; sull'NTSC quattro da 5), un pezzo per frame;
+; le scritte con i glifi del
 ; set (text_cell). Sprite: le sigle 0 e 1, i loro riquadri neri 2 e 5, le racchette 3 e 4, le
 ; cornici dei cursori 6 e 7 (davanti c'è il numero più basso: sigla, riquadro, cornice, come sul
 ; PC). Le immagini stanno nella riga 23 della bitmap, vuota e nera su nero: cornice e riquadri
@@ -24,10 +25,17 @@
 KP_RUN    = $C400
 KP_BG     = $84                 ; pagina dello sfondo nella finestra a 16K, dopo il codice
 KP_LOADED = KP_BG_PAGES + KP_COL_PAGES + 2      ; kp_pg: sfondo copiato, scritte, poi i pannelli
-KP_PART_ROWS = 6                ; righe di celle di un pezzo di pannello
+; righe di celle di un pezzo di pannello (uno per frame, circa 1.300 cicli a riga): sull'NTSC 5,
+; con la frase del tipo nel frame dell'ultimo pezzo 6 non ci stanno
+.ifdef NTSC
+KP_PART_ROWS = 5
+.else
+KP_PART_ROWS = 6
+.endif
+KP_PIECES = (KP_PANEL_H + KP_PART_ROWS - 1) / KP_PART_ROWS
 KP_ROW_BYTES = KP_PANEL_W * 9   ; per riga del pannello: bitmap e colori
 KP_TEXT_IMG = $C000 + (KP_SPRITE + 3) * 64      ; immagini delle due sigle
-.assert KP_PANEL_H <= 3 * KP_PART_ROWS, error, "pannello in più di tre pezzi"
+.assert KP_PIECES < 8, error, "pannello: troppi pezzi"
 
 .segment "KPCODE"
     jmp kp_tick                 ; KP_RUN: un frame della scelta
@@ -36,7 +44,7 @@ KP_TEXT_IMG = $C000 + (KP_SPRITE + 3) * 64      ; immagini delle due sigle
 kp_pg:     .byte 0              ; caricamento: pagina dello sfondo da copiare, poi le fasi fino a
                                 ; KP_LOADED (il codice arriva fresco dalla cartuccia: si parte da 0)
 kp_shown:  .byte $ff, $ff       ; tipo nel pannello di ciascun lato
-kp_part:   .byte 3, 3           ; pezzo del pannello da copiare (3: fatto)
+kp_part:   .byte KP_PIECES, KP_PIECES ; pezzo del pannello da copiare (KP_PIECES: fatto)
 kp_label:  .byte 0, 0           ; OK da ridisegnare
 kp_n:      .byte 0              ; temporanee
 kp_r:      .byte 0
@@ -61,8 +69,15 @@ live:
     beq choosing
     dec pk_ready
     beq go
-    ; READY! a tratti (6 volte al secondo, come sul PC)
+    ; via i comandi, uno per frame, dopo i pezzi del pannello che la fine può aver lasciato (fino a
+    ; 4 frame) e gli OK: insieme non ci stanno nel frame NTSC; poi READY! a tratti (6 volte al
+    ; secondo, come sul PC)
     lda pk_ready
+    cmp #READY_FRAMES - 6
+    beq hint0
+    cmp #READY_FRAMES - 7
+    beq hint1
+    .assert (READY_FRAMES - 6) .mod 8 <> 0 .and (READY_FRAMES - 7) .mod 8 <> 0, error, "READY!: una scritta nel frame dei comandi"
     and #7
     jne done
     ldx #<ks_ready
@@ -108,10 +123,11 @@ finish:
     lda #READY_FRAMES
     sta pk_ready
     lda #EV_BOOST
-    jsr sid_fx
-    ; via i comandi
+    jmp sid_fx
+hint0:
     ldx #KP_HINT_COL0
-    jsr hint_off
+    bne hint_off                ; (sempre)
+hint1:
     ldx #KP_HINT_COL1
 hint_off:
     lda #<ks_blank
@@ -160,11 +176,12 @@ done:
 .endproc
 
 ; Stringa (A: byte basso tra le stringhe di questo file, KS_PAGE) nella bitmap alla colonna X,
-; riga Y.
+; riga Y; da big quella in ptr2.
 .proc kp_print
     sta ptr2
     lda #>ks_p1
     sta ptr2+1
+big:
     lda #$40
     sta v_big
     jsr print_str
@@ -221,18 +238,18 @@ next:
     ; un pezzo di pannello: prima il lato sinistro
     ldx #0
     lda kp_part
-    cmp #3
+    cmp #KP_PIECES
     bcc :+
     inx
     lda kp_part+1
-    cmp #3
+    cmp #KP_PIECES
     bcs done
 :   stx kp_x
     jsr kp_panel
     ldx kp_x
     inc kp_part,x
     lda kp_part,x
-    cmp #3
+    cmp #KP_PIECES
     bne done
     ; la frase del tipo (kind_tags, pick.s), centrata nella metà
     lda kp_shown,x
@@ -245,11 +262,7 @@ next:
     lda kp_tag_col,x
     tax
     ldy #KP_TAG_ROW
-    lda #$40
-    sta v_big
-    jsr print_str
-    lda #0
-    sta v_big
+    jmp kp_print::big
 done:
     rts
 .endproc
@@ -354,7 +367,7 @@ panels:
     jsr kp_job
     lda kp_part
     and kp_part+1
-    cmp #3
+    cmp #KP_PIECES
     bne :+
     lda #MODE_HOWTO
     sta sh_mode
@@ -544,7 +557,7 @@ ks_2p:    .byte "2P", 0
 ks_ok:    .byte "OK", 0
 ks_ready: .byte "READY!", 0
 ks_title: .byte "PICK YOUR PADDLE", 0
-ks_hint:  .byte "UP DOWN + FIRE", 0
+ks_hint:  .byte " STICK + FIRE ", 0
 ks_blank: .byte "              ", 0
 .assert >ks_p1 = >(ks_blank + 14), error, "stringhe in pagine diverse (kp_print)"
 

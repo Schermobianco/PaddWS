@@ -28,6 +28,10 @@ BOOT_RAM    = $F800
 
 .import __BOOTCODE_LOAD__, __BOOTCODE_RUN__, __BOOTCODE_SIZE__
 .import __LOWCODE_LOAD__, __LOWCODE_RUN__, __LOWCODE_SIZE__
+.ifdef FRAMETEST
+.import __FTCODE_LOAD__, __FTCODE_RUN__, __FTCODE_SIZE__
+.assert __FTCODE_SIZE__ > 0 .and __FTCODE_SIZE__ < 256, lderror, "FTCODE: la copia conta in un byte"
+.endif
 .assert __LOWCODE_SIZE__ > 0 .and __LOWCODE_SIZE__ < 256, lderror, "LOWCODE: la copia conta in un byte"
 
 .segment "INIT"
@@ -41,6 +45,14 @@ BOOT_RAM    = $F800
     sta __LOWCODE_RUN__ - 1,x
     dex
     bne :-
+.ifdef FRAMETEST
+    ; la prova dei frame per VICE (play.s, ft_check) sotto lo stack
+    ldx #<__FTCODE_SIZE__
+:   lda __FTCODE_LOAD__ - 1,x
+    sta __FTCODE_RUN__ - 1,x
+    dex
+    bne :-
+.endif
     ; animazione del colpo di una mossa (supers.s) ferma dall'accensione: NEXTBSS non si azzera
     lda #0
     sta sm_kick
