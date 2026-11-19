@@ -359,14 +359,18 @@ menu. Solo PAL; finora provata in VICE. Dettagli in [c64/README.md](../../c64/RE
 | NEXT: ognuno sceglie 3 bonus su 6 | NEXT: riserve in alto, capsule in volo, racchetta che ruota con il SUPER |
 | ![NEXT: presentazione delle mosse speciali](../screenshots/next-howto.png) | ![NEXT: STRAIGHT SHOT in volo](../screenshots/next-supers.png) |
 | NEXT: HOW TO PLAY, le mosse speciali prima della partita | NEXT: barre delle mosse accanto alle riserve, STRAIGHT SHOT in volo |
-| ![NEXT: presentazione dell'avversario](../screenshots/challenge-intro.png) | ![NEXT: nuovo sfidante](../screenshots/challenge-challenger.png) |
-| NEXT: presentazione del sesto avversario, RUSH | NEXT: entra un secondo giocatore |
+| ![NEXT: scelta della racchetta con i personaggi](../screenshots/next-paddles.png) | ![NEXT: BLASTER contro GUARDIAN](../screenshots/next-kinds.png) |
+| NEXT: scelta della racchetta, con i personaggi | Le racchette dei personaggi: BLASTER contro GUARDIAN |
+| ![NEXT: lo schermo VS della scalata](../screenshots/challenge-intro.png) | ![NEXT: nuovo sfidante](../screenshots/challenge-challenger.png) |
+| NEXT: lo schermo VS prima del sesto avversario, RUSH | NEXT: entra un secondo giocatore |
+| ![Finale: la sfilata degli avversari battuti](../screenshots/ending-parade.png) | ![Commodore 64: scelta della racchetta](../screenshots/c64-paddles.png) |
+| Finale della scalata: gli avversari battuti, timbrati DEFEATED | Commodore 64: scelta della racchetta, con i personaggi |
 | ![Core MiSTer: titolo](../screenshots/mister-title.png) | ![Core MiSTer: scelta della racchetta](../screenshots/mister-pick.png) |
-| Core MiSTer a 320×240: titolo dopo il gettone | Core MiSTer: demo CPU contro CPU della modalità scelta (qui NEXT) |
+| Core MiSTer a 320×240: titolo dopo il gettone | Core MiSTer: scelta della racchetta, con i personaggi |
 | ![Commodore 64: titolo](../screenshots/c64-title.png) | ![Commodore 64: partita NEXT](../screenshots/c64-next.png) |
-| Commodore 64: titolo in Free Play | Commodore 64: NEXT, con la capsula di CURVE |
-| ![Commodore 64: scelta dei bonus](../screenshots/c64-pick.png) | ![Commodore 64: scalata di NEXT](../screenshots/c64-challenge.png) |
-| Commodore 64: scelta dei bonus (la CPU ha già scelto) | Commodore 64: presentazione del primo avversario della scalata |
+| Commodore 64: titolo in Free Play | Commodore 64: NEXT, ARCADE contro ARCADE |
+| ![Commodore 64: scelta dei bonus](../screenshots/c64-pick.png) | ![Commodore 64: lo schermo VS della scalata](../screenshots/c64-challenge.png) |
+| Commodore 64: scelta dei bonus (la CPU ha già scelto) | Commodore 64: lo schermo VS prima del primo avversario |
 
 Le schermate PC vengono da `paddws --screenshot-tour DIR` (versione Rust), quelle MiSTer dalla
 simulazione del core con Verilator (`mister/sim/frames`), quelle C64 da VICE (`c64/shot.ps1`).

@@ -28,12 +28,12 @@ gamepad o mouse.
 
 | | |
 |---|---|
-| ![Titolo dell'attract con il filtro CRT](docs/screenshots/attract-crt.jpg) | ![NEXT: riserve, capsule e SUPER armato](docs/screenshots/next-game.png) |
-| Titolo dell'attract, con il filtro CRT | NEXT: bonus nelle riserve in alto e capsule in volo |
-| ![NEXT: STRAIGHT SHOT in volo](docs/screenshots/next-supers.png) | ![NEXT: nuovo sfidante](docs/screenshots/challenge-challenger.png) |
-| Mosse speciali: MAX STRAIGHT SHOT in volo | NEXT: entra un secondo giocatore |
-| ![Core MiSTer: scelta della racchetta](docs/screenshots/mister-pick.png) | ![Commodore 64: partita NEXT](docs/screenshots/c64-next.png) |
-| Core MiSTer a 320×240 | Commodore 64: NEXT |
+| ![Titolo dell'attract con il filtro CRT](docs/screenshots/attract-crt.jpg) | ![NEXT: scelta della racchetta con i personaggi](docs/screenshots/next-paddles.png) |
+| Titolo dell'attract, con il filtro CRT | NEXT: scelta della racchetta, con i personaggi |
+| ![NEXT: lo schermo VS della scalata](docs/screenshots/challenge-intro.png) | ![NEXT: BLASTER contro GUARDIAN](docs/screenshots/next-kinds.png) |
+| La scalata: lo schermo VS prima di ogni avversario | Le racchette dei personaggi: BLASTER contro GUARDIAN |
+| ![Core MiSTer: scelta della racchetta](docs/screenshots/mister-pick.png) | ![Commodore 64: lo schermo VS](docs/screenshots/c64-challenge.png) |
+| Core MiSTer a 320×240 | Commodore 64: lo schermo VS della scalata |
 
 Altre schermate in [Come si gioca](docs/it/come-si-gioca.md#schermate).
 

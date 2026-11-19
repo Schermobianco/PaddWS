@@ -365,14 +365,18 @@ used with `F` / `C` (left) and `.` / `-` (right). Key **5** coin, fire or **RETU
 | NEXT: each player picks 3 power-ups out of 6 | NEXT: reserves at the top, capsules in flight, paddle spinning with the SUPER |
 | ![NEXT: special moves introduction](../screenshots/next-howto.png) | ![NEXT: STRAIGHT SHOT in flight](../screenshots/next-supers.png) |
 | NEXT: HOW TO PLAY, the special moves before the match | NEXT: move meters next to the reserves, STRAIGHT SHOT in flight |
-| ![NEXT: opponent introduction](../screenshots/challenge-intro.png) | ![NEXT: new challenger](../screenshots/challenge-challenger.png) |
-| NEXT: introduction of the sixth opponent, RUSH | NEXT: a second player joins in |
+| ![NEXT: paddle pick with the characters](../screenshots/next-paddles.png) | ![NEXT: BLASTER against GUARDIAN](../screenshots/next-kinds.png) |
+| NEXT: paddle pick, with the characters | The characters' paddles: BLASTER against GUARDIAN |
+| ![NEXT: the ladder's VS screen](../screenshots/challenge-intro.png) | ![NEXT: new challenger](../screenshots/challenge-challenger.png) |
+| NEXT: the VS screen before the sixth opponent, RUSH | NEXT: a second player joins in |
+| ![Ending: the parade of the beaten opponents](../screenshots/ending-parade.png) | ![Commodore 64: paddle pick](../screenshots/c64-paddles.png) |
+| Ladder ending: the beaten opponents, stamped DEFEATED | Commodore 64: paddle pick, with the characters |
 | ![MiSTer core: title](../screenshots/mister-title.png) | ![MiSTer core: paddle pick](../screenshots/mister-pick.png) |
-| MiSTer core at 320×240: title after the coin | MiSTer core: CPU against CPU demo of the chosen mode (here NEXT) |
+| MiSTer core at 320×240: title after the coin | MiSTer core: paddle pick, with the characters |
 | ![Commodore 64: title](../screenshots/c64-title.png) | ![Commodore 64: NEXT match](../screenshots/c64-next.png) |
-| Commodore 64: title in Free Play | Commodore 64: NEXT, with the CURVE capsule |
-| ![Commodore 64: power-up pick](../screenshots/c64-pick.png) | ![Commodore 64: NEXT ladder](../screenshots/c64-challenge.png) |
-| Commodore 64: power-up pick (the CPU has already picked) | Commodore 64: introduction of the first opponent of the ladder |
+| Commodore 64: title in Free Play | Commodore 64: NEXT, ARCADE against ARCADE |
+| ![Commodore 64: power-up pick](../screenshots/c64-pick.png) | ![Commodore 64: the ladder's VS screen](../screenshots/c64-challenge.png) |
+| Commodore 64: power-up pick (the CPU has already picked) | Commodore 64: the VS screen before the first opponent |
 
 The PC screenshots come from `paddws --screenshot-tour DIR` (Rust version), the MiSTer ones from the
 simulation of the core with Verilator (`mister/sim/frames`), the C64 ones from VICE

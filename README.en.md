@@ -28,12 +28,12 @@ keyboard, a gamepad or the mouse.
 
 | | |
 |---|---|
-| ![Attract mode title with the CRT filter](docs/screenshots/attract-crt.jpg) | ![NEXT: reserves, capsules and an armed SUPER](docs/screenshots/next-game.png) |
-| Attract mode title, with the CRT filter | NEXT: power-ups in the reserves at the top and capsules in flight |
-| ![NEXT: STRAIGHT SHOT in flight](docs/screenshots/next-supers.png) | ![NEXT: new challenger](docs/screenshots/challenge-challenger.png) |
-| Special moves: MAX STRAIGHT SHOT in flight | NEXT: a second player joins in |
-| ![MiSTer core: paddle pick](docs/screenshots/mister-pick.png) | ![Commodore 64: NEXT match](docs/screenshots/c64-next.png) |
-| MiSTer core at 320×240 | Commodore 64: NEXT |
+| ![Attract mode title with the CRT filter](docs/screenshots/attract-crt.jpg) | ![NEXT: paddle pick with the characters](docs/screenshots/next-paddles.png) |
+| Attract mode title, with the CRT filter | NEXT: paddle pick, with the characters |
+| ![NEXT: the ladder's VS screen](docs/screenshots/challenge-intro.png) | ![NEXT: BLASTER against GUARDIAN](docs/screenshots/next-kinds.png) |
+| The ladder: the VS screen before each opponent | The characters' paddles: BLASTER against GUARDIAN |
+| ![MiSTer core: paddle pick](docs/screenshots/mister-pick.png) | ![Commodore 64: the VS screen](docs/screenshots/c64-challenge.png) |
+| MiSTer core at 320×240 | Commodore 64: the ladder's VS screen |
 
 More screenshots in [How to play](docs/en/how-to-play.md#screenshots).
 
