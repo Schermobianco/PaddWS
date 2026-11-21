@@ -621,7 +621,8 @@ SID_LATE_LINE = RASTER_LINE + SID_LATE / TV_LCYC - TV_LINES
 ; righe oltre le quali restano gli sprite del frame prima: sprite e HUD costano fino a circa 3.800
 ; cicli sul PAL (con il salto del TELEPORT, warp_fx), 4.000 sull'NTSC. Sull'NTSC dopo un tick pesante il frame può finire fino a 2.500
 ; cicli dopo l'interrupt del frame dopo (quello dopo parte subito, ancora nel bordo, e recupera):
-; gli sprite si rifanno lo stesso, e restano quelli di prima solo oltre il budget meno 1.500
+; gli sprite si rifanno lo stesso, e restano quelli di prima solo oltre il budget meno 1.700
+; (KEEP_SPRITES_CYC; keep_sprites del banco di prova, rust/c64, deve restare uguale)
 .ifdef NTSC
 KEEP_SPRITES_CYC = 1700
 .else

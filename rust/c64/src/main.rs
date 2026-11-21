@@ -2114,7 +2114,7 @@ impl CometCheck {
         frame_budget() - 6_000
     }
     /// KEEP_SPRITES_LINE di play.s in cicli: oltre, gli sprite possono restare quelli del frame prima
-    /// (il budget meno KEEP_SPRITES_CYC; PAL 14.500)
+    /// (il budget meno KEEP_SPRITES_CYC)
     fn keep_sprites() -> u64 {
         keep_sprites()
     }
@@ -2392,9 +2392,9 @@ thread_local! {
 }
 
 /// KEEP_SPRITES_LINE di play.s in cicli: oltre, il frame tiene gli sprite del frame prima (il budget
-/// meno KEEP_SPRITES_CYC: PAL 3.500, NTSC 1.500, dove sprite e HUD si fanno anche sforando).
+/// meno KEEP_SPRITES_CYC: PAL 3.900, NTSC 1.700, dove sprite e HUD si fanno anche sforando).
 fn keep_sprites() -> u64 {
-    frame_budget() - if ntsc() { 1_500 } else { 3_900 }
+    frame_budget() - if ntsc() { 1_700 } else { 3_900 }
 }
 
 /// Parte del frame che non si rimanda oltre la quale il tick è pesantissimo: sprite, HUD e il resto
