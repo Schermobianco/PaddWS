@@ -895,22 +895,27 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         ("7_next_kinds_wall_crack", |app| kinds_fx(app, [K::Guardian, K::Twist], 0.05)),
         ("7_next_kinds_wall_break", |app| kinds_fx(app, [K::Guardian, K::Twist], 0.25)),
         ("7_next_kinds_wall_build", |app| kinds_countdown(app, [K::Guardian, K::Guardian])),
+        // (con le astronavi dei personaggi, come nelle schermate della guida)
         ("7_next_game", |app| {
             app.players = 2;
             app.next = true;
+            app.paddles = [Some(K::Twist), Some(K::Titan)];
             let mut play = Play::new(app);
             play.skip_countdown();
             play.fill_next_demo();
             app.next = false;
+            app.paddles = [None; 2];
             Scene::Game(Box::new(play))
         }),
         ("7_next_super", |app| {
             app.players = 2;
             app.next = true;
+            app.paddles = [Some(K::Rush), Some(K::Arcade)];
             let mut play = Play::new(app);
             play.skip_countdown();
             play.fill_super_demo();
             app.next = false;
+            app.paddles = [None; 2];
             Scene::Game(Box::new(play))
         }),
         ("7_next_bullet", |app| {
