@@ -14,6 +14,40 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+### Aggiunto
+- **Astronavi** (PC, web, Deck, MiSTer e C64): le racchette di NEXT diventano le astronavi dei
+  personaggi viste dall'alto, con la faccia che colpisce sempre dritta. Su PC e MiSTer i motori
+  fanno fuoco e allo scatto in avanti si accendono i booster di tutte le racchette: un lampo agli
+  ugelli e un getto che parte da casa e si accorcia mentre la racchetta avanza. Sul C64 ogni
+  astronave ha il suo colore. Le illustrazioni delle astronavi sono nella guida.
+- I personaggi sono ridisegnati come equipaggi spaziali, nella scelta, nello schermo VS e nella
+  sfilata del finale (tutte le versioni).
+- Finale (PC, MiSTer e C64): fuochi d'artificio nuovi, di sei tipi, con una salva finale; tra i
+  fuochi passa l'astronave del campione, che rallenta, carica e salta nell'iperspazio; THE END
+  mostra la sua astronave.
+- **BLASTER**: spara due fasci laser verdi, con un caricatore di 6 colpi mostrato da una barra
+  verde; tenendo premuto il tasto (o il pulsante del paddle, o il joystick verso l'avversario sul
+  C64) continua a sparare e i colpi vicini diventano un raggio continuo. Un colpo che prende la
+  racchetta avversaria la rallenta a metà per 2 s.
+- **ARCADE**: con la riserva vuota, un doppio clic su USE chiama subito una capsula verso di sé.
+- La CPU di NEXT usa le due novità: il BLASTER spara anche alla racchetta avversaria quando la
+  palla va verso di lei, l'ARCADE con la riserva vuota chiama le capsule con il doppio clic.
+
+### Modificato
+- RUSH: la fiamma del postbruciatore è più viva (lunghezza che cambia, alone che pulsa, diamanti
+  d'urto che scorrono, scintille).
+- BULLET: la palla rallenta tanto più quanto è veloce (da un quarto in meno se è lenta a sette
+  ottavi in meno se è velocissima), così anche i tiri più veloci diventano prendibili.
+- TWIST: passa alla palla tre quarti della sua velocità verticale (prima metà), fino a circa 60
+  gradi.
+- Mosse speciali: STRAIGHT SHOT parte almeno ai 3/4 della velocità massima e RISING STRIKE ai 5/8;
+  RISING STRIKE parte anche più veloce (×1,25, la MAX ×1,5).
+- PC: la scritta del bonus sta in alto al centro, sotto i punteggi, come sul MiSTer.
+
+### Corretto
+- PC e MiSTer: il salto del TELEPORT finisce sempre prima che la palla arrivi, anche con la racchetta in
+  posizione di scatto (e con quello lungo del RUSH).
+
 ## [4.5.0] - 2026-11-19
 
 ### Aggiunto

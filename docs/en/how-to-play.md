@@ -56,24 +56,34 @@ Each capsule shows the symbol of its power-up:
 | <img src="../icons/ghost.png" alt="" width="40" height="40"><br>**GHOST** | after the next shot the ball is only visible in flashes |
 | <img src="../icons/steer.png" alt="" width="40" height="40"><br>**STEER** | after the next shot, up and down steer the ball, with limited steering, up to 3/4 of the field (marked in yellow on the edges); meanwhile the paddle stays still |
 | <img src="../icons/super.png" alt="" width="40" height="40"><br>**SUPER** | rare, only from capsules: a very fast shot, with a random animation among spinning paddle, hit-stop and a comet that breaks the net |
-| <img src="../icons/bullet.png" alt="" width="40" height="40"><br>**BULLET** | rare, only from capsules (about one in 16): defensive bullet time. Once activated it stays armed (the yellow border of the paddle flashes) until the ball enters your own half, heading towards you; then, easing in, everything runs at half speed (ball with CURVE and STEER, opponent's paddle, capsules, the opponent's BLASTER shots) except your own paddle, until the return or the point. The rest of the game turns grey and blurred (on the MiSTer with soft edges, on the C64 just grey) and the ball leaves a trail of images. If you concede a point before it triggers, the power-up is not used up; only one can be used at a time |
+| <img src="../icons/bullet.png" alt="" width="40" height="40"><br>**BULLET** | rare, only from capsules (about one in 16): defensive bullet time. Once activated it stays armed (the yellow border of the paddle flashes) until the ball enters your own half, heading towards you; then, easing in, everything slows down except your own paddle: the opponent's paddle, the capsules and the opponent's BLASTER shots run at half speed, the ball (also with CURVE and STEER) the more the faster it is, from a quarter less when it is slow to seven eighths less when it is very fast, until the return or the point. The rest of the game turns grey and blurred (on the MiSTer with soft edges, on the C64 just grey) and the ball leaves a trail of images. If you concede a point before it triggers, the power-up is not used up; only one can be used at a time |
 
 ## Paddle types (NEXT)
 
-Before the power-ups each player picks a paddle (each opponent of the ladder has its own). Each type has an advantage, a small price and its character's design, which makes it
-recognisable in play (the paddles in the picture are to scale; on the C64 the marks are still and
-keep the usual colours). The types are balanced so that each
-wins about half of the points against the normal paddle.
+Before the power-ups each player picks a paddle (each opponent of the ladder has its own). Each type has an advantage, a small price and its character's spaceship, seen from above, which makes it
+recognisable in play (the paddles in the picture are to scale; on the C64 the drawings are still).
+The hitting face stays a straight edge, as tall as the paddle. On PC and MiSTer the engines fire
+and, on the forward dash, the boosters ignite: a flash at the nozzles and a jet that starts where
+the paddle was and shrinks within a quarter of a second. The types are balanced so that each wins
+about half of the points against the normal paddle.
 
 ![The seven paddle types, to scale, with their marks](../icons/paddles.png)
 
+The spaceships, as they appear on the THE END screen of the ending:
+
+| | | |
+|:---:|:---:|:---:|
+| <img src="../../assets/ships/arcade.png" alt="ARCADE" width="260"><br>**ARCADE** | <img src="../../assets/ships/titan.png" alt="TITAN" width="260"><br>**TITAN** | <img src="../../assets/ships/hammer.png" alt="HAMMER" width="260"><br>**HAMMER** |
+| <img src="../../assets/ships/twist.png" alt="TWIST" width="260"><br>**TWIST** | <img src="../../assets/ships/blaster.png" alt="BLASTER" width="260"><br>**BLASTER** | <img src="../../assets/ships/rush.png" alt="RUSH" width="260"><br>**RUSH** |
+| <img src="../../assets/ships/guardian.png" alt="GUARDIAN" width="260"><br>**GUARDIAN** | | |
+
 | type | advantage | price |
 |---|---|---|
-| **ARCADE** | more capsules: they start every 3-4 s instead of 4-5 and two out of three go to it (if the opponent is not ARCADE); shorter pause between two power-ups | shorter (0.8) |
+| **ARCADE** | more capsules: they start every 3-4 s instead of 4-5 and two out of three go to it (if the opponent is not ARCADE); shorter pause between two power-ups; with an empty reserve a double click on USE (within 0.4 s) calls a capsule towards it right away, unless one is already on its way | shorter (0.8) |
 | **TITAN** | taller (1.2) | slower (0.8) |
 | **HAMMER** | shots leave faster (×1.25, if the ball doesn't already have a boost) | slow (0.75) |
-| **TWIST** | passes half of its vertical speed to the ball: hitting while moving gives angle; it tilts with its speed | — |
-| **BLASTER** | slightly taller (1.1) and it shoots: a magazine of 4 fast shots that can be fired in a row, shown as small yellow rectangles behind the paddle (it reloads 3 s after the first shot); the shots collect capsules, even those heading for the opponent | no forward dash: that button shoots |
+| **TWIST** | passes three quarters of its vertical speed to the ball, up to about 60 degrees: hitting while moving gives angle; it tilts with its speed | — |
+| **BLASTER** | slightly taller (1.1) and it shoots two green laser beams from its wing guns: a magazine of 6 shots, shown by the green bar behind the paddle (it reloads 3 s after the first shot); holding the button turns close shots into a continuous beam. The shots collect capsules, even those heading for the opponent, and when they hit the opponent's paddle they slow it to half speed for 2 s | no forward dash: that button shoots |
 | **RUSH** | longer forward dash (×1.5), which catches the ball more often; from the forward position shots leave faster (×1.15, also with the dash that intercepts the ball) and closer to the opponent; the forward paddle is also quicker (×1.15) | shorter (0.85) |
 | **GUARDIAN** | a 5-section wall behind the paddle, one per match: each missed ball bounces off the section at the ball's height, which then disappears | shorter (0.8) |
 
@@ -102,11 +112,11 @@ power-ups can be activated).
 | move | effect |
 |---|---|
 | **STRAIGHT SHOT** | the next shot goes straight, with no angle, at one and a half times the push of the hit (twice with the MAX); it lasts one shot only, and is lost if the opponent intercepts it with the dash |
-| **RISING STRIKE** | the next shot goes straight and, past 5/8 of the field (7/8 with the MAX), suddenly rises at 45° away from the opponent's paddle: it fools whoever had already moved into its path |
+| **RISING STRIKE** | the next shot goes straight, faster (×1.25, the MAX ×1.5), and, past 5/8 of the field (7/8 with the MAX), suddenly rises at 45° away from the opponent's paddle: it fools whoever had already moved into its path |
 
 A move never leaves slowly, even at the start of a rally: when it is hit, the ball goes at least at
-half the difficulty's top speed with STRAIGHT SHOT (so the MAX at least at the top speed) and at 3/8
-with RISING STRIKE.
+3/4 of the difficulty's top speed with STRAIGHT SHOT (which then multiplies it: the MAX leaves at
+least at one and a half times the top speed) and at 5/8 with RISING STRIKE.
 
 | command | STRAIGHT SHOT | RISING STRIKE |
 |---|---|---|
@@ -169,7 +179,8 @@ entrances in characters, simpler). Matches are NEXT, to 5 points.
   parade of the seven opponents with the DEFEATED stamp (on the MiSTer the beaten paddle goes
   dark), the final score with the champion's prize
   (the win of the last level, plus the perfect match), "YOU ARE THE PADD WS CHAMPION" with
-  fireworks, the credits and THE END, in about a minute, with its own music; then the initials.
+  fireworks, through which the champion's spaceship flies, slows down, charges and jumps into
+  hyperspace, the credits and THE END with the illustration of its spaceship, in about a minute, with its own music; then the initials.
   Start skips it. The voice "YOU WIN!" is also heard at every match won against the CPU. If the
   winner didn't let the opponent score a single point, PERFECT replaces YOU WIN (or GAME OVER, with
   two players), shouted by the voice.
@@ -369,8 +380,10 @@ used with `F` / `C` (left) and `.` / `-` (right). Key **5** coin, fire or **RETU
 | NEXT: paddle pick, with the characters | The characters' paddles: BLASTER against GUARDIAN |
 | ![NEXT: the ladder's VS screen](../screenshots/challenge-intro.png) | ![NEXT: new challenger](../screenshots/challenge-challenger.png) |
 | NEXT: the VS screen before the last opponent, GUARDIAN | NEXT: a second player joins in |
-| ![Ending: the parade of the beaten opponents](../screenshots/ending-parade.png) | ![Commodore 64: paddle pick](../screenshots/c64-paddles.png) |
-| Ladder ending: the beaten opponents, stamped DEFEATED | Commodore 64: paddle pick, with the characters |
+| ![Ending: the parade of the beaten opponents](../screenshots/ending-parade.png) | ![Ending: the champion's spaceship jumps into hyperspace](../screenshots/ending-warp.png) |
+| Ladder ending: the beaten opponents, stamped DEFEATED | Ending: among the fireworks the champion's spaceship jumps into hyperspace |
+| ![Ending: THE END with the champion's spaceship](../screenshots/ending-the-end.png) | ![Commodore 64: paddle pick](../screenshots/c64-paddles.png) |
+| Ending: THE END with the spaceship's illustration | Commodore 64: paddle pick, with the characters |
 | ![MiSTer core: title](../screenshots/mister-title.png) | ![MiSTer core: paddle pick](../screenshots/mister-pick.png) |
 | MiSTer core at 320×240: title after the coin | MiSTer core: paddle pick, with the characters |
 | ![Commodore 64: title](../screenshots/c64-title.png) | ![Commodore 64: NEXT match](../screenshots/c64-next.png) |

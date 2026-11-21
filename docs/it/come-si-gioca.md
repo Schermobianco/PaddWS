@@ -54,24 +54,34 @@ Ogni capsula mostra il simbolo del suo bonus:
 | <img src="../icons/ghost.png" alt="" width="40" height="40"><br>**GHOST** | dopo il prossimo tiro la palla si vede solo a lampi |
 | <img src="../icons/steer.png" alt="" width="40" height="40"><br>**STEER** | dopo il prossimo tiro i comandi su e giù guidano la palla, con una sterzata limitata, fino a 3/4 del campo (segnati in giallo sui bordi); intanto la racchetta resta ferma |
 | <img src="../icons/super.png" alt="" width="40" height="40"><br>**SUPER** | raro, solo dalle capsule: tiro velocissimo, con un'animazione a caso tra racchetta che ruota, hit-stop e cometa che spacca la rete |
-| <img src="../icons/bullet.png" alt="" width="40" height="40"><br>**BULLET** | raro, solo dalle capsule (circa una su 16): bullet time difensivo. Una volta attivato resta armato (il bordo giallo della racchetta lampeggia) finché la palla non entra nella propria metà campo, diretta verso di sé; allora, con un'entrata graduale, tutto va a metà velocità (palla con CURVE e STEER, racchetta avversaria, capsule, colpi del BLASTER avversario) tranne la propria racchetta, fino alla ribattuta o al punto. Il resto del gioco diventa grigio e sfocato (sul MiSTer con bordi sfumati, sul C64 solo grigio) e la palla lascia una scia di immagini. Se si subisce un punto prima che scatti, il bonus non si consuma; se ne usa uno alla volta |
+| <img src="../icons/bullet.png" alt="" width="40" height="40"><br>**BULLET** | raro, solo dalle capsule (circa una su 16): bullet time difensivo. Una volta attivato resta armato (il bordo giallo della racchetta lampeggia) finché la palla non entra nella propria metà campo, diretta verso di sé; allora, con un'entrata graduale, tutto rallenta tranne la propria racchetta: la racchetta avversaria, le capsule e i colpi del BLASTER avversario vanno a metà velocità, la palla (anche con CURVE e STEER) tanto più piano quanto più è veloce, da un quarto in meno se è lenta a sette ottavi in meno se è velocissima, fino alla ribattuta o al punto. Il resto del gioco diventa grigio e sfocato (sul MiSTer con bordi sfumati, sul C64 solo grigio) e la palla lascia una scia di immagini. Se si subisce un punto prima che scatti, il bonus non si consuma; se ne usa uno alla volta |
 
 ## Tipi di racchetta (NEXT)
 
-Prima dei bonus ognuno sceglie la sua racchetta (ogni avversario della scalata ha la sua). Ogni tipo ha un vantaggio, un piccolo prezzo e il disegno del suo personaggio, che lo fa
-riconoscere in partita (nell'immagine le racchette sono in proporzione; sul C64 i segni sono fermi
-e con i colori di sempre). I tipi sono bilanciati perché ognuno vinca
-circa metà dei punti contro la racchetta normale.
+Prima dei bonus ognuno sceglie la sua racchetta (ogni avversario della scalata ha la sua). Ogni tipo ha un vantaggio, un piccolo prezzo e l'astronave del suo personaggio, vista dall'alto, che lo fa
+riconoscere in partita (nell'immagine le racchette sono in proporzione; sul C64 i disegni sono fermi).
+La faccia che colpisce resta un bordo dritto, alto quanto la racchetta. Su PC e MiSTer i motori
+fanno fuoco e, allo scatto in avanti, si accendono i booster: un lampo agli ugelli e un getto che
+parte da dove era la racchetta e si accorcia in un quarto di secondo. I tipi sono bilanciati perché
+ognuno vinca circa metà dei punti contro la racchetta normale.
 
 ![I sette tipi di racchetta, in proporzione, con i loro segni](../icons/paddles.png)
 
+Le astronavi, come compaiono nella schermata THE END del finale:
+
+| | | |
+|:---:|:---:|:---:|
+| <img src="../../assets/ships/arcade.png" alt="ARCADE" width="260"><br>**ARCADE** | <img src="../../assets/ships/titan.png" alt="TITAN" width="260"><br>**TITAN** | <img src="../../assets/ships/hammer.png" alt="HAMMER" width="260"><br>**HAMMER** |
+| <img src="../../assets/ships/twist.png" alt="TWIST" width="260"><br>**TWIST** | <img src="../../assets/ships/blaster.png" alt="BLASTER" width="260"><br>**BLASTER** | <img src="../../assets/ships/rush.png" alt="RUSH" width="260"><br>**RUSH** |
+| <img src="../../assets/ships/guardian.png" alt="GUARDIAN" width="260"><br>**GUARDIAN** | | |
+
 | tipo | vantaggio | prezzo |
 |---|---|---|
-| **ARCADE** | più capsule: partono ogni 3-4 s invece di 4-5 e due su tre vanno a lui (se l'avversario non è ARCADE); pausa più breve tra due bonus | più corta (0,8) |
+| **ARCADE** | più capsule: partono ogni 3-4 s invece di 4-5 e due su tre vanno a lui (se l'avversario non è ARCADE); pausa più breve tra due bonus; con la riserva vuota un doppio clic su USE (entro 0,4 s) chiama subito una capsula verso di sé, se non ne sta già arrivando una | più corta (0,8) |
 | **TITAN** | più alta (1,2) | più lenta (0,8) |
 | **HAMMER** | i tiri partono più veloci (×1,25, se la palla non ha già un boost) | lenta (0,75) |
-| **TWIST** | passa alla palla metà della sua velocità verticale: colpendo in movimento si dà angolo; si inclina con la velocità | — |
-| **BLASTER** | un po' più alta (1,1) e spara: caricatore di 4 colpi veloci da sparare di fila, mostrati come rettangolini gialli dietro la racchetta (si ricarica 3 s dopo il primo colpo); i colpi raccolgono le capsule, anche quelle dirette all'avversario | niente scatto in avanti: spara con quel tasto |
+| **TWIST** | passa alla palla tre quarti della sua velocità verticale, fino a circa 60 gradi: colpendo in movimento si dà angolo; si inclina con la velocità | — |
+| **BLASTER** | un po' più alta (1,1) e spara due fasci laser verdi dai cannoni alari: caricatore di 6 colpi, mostrato dalla barra verde dietro la racchetta (si ricarica 3 s dopo il primo colpo); tenendo premuto il tasto i colpi vicini diventano un raggio continuo. I colpi raccolgono le capsule, anche quelle dirette all'avversario, e se prendono la racchetta avversaria la rallentano a metà per 2 s | niente scatto in avanti: spara con quel tasto |
 | **RUSH** | scatto in avanti più lungo (×1,5), che prende la palla più spesso; dalla posizione avanzata i tiri partono più veloci (×1,15, anche lo scatto che intercetta la palla) e più vicini all'avversario; la racchetta avanzata è anche più rapida (×1,15) | più corta (0,85) |
 | **GUARDIAN** | un muro a 5 settori dietro la racchetta, uno per partita: ogni palla mancata rimbalza sul settore all'altezza della palla, che poi sparisce | più corta (0,8) |
 
@@ -100,11 +110,11 @@ non si attivano bonus).
 | mossa | effetto |
 |---|---|
 | **STRAIGHT SHOT** | il prossimo tiro parte dritto, senza angolo, a una volta e mezza la spinta del colpo (il doppio la MAX); vale un tiro solo, e si perde se l'avversario lo intercetta con lo scatto |
-| **RISING STRIKE** | il prossimo tiro parte dritto e, passati i 5/8 del campo (i 7/8 la MAX), s'impenna di colpo a 45° lontano dalla racchetta avversaria: inganna chi si era già messo sulla traiettoria |
+| **RISING STRIKE** | il prossimo tiro parte dritto, più veloce (×1,25, la MAX ×1,5), e, passati i 5/8 del campo (i 7/8 la MAX), s'impenna di colpo a 45° lontano dalla racchetta avversaria: inganna chi si era già messo sulla traiettoria |
 
-Anche a inizio scambio una mossa non parte lenta: al colpo la palla va almeno a metà della velocità
-massima della difficoltà con STRAIGHT SHOT (la MAX quindi almeno alla velocità massima) e ai 3/8 con
-RISING STRIKE.
+Anche a inizio scambio una mossa non parte lenta: al colpo la palla va almeno ai 3/4 della velocità
+massima della difficoltà con STRAIGHT SHOT (che poi la moltiplica: la MAX parte almeno a una volta e
+mezza la massima) e ai 5/8 con RISING STRIKE.
 
 | comando | STRAIGHT SHOT | RISING STRIKE |
 |---|---|---|
@@ -167,7 +177,9 @@ semplici). Le partite sono NEXT a 5 punti.
   sfilata dei sette avversari con il timbro DEFEATED (sul MiSTer la racchetta battuta si spegne),
   il punteggio finale con il premio del
   campione (la vittoria dell'ultimo livello, più la partita perfetta), "YOU ARE THE PADD WS
-  CHAMPION" con i fuochi d'artificio, i titoli di coda e THE END, in circa un minuto, con una
+  CHAMPION" con i fuochi d'artificio, tra cui passa l'astronave del campione, che rallenta, carica e
+  salta nell'iperspazio, i titoli di coda e THE END con l'illustrazione della sua astronave, in
+  circa un minuto, con una
   musica tutta sua; poi le iniziali. Start lo salta. La voce "YOU WIN!" si sente anche a ogni
   partita vinta contro la CPU. Se chi vince non ha lasciato neanche un punto all'avversario, al posto
   di YOU WIN (o di GAME OVER, in due) compare PERFECT, urlato dalla voce.
@@ -363,8 +375,10 @@ menu. Solo PAL; finora provata in VICE. Dettagli in [c64/README.md](../../c64/RE
 | NEXT: scelta della racchetta, con i personaggi | Le racchette dei personaggi: BLASTER contro GUARDIAN |
 | ![NEXT: lo schermo VS della scalata](../screenshots/challenge-intro.png) | ![NEXT: nuovo sfidante](../screenshots/challenge-challenger.png) |
 | NEXT: lo schermo VS prima dell'ultimo avversario, GUARDIAN | NEXT: entra un secondo giocatore |
-| ![Finale: la sfilata degli avversari battuti](../screenshots/ending-parade.png) | ![Commodore 64: scelta della racchetta](../screenshots/c64-paddles.png) |
-| Finale della scalata: gli avversari battuti, timbrati DEFEATED | Commodore 64: scelta della racchetta, con i personaggi |
+| ![Finale: la sfilata degli avversari battuti](../screenshots/ending-parade.png) | ![Finale: l'astronave del campione salta nell'iperspazio](../screenshots/ending-warp.png) |
+| Finale della scalata: gli avversari battuti, timbrati DEFEATED | Finale: tra i fuochi l'astronave del campione salta nell'iperspazio |
+| ![Finale: THE END con l'astronave del campione](../screenshots/ending-the-end.png) | ![Commodore 64: scelta della racchetta](../screenshots/c64-paddles.png) |
+| Finale: THE END con l'illustrazione dell'astronave | Commodore 64: scelta della racchetta, con i personaggi |
 | ![Core MiSTer: titolo](../screenshots/mister-title.png) | ![Core MiSTer: scelta della racchetta](../screenshots/mister-pick.png) |
 | Core MiSTer a 320×240: titolo dopo il gettone | Core MiSTer: scelta della racchetta, con i personaggi |
 | ![Commodore 64: titolo](../screenshots/c64-title.png) | ![Commodore 64: partita NEXT](../screenshots/c64-next.png) |
