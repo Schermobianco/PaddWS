@@ -15,6 +15,9 @@ crea il commit e il tag `vX.Y.Z`.
 ## [Non rilasciato]
 
 ### Modificato
+- MiSTer: i ritratti grandi e medi e le illustrazioni delle astronavi stanno nella DDR3 invece che
+  nella memoria interna dell'FPGA, che era piena al 99%. La grafica è nel file `paddws.zip`, da
+  mettere in `games/mame/` (è nello zip della release e in update_all): il `.mra` la carica all'avvio.
 - Lo sparo del BLASTER ha il suo suono, un laser, al posto di quello del colpo della racchetta
   (PC, web, Deck, MiSTer e C64).
 - Continue: il rimbalzo della pallina non è più nella canzone ma è un effetto che parte quando la

@@ -24,6 +24,7 @@ mod omega;
 pub mod pal;
 mod pick;
 pub mod regs;
+pub mod win;
 
 use dl::Dl;
 use regs::Regs;
@@ -65,8 +66,14 @@ pub mod map {
     pub const PAL: u32 = 0xA00;
     /// fine del frame: [7:0] numero di oggetti, [8] scambio dei banchi
     pub const CTRL: u32 = 0xB00;
-    /// lettura: [0] banco mostrato, [1] scambio in attesa
+    /// lettura: [0] banco mostrato, [1] scambio in attesa, [2] copia dalla DDR3 in corso
+    /// (`DMA_BUSY`), [3] grafica della DDR3 caricata (`GFX_OK`)
     pub const STATUS: u32 = 0x000;
+    pub const DMA_BUSY: u32 = 4;
+    pub const GFX_OK: u32 = 8;
+    /// copia dalla DDR3 nella finestra (gfx_ddr.v): sorgente (parola nel file paddws_gfx.rom),
+    /// destinazione (parola nella finestra), parole (la scrittura fa partire la copia)
+    pub const DMA: u32 = 0xE00;
     /// lettura: registri dello stato delle schermate (pong_top, `uis`)
     pub const UIS: u32 = 0x1000;
     /// lettura: [7:0] numero della foto dello stato
@@ -94,6 +101,8 @@ pub struct Ui {
     pad_egg: Option<bool>,
     /// illustrazione isometrica caricata in `pal::SHIP` (durante `THE END`), None = ritratti attivi
     ship_pal: Option<usize>,
+    /// finestra della DDR3: ritratti grandi e medi e astronavi copiati
+    win: win::Win,
 }
 
 impl Default for Ui {
@@ -109,6 +118,7 @@ impl Ui {
             game: game::GameState { glint_ph: 0 },
             pad_egg: None,
             ship_pal: None,
+            win: win::Win::new(),
         }
     }
 
@@ -174,13 +184,14 @@ impl Ui {
                 }
             }
         }
-        let mut d = Dl::new(p);
-        self.draw(&r, &mut d);
+        self.win.next_frame();
+        let mut d = Dl::new(p, &mut self.win);
+        Self::draw(&r, &mut self.game, &mut d);
         d.finish();
         true
     }
 
-    fn draw(&mut self, r: &Regs, d: &mut Dl) {
+    fn draw(r: &Regs, game_state: &mut game::GameState, d: &mut Dl) {
         let om = regs::Omega::new(r);
         // OMEGA: la rete che segue la voce 2 (anche fuori da OMEGA: azzerata)
         omega::net(r, &om, d);
@@ -189,7 +200,7 @@ impl Ui {
             return;
         }
         // scritte sopra il campo (e lo stato che va avanti a ogni frame)
-        game::draw(r, &mut self.game, d);
+        game::draw(r, game_state, d);
         d.dx = 0;
         challenge::hud(r, d);
         if matches!(r.mode, regs::M_GAME | regs::M_GAME_OVER) {

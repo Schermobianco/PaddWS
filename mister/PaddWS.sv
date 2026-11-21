@@ -31,7 +31,6 @@ assign USER_OUT = '1;
 assign {UART_RTS, UART_TXD, UART_DTR} = 0;
 assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 assign {SDRAM_DQ, SDRAM_A, SDRAM_BA, SDRAM_CLK, SDRAM_CKE, SDRAM_DQML, SDRAM_DQMH, SDRAM_nWE, SDRAM_nCAS, SDRAM_nRAS, SDRAM_nCS} = 'Z;
-assign {DDRAM_CLK, DDRAM_BURSTCNT, DDRAM_ADDR, DDRAM_DIN, DDRAM_BE, DDRAM_RD, DDRAM_WE} = '0;
 
 assign VGA_F1 = 0;
 assign VGA_SCALER  = 0;
@@ -92,7 +91,7 @@ wire [8:0]  spinner0, spinner1;
 wire [10:0] ps2_key;
 wire [21:0] gamma_bus;
 // file della NVRAM (classifica di NEXT e sblocco dell'allenamento, indice 4 nel PaddWS.mra)
-wire        ioctl_download, ioctl_upload, ioctl_wr, ioctl_upload_req;
+wire        ioctl_download, ioctl_upload, ioctl_wr, ioctl_upload_req, ioctl_wait;
 wire [15:0] ioctl_index;
 wire [26:0] ioctl_addr;
 wire [7:0]  ioctl_dout, ioctl_din;
@@ -128,7 +127,7 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 	.ioctl_din(ioctl_din),
 	.ioctl_upload_req(ioctl_upload_req),
 	.ioctl_upload_index(8'd4),
-	.ioctl_wait(1'b0)
+	.ioctl_wait(ioctl_wait)
 );
 
 ///////////////////////   CLOCK   ////////////////////////////////
@@ -136,6 +135,7 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 // PLL del template: 20 MHz, pixel clock = 20 MHz / 3; seconda uscita a 60 MHz (stesso VCO, fronti
 // allineati) per il processore RISC-V della logica di gioco (rtl/pong_logic_rv.v)
 wire clk_sys, clk_cpu;
+assign DDRAM_CLK = clk_cpu;   // la DDR3 (grafica) nel dominio del firmware e della finestra
 pll pll
 (
 	.refclk(CLK_50M),
@@ -236,6 +236,11 @@ pong_top pong
 	.ioctl_din(ioctl_din),
 	.ioctl_upload_req(ioctl_upload_req),
 	.nv_autosave(!status[27]),
+	// grafica nella DDR3 (rtl/gfx_ddr.v): file paddws_gfx.rom dal .mra, copie nella finestra
+	.ioctl_wait(ioctl_wait),
+	.DDRAM_BUSY(DDRAM_BUSY), .DDRAM_BURSTCNT(DDRAM_BURSTCNT), .DDRAM_ADDR(DDRAM_ADDR),
+	.DDRAM_DOUT(DDRAM_DOUT), .DDRAM_DOUT_READY(DDRAM_DOUT_READY), .DDRAM_RD(DDRAM_RD),
+	.DDRAM_DIN(DDRAM_DIN), .DDRAM_BE(DDRAM_BE), .DDRAM_WE(DDRAM_WE),
 	.ce_pix(ce_pix),
 	.rgb(rgb),
 	.hblank(hblank),

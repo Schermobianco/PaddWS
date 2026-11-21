@@ -8,7 +8,7 @@
 use crate::assets::ending as e;
 use crate::assets::game::{KIND_H, KIND_NAMES, SIN_Q8};
 use crate::assets::{portraits, ships};
-use crate::cast::{OMEGA, centered, paddle_warp, portrait};
+use crate::cast::{OMEGA, centered, mid_portrait, paddle_warp};
 use crate::dl::{CLASS_A, Dl, Kind, Obj, text_w};
 use crate::pal::{CYAN, GRAY, OMEGA_Q, PADS, RED, SHIP, WHITE, YELLOW};
 use crate::regs::{Omega, Regs, field};
@@ -179,7 +179,10 @@ fn draw_the_end_ship(d: &mut Dl, pf: i32, winner: usize) {
         let sz = if i % 5 == 0 { 2 } else { 1 };
         d.rect(x, y + 4, sz, sz, col);
     }
-    let img = &ships::ART[winner];
+    // dalla DDR3: un posto nella finestra
+    let words = (ships::ROW_WORDS * ships::ART[winner].h as i32) as u16;
+    let Some(img) = d.ddr(&ships::ART[winner], words, words, 1) else { return };
+    let img = &img;
     let mut rows = [0i32; 90];
     for (v, row) in rows.iter_mut().enumerate() {
         *row = v as i32 * ships::ROW_WORDS;
@@ -350,12 +353,12 @@ pub fn draw(r: &Regs, om: &Omega, d: &mut Dl) {
         };
         let cx = x + e::PARADE_W / 2;
         if k == OMEGA && !om.won {
-            portrait(d, &portraits::MID_LOCKED, OMEGA, x, y);
+            mid_portrait(d, &portraits::MID_LOCKED, OMEGA, x, y);
             centered(d, b"?", cx, ny, OMEGA_Q);
             continue;
         }
         let ko = i < stamped;
-        portrait(d, &portraits::MID[k][ko as usize], k, x, y);
+        mid_portrait(d, &portraits::MID[k][ko as usize], k, x, y);
         let name: &[u8] = if k == OMEGA { b"OMEGA" } else { KIND_NAMES[k] };
         centered(d, name, cx, ny, if ko { GRAY } else { WHITE });
         if ko {

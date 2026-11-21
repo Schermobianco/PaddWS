@@ -4,7 +4,8 @@
 //!
 //! I ritratti (assets::portraits) hanno 4 bit per pixel, il ruolo del colore + 1, e la tavolozza del
 //! personaggio da `pal::PORTRAIT`. I grandi hanno le righe una dopo l'altra (11 parole, non 16): si
-//! leggono con la tabella delle righe, scritta una volta per frame ([`Cast::big`]).
+//! leggono con la tabella delle righe, scritta una volta per frame ([`Cast::big`]). Grandi e medi
+//! stanno nella DDR3: si disegnano dalla finestra ([`crate::win`]), dopo la copia.
 
 use crate::Img;
 use crate::assets::game::{KIND_H, PW};
@@ -80,7 +81,10 @@ impl Cast {
                 lt
             }
         };
-        let mut o = d.img_obj(x, y, &portraits::BIG[k], pal_of(k));
+        // dalla DDR3: 4 posti nella finestra (2 mostrati e 2 per il cambio senza strappi)
+        let words = (portraits::BIG_ROW_WORDS * PORTRAIT_H) as u16;
+        let Some(img) = d.ddr(&portraits::BIG[k], words, words, 4) else { return };
+        let mut o = d.img_obj(x, y, &img, pal_of(k));
         o.lt = Some(lt);
         o.ltrow = true;
         o.fx = mirror;
@@ -88,10 +92,20 @@ impl Cast {
     }
 }
 
-/// Immagine di un ritratto (casella o medio) del personaggio `k`.
+/// Immagine di un ritratto (casella) del personaggio `k`.
 #[inline(never)]
 pub fn portrait(d: &mut Dl, img: &Img, k: usize, x: i32, y: i32) {
     d.img(x, y, img, pal_of(k));
+}
+
+/// Ritratto medio (della sfilata, nella DDR3) del personaggio `k`: 9 posti nella finestra (8 mostrati
+/// e uno per il cambio senza strappi).
+#[inline(never)]
+pub fn mid_portrait(d: &mut Dl, img: &Img, k: usize, x: i32, y: i32) {
+    let words = img.h << img.stride_sh;
+    if let Some(img) = d.ddr(img, words, words, 9) {
+        d.img(x, y, &img, pal_of(k));
+    }
 }
 
 /// Riquadro vuoto spesso `t` pixel verso l'interno del rettangolo (x, y, w, h).

@@ -417,6 +417,10 @@ def game_consts() -> list[str]:
 
 # parole della prima memoria della ROM grafica (indirizzo a 15 bit)
 GFX_SPLIT = 32768
+# finestra della DDR3 nello spazio delle immagini (ui_render.v): 4 ritratti grandi (2 mostrati e 2 in
+# preparazione), o i medi della sfilata (8 mostrati e uno in preparazione), o un'astronave
+WIN_BASE = 0x8000
+WIN_WORDS = 5184
 
 # nomi degli avversari nell'ordine di PaddleKind
 KINDS = ["arcade", "titan", "hammer", "twist", "blaster", "rush", "guardian"]
@@ -431,26 +435,28 @@ def portrait_px(name: str, size: tuple[int, int]) -> list[list[int]]:
     return [[im.getpixel((x, y)) + 1 for x in range(im.size[0])] for y in range(im.size[1])]
 
 
-def portrait_assets(gfx: Gfx) -> list[str]:
+def portrait_assets(gfx: Gfx, ddr: Gfx) -> list[str]:
     """Ritratti della scelta della racchetta, dello schermo VS e della sfilata del finale: grandi
     (88x104, i sette tipi e OMEGA svelato) con le righe una dopo l'altra (11 parole: il firmware le
     sceglie con la tabella delle righe, senza il passo di 16 parole), caselle della griglia (32x32, i
     sette tipi e OMEGA in sagoma), medi della sfilata (64x72, normali e sconfitti, e OMEGA in sagoma).
-    4 bit per pixel: il ruolo + 1; i colori dei ruoli di ogni personaggio vanno nella tavolozza."""
+    4 bit per pixel: il ruolo + 1; i colori dei ruoli di ogni personaggio vanno nella tavolozza.
+    Grandi e medi stanno nella DDR3 (`ddr`, file paddws_gfx.rom: la base è la parola nel file), le
+    caselle nella ROM grafica."""
     import json
     spec = json.loads((PORTRAITS / "portraits.json").read_text(encoding="utf-8"))
     roles = spec["roles"]
     big, small, mid = tuple(spec["big"]), (spec["small"], spec["small"]), tuple(spec["mid"])
     names = KINDS + ["omega"]
-    row_words = {gfx.add_packed(f"pt_big_{n}", portrait_px(n, big), 4) for n in names}
+    row_words = {ddr.add_packed(f"pt_big_{n}", portrait_px(n, big), 4) for n in names}
     assert len(row_words) == 1
     for n in KINDS:
         gfx.add(f"pt_small_{n}", portrait_px(f"{n}_small", small), 4)
     gfx.add("pt_small_omega", portrait_px("omega_small", small), 4)
     for n in names:
-        gfx.add(f"pt_mid_{n}", portrait_px(f"{n}_mid", mid), 4)
-        gfx.add(f"pt_mid_{n}_defeated", portrait_px(f"{n}_mid_defeated", mid), 4)
-    gfx.add("pt_mid_omega_locked", portrait_px("omega_mid_locked", mid), 4)
+        ddr.add(f"pt_mid_{n}", portrait_px(f"{n}_mid", mid), 4)
+        ddr.add(f"pt_mid_{n}_defeated", portrait_px(f"{n}_mid_defeated", mid), 4)
+    ddr.add("pt_mid_omega_locked", portrait_px("omega_mid_locked", mid), 4)
 
     def rgb(c: list[int]) -> str:
         return f"0x{c[0]:02X}{c[1]:02X}{c[2]:02X}"
@@ -470,12 +476,13 @@ def portrait_assets(gfx: Gfx) -> list[str]:
     out = ["", "/// Ritratti dei personaggi (assets/characters/portraits, tools/gen_portraits.py): 4 bit per pixel,",
            "/// il ruolo del colore + 1; i tipi nell'ordine di PaddleKind, poi OMEGA.", "pub mod portraits {",
            "    use crate::Img;", "    use crate::assets::*;",
-           "    /// grandi: righe di BIG_ROW_WORDS parole una dopo l'altra (tabella delle righe); OMEGA svelato",
+           "    /// grandi (nella DDR3): righe di BIG_ROW_WORDS parole una dopo l'altra (tabella delle righe);",
+           "    /// OMEGA svelato",
            "    pub const BIG: [Img; 8] = [" + ", ".join(rust_name(f"pt_big_{n}") for n in names) + "];",
            f"    pub const BIG_ROW_WORDS: i32 = {row_words.pop()};",
            "    /// caselle della griglia; OMEGA in sagoma",
            "    pub const SMALL: [Img; 8] = [" + ", ".join(rust_name(f"pt_small_{n}") for n in names) + "];",
-           "    /// sfilata del finale: normale e sconfitto",
+           "    /// sfilata del finale (nella DDR3): normale e sconfitto",
            "    pub const MID: [[Img; 2]; 8] = [" + ", ".join(
                f"[{rust_name(f'pt_mid_{n}')}, {rust_name(f'pt_mid_{n}_defeated')}]" for n in names) + "];",
            "    pub const MID_LOCKED: Img = IMG_PT_MID_OMEGA_LOCKED;",
@@ -489,10 +496,10 @@ SHIPS_DIR = ROOT / "assets" / "ships"
 SHIP_W, SHIP_H = 160, 90
 
 
-def ship_assets(gfx: Gfx) -> list[str]:
+def ship_assets(ddr: Gfx) -> list[str]:
     """Illustrazioni isometriche delle astronavi (assets/ships/*.png, 160x90 a 4 bit per pixel):
     indice 0 trasparente (sfondo nero), 1..15 i 15 colori principali di ciascuna nave; righe
-    impaccate (20 parole per riga, usate con ltrow nella schermata THE END)."""
+    impaccate (20 parole per riga, usate con ltrow nella schermata THE END). Nella DDR3."""
     row_words_set = set()
     pals = []
     for n in KINDS:
@@ -523,13 +530,13 @@ def ship_assets(gfx: Gfx) -> list[str]:
         cache = {c: nearest(c) for c in counts}
         grid = [[0 if small.getpixel((x, y)) == (0, 0, 0) else cache[small.getpixel((x, y))]
                  for x in range(SHIP_W)] for y in range(SHIP_H)]
-        row_words_set.add(gfx.add_packed(f"ship_{n}", grid, 4))
+        row_words_set.add(ddr.add_packed(f"ship_{n}", grid, 4))
         pals.append("[" + ", ".join(f"0x{r:02X}{g:02X}{b:02X}" for r, g, b in top) + "]")
     assert len(row_words_set) == 1
-    assert len(gfx.words) <= 0xC000, f"ROM grafica oltre 0xC000 ({len(gfx.words)} parole)"
     out = [
         "",
-        "/// Illustrazioni isometriche delle astronavi (assets/ships/*.png, 160x90 a 4 bpp) per THE END.",
+        "/// Illustrazioni isometriche delle astronavi (assets/ships/*.png, 160x90 a 4 bpp) per THE END,",
+        "/// nella DDR3.",
         "pub mod ships {",
         "    use crate::Img;",
         "    use crate::assets::*;",
@@ -576,8 +583,12 @@ def main() -> None:
     gfx.add("vs3", [[(vs[y] >> (15 - x // 3)) & 1 for x in range(48)] for y in range(24)], 1)
     howto = howto_assets(gfx)
     ending = ending_assets(gfx)
-    portraits = portrait_assets(gfx)
-    ships = ship_assets(gfx)
+    # immagini nella DDR3 (file paddws_gfx.rom, caricato dal .mra all'avvio): il firmware le copia
+    # nella finestra (WIN_BASE) quando servono; la loro base è la parola nel file
+    ddr = Gfx()
+    portraits = portrait_assets(gfx, ddr)
+    ships = ship_assets(ddr)
+    assert len(gfx.words) <= WIN_BASE, f"ROM grafica oltre la finestra della DDR3 ({len(gfx.words)} parole)"
 
     OUT.mkdir(parents=True, exist_ok=True)
     font_rom = [glyphs[c][y] if i < len(CHARS) else 0 for i, c in enumerate(CHARS + "\0" * (256 - len(CHARS)))
@@ -587,6 +598,8 @@ def main() -> None:
     low, high = gfx.words[:GFX_SPLIT], gfx.words[GFX_SPLIT:] or [0]
     (OUT / "ui_gfx.hex").write_text("".join(f"{w:08x}\n" for w in low), encoding="ascii", newline="\n")
     (OUT / "ui_gfx2.hex").write_text("".join(f"{w:08x}\n" for w in high), encoding="ascii", newline="\n")
+    # DDR3: parole a 32 bit little endian, nell'ordine del file (due per parola a 64 bit della DDR3)
+    (OUT / "paddws_gfx.rom").write_bytes(b"".join(w.to_bytes(4, "little") for w in ddr.words))
     (OUT / "ui_gfx.vh").write_text(
         "// Generato da tools/gen_mister_ui.py: non modificare a mano.\n"
         f"localparam integer UI_GFX_WORDS = {len(gfx.words)};\n"
@@ -594,7 +607,12 @@ def main() -> None:
         f"// prima parte (ui_gfx.hex) e seconda (ui_gfx2.hex, dall'indirizzo {GFX_SPLIT})\n"
         f"localparam integer UI_GFX1_WORDS = {len(low)};\n"
         f"localparam integer UI_GFX2_WORDS = {len(high)};\n"
-        f"localparam integer UI_GFX2_AW = {max(1, (len(high) - 1).bit_length())};\n",
+        f"localparam integer UI_GFX2_AW = {max(1, (len(high) - 1).bit_length())};\n"
+        f"// finestra della DDR3: base nello spazio delle immagini e parole\n"
+        f"localparam integer UI_WIN_BASE = {WIN_BASE};\n"
+        f"localparam integer UI_WIN_WORDS = {WIN_WORDS};\n"
+        f"// file paddws_gfx.rom (parole a 32 bit)\n"
+        f"localparam integer UI_DDR_WORDS = {len(ddr.words)};\n",
         encoding="ascii", newline="\n")
 
     # il carattere 0x7F (DEL) è "©"
@@ -626,6 +644,16 @@ def main() -> None:
     for name, base, w, h, bpp_sh, stride_sh in gfx.images:
         lines.append(f"pub const {rust_name(name)}: Img = Img {{ base: {base}, w: {w}, h: {h}, "
                      f"bpp_sh: {bpp_sh}, stride_sh: {stride_sh} }};")
+    lines.append("// immagini nella DDR3: `base` è la parola nel file paddws_gfx.rom; si disegnano dopo averle")
+    lines.append("// copiate nella finestra (`Win`)")
+    for name, base, w, h, bpp_sh, stride_sh in ddr.images:
+        lines.append(f"pub const {rust_name(name)}: Img = Img {{ base: {base}, w: {w}, h: {h}, "
+                     f"bpp_sh: {bpp_sh}, stride_sh: {stride_sh} }};")
+    lines.append("/// Finestra della DDR3 nello spazio delle immagini: base e parole (ui_render.v).")
+    lines.append(f"pub const WIN_BASE: u16 = {WIN_BASE};")
+    lines.append(f"pub const WIN_WORDS: u16 = {WIN_WORDS};")
+    lines.append("/// Parole del file paddws_gfx.rom.")
+    lines.append(f"pub const DDR_WORDS: u32 = {len(ddr.words)};")
     lines += attract_consts()
     lines.append("/// Cifre dei punteggi (22x22), dalla 0 alla 9.")
     lines.append("pub const IMG_SCORE: [Img; 10] = [" + ", ".join(rust_name(f"score_{d}") for d in range(10)) + "];")
@@ -642,7 +670,8 @@ def main() -> None:
     RUST.parent.mkdir(parents=True, exist_ok=True)
     RUST.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     print(f"font: {len(CHARS)} caratteri, {checked} scritte controllate; grafica: {len(gfx.images)} immagini, "
-          f"{len(gfx.words)} parole ({-(-len(gfx.words) * 32 // 10240)} M10K)")
+          f"{len(gfx.words)} parole ({-(-len(gfx.words) * 32 // 10240)} M10K); DDR3: {len(ddr.images)} immagini, "
+          f"{len(ddr.words)} parole, finestra {WIN_WORDS} parole ({-(-WIN_WORDS * 32 // 10240)} M10K)")
 
 
 if __name__ == "__main__":

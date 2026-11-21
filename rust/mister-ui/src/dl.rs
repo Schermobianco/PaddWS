@@ -2,6 +2,7 @@
 //! direttamente nel banco nascosto del motore.
 
 use crate::assets::{FONT_COLS, FONT_MAP};
+use crate::win::Win;
 use crate::{Img, Port, map};
 
 /// Sorgente di un oggetto.
@@ -133,6 +134,8 @@ pub fn code(c: u8) -> u8 {
 
 pub struct Dl<'a> {
     p: &'a mut dyn Port,
+    /// finestra della DDR3 (immagini copiate per il frame)
+    win: &'a mut Win,
     n: u32,
     tiles: u32,
     lt: u32,
@@ -145,9 +148,10 @@ pub struct Dl<'a> {
 }
 
 impl<'a> Dl<'a> {
-    pub fn new(p: &'a mut dyn Port) -> Self {
+    pub fn new(p: &'a mut dyn Port, win: &'a mut Win) -> Self {
         Self {
             p,
+            win,
             n: 0,
             tiles: 0,
             lt: 0,
@@ -155,6 +159,12 @@ impl<'a> Dl<'a> {
             clip: [0, 320, 0, 240],
             dx: 0,
         }
+    }
+
+    /// L'immagine `img` della DDR3 (`words` parole) copiata in uno dei `count` posti a passo `stride`
+    /// della finestra ([`Win::place`]); None se la grafica della DDR3 non è caricata.
+    pub fn ddr(&mut self, img: &Img, words: u16, stride: u16, count: u16) -> Option<Img> {
+        self.win.place(self.p, img, words, stride, count)
     }
 
     /// Aggiunge un oggetto (se ha righe visibili e c'è posto).

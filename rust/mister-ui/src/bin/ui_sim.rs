@@ -32,6 +32,11 @@ struct Model {
     gfx: Vec<u32>,
     /// immagine scrivibile (map::GRAM)
     gram: Vec<u32>,
+    /// grafica della DDR3 (paddws_gfx.rom), finestra e registri della copia (gfx_ddr.v): la copia
+    /// qui è istantanea
+    ddr: Vec<u32>,
+    wram: Vec<u32>,
+    dma: [u32; 2],
 }
 
 impl Port for Model {
@@ -40,7 +45,7 @@ impl Port for Model {
             // oscilloscopi del SID: niente audio nel modello
             0
         } else if word & 0x1000 == 0 {
-            (self.front as u32) | (self.flip_req as u32) << 1
+            (self.front as u32) | (self.flip_req as u32) << 1 | if self.ddr.is_empty() { 0 } else { map::GFX_OK }
         } else if word & 0x40 != 0 {
             self.seq
         } else {
@@ -56,6 +61,15 @@ impl Port for Model {
             2 if word & 0x200 == 0 => self.lt[back << 9 | (word & 0x1FF) as usize] = v as u16,
             2 if word & 0x300 == 0x200 => self.pal[(word & 0xFF) as usize] = v & 0xFF_FFFF,
             3 if word & 0x200 == 0 => self.gram[(word & 0x1FF) as usize] = v,
+            3 if word & 3 < 2 => self.dma[(word & 3) as usize] = v,
+            3 if word & 3 == 2 => {
+                let (src, dst) = (self.dma[0] as usize, self.dma[1] as usize);
+                for i in 0..v as usize {
+                    if let (Some(&w), Some(slot)) = (self.ddr.get(src + i), self.wram.get_mut(dst + i)) {
+                        *slot = w;
+                    }
+                }
+            }
             2 if word == map::CTRL => {
                 self.count[back] = v & 0xFF;
                 if v & 0x100 != 0 {
@@ -153,6 +167,8 @@ impl Model {
                         let ga = (base + row + (u >> (5 - bpp))) & 0xFFFF;
                         let word = if ga & 0xC000 == 0xC000 {
                             self.gram[(ga as usize) & 0x1FF]
+                        } else if ga & 0xC000 == 0x8000 {
+                            self.wram.get((ga as usize) & 0x1FFF).copied().unwrap_or(0)
                         } else {
                             self.gfx.get(ga as usize).copied().unwrap_or(0)
                         };
@@ -302,6 +318,12 @@ fn main() -> ExitCode {
             .flat_map(|f| read_hex(f, |s| u32::from_str_radix(s, 16).unwrap()))
             .collect(),
         gram: vec![0; map::GRAM_WORDS as usize],
+        // grafica della DDR3 (paddws_gfx.rom, parole a 32 bit little endian)
+        ddr: fs::read(rtl_gen.join("paddws_gfx.rom"))
+            .map(|b| b.as_chunks::<4>().0.iter().map(|c| u32::from_le_bytes(*c)).collect())
+            .unwrap_or_default(),
+        wram: vec![0; paddws_mister_ui::assets::WIN_WORDS as usize],
+        dma: [0; 2],
     };
     let refs: HashMap<i64, (u32, u64)> = fs::read_to_string(&pos[1])
         .expect("registro delle impronte")

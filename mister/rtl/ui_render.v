@@ -35,8 +35,11 @@
 // codice del font, [15:8] colore), 0x800 tabella delle righe (16 bit), 0xA00 tavolozza (24 bit),
 // 0xB00 fine del frame ([7:0] numero di oggetti, [8] scambio), 0xC00-0xDFF immagine scrivibile
 // (GRAM_WORDS parole, per gli oscilloscopi del JUKEBOX: un'immagine con la base da 0xC000 la legge
-// qui invece che nella ROM grafica; non ha due banchi, il firmware la riscrive nel vblank). Lettura di
-// stato: [0] banco mostrato, [1] scambio in attesa.
+// qui invece che nella ROM grafica; non ha due banchi, il firmware la riscrive nel vblank), 0xE00-0xE02
+// registri della copia dalla DDR3 (gfx_ddr: sorgente, destinazione, parole). Lettura di stato: [0]
+// banco mostrato, [1] scambio in attesa (in pong_top anche [2] copia in corso, [3] grafica caricata).
+// Immagini da 0x8000: la finestra della DDR3 (UI_WIN_WORDS parole, ritratti grandi e medi e
+// astronavi copiati dal firmware).
 
 `timescale 1ns / 1ps
 
@@ -57,6 +60,11 @@ module ui_render #(
     input  wire [13:0] cpu_addr,
     input  wire [31:0] cpu_wdata,
     output wire [31:0] status,
+    // finestra della DDR3 (dominio di clk_cpu): la scrive gfx_ddr, copiando dalla DDR3 i ritratti
+    // grandi e medi e le astronavi; un'immagine con la base da UI_WIN_BASE (0x8000) la legge qui
+    input  wire        win_we,
+    input  wire [12:0] win_addr,
+    input  wire [31:0] win_data,
     // pixel (dominio di clk): indice del colore (0 = niente), classe, colore vero (un ciclo dopo)
     output wire [7:0]  px_idx,
     output wire [1:0]  px_class,
@@ -382,7 +390,16 @@ always @(posedge clk_cpu) begin
     gram_q <= gram[p2_ga[8:0]];
     gram_sel <= p2_ga[15:14] == 2'b11;
 end
-assign gfx_d = gram_sel ? gram_q : gfx_q;
+// finestra della DDR3: base da UI_WIN_BASE (0x8000-0xBFFF)
+reg [31:0] wram [0:UI_WIN_WORDS-1];
+reg [31:0] wram_q;
+reg        wram_sel = 1'b0;
+always @(posedge clk_cpu) if (win_we) wram[win_addr] <= win_data;
+always @(posedge clk_cpu) begin
+    wram_q <= wram[p2_ga[12:0]];
+    wram_sel <= p2_ga[15:14] == 2'b10;
+end
+assign gfx_d = gram_sel ? gram_q : wram_sel ? wram_q : gfx_q;
 always @(posedge clk_cpu) font_q <= font_rom[{tile_q[7:0], p3_vlo}];
 always @(posedge clk_cpu) if (lb_we) lb[lb_wa] <= lb_wd;
 

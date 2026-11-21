@@ -60,18 +60,22 @@ if [ -z "$nomister" ] && { [ -z "$checkonly" ] || [ -n "$synth" ]; }; then
         "$src/mister/output_files/PaddWS.sta.summary"
 fi
 if [ -z "$checkonly" ] && [ -z "$nomister" ]; then
-    # le cartelle della SD come nella CI: _Arcade con il .mra, il .rbf datato e le licenze
+    # le cartelle della SD come nella CI: _Arcade con il .mra, il .rbf datato e le licenze, e
+    # games/mame/paddws.zip con la grafica della DDR3
     day=$(date +%Y%m%d)
     sd=$(mktemp -d)
     lic=$sd/_Arcade/cores/PaddWS_licenses
     mkdir -p "$lic"
     cp "$src/mister/output_files/PaddWS.rbf" "$sd/_Arcade/cores/PaddWS_$day.rbf"
     cp "$src/mister/PaddWS.mra" "$sd/_Arcade/"
+    # la grafica dei personaggi che il core tiene nella DDR3: il .mra la carica da games/mame/paddws.zip
+    mkdir -p "$sd/games/mame"
+    docker run --rm -v "$src/mister/rtl/gen:/g:ro" -v "$sd:/sd" -w /g paddws-build         zip -qj -X /sd/games/mame/paddws.zip paddws_gfx.rom
     cp "$src/mister/LICENSE" "$lic/LICENSE-GPL-2.0.txt"
     cp "$src/LICENSE" "$lic/LICENSE-GPL-3.0.txt"          # il firmware Rust dentro il core
     cp "$src/mister/rtl/sid/LICENSE-CERN-OHL-S-2.0.txt" "$src/THIRD_PARTY.md" "$src/assets/fonts/OFL-PressStart2P.txt" "$lic/"
     cp "$src/mister/rtl/vexriscv/LICENSE" "$lic/LICENSE-VexRiscv-MIT.txt"
-    docker run --rm -v "$sd:/sd" -v "$out:/out" -w /sd paddws-build zip -qr -X "/out/PaddWS_MiSTer_$day.zip" _Arcade
+    docker run --rm -v "$sd:/sd" -v "$out:/out" -w /sd paddws-build zip -qr -X "/out/PaddWS_MiSTer_$day.zip" _Arcade games
     rm -rf "$sd"
     echo "  $out/PaddWS_MiSTer_$day.zip"
 fi

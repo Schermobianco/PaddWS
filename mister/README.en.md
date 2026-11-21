@@ -19,9 +19,11 @@ and spinner.
 ## Installation
 
 The release zip, `PaddWS_MiSTer_YYYYMMDD.zip`, is unpacked into the root of the SD card
-(`/media/fat/`): it puts `PaddWS.mra` in `_Arcade/` and `PaddWS_YYYYMMDD.rbf` in `_Arcade/cores/`,
-with the license texts in `_Arcade/cores/PaddWS_licenses/`. The game shows up among the arcade
-titles and needs no ROMs.
+(`/media/fat/`): it puts `PaddWS.mra` in `_Arcade/`, `PaddWS_YYYYMMDD.rbf` in `_Arcade/cores/` (with
+the license texts in `_Arcade/cores/PaddWS_licenses/`) and `paddws.zip` in `games/mame/`. The zip
+holds the character graphics (portraits and spaceships), which the core loads into the DDR3 at
+start-up: it is not another game's ROM, it is part of PADD WS. The game shows up among the arcade
+titles.
 
 With update_all (or downloader) the core installs and updates itself: add these two lines at the end
 of `/media/fat/downloader.ini`, then run update_all as usual. Each new version replaces the old

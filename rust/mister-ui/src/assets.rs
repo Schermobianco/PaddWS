@@ -91,46 +91,53 @@ pub const IMG_HT_SPRITE_7: Img = Img { base: 11172, w: 32, h: 32, bpp_sh: 2, str
 pub const IMG_HT_SPRITE_8: Img = Img { base: 11300, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
 pub const IMG_HT_SPRITE_9: Img = Img { base: 11428, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
 pub const IMG_HT_ARROW: Img = Img { base: 11556, w: 5, h: 7, bpp_sh: 0, stride_sh: 0 };
-pub const IMG_PT_BIG_ARCADE: Img = Img { base: 14553, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
-pub const IMG_PT_BIG_TITAN: Img = Img { base: 15697, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
-pub const IMG_PT_BIG_HAMMER: Img = Img { base: 16841, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
-pub const IMG_PT_BIG_TWIST: Img = Img { base: 17985, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
-pub const IMG_PT_BIG_BLASTER: Img = Img { base: 19129, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
-pub const IMG_PT_BIG_RUSH: Img = Img { base: 20273, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
-pub const IMG_PT_BIG_GUARDIAN: Img = Img { base: 21417, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
-pub const IMG_PT_BIG_OMEGA: Img = Img { base: 22561, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
-pub const IMG_PT_SMALL_ARCADE: Img = Img { base: 23705, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_PT_SMALL_TITAN: Img = Img { base: 23833, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_PT_SMALL_HAMMER: Img = Img { base: 23961, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_PT_SMALL_TWIST: Img = Img { base: 24089, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_PT_SMALL_BLASTER: Img = Img { base: 24217, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_PT_SMALL_RUSH: Img = Img { base: 24345, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_PT_SMALL_GUARDIAN: Img = Img { base: 24473, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_PT_SMALL_OMEGA: Img = Img { base: 24601, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_PT_MID_ARCADE: Img = Img { base: 24729, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_ARCADE_DEFEATED: Img = Img { base: 25305, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_TITAN: Img = Img { base: 25881, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_TITAN_DEFEATED: Img = Img { base: 26457, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_HAMMER: Img = Img { base: 27033, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_HAMMER_DEFEATED: Img = Img { base: 27609, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_TWIST: Img = Img { base: 28185, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_TWIST_DEFEATED: Img = Img { base: 28761, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_BLASTER: Img = Img { base: 29337, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_BLASTER_DEFEATED: Img = Img { base: 29913, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_RUSH: Img = Img { base: 30489, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_RUSH_DEFEATED: Img = Img { base: 31065, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_GUARDIAN: Img = Img { base: 31641, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_GUARDIAN_DEFEATED: Img = Img { base: 32217, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_OMEGA: Img = Img { base: 32793, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_OMEGA_DEFEATED: Img = Img { base: 33369, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_OMEGA_LOCKED: Img = Img { base: 33945, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_SHIP_ARCADE: Img = Img { base: 34521, w: 160, h: 90, bpp_sh: 2, stride_sh: 0 };
-pub const IMG_SHIP_TITAN: Img = Img { base: 36321, w: 160, h: 90, bpp_sh: 2, stride_sh: 0 };
-pub const IMG_SHIP_HAMMER: Img = Img { base: 38121, w: 160, h: 90, bpp_sh: 2, stride_sh: 0 };
-pub const IMG_SHIP_TWIST: Img = Img { base: 39921, w: 160, h: 90, bpp_sh: 2, stride_sh: 0 };
-pub const IMG_SHIP_BLASTER: Img = Img { base: 41721, w: 160, h: 90, bpp_sh: 2, stride_sh: 0 };
-pub const IMG_SHIP_RUSH: Img = Img { base: 43521, w: 160, h: 90, bpp_sh: 2, stride_sh: 0 };
-pub const IMG_SHIP_GUARDIAN: Img = Img { base: 45321, w: 160, h: 90, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_PT_SMALL_ARCADE: Img = Img { base: 14553, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_PT_SMALL_TITAN: Img = Img { base: 14681, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_PT_SMALL_HAMMER: Img = Img { base: 14809, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_PT_SMALL_TWIST: Img = Img { base: 14937, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_PT_SMALL_BLASTER: Img = Img { base: 15065, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_PT_SMALL_RUSH: Img = Img { base: 15193, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_PT_SMALL_GUARDIAN: Img = Img { base: 15321, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_PT_SMALL_OMEGA: Img = Img { base: 15449, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+// immagini nella DDR3: `base` è la parola nel file paddws_gfx.rom; si disegnano dopo averle
+// copiate nella finestra (`Win`)
+pub const IMG_PT_BIG_ARCADE: Img = Img { base: 0, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_PT_BIG_TITAN: Img = Img { base: 1144, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_PT_BIG_HAMMER: Img = Img { base: 2288, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_PT_BIG_TWIST: Img = Img { base: 3432, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_PT_BIG_BLASTER: Img = Img { base: 4576, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_PT_BIG_RUSH: Img = Img { base: 5720, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_PT_BIG_GUARDIAN: Img = Img { base: 6864, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_PT_BIG_OMEGA: Img = Img { base: 8008, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_PT_MID_ARCADE: Img = Img { base: 9152, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_ARCADE_DEFEATED: Img = Img { base: 9728, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_TITAN: Img = Img { base: 10304, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_TITAN_DEFEATED: Img = Img { base: 10880, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_HAMMER: Img = Img { base: 11456, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_HAMMER_DEFEATED: Img = Img { base: 12032, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_TWIST: Img = Img { base: 12608, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_TWIST_DEFEATED: Img = Img { base: 13184, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_BLASTER: Img = Img { base: 13760, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_BLASTER_DEFEATED: Img = Img { base: 14336, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_RUSH: Img = Img { base: 14912, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_RUSH_DEFEATED: Img = Img { base: 15488, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_GUARDIAN: Img = Img { base: 16064, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_GUARDIAN_DEFEATED: Img = Img { base: 16640, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_OMEGA: Img = Img { base: 17216, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_OMEGA_DEFEATED: Img = Img { base: 17792, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_OMEGA_LOCKED: Img = Img { base: 18368, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_SHIP_ARCADE: Img = Img { base: 18944, w: 160, h: 90, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_SHIP_TITAN: Img = Img { base: 20744, w: 160, h: 90, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_SHIP_HAMMER: Img = Img { base: 22544, w: 160, h: 90, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_SHIP_TWIST: Img = Img { base: 24344, w: 160, h: 90, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_SHIP_BLASTER: Img = Img { base: 26144, w: 160, h: 90, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_SHIP_RUSH: Img = Img { base: 27944, w: 160, h: 90, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_SHIP_GUARDIAN: Img = Img { base: 29744, w: 160, h: 90, bpp_sh: 2, stride_sh: 0 };
+/// Finestra della DDR3 nello spazio delle immagini: base e parole (ui_render.v).
+pub const WIN_BASE: u16 = 32768;
+pub const WIN_WORDS: u16 = 5184;
+/// Parole del file paddws_gfx.rom.
+pub const DDR_WORDS: u32 = 31544;
 
 /// Attract (assets/attract/attract.json, come pong_attract.vh).
 pub mod at {
@@ -437,19 +444,21 @@ pub mod ending {
 pub mod portraits {
     use crate::Img;
     use crate::assets::*;
-    /// grandi: righe di BIG_ROW_WORDS parole una dopo l'altra (tabella delle righe); OMEGA svelato
+    /// grandi (nella DDR3): righe di BIG_ROW_WORDS parole una dopo l'altra (tabella delle righe);
+    /// OMEGA svelato
     pub const BIG: [Img; 8] = [IMG_PT_BIG_ARCADE, IMG_PT_BIG_TITAN, IMG_PT_BIG_HAMMER, IMG_PT_BIG_TWIST, IMG_PT_BIG_BLASTER, IMG_PT_BIG_RUSH, IMG_PT_BIG_GUARDIAN, IMG_PT_BIG_OMEGA];
     pub const BIG_ROW_WORDS: i32 = 11;
     /// caselle della griglia; OMEGA in sagoma
     pub const SMALL: [Img; 8] = [IMG_PT_SMALL_ARCADE, IMG_PT_SMALL_TITAN, IMG_PT_SMALL_HAMMER, IMG_PT_SMALL_TWIST, IMG_PT_SMALL_BLASTER, IMG_PT_SMALL_RUSH, IMG_PT_SMALL_GUARDIAN, IMG_PT_SMALL_OMEGA];
-    /// sfilata del finale: normale e sconfitto
+    /// sfilata del finale (nella DDR3): normale e sconfitto
     pub const MID: [[Img; 2]; 8] = [[IMG_PT_MID_ARCADE, IMG_PT_MID_ARCADE_DEFEATED], [IMG_PT_MID_TITAN, IMG_PT_MID_TITAN_DEFEATED], [IMG_PT_MID_HAMMER, IMG_PT_MID_HAMMER_DEFEATED], [IMG_PT_MID_TWIST, IMG_PT_MID_TWIST_DEFEATED], [IMG_PT_MID_BLASTER, IMG_PT_MID_BLASTER_DEFEATED], [IMG_PT_MID_RUSH, IMG_PT_MID_RUSH_DEFEATED], [IMG_PT_MID_GUARDIAN, IMG_PT_MID_GUARDIAN_DEFEATED], [IMG_PT_MID_OMEGA, IMG_PT_MID_OMEGA_DEFEATED]];
     pub const MID_LOCKED: Img = IMG_PT_MID_OMEGA_LOCKED;
     /// colori RGB dei ruoli 1-7 di ogni personaggio
     pub const PAL: [[u32; 7]; 8] = [[0x000000, 0xFFFFFF, 0xC3C3C3, 0x828282, 0x464646, 0xFFD21E, 0x8C7411], [0x000000, 0xFFFFFF, 0xC3C3C3, 0x828282, 0x464646, 0xE67828, 0x7F4216], [0x000000, 0xFFFFFF, 0xC3C3C3, 0x828282, 0x464646, 0xE62828, 0x7F1616], [0x000000, 0xFFFFFF, 0xC3C3C3, 0x828282, 0x464646, 0x9646C8, 0x53276E], [0x000000, 0xFFFFFF, 0xC3C3C3, 0x828282, 0x464646, 0x46BE46, 0x276927], [0x000000, 0xFFFFFF, 0xC3C3C3, 0x828282, 0x464646, 0x3CC8DC, 0x216E79], [0x000000, 0xFFFFFF, 0xC3C3C3, 0x828282, 0x464646, 0x5A96FF, 0x32538C], [0x000000, 0xFFFFFF, 0xC3C3C3, 0x828282, 0x464646, 0xE040FF, 0x7B238C]];
 }
 
-/// Illustrazioni isometriche delle astronavi (assets/ships/*.png, 160x90 a 4 bpp) per THE END.
+/// Illustrazioni isometriche delle astronavi (assets/ships/*.png, 160x90 a 4 bpp) per THE END,
+/// nella DDR3.
 pub mod ships {
     use crate::Img;
     use crate::assets::*;

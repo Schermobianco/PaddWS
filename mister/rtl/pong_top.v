@@ -95,6 +95,18 @@ module pong_top #(
     output wire [7:0]  ioctl_din,
     output wire        ioctl_upload_req,
     input  wire        nv_autosave,
+    // grafica nella DDR3 (gfx_ddr.v): il file paddws_gfx.rom (indice 0 del .mra) e la copia nella
+    // finestra dello schermo a oggetti; DDRAM_CLK = clk_cpu
+    output wire        ioctl_wait,
+    input  wire        DDRAM_BUSY,
+    output wire [7:0]  DDRAM_BURSTCNT,
+    output wire [28:0] DDRAM_ADDR,
+    input  wire [63:0] DDRAM_DOUT,
+    input  wire        DDRAM_DOUT_READY,
+    output wire        DDRAM_RD,
+    output wire [63:0] DDRAM_DIN,
+    output wire [7:0]  DDRAM_BE,
+    output wire        DDRAM_WE,
 
     output wire        ce_pix,
     output wire [23:0] rgb,
@@ -186,7 +198,8 @@ wire [2:0] start_level = want_train ? train_pick[2:0] - 3'd1 : 3'd0;
 wire jb_on = jukebox && juke_unlock_r;
 
 // eventi sonori (bit come quelli della logica): 0 ping, 1 pong, 2 boost, 3 punto, 4 gettone
-localparam [7:0] SND_PING = 8'h01, SND_PONG = 8'h02, SND_BOOST = 8'h04, SND_COIN = 8'h10;
+localparam [8:0] SND_PING = 9'h001, SND_PONG = 9'h002, SND_BOOST = 9'h004, SND_COIN = 9'h010,
+                 SND_BOUNCE = 9'h100;   // rimbalzo della pallina del continue
 
 // ------------------------------------------------------------------- video
 
@@ -416,7 +429,7 @@ reg [10:0] mframe = 11'd0;      // frame dall'inizio del modo
 reg [5:0]  blink = 6'd0;        // frame % 60, per le scritte lampeggianti
 reg [3:0]  credits = 4'd0;
 reg [1:0]  lives = LIVES;
-reg [7:0]  attract_sound = 8'd0;
+reg [8:0]  attract_sound = 9'd0;
 reg        booted = 1'b0;       // auto-test già mostrato (solo all'accensione)
 reg        attract_trigger = 1'b0;
 reg        attract_auto = 1'b0;   // il suono dell'attract è automatico, non un'azione del giocatore
@@ -471,9 +484,9 @@ function [10:0] mode_frames(input [3:0] m);
 endfunction
 
 // suoni dell'attract nel frame f del modo m
-function [7:0] attract_events(input [3:0] m, input [10:0] f);
+function [8:0] attract_events(input [3:0] m, input [10:0] f);
     begin
-        attract_events = 8'd0;
+        attract_events = 9'd0;
         case (m)
             M_BOOT:
                 if (f == 0) attract_events = SND_PONG;
@@ -485,7 +498,7 @@ function [7:0] attract_events(input [3:0] m, input [10:0] f);
                     ((f - AT_SLIDE_LAST) % AT_STRIPE_START_STEP) == 0) attract_events = SND_PONG;
             M_LOGO:
                 if (f == AT_WIPE_FRAMES) attract_events = SND_BOOST;
-            default: attract_events = 8'd0;
+            default: attract_events = 9'd0;
         endcase
     end
 endfunction
@@ -957,10 +970,17 @@ always @(posedge clk) begin
             match_reset <= 1'b1;
         end
 
-        if (attract_events(mode, mframe) != 8'd0) begin
+        if (attract_events(mode, mframe) != 9'd0) begin
             attract_sound <= attract_events(mode, mframe);
             attract_trigger <= 1'b1;
             attract_auto <= 1'b1;
+        end
+        // continue: il rimbalzo della pallina quando tocca terra, cioè quando la cifra cambia
+        // (ch_cont_sub da 59 a 0), come su PC e C64: non è più nella canzone
+        if (mode == M_CONT && !cont_over && ch_cont_sub == 6'd59) begin
+            attract_sound <= SND_BOUNCE;
+            attract_trigger <= 1'b1;
+            attract_auto <= 1'b0;
         end
         // schermo VS: un colpo quando si posano i ritratti, il punto quando si posa il VS
         if (mode == M_INTRO && !omega_warn &&
@@ -2107,6 +2127,7 @@ wire [31:0] ui_status;
 ui_render #(.FONT_ROM(UI_FONT_ROM), .GFX_ROM(UI_GFX_ROM), .GFX_ROM2(UI_GFX_ROM2)) ui (
     .clk(clk), .clk_cpu(clk_cpu), .clear(reset), .ce_pix(ce_pix), .hc(hc), .vc(vc),
     .cpu_wr(ui_wr), .cpu_addr(ui_addr), .cpu_wdata(ui_wdata), .status(ui_status),
+    .win_we(win_we), .win_addr(win_addr), .win_data(win_data),
     .px_idx(ui_idx), .px_class(ui_class), .px_rgb(ui_rgb)
 );
 // colore 1 della tavolozza: il nero "solido" della scena del titolo, contro cui rimbalza la pallina
@@ -2115,6 +2136,21 @@ assign attract_solid = mode == M_TITLE && ui_idx == 8'd1;
 assign ui_full = (ui_idx != 8'd0) ? ui_rgb : 24'h000000;
 wire   ui_on_a = ui_idx != 8'd0 && ui_class == 2'd0;
 wire   ui_on_b = ui_idx != 8'd0 && ui_class == 2'd1;
+
+// grafica nella DDR3: caricamento all'avvio e copia nella finestra di ui_render (gfx_ddr.v)
+wire        win_we, gfx_busy, gfx_ok;
+wire [12:0] win_addr;
+wire [31:0] win_data;
+gfx_ddr gfx (
+    .clk_sys(clk), .clk_cpu(clk_cpu), .reset(reset),
+    .ioctl_download(ioctl_download), .ioctl_index(ioctl_index), .ioctl_wr(ioctl_wr),
+    .ioctl_addr(ioctl_addr), .ioctl_dout(ioctl_dout), .ioctl_wait(ioctl_wait),
+    .cpu_wr(ui_wr), .cpu_addr(ui_addr), .cpu_wdata(ui_wdata), .dma_busy(gfx_busy), .gfx_ok(gfx_ok),
+    .win_we(win_we), .win_addr(win_addr), .win_data(win_data),
+    .DDRAM_BUSY(DDRAM_BUSY), .DDRAM_BURSTCNT(DDRAM_BURSTCNT), .DDRAM_ADDR(DDRAM_ADDR),
+    .DDRAM_DOUT(DDRAM_DOUT), .DDRAM_DOUT_READY(DDRAM_DOUT_READY), .DDRAM_RD(DDRAM_RD),
+    .DDRAM_DIN(DDRAM_DIN), .DDRAM_BE(DDRAM_BE), .DDRAM_WE(DDRAM_WE)
+);
 
 // classifica per la NVRAM
 wire [179:0] tb_names_bus;
@@ -2232,11 +2268,13 @@ wire attract_play = attract_trigger && !(attract_mute && attract_auto);
 
 // capsula e muro del GUARDIAN = muro, sparo del BLASTER = colpo, bonus attivato e TELEPORT = boost,
 // SUPER = punto; le mosse speciali hanno i loro effetti: bit 5 mossa attivata, bit 6 colpo della mossa
-wire [7:0] sid_events = (game_sound ? {1'b0, sound_events[12], sound_events[10] | sound_events[11], 1'b0,
+// eventi degli effetti (bit come `effect_of` del player Rust): lo sparo del BLASTER (evento 8 del
+// core) è il laser, bit 7
+wire [8:0] sid_events = (game_sound ? {1'b0, sound_events[8], sound_events[12], sound_events[10] | sound_events[11], 1'b0,
                                        sound_events[3] | sound_events[6],
                                        sound_events[2] | sound_events[5] | sound_events[7],
-                                       sound_events[1] | sound_events[8], sound_events[0] | sound_events[4] | sound_events[9]} : 8'd0) |
-                        (attract_play ? attract_sound : 8'd0);
+                                       sound_events[1], sound_events[0] | sound_events[4] | sound_events[9]} : 9'd0) |
+                        (attract_play ? attract_sound : 9'd0);
 wire signed [15:0] sid_sample;
 // oscilloscopi delle voci del SID per il firmware (rete di OMEGA, JUKEBOX): sid_scope, letti da
 // 0xF001_8000 (ui_addr[13], indirizzo {campione, voce, posto}: 0 la media di 1 ms, 1 il campione)
@@ -2539,7 +2577,9 @@ always @(posedge clk) begin
     end
 end
 // letture del firmware (dominio di clk_cpu; i registri sopra sono fermi quando li legge)
-assign ui_rdata = !ui_addr[12] ? ui_status : ui_addr[6] ? {24'd0, ui_seq} : uis[ui_addr[5:0]];
+// stato dello schermo a oggetti: [1:0] di ui_render, [2] copia dalla DDR3 in corso, [3] grafica caricata
+assign ui_rdata = !ui_addr[12] ? {ui_status[31:4], gfx_ok, gfx_busy, ui_status[1:0]} :
+                  ui_addr[6] ? {24'd0, ui_seq} : uis[ui_addr[5:0]];
 
 endmodule
 

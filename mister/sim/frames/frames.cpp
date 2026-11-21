@@ -392,6 +392,44 @@ int main(int argc, char** argv) {
         top.ioctl_addr = 0;
         (up ? top.ioctl_upload : top.ioctl_download) = 1;
     };
+    // grafica nella DDR3 (rtl/gfx_ddr.v): modello della DDR3 (parole a 64 bit da 0x3000_0000, ogni
+    // richiesta accettata subito, dati dopo DDR_LATENCY cicli di clk_cpu) e caricamento del file
+    // paddws_gfx.rom come fa il .mra all'avvio (ioctl, indice 0, rispettando ioctl_wait), finito il
+    // reset. Con PONG_NO_GFX=1 il file non si carica (il core senza la grafica dei personaggi).
+    const int DDR_LATENCY = 20;
+    const uint32_t DDR_BASE = 0x06000000;
+    std::vector<uint64_t> ddr(1 << 16, 0);
+    std::vector<uint8_t> gfx_file;
+    if (!std::getenv("PONG_NO_GFX"))
+        if (FILE* f = std::fopen("../../rtl/gen/paddws_gfx.rom", "rb")) {
+            int c;
+            while ((c = std::fgetc(f)) != EOF) gfx_file.push_back(uint8_t(c));
+            std::fclose(f);
+        }
+    size_t gfx_i = 0;
+    int gfx_sub = 0;
+    bool gfx_on = false;
+    int ddr_wait = -1;          // cicli alla risposta della lettura in corso (-1 nessuna)
+    uint32_t ddr_raddr = 0;
+    top.DDRAM_BUSY = 0;
+    top.DDRAM_DOUT_READY = 0;
+    top.DDRAM_DOUT = 0;
+    // fronte di salita di clk_cpu (dopo eval): scritture, letture e dati della DDR3
+    auto ddr_edge = [&]() {
+        if (top.DDRAM_DOUT_READY) top.DDRAM_DOUT_READY = 0;
+        if (top.DDRAM_WE) {
+            const uint32_t a = uint32_t(top.DDRAM_ADDR) - DDR_BASE;
+            if (a < ddr.size()) ddr[a] = top.DDRAM_DIN;
+        }
+        if (top.DDRAM_RD && ddr_wait < 0) {
+            ddr_raddr = uint32_t(top.DDRAM_ADDR) - DDR_BASE;
+            ddr_wait = DDR_LATENCY;
+        } else if (ddr_wait > 0 && --ddr_wait == 0) {
+            top.DDRAM_DOUT = ddr_raddr < ddr.size() ? ddr[ddr_raddr] : 0;
+            top.DDRAM_DOUT_READY = 1;
+            ddr_wait = -1;
+        }
+    };
     int frames = 0, prev_mode = -1;
     long long cycle = 0;
     // registro PONG_UILOG: ultima foto vista (ui_seq), suo ciclo e richiesta di scambio del frame prima
@@ -422,6 +460,10 @@ int main(int argc, char** argv) {
         io(&nv_on, sizeof nv_on); io(&nv_up, sizeof nv_up); io(&nv_i, sizeof nv_i); io(&nv_sub, sizeof nv_sub);
         io(&nv_errors, sizeof nv_errors); io(&an_from, sizeof an_from); io(&chal_bonus_at, sizeof chal_bonus_at);
         io(frame.data(), frame.size());
+        // DDR3: contenuto, caricamento e lettura in corso
+        io(ddr.data(), ddr.size() * sizeof ddr[0]);
+        io(&gfx_i, sizeof gfx_i); io(&gfx_sub, sizeof gfx_sub); io(&gfx_on, sizeof gfx_on);
+        io(&ddr_wait, sizeof ddr_wait); io(&ddr_raddr, sizeof ddr_raddr);
     };
     const std::string ckpt = "ckpt_" + (arg.empty() ? std::string("base") : arg) +
                              (kinds_test ? "_" + std::to_string(kind_l) + std::to_string(kind_r) : std::string()) +
@@ -432,7 +474,8 @@ int main(int argc, char** argv) {
     // anche il firmware (le schermate sono sue) e le ROM dello schermo a oggetti: si leggono
     // all'avvio del modello, quindi cambiano senza ricompilare
     for (const char* f : {"../../rtl/gen/pong_fw_b0.hex", "../../rtl/gen/pong_fw_b1.hex", "../../rtl/gen/pong_fw_b2.hex",
-                          "../../rtl/gen/pong_fw_b3.hex", "../../rtl/gen/ui_font.hex", "../../rtl/gen/ui_gfx.hex", "../../rtl/gen/ui_gfx2.hex"})
+                          "../../rtl/gen/pong_fw_b3.hex", "../../rtl/gen/ui_font.hex", "../../rtl/gen/ui_gfx.hex", "../../rtl/gen/ui_gfx2.hex",
+                          "../../rtl/gen/paddws_gfx.rom"})
         key = key ? hash_file(f, key) : 0;
     for (const char c : arg + (kinds_test ? kinds_arg : std::string()))
         key = (key ^ static_cast<unsigned char>(c)) * 0x100000001b3ULL;
@@ -562,6 +605,30 @@ int main(int argc, char** argv) {
             top.clk_cpu = (k % 2 == 0);
             if (k == CPU_RATIO) top.clk = 0;
             top.eval();
+            if (top.clk_cpu) ddr_edge();
+        }
+        // caricamento di paddws_gfx.rom: dalla fine del reset, un byte ogni 2 cicli di clk (fermo con
+        // ioctl_wait)
+        if (!top.reset && !gfx_on && gfx_i == 0 && !gfx_file.empty() && !nv_on) {
+            gfx_on = true;
+            top.ioctl_index = 0;
+            top.ioctl_download = 1;
+        }
+        if (gfx_on) {
+            top.ioctl_wr = 0;
+            if (gfx_sub == 0 && !top.ioctl_wait) {
+                if (gfx_i < gfx_file.size()) {
+                    top.ioctl_addr = gfx_i;
+                    top.ioctl_dout = gfx_file[gfx_i];
+                    top.ioctl_wr = 1;
+                    gfx_i++;
+                } else {
+                    gfx_on = false;
+                    top.ioctl_download = 0;
+                    std::printf("frame %d: grafica caricata nella DDR3 (%zu byte)\n", frames, gfx_file.size());
+                }
+            }
+            if (!top.ioctl_wait) gfx_sub = (gfx_sub + 1) % 2;
         }
         if (nv_on) {
             top.ioctl_wr = 0;
@@ -1803,6 +1870,7 @@ int main(int argc, char** argv) {
             top.clk_cpu = (k % 2 == 0);
             if (k == 2 * CPU_RATIO) top.clk = 1;
             top.eval();
+            if (top.clk_cpu) ddr_edge();
         }
     }
     if (ch_test || chal_test || end_test || egg_test)

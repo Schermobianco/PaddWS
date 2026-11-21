@@ -4,6 +4,7 @@ set_global_assignment -name VERILOG_FILE rtl/vexriscv/VexRiscv.v
 set_global_assignment -name VERILOG_FILE rtl/pong_logic_rv.v
 set_global_assignment -name VERILOG_FILE rtl/pong_render.v
 set_global_assignment -name VERILOG_FILE rtl/ui_render.v
+set_global_assignment -name VERILOG_FILE rtl/gfx_ddr.v
 set_global_assignment -name VERILOG_FILE rtl/next_render.v
 set_global_assignment -name VERILOG_FILE rtl/ending_render.v
 set_global_assignment -name VERILOG_FILE rtl/ch_nvram.v

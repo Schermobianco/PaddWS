@@ -4,6 +4,7 @@
 # mister/quartus-image.txt (la stessa di mister/synth.sh e synth.ps1 per la sintesi in locale).
 # La sintesi dura circa mezz'ora: a ogni push consumerebbe gran parte dei minuti gratuiti.
 # Il core .rbf e il PaddWS.mra, già nelle cartelle della SD del MiSTer (_Arcade/ e _Arcade/cores/),
+# con games/mame/paddws.zip (la grafica della DDR3),
 # sono allegati alla run; su un tag vX.Y.Z uguale alla versione in rust/Cargo.toml finiscono anche
 # nella release, accanto agli eseguibili Rust, in un unico zip da scompattare nella radice della SD.
 
@@ -71,6 +72,9 @@ jobs:
           mkdir -p sd/_Arcade/cores dist
           cp mister/output_files/PaddWS.rbf "sd/_Arcade/cores/PaddWS_$day.rbf"   # nome standard dei core MiSTer
           cp mister/PaddWS.mra sd/_Arcade/
+          # la grafica dei personaggi che il core tiene nella DDR3: il .mra la carica da games/mame/paddws.zip
+          mkdir -p sd/games/mame
+          zip -qj -X sd/games/mame/paddws.zip mister/rtl/gen/paddws_gfx.rom
           # licenze accanto al core: GPL v2 (framework MiSTer), CERN-OHL-S v2 (SID), componenti di terzi
           mkdir -p sd/_Arcade/cores/PaddWS_licenses
           cp mister/LICENSE sd/_Arcade/cores/PaddWS_licenses/LICENSE-GPL-2.0.txt
@@ -79,7 +83,7 @@ jobs:
           cp mister/rtl/vexriscv/LICENSE sd/_Arcade/cores/PaddWS_licenses/LICENSE-VexRiscv-MIT.txt
           # un solo zip con le cartelle della SD: si scompatta nella radice (/media/fat)
           zip="dist/PaddWS_MiSTer_$day.zip"
-          (cd sd && zip -r -X "../$zip" _Arcade)
+          (cd sd && zip -r -X "../$zip" _Arcade games)
           cp mister/output_files/PaddWS.fit.summary mister/output_files/PaddWS.sta.summary dist/
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' rust/Cargo.toml | head -1)
           echo "zip=$zip" >> "$GITHUB_OUTPUT"
