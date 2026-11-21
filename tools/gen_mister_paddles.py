@@ -168,6 +168,12 @@ def colors() -> list[str]:
     for name, role in (("SHADOW", ps.SHADOW), ("GRAY", ps.GRAY), ("GRAY_LIGHT", ps.GRAY_LIGHT), ("DARK", ps.DARK),
                        ("DARK_DEEP", ps.DARK_DEEP)):
         out.append(f"localparam [23:0] PD_{name} = {rgb(ps.RGB[role])};")
+    # TITAN: sul PC (paddle_ui.rs) l'ombra è doppia e più scura, una lontana (26, 26, 38) al 175/255
+    # e sopra quella vicina (40, 40, 52) al 115/255, sul nero: vicino allo scafo, dove sta l'ombra
+    # del MiSTer, si vedono tutte e due
+    far = tuple(round(c * 175 / 255) for c in (26, 26, 38))
+    near = tuple(round(f + (m - f) * 115 / 255) for f, m in zip(far, (40, 40, 52)))
+    out.append(f"localparam [23:0] PD_SHADOW_TITAN = {rgb(near)};")
     rush = tuple(spec["accent"]["rush"])
     for i in (1, 2, 3):
         out.append(f"localparam [23:0] PD_RUSH_GHOST{i} = {rgb(tuple(round(c * 0.18 * i) for c in rush))};")

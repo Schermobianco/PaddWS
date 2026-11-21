@@ -149,7 +149,8 @@ localparam [23:0] RGB_OMEGA_RED = 24'hE62828, RGB_OMEGA_PURPLE = 24'hA040E0;
 localparam [6:0] P_SHADOW = 7'd83, P_WHITE_SH = 7'd84, P_GRAY_SH = 7'd85, P_ACCENT_SH = 7'd86, P_RED_SH = 7'd87,
                  P_PURPLE_SH = 7'd88, P_GRAY = 7'd89, P_GRAY_LIGHT = 7'd90, P_DARK = 7'd91, P_DARK_DEEP = 7'd92,
                  P_MARK = 7'd93, P_RGHOST1 = 7'd114, P_RGHOST2 = 7'd115, P_RGHOST3 = 7'd116,
-                 P_WALL = 7'd117, P_WALL_LIGHT = 7'd118, P_WALL1 = 7'd119, P_WALL2 = 7'd120;
+                 P_WALL = 7'd117, P_WALL_LIGHT = 7'd118, P_WALL1 = 7'd119, P_WALL2 = 7'd120,
+                 P_SHADOW_TITAN = 7'd121;   // ombra del TITAN, più scura come sul PC
 // TWIST: inclinazione a gradini (fino a circa 20 gradi) dalla velocità della racchetta
 localparam signed [31:0] TILT1 = P_PAD_MAX_SPEED / 6, TILT2 = P_PAD_MAX_SPEED / 2,
                          TILT3 = P_PAD_MAX_SPEED * 5 / 6;
@@ -232,6 +233,7 @@ function [23:0] pal(input [6:0] i);
             OMEGA_RED: pal = RGB_OMEGA_RED;
             OMEGA_PURPLE: pal = RGB_OMEGA_PURPLE;
             P_SHADOW:     pal = PD_SHADOW;
+            P_SHADOW_TITAN: pal = PD_SHADOW_TITAN;
             P_WHITE_SH:   pal = PD_WHITE_SH;
             P_GRAY_SH:    pal = PD_GRAY_SH;
             P_ACCENT_SH:  pal = PD_ACCENT_SH;
@@ -408,6 +410,8 @@ reg        kshot [0:7];               // colpi del BLASTER, 4 * lato + posto
 reg [9:0]  ksx [0:7];
 reg [9:0]  ksy [0:7];
 reg [2:0]  kammo [0:1];               // colpi nel caricatore
+reg        kslow [0:1];               // rallentata dal laser del BLASTER (alone verde)
+reg        kpulse = 1'b0;             // fase del suo lampeggio (64 tick)
 reg [1:0]  kfade [0:1];               // RUSH: intensità delle immagini dello scatto
 reg signed [11:0] kg [0:5];           // RUSH: colonna sinistra delle immagini, 3 * lato + (k - 1)
 reg signed [11:0] gd;
@@ -638,6 +642,7 @@ always @(posedge clk) begin
         pcx[1] <= px_of(pad1_x);
         pcy[1] <= H - px_of(pad1_y);
         angle <= tick[5:0];
+        kpulse <= tick[5];
         spin_sin <= sin_q8(tick[5:0]);
         spin_cos <= sin_q8(tick[5:0] + 6'd16);
         for (i = 0; i < 2; i = i + 1) begin
@@ -647,6 +652,7 @@ always @(posedge clk) begin
             kt[i] <= top_row(i ? pad1_y : pad0_y, kind_px_h(nxt ? (i ? kind1[2:0] : kind0[2:0]) : K_NONE));
             ktilt[i] <= twist_tilt(i ? pad1_motion : pad0_motion);
             kammo[i] <= i ? kind1[10:8] : kind0[10:8];
+            kslow[i] <= nxt && (i ? kind1[11] : kind0[11]);
             // RUSH: immagini a 1/4, 1/2 e 3/4 della strada da casa a dove si trova
             kfade[i] <= i ? rush_fade[3:2] : rush_fade[1:0];
             gd = left_col(i ? pad1_x : pad0_x) - left_col(i ? P_WIDTH - P_PAD_START_POS : P_PAD_START_POS);
@@ -1328,7 +1334,7 @@ function [6:0] kr_col(input [3:0] r, input p);
             KR_DARK:       kr_col = P_DARK;
             KR_DARK_DEEP:  kr_col = P_DARK_DEEP;
             KR_SIGNAL:     kr_col = ACCENT;
-            KR_SHADOW:     kr_col = P_SHADOW;
+            KR_SHADOW:     kr_col = (kd[p] == K_TITAN) ? P_SHADOW_TITAN : P_SHADOW;
             default:       kr_col = BLACK;
         endcase
     end
@@ -1383,7 +1389,7 @@ reg signed [10:0] sdx, sdy;
 reg signed [21:0] u8, v8;
 reg signed [11:0] sy;
 reg        w_col, w_line;
-reg signed [11:0] kx, ky, kq, kr, ka;
+reg signed [11:0] kx, ky, kq, kr, ka, lx, ly;
 reg signed [11:0] ke, kf, kv, kb, ko;  // colpo di una mossa: frame dal colpo, davanti, dal centro, dietro
 integer    k, m, p, r;
 // mosse speciali: nome della mossa nella scritta e barre dei due giocatori (un solo confronto per pixel)
@@ -1554,6 +1560,15 @@ always @(*) begin
             kin[k] = kx >= 0 && kx < PW && kr >= 0 && kr < $signed({2'b0, kh[k]});
         end
         for (p = 0; p < 2; p = p + 1) begin
+            // colpita dal laser del BLASTER: riquadro verde a 2 pixel dal rettangolo della racchetta,
+            // sotto l'astronave, che pulsa (come body_rot di next_ui.rs)
+            lx = $signed({2'b0, x}) - kl[p];
+            ly = $signed({2'b0, y}) - kt[p];
+            if (kslow[p] && lx >= -2 && lx <= PW + 1 && ly >= -2 && ly <= $signed({2'b0, kh[p]}) + 1 &&
+                (lx == -2 || lx == PW + 1 || ly == -2 || ly == $signed({2'b0, kh[p]}) + 1)) begin
+                on = 1'b1;
+                col = kpulse ? kind_pal(K_BLASTER, KR_MARK) : kind_pal(K_BLASTER, KR_MARK_DARK);
+            end
             if (rv_on && rv_p == p) begin
                 on = 1'b1;
                 col = rv_col;

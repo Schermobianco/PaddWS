@@ -22,6 +22,7 @@ localparam [23:0] PD_GRAY = 24'hB4B4B4;
 localparam [23:0] PD_GRAY_LIGHT = 24'hE2E2E6;
 localparam [23:0] PD_DARK = 24'h5C5C62;
 localparam [23:0] PD_DARK_DEEP = 24'h34343C;
+localparam [23:0] PD_SHADOW_TITAN = 24'h1C1C26;
 localparam [23:0] PD_RUSH_GHOST1 = 24'h0B2428;
 localparam [23:0] PD_RUSH_GHOST2 = 24'h16484F;
 localparam [23:0] PD_RUSH_GHOST3 = 24'h206C77;

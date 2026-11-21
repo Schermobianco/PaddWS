@@ -34,7 +34,7 @@
 //!   con 8 = nessuno, 20-31 pausa); 25-44 capsule 0-3: x, y, vx, vy, flag (bit 3 presente, 0-2
 //!   bonus; BULLET = 15).
 //! - Tipi di racchetta (45-74): 45-46 bit 0-2 tipo, 3 muro del GUARDIAN in piedi, 4-7 colpi in
-//!   volo, 8-10 caricatore, 16-31 ricarica; 47-48 bit 0-7 settori del muro (bit 0 in alto, 5
+//!   volo, 8-10 caricatore, 11 rallentata dal laser del BLASTER, 16-31 ricarica; 47-48 bit 0-7 settori del muro (bit 0 in alto, 5
 //!   settori), 16-31 pausa; 49-72 colpi del BLASTER, 4 per lato (prima il sinistro): x, y, vx;
 //!   73-74 `Paddle::motion`.
 //! - Mosse speciali (75-76): bit 0-7 barra, 8-9 STRAIGHT armato, 10-11 RISING armata (2 = MAX);
@@ -241,6 +241,7 @@ pub fn encode_state<S: Sink>(m: &Match, events: u16, w: &mut S) {
                         | ((pl.barrier != 0) as u32) << 3
                         | flying << 4
                         | (pl.ammo as u32 & 7) << 8
+                        | ((pl.laser_slow != 0) as u32) << 11
                         | (pl.reload & 0xFFFF) << 16,
                 );
                 w.put(KINDS_AT + 2 + i, pl.barrier as u32 | (pl.gap & 0xFFFF) << 16);
