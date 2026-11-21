@@ -76,6 +76,8 @@ nx_kind:   .res 8
 nx_ammo:   .res 8
 nx_gap:    .res 8               ; pausa prima del colpo successivo (16 bit)
 nx_reload: .res 8               ; ricarica del caricatore (16 bit)
+nx_lslow:  .res 8               ; rallentamento lieve da colpo laser del BLASTER (1 byte per lato)
+nx_atap:   .res 8               ; ARCADE: finestra doppio clic su USE a riserva vuota (1 byte)
 nx_barrier: .res 8              ; GUARDIAN: settori del muro in piedi, bit 0 = settore 0
 nx_morph:  .res 1               ; OMEGA: lato (0 o 4) che cambia forma a ogni punto subito ($FF nessuno)
 ; colpi del BLASTER: 8 posti (4 per giocatore, prima il sinistro: posto = lato * 4 + k, cioè
@@ -112,6 +114,7 @@ ghost_phase: .res 1             ; tick % P_GHOST_PERIOD (lampi della palla fanta
 nx_btimer: .res 1               ; BULLET scattato: tick di rampa rimasti + 1 (0 = non scattato)
 nx_bside:  .res 1               ; chi l'ha attivato, armato o scattato (0 o 4; bit 7 = nessuno)
 s_k:       .res 1               ; shift del BULLET per palla e capsule in questo tick
+s_ex:      .res 1               ; shift extra adattivo del BULLET sulla palla (0, 1 o 2)
 s_ki:      .res 1               ; e indice delle costanti rallentate: 0 in mezzo, 8 nelle rampe
 .segment "BSS"
 ball_dy:   .res 4               ; passo verticale rallentato dell'ultimo tick (ball_slowed)
@@ -124,6 +127,8 @@ s_w = m_p + 4
 s_n = m_p + 8
 
 .assert P_BULLET_RAMP < 255 .and P_BULLET_SHIFT > 0 .and P_BULLET_RSHIFT > 0, error, "BULLET: timer in un byte"
+.assert P_BLASTER_SLOW < 256, error, "rallentamento del laser del BLASTER in un byte"
+.assert P_ARCADE_TAP < 256, error, "finestra doppio clic ARCADE in un byte"
 .assert P_BULLET_CUT < $10000 .and P_SUPER_CUT <= P_BULLET_CUT, error, "capsule: estrazione a 16 bit"
 
 .segment "ZEROPAGE"
@@ -160,6 +165,8 @@ pl:
     sta nx_anim,x
     sta nx_cool,x
     sta nx_cool+1,x
+    sta nx_lslow,x
+    sta nx_atap,x
     lda cfg_kinds,x
     sta nx_kind,x
     jsr set_kind
@@ -227,6 +234,7 @@ pl:
     sta nx_gap+1,x
     sta nx_reload,x
     sta nx_reload+1,x
+    sta nx_atap,x
     .assert MAX_SHOTS = 4, error, "set_kind: quattro posti per giocatore"
     sta shot_on,x
     sta shot_on+1,x
@@ -423,10 +431,59 @@ activate:
     jne done
     lda sm_arm,x
     jne done
-    ; toglie il selezionato dalla riserva, compattando gli altri
+    ; toglie il selezionato dalla riserva, compattando gli altri; se vuota e ARCADE, doppio clic chiama un bonus
     jsr res_count
-    jeq done
+    bne has_bonus
+    lda nx_kind,x
+    cmp #K_ARCADE
+    jne done
+    lda nx_atap,x
+    bne arcade_call
+    lda #P_ARCADE_TAP
+    sta nx_atap,x
+    rts
+arcade_call:
+    lda #0
+    sta nx_atap,x
+    stx n_side
+    ; nessuna capsula già in arrivo verso questo lato
+    sta n_i
+chk_c:
+    ldx n_i
+    lda cap_on,x
+    beq next_c
+    txa
+    asl a
+    asl a
+    tax
+    ldy n_side
+    beq chk_l
+    lda cap_vx+3,x
+    jpl done
+    bmi next_c
+chk_l:
+    lda cap_vx+3,x
+    jmi done
+next_c:
+    inc n_i
+    lda n_i
+    cmp #4
+    bne chk_c
+    lda n_side
+    jsr spawn_to_side
+    jcc done
+    ldx n_side
+    lda #<P_COOLDOWN
+    sta nx_cool,x
+    lda #>P_COOLDOWN
+    sta nx_cool+1,x
+    event EV_COLLECT
+    rts
+has_bonus:
     sta n_t                     ; n
+    lda #0
+    sta nx_atap,x
+    lda n_t
     tay
     dey                         ; n - 1
     sty n_t+1
@@ -612,7 +669,7 @@ no:
 ZONE_HALF    = 0
 ZONE_BULLET  = 1
 ZONE_NEAR    = 2
-ZONE_NEAR_PX = 48
+ZONE_NEAR_PX = 112
 .proc ball_in_zone
     jsr ball_toward
     bcc no
@@ -783,11 +840,18 @@ compute:
 ; Match::next_tick: pause, caricatore, TELEPORT, capsule, colpi del BLASTER e, per ultime, le
 ; mosse speciali (sm_tick).
 .proc next_tick
-    ; pause tra due bonus e due colpi, ricarica del caricatore
+    ; pause tra due bonus e due colpi, rallentamento da laser, ricarica del caricatore
     ldx #0
-:   dec16_sat {nx_cool,x}
+loop:
+    dec16_sat {nx_cool,x}
     dec16_sat {nx_gap,x}
-    lda nx_reload,x
+    lda nx_lslow,x
+    beq :+
+    dec nx_lslow,x
+:   lda nx_atap,x
+    beq :+
+    dec nx_atap,x
+:   lda nx_reload,x
     ora nx_reload+1,x
     beq next
     lda nx_reload,x
@@ -805,7 +869,7 @@ next:
     inx
     inx
     cpx #8
-    bne :--
+    jne loop
     ; TELEPORT (non durante l'attesa della battuta)
     or32 serve_timer
     bne :+
@@ -1010,10 +1074,28 @@ drift:
     jmp :++
 :   mov32 {cap_vy,y}, {#-P_CAP_DRIFT}
 :   inc nx_spawned
-    bne done
+    bne :+
     inc nx_spawned+1
+:   sec                         ; capsula generata (spawn_to_side)
 done:
     rts
+.endproc
+
+; Genera una capsula diretta verso il lato A (0 o 4) nel primo posto libero (C = 1 se creata).
+.proc spawn_to_side
+    sta n_side
+    ldx #0
+:   lda cap_on,x
+    beq free
+    inx
+    cpx #4
+    bne :-
+    clc
+    rts
+free:
+    stx n_i
+    lda n_side
+    jmp spawn_capsule::side
 .endproc
 
 ; Tick dello scatto (nx_dash): la x della capsula vale in tutto il tratto fra casa e la posizione
@@ -1222,7 +1304,18 @@ ms_band = m_a                   ; metà altezza della racchetta avversaria + met
 ms_opp  = m_b                   ; avversario (0 o 4)
 .assert P_CAP_HALF + P_SHOT_SPEED < $00FD0000, error, "move_shots: portata in meno di 253 pixel"
 .proc move_shots
-    ; capsule in campo (posto * 4), nell'ordine dei posti
+    ; uscita rapida se non c'è nessun colpo in volo
+    lda shot_on
+    ora shot_on+1
+    ora shot_on+2
+    ora shot_on+3
+    ora shot_on+4
+    ora shot_on+5
+    ora shot_on+6
+    ora shot_on+7
+    bne :+
+    rts
+:   ; capsule in campo (posto * 4), nell'ordine dei posti
     ldx #0
     ldy #0
 :   lda cap_on,x
@@ -1379,7 +1472,11 @@ height:
     sub32 n_t, {shot_y,y}, {pad_y,x}
     abs32 n_t, n_t
     cmp32 ms_band, n_t
-    bpl stop
+    bmi edge
+    ; colpito l'avversario: rallentamento lieve della sua racchetta
+    lda #P_BLASTER_SLOW
+    sta nx_lslow,x
+    jmp stop
 edge:
     lda shot_x+3,y
     bmi stop
@@ -1410,20 +1507,20 @@ ms_ncap: .res 1
 ; ------------------------------------------------------------------------------------ palla
 
 ; Next::ball_motion: RISING STRIKE che s'impenna (sm_motion), palla a effetto (CURVE) o guidata
-; (STEER), prima dello spostamento. Con il BULLET rallentano anche le accelerazioni (il passo lo
-; rallenta ball_slowed).
+; (STEER), prima dello spostamento. Con il BULLET rallentano anche le accelerazioni con lo
+; stesso fattore adattivo del passo (calcolato da |dx| in t0; il passo lo rallenta ball_slowed).
 .proc next_ball_motion
     jsr bullet_shift
-    sta s_k
-    abs32 n_u, ball_vx          ; mai più ripida di 45 gradi
+    jsr bullet_ball_set
     lda sm_rise
     beq :+
+    jsr abs_vx                  ; mai più ripida di 45 gradi
     jsr sm_motion
 :   or32 nx_curve
     beq steer
+    jsr abs_vx
     mov32 s_v, nx_curve
-    lda s_k
-    jsr slow_v
+    jsr slow_ball_v
     add32 ball_vy, ball_vy, s_v
     jsr clamp_vy
 steer:
@@ -1445,6 +1542,7 @@ guide:
     lda nx_steer_dir
     beq slow
     ; fino al doppio della velocità orizzontale (circa 63 gradi)
+    jsr abs_vx
     asl32 n_u
     lda nx_steer_dir
     bmi down
@@ -1453,8 +1551,7 @@ guide:
 down:
     mov32 s_v, {#-P_STEER_ACCEL}
 accel:
-    lda s_k                     ; slowed(-a) non è -slowed(a): lo shift è con il segno
-    jsr slow_v
+    jsr slow_ball_v             ; slowed_extra(-a) non è -slowed_extra(a): shift con il segno
     add32 ball_vy, ball_vy, s_v
     jsr clamp_vy
 slow:
@@ -1464,19 +1561,105 @@ slow:
 :   rts
 .endproc
 
-; BULLET (s_k da next_ball_motion): spostamento rallentato, dx in t0 (che si rallenta) e la y.
+; Next::bullet_ball_slow: dato A = bullet_shift e t0 = dx, imposta (s_k, s_ex) in base a |dx|
+; rispetto a 4, 8 e 16 volte P_SERVE_UNIT. Lascia t0 intatto. Confronto alto-prima per restare
+; veloce anche nei tick BULLET più pesanti sull'NTSC.
+.proc bullet_ball_set
+    sta s_k
+    ldy #0
+    sty s_ex
+    ora #0
+    beq done
+    ; n_t = |t0|
+    lda t0+3
+    bmi neg
+    mov32 n_t, t0
+    jmp cmp_go
+neg:
+    neg32 n_t, t0
+cmp_go:
+    ldy #3
+    lda n_t+3
+    bne hit
+    ldy #0
+    ; Y = 0: <= 4x -> s_k=2; Y = 1: <= 8x -> s_ex=0; Y = 2: <= 16x -> s_ex=1; > 16x -> s_ex=2
+loop:
+    lda b_cap_hi,y
+    cmp n_t+2
+    bcc next
+    bne hit
+    lda b_cap_md,y
+    cmp n_t+1
+    bcc next
+    bne hit
+    lda b_cap_lo,y
+    cmp n_t
+    bcs hit
+next:
+    iny
+    cpy #3
+    bne loop
+hit:
+    tya
+    bne not_slow
+    lda #2
+    sta s_k
+done:
+    rts
+not_slow:
+    dey
+    sty s_ex
+    rts
+.endproc
+
+B_CAP0 = P_SERVE_UNIT << 2
+B_CAP1 = P_SERVE_UNIT << 3
+B_CAP2 = P_SERVE_UNIT << 4
+.assert B_CAP2 < $01000000, error, "B_CAP2 deve stare in 3 byte"
+.segment "RODATA"
+b_cap_hi: .byte ^B_CAP0, ^B_CAP1, ^B_CAP2
+b_cap_md: .byte >B_CAP0, >B_CAP1, >B_CAP2
+b_cap_lo: .byte <B_CAP0, <B_CAP1, <B_CAP2
+.segment "CODE"
+
+; s_v = slowed_extra(s_v, s_k, s_ex) = slowed(s_v, s_k) >> s_ex. X resta.
+.proc slow_ball_v
+    lda s_k
+    jsr slow_v
+    ldy s_ex
+    beq done
+:   asr32 s_v
+    dey
+    bne :-
+done:
+    rts
+.endproc
+
+; BULLET (s_k e s_ex da next_ball_motion): spostamento rallentato, dx in t0 e la y.
 .proc ball_slowed
     mov32 s_v, t0
-    lda s_k
-    jsr slow_v
+    jsr slow_ball_v
     mov32 t0, s_v
     mov32 s_v, ball_vy
-    lda s_k
-    jsr slow_v
+    jsr slow_ball_v
     mov32 ball_dy, s_v
     add32 ball_y, ball_y, s_v
     lda #1
     sta nx_bmoved
+    rts
+.endproc
+
+; Next::paddle_slow_shift: shift di rallentamento della racchetta X (BULLET avversario oppure
+; shift 1 = -50% quando è stata colpita dal laser del BLASTER). X resta, Z = (A == 0).
+.proc pad_slow_shift_x
+    jsr bullet_shift_x
+    cmp #1
+    beq done
+    ldy nx_lslow,x
+    beq done
+    lda #1
+done:
+    ora #0
     rts
 .endproc
 
@@ -1532,6 +1715,12 @@ done:
     rts
 .endproc
 
+; n_u = |ball_vx| (condivisa tra next_ball_motion, SLOW e TWIST). X e Y restano.
+.proc abs_vx
+    abs32 n_u, ball_vx
+    rts
+.endproc
+
 ; vy tra -n_u e n_u
 .proc clamp_vy
     cmp32 n_u, ball_vy
@@ -1576,17 +1765,40 @@ done:
 vy:
     mulq16 ball_vy, {#P_SLOW_BACK}
     mov32 ball_vy, m_a
-    abs32 n_u, ball_vx
+    jsr abs_vx
     jsr clamp_vy
     ldx n_side
 kinds:
     lda nx_kind,x
     cmp #K_TWIST
     bne hammer
-    ; TWIST: la palla prende parte della velocità della racchetta, entro i 45 gradi
+    ; TWIST: la palla prende parte della velocità della racchetta, fino a ~60 gradi (1,75 * |vx|)
     mulq16 {pad_motion,x}, {#P_TWIST_TRANSFER}
     add32 ball_vy, ball_vy, m_a
-    abs32 n_u, ball_vx
+    jsr abs_vx
+    ldx #3
+:   lda n_u,x
+    sta n_t,x
+    dex
+    bpl :-
+    ldy #2
+@tw:
+    lsr n_t+3
+    ror n_t+2
+    ror n_t+1
+    ror n_t
+    ldx #0
+    lda #4
+    sta s_n
+    clc
+:   lda n_u,x
+    adc n_t,x
+    sta n_u,x
+    inx
+    dec s_n
+    bne :-
+    dey
+    bne @tw
     jsr clamp_vy
     jmp armed
 hammer:
@@ -1778,7 +1990,11 @@ g_bounds: .byte <(P_GUARDIAN_B1 >> 16), <(P_GUARDIAN_B2 >> 16), <(P_GUARDIAN_B3 
     lda nx_btimer
     beq :+
     jsr bullet_end
-:
+:   lda #0
+    sta nx_lslow
+    sta nx_lslow+4
+    sta nx_atap
+    sta nx_atap+4
 .endproc
 ; (prosegue)
 ; Match::next_morph (OMEGA): dopo un punto dell'avversario la racchetta di nx_morph prende la forma

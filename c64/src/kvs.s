@@ -64,17 +64,10 @@ kv_s:    .byte 0
 kv_y:    .byte 0
 kv_t:    .byte 0
 kv_hi:   .byte 0
-kv_yel:  .byte 0                ; egg_yel nel nibble alto
 
 ; ------------------------------------------------------------------------------------ inizio
 
 .proc kv_enter
-    lda egg_yel                 ; il giallo delle scritte (rosso con l'easter egg)
-    asl a
-    asl a
-    asl a
-    asl a
-    sta kv_yel
     lda #1
     sta in_vs
     lda #0
@@ -406,12 +399,6 @@ net:
     inx
     cpx #KV_NET_ROW + KV_NET_ROWS
     bne net
-    ; scritte gialle (livello, VS, icone): rosse con l'easter egg
-    lda #KV_ICON_ROW
-    ldx #0
-    ldy #80
-    jsr egg_span
-    jsr kv_egg
     inc kv_step
     rts
 texts:
@@ -608,7 +595,7 @@ kv_icon_col: .byte 6, 26        ; prima capsula, poi una ogni 3 colonne
     lda ch_level
     cmp #CH_LEVELS
     bcs level
-    lda kv_yel
+    lda #COL_YELLOW << 4
     tax
     lda kv_f
     and #8
@@ -626,7 +613,7 @@ level:
     bcc :+
     sbc #20
     bcs :-
-:   ldy kv_yel
+:   ldy #COL_YELLOW << 4
     cmp #10
     bcc :+
     ldy #0
@@ -720,12 +707,12 @@ side:
     bcc next
     jsr kv_tag_char
     ldx kv_s
-    ; icone: una ogni KV_ICON_GAP frame
+    ; icone: una ogni KV_ICON_GAP frame (ldy prima di sbc per non sovrascrivere il flag Z)
+    ldy #0
     lda kv_t
     sec
     sbc #KV_ICONS_AT
     bcc next
-    ldy #0
 :   beq icon
     iny
     cpy #3
@@ -745,21 +732,6 @@ next:
     bne done
     jmp kv_first
 done:
-    rts
-.endproc
-
-; Righe 1-5, colonne 11-28 (livello e VS, tra i ritratti): giallo dell'easter egg.
-.proc kv_egg
-    lda #1
-:   pha
-    ldx #11
-    ldy #18
-    jsr egg_span
-    pla
-    clc
-    adc #1
-    cmp #6
-    bne :-
     rts
 .endproc
 
@@ -995,15 +967,11 @@ side:
     clc
     adc #SP_PAD0
     sta sh_ptr+SPN_PAD,y
-    lda #COL_WHITE
     ldx kv_kind,y
+    lda kind_col,x
     cpx #OMEGA_KIND
     bcc color
-    lda #COL_RED                ; (viola con l'easter egg, come nella prima parte)
-    ldx egg_x
-    beq :+
-    lda #COL_PURPLE
-:   ldx #K_ARCADE
+    ldx #K_ARCADE
 color:
     sta sh_col+SPN_PAD,y
     lda pv_x,y

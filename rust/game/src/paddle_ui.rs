@@ -1,15 +1,17 @@
 //! Tipi di racchetta di NEXT a schermo: il disegno di ogni tipo, uguale in partita e
 //! nella scelta, e la schermata di scelta della racchetta, dopo quella dei bonus.
 //!
-//! Ogni racchetta è il segno, visto dall'alto, del personaggio della sua illustrazione, nel colore
-//! del personaggio (`Portraits::accent`): ARCADE la fessura della gettoniera con il gettone che ci
-//! entra, TITAN la cintura con la fibbia e la polvere del passo pesante, HAMMER la testa della mazza
-//! con la punta del manico e le scintille del colpo potente, TWIST inclinata con la velocità, la
-//! cucitura e un'onda alle estremità a ogni colpo, BLASTER smussata con le canne, la bandana e la cartuccera,
-//! RUSH la fascia con i lembi e le immagini dello scatto, GUARDIAN un muro di cinque corsi, uno per
-//! settore, che si rompono. La faccia che colpisce resta un bordo dritto: davanti vanno solo le
-//! canne di BLASTER e gli effetti brevi dopo un colpo. Cambia solo il disegno, la hitbox è quella
-//! del core.
+//! Ogni racchetta è l'astronave vista dall'alto pilotata dal suo personaggio, nel colore del
+//! personaggio (`Portraits::accent`): ARCADE la capsula coin-op con calotte metalliche, cabina
+//! gettoniera dorata e scia di scintille, TITAN la corazzata pesante con cintura/ponte e due
+//! blocchi motori posteriori, HAMMER la nave-ariete a "T" con striscia rossa e grande reattore
+//! centrale d'urto, TWIST il caccia acrobatico inclinato con visiera da luchador e getti di
+//! manovra RCS sulle virate, BLASTER la cannoniera con livrea a "X", doppi cannoni alari laser
+//! verdi alternati e cartuccera posteriore, RUSH l'intercettore supersonico ad ali a freccia con
+//! postbruciatore nitro e scie alari, GUARDIAN il portascudo orbitale con chiglia posteriore e
+//! cinque piastre scudo anteriori indipendenti. La faccia che colpisce resta un bordo dritto:
+//! davanti vanno solo le canne di BLASTER e gli effetti brevi dopo un colpo. Cambia solo il
+//! disegno, la hitbox è quella del core.
 //!
 //! Le forme sono in pixel arcade (schermo a 240 righe, corpo largo 5), con la x che cresce verso
 //! la faccia (il corpo va da -3 a 2) e la y dalla cima; la racchetta destra è speculare. Il rilievo
@@ -32,6 +34,8 @@ use crate::touch;
 /// Inclinazione massima di TWIST (circa 20 gradi).
 pub(crate) const TWIST_MAX_TILT: f32 = 0.35;
 
+/// ARCADE: durata dell'animazione del gettone che si infila nella fessura (doppio clic USE).
+pub(crate) const COIN_SECONDS: f32 = 0.5;
 /// HAMMER: durata delle scintille del colpo potente (4 pose a 8 al secondo).
 pub(crate) const SPARK_SECONDS: f32 = 0.5;
 /// TWIST: durata dell'onda del colpo.
@@ -42,6 +46,8 @@ pub(crate) const FIRE_SECONDS: f32 = 26.0 / 60.0;
 pub(crate) const RECOIL_SECONDS: f32 = 0.1;
 /// GUARDIAN: rottura di un corso (si crepa, poi diventa grigio e perde le schegge).
 pub(crate) const BREAK_SECONDS: f32 = 0.65;
+/// Scatto in avanti: durata dell'accensione dei booster (15 frame a 60 Hz, come le immagini del RUSH).
+pub(crate) const BOOST_SECONDS: f32 = 0.25;
 
 /// Frase sotto la colonna della scelta.
 pub fn tagline(kind: PaddleKind) -> &'static str {
@@ -63,16 +69,14 @@ pub fn tagline(kind: PaddleKind) -> &'static str {
 pub struct Look {
     pub body: Color,
     pub mark: Color,
-    pub signal: Color,
 }
 
 /// I colori di una racchetta del tipo `kind` con il corpo `body`.
 pub fn look(app: &App, kind: Option<PaddleKind>, body: Color) -> Look {
-    let signal = App::color(app.cfg.colors.accent);
+    let fallback = App::color(app.cfg.colors.accent);
     Look {
         body,
-        mark: kind.map_or(signal, |k| app.assets.portraits.accent(k)),
-        signal,
+        mark: kind.map_or(fallback, |k| app.assets.portraits.accent(k)),
     }
 }
 
@@ -84,8 +88,12 @@ pub struct Anim {
     pub t: f32,
     /// velocità verticale in pixel arcade per frame a 60 Hz, positiva verso il basso
     pub vy: f32,
-    /// BLASTER: colpi nella cartuccera (al massimo 4) e secondi dall'ultimo sparo
+    /// ARCADE: secondi dall'inserimento del gettone (doppio clic USE a riserva vuota)
+    pub coin: Option<f32>,
+    /// BLASTER: colpi nella carica (al massimo 6), progresso di ricarica (0..1 se in corso)
+    /// e secondi dall'ultimo sparo
     pub ammo: u8,
+    pub reload: Option<f32>,
     pub fire: Option<f32>,
     /// HAMMER e TWIST: secondi dal colpo (per HAMMER quello potente) e altezza del colpo (0 in
     /// cima, 1 in fondo): scintille di HAMMER, onda di TWIST
@@ -106,7 +114,9 @@ impl Anim {
         Self {
             t,
             vy: 0.0,
-            ammo: 4,
+            coin: None,
+            ammo: 6,
+            reload: None,
             fire: None,
             spark: None,
             wall: [None; GUARDIAN_SECTORS],
@@ -129,10 +139,13 @@ pub struct Shape {
     pub front: f32,
     pub tilt: f32,
     /// la racchetta sta scattando in avanti: x da cui è partita e intensità (1 all'inizio, poi
-    /// sfuma); RUSH lascia immagini nel suo colore tra la partenza e dove si trova
+    /// sfuma in `BOOST_SECONDS`); tutte accendono i booster, RUSH lascia anche immagini nel suo
+    /// colore tra la partenza e dove si trova
     pub dash: Option<(f32, f32)>,
     /// anteprima della scelta: RUSH mostra sempre le immagini dello scatto
     pub preview: bool,
+    /// ritaglio verticale in coordinate di schermo (y0..y1), usato dal salto del TELEPORT
+    pub clip_y: Option<(f32, f32)>,
     pub anim: Anim,
 }
 
@@ -153,12 +166,12 @@ enum Role {
     Mark,
     MarkDark,
     MarkLight,
-    /// grigio chiaro e grigio scuro
+    /// grigi (chiaro, luce, scuro, profondo)
     Gray,
+    GrayLight,
     Dark,
+    DarkDeep,
     Black,
-    /// giallo del gioco
-    Signal,
 }
 
 #[derive(Clone, Copy)]
@@ -200,6 +213,48 @@ impl Ops {
     }
 }
 
+/// Accensione dei booster allo scatto in avanti, per tutte le racchette: fase (3 nei primi 3
+/// frame, con il lampo agli ugelli, 2 fino al nono, 1 fino al quindicesimo, 0 spenti) e
+/// allungamento delle fiamme in pixel arcade, che parte dalla distanza da casa e si dimezza a ogni
+/// fase (il getto lasciato lungo lo scatto).
+#[derive(Clone, Copy, Default)]
+struct Boost {
+    stage: u8,
+    extra: f32,
+}
+
+impl Boost {
+    /// Dallo scatto in corso: `fade` va da 1 (appena partito) a 0, `dist` è la distanza da casa in
+    /// pixel arcade.
+    fn new(fade: f32, dist: f32) -> Self {
+        let left = (fade * 15.0).round();
+        let dist = dist.round().max(0.0);
+        if left >= 13.0 {
+            Self { stage: 3, extra: dist }
+        } else if left >= 7.0 {
+            Self { stage: 2, extra: (dist / 2.0).floor() }
+        } else if left >= 1.0 {
+            Self { stage: 1, extra: (dist / 4.0).floor() }
+        } else {
+            Self::default()
+        }
+    }
+}
+
+/// Lampo dell'accensione dietro un ugello che finisce alla colonna `x_end`: alone largo 3 nel colore
+/// del personaggio, più chiaro sulle righe del getto e bianco al centro (`y` e `rows`: righe del
+/// nucleo del getto).
+fn ignite(r: &mut Ops, x_end: f32, y: f32, rows: f32) {
+    r.late_rect(x_end - 3.0, y - 2.0, 3.0, rows + 4.0, Role::Mark);
+    r.late_rect(x_end - 3.0, y - 1.0, 3.0, rows + 2.0, Role::MarkLight);
+    r.late_rect(x_end - 2.0, y, 2.0, rows, Role::Body);
+}
+
+/// Sfarfallio delle fiamme a 16 al secondo (0 o 1), il doppio delle pose.
+fn flicker(t: f32) -> usize {
+    ((t * 16.0).floor() as i64).rem_euclid(2) as usize
+}
+
 /// Arrotondamento come `Math.round` (le metà verso l'alto), per avere gli stessi pixel del mockup.
 fn round(v: f32) -> f32 {
     (v + 0.5).floor()
@@ -213,48 +268,6 @@ fn pose(t: f32) -> f32 {
 fn smooth(u: f32) -> f32 {
     let u = u.clamp(0.0, 1.0);
     u * u * (3.0 - 2.0 * u)
-}
-
-/// ARCADE: la fessura della gettoniera al centro del corpo e il gettone che ci entra. Ciclo di 3
-/// secondi a 8 pose al secondo: il gettone, visto dall'alto come una piccola croce, scende verso la
-/// fessura (pose 0-5), si mette di taglio e sparisce dentro (6-8), la fessura lampeggia gialla come
-/// un credito accettato (10-13), poi pausa.
-fn coin_slot(r: &mut Ops, h: f32, t: f32) {
-    let s = (pose(t) as i64).rem_euclid(24);
-    let top = (h / 2.0).floor() - 4.0;
-    let lit = (10..=13).contains(&s) && s % 2 == 0;
-    r.rect(-1.0, top, 1.0, 8.0, if lit { Role::Mark } else { Role::Dark });
-    if s <= 5 {
-        let y = top - 7.0 + s as f32;
-        r.rect(-2.0, y + 1.0, 3.0, 1.0, Role::Mark);
-        r.rect(-1.0, y, 1.0, 3.0, Role::Mark);
-    } else if s <= 8 {
-        let len = [6.0, 4.0, 2.0][s as usize - 6];
-        r.rect(-1.0, top, 1.0, len, Role::Mark);
-    }
-}
-
-/// TITAN, passo pesante: sbuffi di polvere e calcinacci che si staccano dietro le estremità (da
-/// `x0` verso il retro) e si allontanano; da ferma 2 per estremità, in movimento 4. Prima grigio
-/// chiaro 2x2, poi puntini scuri.
-fn heavy_step(r: &mut Ops, h: f32, a: &Anim, x0: f32) {
-    let t = pose(a.t) / 8.0;
-    let m = if a.vy.abs() > 0.5 { 4 } else { 2 };
-    for (yc, dir) in [(h - 3.0, 1.0), (2.0, -1.0)] {
-        for k in 0..m {
-            let p = (t * 0.9 + k as f32 / m as f32 + if dir > 0.0 { 0.0 } else { 0.37 }).fract();
-            if p > 0.85 {
-                continue;
-            }
-            let x = round(x0 - p * 9.0);
-            let y = round(yc + dir * (p * 4.0 + (k % 2) as f32 * 2.0));
-            if p < 0.45 {
-                r.rect(x - 1.0, y, 2.0, 2.0, Role::Gray);
-            } else {
-                r.rect(x, y, 1.0, 1.0, Role::Dark);
-            }
-        }
-    }
 }
 
 /// TWIST, colpo della palla: un'onda che si allarga intorno alle due estremità (raggio da 3 a 10
@@ -280,34 +293,9 @@ fn ring(r: &mut Ops, h: f32, s: f32) {
     }
 }
 
-/// Lembi di fascia o bandana, dal nodo (`ax`, `ay`) verso il retro: due strisce di segmenti larghi
-/// `sw` (`n1` e `n2` segmenti, l'ultimo dell'inferiore scurito). Pose a 8 al secondo: da ferma
-/// sventolano piano; in movimento piegano nel verso opposto alla velocità verticale; nello scatto
-/// di RUSH si allungano di 2 segmenti, dritti.
-fn tails(r: &mut Ops, (ax, ay): (f32, f32), sw: f32, (n1, n2): (u32, u32), a: &Anim) {
-    let t = pose(a.t) / 8.0;
-    let bend = (-a.vy * 0.6).clamp(-1.2, 1.2);
-    let calm = 1.0 - bend.abs().min(1.0);
-    for (i, (n, spread, y0)) in [(n1, -0.5, 0.0), (n2, 0.6, 2.0)].into_iter().enumerate() {
-        let n = if a.dashing { n + 2 } else { n };
-        for j in 1..=n {
-            let jf = j as f32;
-            let wave = if a.dashing {
-                0.0
-            } else {
-                (t * 5.0 + jf * 1.3 + i as f32 * 2.0).sin() * (0.3 + 0.7 * calm) * jf / n as f32 * 1.4
-            };
-            let lean = if a.dashing { 0.25 } else { 1.0 };
-            let dy = round(ay + y0 + lean * spread * jf + bend * jf + wave);
-            let role = if i == 1 && j == n { Role::MarkDark } else { Role::Mark };
-            r.rect(ax - sw * jf, dy, sw, 1.0, role);
-        }
-    }
-}
-
-/// GUARDIAN: spostamento verticale del corso `i` durante la costruzione, a `t` secondi
-/// dall'inizio: i corsi cadono da 14 pixel uno alla volta, dal basso, ogni 0,3 s, e rimbalzano di
-/// 1 pixel; None finché il corso non è ancora entrato.
+/// GUARDIAN: spostamento verticale della piastra scudo `i` durante la costruzione, a `t` secondi
+/// dall'inizio: le piastre cadono da 14 pixel una alla volta, dal basso, ogni 0,3 s, e rimbalzano
+/// di 1 pixel; None finché la piastra non è ancora entrata.
 fn build_offset(i: usize, t: f32) -> Option<f32> {
     let land = 0.4 + 0.3 * (GUARDIAN_SECTORS - 1 - i) as f32;
     if t < land - 0.25 {
@@ -321,14 +309,43 @@ fn build_offset(i: usize, t: f32) -> Option<f32> {
     }
 }
 
-/// GUARDIAN: tutta la racchetta è un muro spesso 8 pixel, 5 corsi di blocchi, uno per settore del
-/// core dall'alto, con le fughe nel suo colore su tutta la larghezza (anche sulla faccia) e i giunti
-/// sfalsati. Un settore perso è un corso che si crepa (0,15 s), poi diventa grigio con la crepa e
-/// quattro schegge saltano via dietro; quando ne resta uno solo, lampeggia nel colore schiarito.
-fn wall(r: &mut Ops, h: f32, a: &Anim) {
+/// GUARDIAN (BASTION-5): portascudo orbitale modulare. Chiglia posteriore compatta con ponte blu,
+/// stabilizzatori e due micro-propulsori azzurri; davanti 5 piastre scudo indipendenti (una per
+/// settore del core dall'alto) con impulso di scansione blu. Un settore perso lampeggia (0,15 s),
+/// poi la piastra si spegne in grigio scuro e perde quattro frammenti; all'ultimo rimasto lampeggia
+/// in allarme.
+fn wall(r: &mut Ops, h: f32, a: &Anim, boost: Boost) {
     let n = GUARDIAN_SECTORS;
-    let tq = pose(a.t) as i64;
+    let tq = (pose(a.t) as i64).rem_euclid(120) as usize;
+    let mid = (h / 2.0).floor();
+    // chiglia posteriore, stabilizzatori e due propulsori ionici a cono (sempre dietro lo scudo)
+    r.rect(-7.0, 5.0, 4.0, h - 10.0, Role::Gray);
+    r.rect(-8.0, mid - 3.0, 3.0, 6.0, Role::Dark);
+    r.rect(-7.0, mid - 2.0, 2.0, 4.0, Role::Mark);
+    r.rect(-5.0, 2.0, 3.0, 3.0, Role::Mark);
+    r.rect(-5.0, h - 5.0, 3.0, 3.0, Role::Mark);
+    let moving = a.vy.abs() > 0.5 || boost.stage > 0;
+    for (idx, ey) in [7.0, h - 9.0].into_iter().enumerate() {
+        r.rect(-8.0, ey - 1.0, 1.0, 4.0, Role::DarkDeep);
+        let p = (tq + idx * 2) % 4;
+        let fl = if moving { [6, 7, 8, 7][p] } else { [4, 5, 6, 5][p] } + boost.extra as usize;
+        let jlen = fl - 1;
+        let clen = (fl / 2).max(2);
+        r.late_rect(-9.0, ey - 1.0, 1.0, 4.0, Role::Mark);
+        r.late_rect(-8.0 - jlen as f32, ey, jlen as f32, 2.0, Role::MarkLight);
+        r.late_rect(-8.0 - clen as f32, ey, clen as f32, 2.0, Role::Body);
+        r.late_rect(-9.0 - fl as f32, ey + (p % 2) as f32, 2.0, 1.0, Role::Mark);
+        if moving {
+            let s = (tq + idx) % 2;
+            r.late_rect(-10.0 - fl as f32 - s as f32, ey + s as f32, 1.0, 1.0, Role::MarkLight);
+        }
+        if boost.stage == 3 {
+            ignite(r, -9.0, ey, 2.0);
+        }
+    }
+
     let alive = a.wall.iter().filter(|w| w.is_none()).count();
+    let scan = tq % n;
     let recoil = a.recoil.map(|at| ((at * n as f32).floor() as usize).min(n - 1));
     for i in 0..n {
         let dy = match a.build {
@@ -342,35 +359,21 @@ fn wall(r: &mut Ops, h: f32, a: &Anim) {
         let mut rect = |x: f32, y: f32, w: f32, hh: f32, role: Role| r.rect(x + dx, y + dy, w, hh, role);
         let y0 = round(h * i as f32 / n as f32);
         let y1 = round(h * (i + 1) as f32 / n as f32);
-        // righe del corso, sotto la fuga
         let ys = if i > 0 { y0 + 1.0 } else { y0 };
         let hh = y1 - ys;
-        let joints: &[f32] = if i % 2 == 1 { &[-4.0, 0.0] } else { &[-2.0] };
-        let crack = |rect: &mut dyn FnMut(f32, f32, f32, f32, Role)| {
-            rect(-4.0, ys + 1.0, 1.0, 2.0, Role::Black);
-            rect(-3.0, ys + 3.0, 1.0, 1.0, Role::Black);
-            rect(-2.0, ys + 4.0, 1.0, 2.0, Role::Black);
-            rect(0.0, ys + 2.0, 1.0, 2.0, Role::Black);
-        };
-        rect(-6.0, y0, 8.0, y1 - y0, Role::Body);
         match a.wall[i] {
             None => {
-                if alive == 1 && tq % 4 < 2 {
-                    rect(-6.0, ys, 8.0, hh, Role::MarkLight);
-                }
-                for &jx in joints {
-                    rect(jx, ys, 1.0, hh, Role::Mark);
-                }
+                let warn = alive == 1 && (tq % 4) < 2;
+                rect(-2.0, y0, 4.0, y1 - y0, if warn { Role::MarkLight } else { Role::Body });
+                rect(-2.0, ys, 1.0, hh, if scan == i || warn { Role::MarkLight } else { Role::Mark });
             }
             Some(age) if age < 0.15 => {
-                for &jx in joints {
-                    rect(jx, ys, 1.0, hh, Role::Mark);
-                }
-                crack(&mut rect);
+                rect(-2.0, y0, 4.0, y1 - y0, Role::MarkLight);
+                rect(-1.0, ys + 1.0, 2.0, (hh - 2.0).max(1.0), Role::Mark);
             }
             Some(age) => {
-                rect(-6.0, ys, 8.0, hh, Role::Dark);
-                crack(&mut rect);
+                rect(-2.0, y0, 4.0, y1 - y0, Role::Dark);
+                rect(-1.0, ys + 1.0, 2.0, (hh - 2.0).max(1.0), Role::DarkDeep);
                 if age < BREAK_SECONDS {
                     let p = (age - 0.15) / 0.5;
                     for j in 0..4 {
@@ -384,45 +387,222 @@ fn wall(r: &mut Ops, h: f32, a: &Anim) {
             }
         }
         if i > 0 {
-            rect(-6.0, y0, 8.0, 1.0, Role::Mark);
+            let gap = if a.wall[i].is_some() && a.wall[i - 1].is_some() {
+                Role::Black
+            } else {
+                Role::Mark
+            };
+            rect(-2.0, y0, 4.0, 1.0, gap);
         }
     }
+    r.late_rect(-3.0, 0.0, 1.0, h, Role::Black);
 }
 
-/// I pezzi della racchetta `kind` alta `h` pixel arcade.
-fn kind_ops(kind: PaddleKind, h: f32, a: &Anim) -> Ops {
+/// I pezzi dell'astronave `kind` alta `h` pixel arcade. `par` (-1 in cima, +1 in fondo) regola la
+/// prospettiva 2.5D della corazzata TITAN.
+fn kind_ops(kind: PaddleKind, h: f32, a: &Anim, par: f32, boost: Boost) -> Ops {
     let mut r = Ops::default();
     let mid = (h / 2.0).floor();
+    let tq = (pose(a.t) as i64).rem_euclid(120) as usize;
+    // con i booster accesi le fiamme si muovono come in movimento
+    let moving = a.vy.abs() > 0.5 || boost.stage > 0;
+    let extra = boost.extra;
+    let ignited = boost.stage == 3;
     match kind {
         PaddleKind::Arcade => {
-            r.rect(-3.0, 0.0, 5.0, h, Role::Body);
-            coin_slot(&mut r, h, a.t);
+            // VAUS-84: capsula coin-op con calotte metalliche arrotondate, cabina gettoniera
+            // dorata al centro, due alette posteriori e scia di scintille/monetine dai due ugelli
+            let coin_f = a.coin.and_then(|s| (s < COIN_SECONDS).then(|| (s * 60.0).floor() as usize));
+            let coin_flash = coin_f.is_some_and(|f| f >= 18);
+            r.rect(-3.0, 4.0, 5.0, h - 8.0, Role::Body);
+            r.rect(-3.0, 1.0, 5.0, 3.0, Role::Gray);
+            r.rect(-2.0, 0.0, 4.0, 1.0, Role::Gray);
+            r.rect(-3.0, h - 4.0, 5.0, 3.0, Role::Gray);
+            r.rect(-2.0, h - 1.0, 4.0, 1.0, Role::Gray);
+            r.late_rect(-3.0, 4.0, 4.0, 1.0, Role::Dark);
+            r.late_rect(-3.0, h - 5.0, 4.0, 1.0, Role::Dark);
+            r.rect(-5.0, 6.0, 2.0, 5.0, Role::Gray);
+            r.rect(-5.0, h - 11.0, 2.0, 5.0, Role::Gray);
+            r.rect(-6.0, 7.0, 1.0, 3.0, Role::Dark);
+            r.rect(-6.0, h - 10.0, 1.0, 3.0, Role::Dark);
+            let lit = (tq % 8) < 2;
+            r.rect(-4.0, mid - 4.0, 4.0, 8.0, Role::Dark);
+            let cabin_role = if coin_f.is_some_and(|f| (18..22).contains(&f)) {
+                Role::Body
+            } else if coin_flash || lit {
+                Role::MarkLight
+            } else {
+                Role::Mark
+            };
+            r.rect(-3.0, mid - 3.0, 3.0, 6.0, cabin_role);
+            r.late_rect(-2.0, mid - 2.0, 1.0, 4.0, Role::Black);
+            let f = tq % 4;
+            let fl = if moving { 3.0 } else { 2.0 } + extra;
+            for ey in [8.0, h - 9.0] {
+                r.rect(-6.0 - fl - (f % 2) as f32, ey, fl, 1.0, Role::MarkLight);
+                r.rect(-8.0 - (f * 2) as f32 - extra, ey + if f % 2 == 1 { 1.0 } else { -1.0 }, 1.0, 1.0, Role::Mark);
+                if ignited {
+                    ignite(&mut r, -6.0, ey, 1.0);
+                }
+            }
+            // animazione del gettone che entra nella fessura della gettoniera (doppio clic USE)
+            if let Some(cf) = coin_f {
+                if cf < 12 {
+                    let cx = -17.0 + cf as f32;
+                    r.late_rect(cx, mid - 1.0, 4.0, 2.0, Role::Mark);
+                    r.late_rect(cx + 1.0, mid - 2.0, 2.0, 4.0, Role::Mark);
+                    r.late_rect(cx + 1.0, mid - 2.0, 2.0, 1.0, Role::MarkLight);
+                    r.late_rect(cx + 1.0, mid + 1.0, 2.0, 1.0, Role::MarkDark);
+                    if (cf / 3).is_multiple_of(2) {
+                        r.late_rect(cx + 1.0, mid - 1.0, 1.0, 2.0, Role::Body);
+                    } else {
+                        r.late_rect(cx + 2.0, mid - 1.0, 1.0, 2.0, Role::MarkLight);
+                    }
+                } else if cf < 14 {
+                    r.late_rect(-5.0, mid - 2.0, 3.0, 4.0, Role::Mark);
+                    r.late_rect(-5.0, mid - 2.0, 2.0, 1.0, Role::MarkLight);
+                    r.late_rect(-4.0, mid - 1.0, 1.0, 2.0, Role::Body);
+                } else if cf < 16 {
+                    r.late_rect(-4.0, mid - 2.0, 2.0, 4.0, Role::MarkLight);
+                    r.late_rect(-3.0, mid - 1.0, 1.0, 2.0, Role::Body);
+                } else if cf < 18 {
+                    r.late_rect(-3.0, mid - 2.0, 1.0, 4.0, Role::Body);
+                } else {
+                    let (d, srole) = if cf < 22 {
+                        (0.0, Role::Body)
+                    } else if cf < 26 {
+                        (1.0, Role::MarkLight)
+                    } else {
+                        (2.0, Role::Mark)
+                    };
+                    r.late_rect(-2.0 - d * 2.0, mid - 5.0 - d, 1.0, 1.0, srole);
+                    r.late_rect(-2.0 - d * 2.0, mid + 4.0 + d, 1.0, 1.0, srole);
+                    r.late_rect(-5.0 - d * 2.0, mid - 2.0 - d, 1.0, 1.0, srole);
+                    r.late_rect(-5.0 - d * 2.0, mid + 1.0 + d, 1.0, 1.0, srole);
+                }
+            }
         }
         PaddleKind::Titan => {
-            // più spessa verso il retro (la faccia resta dove colpisce), cintura a metà altezza con
-            // i fori (la colonna della faccia resta bianca), fibbia che sporge sul retro
-            let yb = round(h / 2.0) - 2.0;
-            r.rect(-6.0, 0.0, 8.0, h, Role::Body);
-            r.rect(-6.0, yb, 7.0, 4.0, Role::Mark);
-            for x in [-4.0, -2.0, 0.0] {
-                r.rect(x, yb + 1.0, 1.0, 1.0, Role::MarkDark);
+            // COLOSSUS: corazzata pesante in prospettiva 2.5D — fiancata 3D estrusa, ponte superiore
+            // rialzato e torre di comando con ombra propria e parallasse verticale (`par`) così
+            // appare molto più alta e imponente delle altre racchette (hitbox invariata)
+            let yb = round(h / 2.0) - 3.0;
+            let wall_bot = (2.0 - par * 2.0).clamp(0.0, 3.5);
+            let wall_top = (par * 2.5 - 0.5).clamp(0.0, 2.0);
+            let dy_p = round(par * 2.0);
+            // due enormi pod motori posteriori (al livello inferiore dello scafo, sotto la fiancata)
+            // con fiamme booster coniche affusolate e nucleo incandescente (niente bordi squadrati)
+            for (idx, my) in [2.0, h - 12.0].into_iter().enumerate() {
+                r.rect(-11.0, my, 4.0, 10.0, Role::Gray);
+                r.rect(-10.0, my + 2.0, 2.0, 6.0, Role::Dark);
+                r.rect(-12.0, my + 1.0, 1.0, 8.0, Role::DarkDeep);
+                let p = (tq + idx * 2) % 4;
+                let fl = if moving { [6, 8, 7, 8][p] } else { [4, 5, 6, 5][p] } + extra as usize;
+                let mlen = fl.div_ceil(2);
+                let jlen = fl - 1;
+                let clen = (fl / 2).max(2);
+                r.late_rect(-13.0, my + 2.0, 1.0, 6.0, Role::Mark);
+                r.late_rect(-12.0 - mlen as f32, my + 3.0, mlen as f32, 4.0, Role::Mark);
+                r.late_rect(-13.0, my + 3.0, 1.0, 4.0, Role::MarkLight);
+                r.late_rect(-12.0 - jlen as f32, my + 4.0, jlen as f32, 2.0, Role::MarkLight);
+                r.late_rect(-12.0 - clen as f32, my + 4.0, clen as f32, 2.0, Role::Body);
+                r.late_rect(-13.0 - fl as f32, my + 4.0 + (p % 2) as f32, 2.0, 1.0, Role::Mark);
+                if moving {
+                    let s = (tq + idx) % 3;
+                    let srole = if s == 0 { Role::MarkLight } else { Role::Mark };
+                    r.late_rect(-14.0 - fl as f32 - s as f32, my + 3.0 + ((s + idx) % 3) as f32, 1.0, 1.0, srole);
+                }
+                if ignited {
+                    ignite(&mut r, -13.0, my + 4.0, 2.0);
+                }
             }
-            r.rect(-9.0, yb - 1.0, 3.0, 6.0, Role::Gray);
-            r.rect(-8.0, yb, 1.0, 4.0, Role::Dark);
-            heavy_step(&mut r, h, a, -8.0);
+            // fiancate 3D verticali dello scafo (danno spessore e altezza in prospettiva)
+            r.rect(-8.0, 1.0, 2.0, h - 2.0, Role::DarkDeep);
+            r.rect(-7.0, 1.0, 1.0, h - 2.0, Role::Dark);
+            if wall_bot > 0.25 {
+                r.rect(-7.0, h, 9.0, wall_bot, Role::DarkDeep);
+                r.rect(-6.0, h, 8.0, (wall_bot - 1.0).max(0.5), Role::Dark);
+            }
+            if wall_top > 0.25 {
+                r.rect(-7.0, -wall_top, 9.0, wall_top, Role::Dark);
+                r.rect(-6.0, -wall_top, 8.0, 1.0, Role::Gray);
+            }
+            // scafo principale corazzato (faccia anteriore dritta sulla hitbox, x = -6..+2)
+            r.rect(-6.0, 0.0, 8.0, h, Role::Body);
+            // ponte superiore rialzato (gradino centrale con ombra sul ponte inferiore)
+            r.rect(-6.0, 6.0, 1.0, h - 12.0, Role::Dark);
+            r.rect(-5.0, 6.0, 6.0, h - 12.0, Role::GrayLight);
+            r.rect(-4.0, 7.0, 5.0, h - 14.0, Role::Body);
+            r.late_rect(-6.0, 11.0, 6.0, 1.0, Role::Dark);
+            r.late_rect(-6.0, h - 12.0, 6.0, 1.0, Role::Dark);
+            // basamento e ombra della torre di comando sullo scafo sottostante
+            r.late_rect(-7.0, yb + 1.0, 7.0, 7.0, Role::DarkDeep);
+            r.late_rect(-6.0, yb - 1.0, 7.0, 8.0, Role::Dark);
+            // tetto della torre di comando sopraelevato (si sposta in parallasse 2.5D con `dy_p`)
+            let ty = yb + dy_p;
+            r.late_rect(-5.0, ty, 6.0, 6.0, Role::Mark);
+            r.late_rect(-5.0, ty, 6.0, 1.0, Role::MarkLight);
+            r.late_rect(-5.0, ty + 5.0, 6.0, 1.0, Role::MarkDark);
+            r.late_rect(-4.0, ty + 1.0, 4.0, 4.0, Role::GrayLight);
+            r.late_rect(-3.0, ty + 2.0, 2.0, 2.0, Role::DarkDeep);
+            r.late_rect(-2.0, ty + 2.0, 1.0, 2.0, Role::MarkLight);
         }
         PaddleKind::Hammer => {
-            // la testa della mazza vista dall'alto (il manico scende sotto e non si vede): piano
-            // bianco spesso 8 pixel con un bordo scuro sul retro, al centro l'occhio con la punta
-            // del manico e il cuneo di traverso
-            r.rect(-6.0, 0.0, 8.0, h, Role::Body);
-            r.late_rect(-6.0, 0.0, 1.0, h, Role::Dark);
+            // ANVIL-MK1: nave-martello / ariete a "T" con fronte corazzato, striscia rossa da
+            // battaglia e grande booster centrale d'urto che si allunga al colpo
             let yc = round(h / 2.0);
-            r.rect(-4.0, yc - 4.0, 4.0, 8.0, Role::Dark);
-            r.rect(-3.0, yc - 3.0, 2.0, 6.0, Role::Mark);
-            r.rect(-3.0, yc - 1.0, 2.0, 1.0, Role::MarkDark);
-            // colpo potente: scintille a raggiera dalla faccia (da -70 a +70 gradi), che si
-            // allontanano e si scuriscono
+            r.rect(-4.0, 0.0, 6.0, h, Role::Body);
+            r.rect(-4.0, 0.0, 2.0, 5.0, Role::Gray);
+            r.rect(-4.0, h - 5.0, 2.0, 5.0, Role::Gray);
+            r.rect(-3.0, 5.0, 2.0, h - 10.0, Role::Mark);
+            r.late_rect(-4.0, 5.0, 1.0, h - 10.0, Role::Dark);
+            r.rect(-10.0, yc - 5.0, 6.0, 10.0, Role::Gray);
+            r.rect(-8.0, yc - 4.0, 4.0, 8.0, Role::Dark);
+            r.rect(-7.0, yc - 3.0, 3.0, 6.0, Role::Mark);
+            r.rect(-11.0, yc - 6.0, 2.0, 12.0, Role::Dark);
+            r.late_rect(-10.0, yc - 4.0, 1.0, 8.0, Role::GrayLight);
+            // booster conico: compatto a riposo, esplode allungandosi fino a 11 px al colpo
+            let surge = match a.spark {
+                Some((s, _)) if s < 0.14 => 3,
+                Some((s, _)) if s < 0.25 => 2,
+                Some((s, _)) if s < 0.35 => 1,
+                _ => 0,
+            };
+            let piston_beat = tq % 2 == 1;
+            let fl: usize = match surge {
+                3 => 11,
+                2 => 9,
+                1 => 7,
+                _ => [4, 5, 4, 3][tq % 4],
+            };
+            let tlen = if fl >= 9 { 3 } else if fl >= 6 { 2 } else { 1 };
+            let mlen = (fl * 2) / 3;
+            // i booster allungano il getto e la punta, non il cono (che segue il colpo)
+            let fl = fl + extra as usize;
+            let jlen = fl - 1;
+            let clen = (fl / 2).max(2);
+            if surge == 3 {
+                r.late_rect(-12.0, yc - 4.0, 1.0, 8.0, Role::Mark);
+            }
+            r.late_rect(-11.0 - tlen as f32, yc - 3.0, tlen as f32, 6.0, Role::Mark);
+            r.late_rect(-11.0 - mlen as f32, yc - 2.0, mlen as f32, 4.0, Role::Mark);
+            if surge >= 1 {
+                let hlen = (mlen / 2).max(1);
+                r.late_rect(-11.0 - hlen as f32, yc - 2.0, hlen as f32, 4.0, Role::MarkLight);
+            }
+            r.late_rect(-11.0 - jlen as f32, yc - 1.0, jlen as f32, 2.0, Role::MarkLight);
+            r.late_rect(-11.0 - clen as f32, yc - 1.0, clen as f32, 2.0, Role::Body);
+            r.late_rect(-12.0 - fl as f32, yc - 1.0 + (tq % 2) as f32, 2.0, 1.0, Role::Mark);
+            if surge >= 2 {
+                r.late_rect(-11.0 - fl as f32, yc - 1.0 + (tq % 2) as f32, 1.0, 1.0, Role::MarkLight);
+            }
+            if ignited {
+                ignite(&mut r, -11.0, yc - 1.0, 2.0);
+            }
+            // micro-vibrazione meccanica della racchetta a ogni battito del pistone (e al colpo)
+            if surge >= 2 || piston_beat {
+                r.shift(0, -1.0);
+            }
             if let Some((s, at)) = a.spark
                 && s < SPARK_SECONDS
             {
@@ -439,10 +619,58 @@ fn kind_ops(kind: PaddleKind, h: f32, a: &Anim) -> Ops {
             }
         }
         PaddleKind::Twist => {
-            // cucitura della maschera e stemma al centro
-            r.rect(-3.0, 0.0, 5.0, h, Role::Body);
-            r.rect(-1.0, 2.0, 1.0, h - 4.0, Role::Mark);
-            r.rect(-2.0, mid - 2.0, 3.0, 4.0, Role::Mark);
+            // VORTEX: caccia acrobatico affusolato con cabina-visiera da luchador viola, alette
+            // giroscopiche, ugello rotante e getti di manovra RCS sulle virate
+            r.rect(-3.0, 3.0, 5.0, h - 6.0, Role::Body);
+            r.rect(-2.0, 1.0, 4.0, 2.0, Role::Body);
+            r.rect(-1.0, 0.0, 3.0, 1.0, Role::Gray);
+            r.rect(-2.0, h - 3.0, 4.0, 2.0, Role::Body);
+            r.rect(-1.0, h - 1.0, 3.0, 1.0, Role::Gray);
+            r.rect(-6.0, 7.0, 3.0, 6.0, Role::Mark);
+            r.rect(-7.0, 9.0, 2.0, 3.0, Role::Gray);
+            r.rect(-6.0, h - 13.0, 3.0, 6.0, Role::Mark);
+            r.rect(-7.0, h - 12.0, 2.0, 3.0, Role::Gray);
+            r.rect(-5.0, mid - 5.0, 5.0, 10.0, Role::Mark);
+            r.late_rect(-4.0, mid - 4.0, 3.0, 8.0, Role::MarkDark);
+            r.late_rect(-3.0, mid - 3.0, 2.0, 6.0, Role::Mark);
+            r.late_rect(-2.0, mid - 2.0, 2.0, 1.0, Role::Body);
+            r.late_rect(-2.0, mid + 1.0, 2.0, 1.0, Role::Body);
+            let ph = tq % 4;
+            let dy = match ph {
+                1 => -1.0,
+                3 => 1.0,
+                _ => 0.0,
+            };
+            let fl = if moving { [2, 3, 2, 3][ph] } else { [0, 1, 0, 1][ph] } as f32 + extra;
+            let clen = 2.0 + (fl / 2.0).floor();
+            r.rect(-7.0, mid - 2.0, 2.0, 4.0, Role::Dark);
+            r.late_rect(-9.0, mid - 2.0, 2.0, 4.0, Role::Mark);
+            r.late_rect(-10.0 - fl, mid - 1.0 + dy, 3.0 + fl, 2.0, Role::MarkLight);
+            r.late_rect(-7.0 - clen, mid - 1.0 + dy, clen, 2.0, Role::Body);
+            r.late_rect(-12.0 - fl, mid - 1.0 + dy + (ph % 2) as f32, 2.0, 1.0, Role::Mark);
+            if ignited {
+                ignite(&mut r, -9.0, mid - 1.0, 2.0);
+            }
+            let p = (tq % 2) as f32;
+            if a.vy < -0.5 {
+                // sale: getto RCS brillante dal pod inferiore (nucleo bianco + scia diagonale/verticale)
+                r.late_rect(-13.0 - p, h - 8.0, 3.0, 3.0 + p, Role::Mark);
+                r.late_rect(-11.0, h - 3.0 + p, 2.0, 3.0, Role::Mark);
+                r.late_rect(-11.0, h - 10.0, 3.0, 4.0 + p, Role::MarkLight);
+                r.late_rect(-10.0, h - 6.0, 2.0, 4.0 + p, Role::MarkLight);
+                r.late_rect(-9.0, h - 11.0, 2.0, 3.0, Role::Body);
+                r.late_rect(-9.0, h - 8.0, 1.0, 3.0, Role::Body);
+                r.late_rect(-13.0 - p, h - 2.0 + p, 1.0, 1.0, Role::Body);
+            } else if a.vy > 0.5 {
+                // scende: getto RCS brillante dal pod superiore (speculare)
+                r.late_rect(-13.0 - p, 5.0 - p, 3.0, 3.0 + p, Role::Mark);
+                r.late_rect(-11.0, -p, 2.0, 3.0, Role::Mark);
+                r.late_rect(-11.0, 6.0 - p, 3.0, 4.0 + p, Role::MarkLight);
+                r.late_rect(-10.0, 2.0 - p, 2.0, 4.0 + p, Role::MarkLight);
+                r.late_rect(-9.0, 8.0, 2.0, 3.0, Role::Body);
+                r.late_rect(-9.0, 5.0, 1.0, 3.0, Role::Body);
+                r.late_rect(-13.0 - p, 1.0 - p, 1.0, 1.0, Role::Body);
+            }
             if let Some((s, _)) = a.spark
                 && s < RING_SECONDS
             {
@@ -450,9 +678,8 @@ fn kind_ops(kind: PaddleKind, h: f32, a: &Anim) -> Ops {
             }
         }
         PaddleKind::Blaster => {
-            // sparo: tutta la racchetta arretra di 1 pixel per 3 frame, le canne rientrano a 1
-            // pixel e tornano a 3 in 8 frame, lampo alla bocca per 3 frame, il bossolo vola dietro
-            // con un arco in circa 24 frame
+            // VIPER-X: cannoniera d'assalto con livrea verde a "X", ali corte con motorini verdi,
+            // due cannoni alari laser con rinculo e lampo verde simultanei e barra di carica laser
             let fr = a.fire.map(|s| s * 60.0);
             let recoil = fr.is_some_and(|f| f < 3.0);
             let barrel = match fr {
@@ -465,43 +692,137 @@ fn kind_ops(kind: PaddleKind, h: f32, a: &Anim) -> Ops {
             r.rect(0.0, cut, 2.0, h - 2.0 * cut, Role::Body);
             r.tri([(0.0, 0.0), (0.0, cut), (2.0, cut)], Role::Body);
             r.tri([(0.0, h), (0.0, h - cut), (2.0, h - cut)], Role::Body);
-            r.rect(2.0, mid - 3.0, barrel, 2.0, Role::Gray);
-            r.rect(2.0, mid + 1.0, barrel, 2.0, Role::Gray);
+            // ali corte posteriori + ugelli e booster al plasma verde
+            r.rect(-6.0, 3.0, 3.0, 5.0, Role::Gray);
+            r.rect(-6.0, h - 8.0, 3.0, 5.0, Role::Gray);
+            for (idx, ey) in [5.0, h - 6.0].into_iter().enumerate() {
+                r.rect(-7.0, ey - 1.0, 1.0, 3.0, Role::DarkDeep);
+                let p = (tq + idx * 2) % 4;
+                let fl = if moving { [6, 8, 7, 8][p] } else { [4, 5, 6, 5][p] } as f32 + extra;
+                let mlen = ((fl as i32 + 1) / 2) as f32;
+                let jlen = fl - 1.0;
+                let clen = (fl as i32 / 2).max(2) as f32;
+                r.late_rect(-7.0 - mlen, ey - 1.0, mlen, 3.0, Role::Mark);
+                r.late_rect(-8.0, ey - 1.0, 1.0, 3.0, Role::MarkLight);
+                r.late_rect(-7.0 - jlen, ey, jlen, 1.0, Role::MarkLight);
+                r.late_rect(-7.0 - clen, ey, clen, 1.0, Role::Body);
+                r.late_rect(-8.0 - fl, ey, 2.0, 1.0, Role::Mark);
+                if moving {
+                    let s = (tq + idx) % 3;
+                    let spark_col = if s == 0 { Role::MarkLight } else { Role::Mark };
+                    r.late_rect(-9.0 - fl - s as f32, ey - 1.0 + ((s + idx) % 3) as f32, 1.0, 1.0, spark_col);
+                }
+                if ignited {
+                    ignite(&mut r, -8.0, ey, 1.0);
+                }
+            }
+            // livrea a "X" verde sul dorso (colonne -3..-1, identica su PC e MiSTer)
+            r.late_rect(-3.0, mid - 4.0, 1.0, 2.0, Role::Mark);
+            r.late_rect(-1.0, mid - 4.0, 1.0, 2.0, Role::Mark);
+            r.late_rect(-2.0, mid - 2.0, 1.0, 1.0, Role::MarkDark);
+            r.late_rect(-2.0, mid - 1.0, 1.0, 2.0, Role::Mark);
+            r.late_rect(-2.0, mid + 1.0, 1.0, 1.0, Role::MarkDark);
+            r.late_rect(-3.0, mid + 2.0, 1.0, 2.0, Role::Mark);
+            r.late_rect(-1.0, mid + 2.0, 1.0, 2.0, Role::Mark);
+            // bobine verdi e due cannoni laser alari davanti
+            r.rect(-1.0, 8.0, 1.0, 2.0, Role::Mark);
+            r.rect(2.0, 8.0, barrel, 2.0, Role::Gray);
+            r.rect(-1.0, h - 10.0, 1.0, 2.0, Role::Mark);
+            r.rect(2.0, h - 10.0, barrel, 2.0, Role::Gray);
             if recoil {
-                let x = 2.0 + barrel;
-                r.rect(x, mid - 4.0, 1.0, 3.0, Role::Signal);
-                r.rect(x, mid + 1.0, 1.0, 3.0, Role::Signal);
-                r.rect(x + 1.0, mid - 2.0, 2.0, 4.0, Role::Signal);
-                r.rect(x + 3.0, mid - 1.0, 1.0, 2.0, Role::Signal);
+                let fx = 2.0 + barrel;
+                for fy in [7.0, h - 11.0] {
+                    r.rect(fx, fy, 2.0, 4.0, Role::Mark);
+                    r.rect(fx + 1.0, fy + 1.0, 3.0, 2.0, Role::MarkLight);
+                    r.rect(fx + 1.0, fy + 1.0, 2.0, 2.0, Role::Body);
+                    r.rect(fx + 4.0, fy + 1.0, 2.0, 2.0, Role::MarkLight);
+                }
             }
-            // lembi della bandana, cinghia e cartuccera
-            tails(&mut r, (-3.0, 3.0), 2.0, (3, 2), a);
+            // barra verticale di ricarica del condensatore laser (verde, da 0 a 19 px dal basso)
             let y0 = mid - 9.0;
-            r.rect(-4.0, y0, 1.0, 21.0, Role::Dark);
-            let ammo = a.ammo.min(4);
-            for i in (4 - ammo)..4 {
-                r.rect(-6.0, y0 + 1.0 + i as f32 * 5.0, 2.0, 3.0, Role::Signal);
-            }
-            if let Some(f) = fr
-                && (2.0..26.0).contains(&f)
-            {
-                let p = (f - 2.0) / 24.0;
-                let slot = 3u8.saturating_sub(ammo) as f32;
-                let x = round(-7.0 - p * 10.0);
-                let y = round(y0 + 1.0 + slot * 5.0 - 6.0 * (p * std::f32::consts::PI).sin() + p * 4.0);
-                r.rect(x, y, 2.0, 1.0, Role::Signal);
+            r.rect(-6.0, y0, 3.0, 21.0, Role::Dark);
+            let ammo = a.ammo.min(6);
+            let fill = if ammo > 0 {
+                [0.0, 3.0, 6.0, 9.0, 13.0, 16.0, 19.0][ammo as usize]
+            } else if let Some(p) = a.reload {
+                round(p.clamp(0.0, 1.0) * 19.0)
+            } else {
+                0.0
+            };
+            if fill > 0.0 {
+                let top = y0 + 20.0 - fill;
+                r.rect(-6.0, top, 2.0, fill, Role::Mark);
+                r.rect(-6.0, top, 2.0, fill.min(2.0), Role::MarkLight);
             }
             if recoil {
                 r.shift(0, -1.0);
             }
         }
         PaddleKind::Rush => {
-            // fascia in cima, con i lembi che escono dietro dal nodo
+            // MACH-ZERO: intercettore supersonico ad ali a freccia ciano, cockpit filante,
+            // ugello postbruciatore nitro (che piega contro `vy`) e scie d'aria dalle punte alari
             r.rect(-3.0, 0.0, 5.0, h, Role::Body);
-            r.rect(-3.0, 3.0, 4.0, 2.0, Role::Mark);
-            tails(&mut r, (-3.0, 3.0), 3.0, (3, 2), a);
+            // ali a freccia spazzate indietro
+            r.rect(-6.0, 1.0, 3.0, 5.0, Role::Body);
+            r.rect(-9.0, 0.0, 4.0, 3.0, Role::Mark);
+            r.rect(-11.0, 0.0, 2.0, 2.0, Role::MarkDark);
+            r.rect(-6.0, h - 6.0, 3.0, 5.0, Role::Body);
+            r.rect(-9.0, h - 3.0, 4.0, 3.0, Role::Mark);
+            r.rect(-11.0, h - 2.0, 2.0, 2.0, Role::MarkDark);
+            // cockpit centrale e ugello
+            r.rect(-3.0, mid - 4.0, 3.0, 8.0, Role::Dark);
+            r.rect(-2.0, mid - 3.0, 2.0, 6.0, Role::Mark);
+            r.late_rect(-1.0, mid - 2.0, 1.0, 4.0, Role::MarkLight);
+            r.rect(-5.0, mid - 2.0, 2.0, 4.0, Role::Gray);
+            // postbruciatore nitro: lunghezza irregolare a quattro pose, alone che pulsa e punta che
+            // sfarfalla a 16 al secondo, diamanti d'urto bianchi che scorrono lungo il getto e
+            // scintille che si staccano; il getto piega contro `vy` (dritto nello scatto)
+            let p = tq % 4;
+            let fz = flicker(a.t);
+            let fl = if a.dashing {
+                [11, 13, 12, 14][p]
+            } else {
+                [5, 7, 6, 8][p] + if moving { 2 } else { 0 }
+            } + extra as usize;
+            let lean = if a.dashing {
+                0.0
+            } else if a.vy > 0.5 {
+                -1.0
+            } else if a.vy < -0.5 {
+                1.0
+            } else {
+                0.0
+            };
+            let olen = (fl.div_ceil(2) + fz) as f32;
+            let jlen = (fl - 1) as f32;
+            let clen = (fl / 4 + 1) as f32;
+            r.late_rect(-5.0 - olen, mid - 2.0, olen, 4.0, Role::Mark);
+            r.late_rect(-5.0 - jlen, mid - 1.0 + lean, jlen, 2.0, Role::MarkLight);
+            r.late_rect(-5.0 - clen, mid - 1.0, clen, 2.0, Role::Body);
+            for k in 0..2 {
+                let d = clen + 1.0 + (tq % 3) as f32 + 3.0 * k as f32;
+                if d < jlen - 1.0 {
+                    r.late_rect(-6.0 - d, mid - 1.0 + lean, 1.0, 2.0, Role::Body);
+                }
+            }
+            r.late_rect(-6.0 - fl as f32, mid - 1.0 + lean + fz as f32, 2.0, 1.0, Role::Mark);
+            if moving {
+                let s = tq % 3;
+                let srole = if s == 0 { Role::MarkLight } else { Role::Mark };
+                r.late_rect(-7.0 - fl as f32 - s as f32, mid - 2.0 + ((p + s) % 4) as f32, 1.0, 1.0, srole);
+            }
+            if ignited {
+                ignite(&mut r, -5.0, mid - 1.0, 2.0);
+            }
+            // scie d'aria dalle punte alari
+            let wlen = if a.dashing { 4.0 } else { 2.0 };
+            let w1 = (tq % 3) as f32;
+            let w2 = ((tq + 1) % 3) as f32;
+            let wrole = if a.dashing { Role::MarkLight } else { Role::Mark };
+            r.rect(-12.0 - w1 - wlen, 1.0, wlen, 1.0, wrole);
+            r.rect(-12.0 - w2 - wlen, h - 2.0, wlen, 1.0, wrole);
         }
-        PaddleKind::Guardian => wall(&mut r, h, a),
+        PaddleKind::Guardian => wall(&mut r, h, a, boost),
     }
     r
 }
@@ -522,18 +843,42 @@ fn rgb(r: u8, g: u8, b: u8) -> Color {
 
 /// Disegna la racchetta `s` con i colori `look`; `u` è il pixel "arcade" (schermo a 240 righe).
 pub fn draw_paddle(r: &Renderer, s: &Shape, u: f32, look: Look) {
+    draw_paddle_stretched(r, s, u, 1.0, look);
+}
+
+/// Come [`draw_paddle`], ma allunga orizzontalmente i pixel arcade del fattore `stretch_x` (usata
+/// nello scatto iperspaziale del finale).
+pub fn draw_paddle_stretched(r: &Renderer, s: &Shape, u: f32, stretch_x: f32, look: Look) {
     let (cx, cy, f) = (s.x, r.screen_y(s.y), s.front);
     let Some(kind) = s.kind else {
-        draw_rectangle(cx - s.w / 2.0, cy - s.h / 2.0, s.w, s.h, look.body);
+        if s.tilt != 0.0 {
+            draw_rectangle_ex(cx, cy, s.w * stretch_x, s.h, DrawRectangleParams {
+                offset: vec2(0.5, 0.5),
+                rotation: -s.tilt * f,
+                color: look.body,
+            });
+        } else {
+            let mut y0 = cy - s.h / 2.0;
+            let mut y1 = y0 + s.h;
+            if let Some((cy0, cy1)) = s.clip_y {
+                y0 = y0.max(cy0);
+                y1 = y1.min(cy1);
+                if y1 <= y0 {
+                    return;
+                }
+            }
+            let w = s.w * stretch_x;
+            draw_rectangle(cx - w / 2.0, y0, w, y1 - y0, look.body);
+        }
         return;
     };
     // pixel arcade della racchetta: il corpo largo 5 e alto `h` occupa esattamente la hitbox
     let h = (s.h / u).round().max(1.0);
-    let (kx, ky) = (s.w / 5.0, s.h / h);
+    let (kx, ky) = ((s.w / 5.0) * stretch_x, s.h / h);
     let top = cy - s.h / 2.0;
 
-    // RUSH: immagini della racchetta lungo lo scatto in avanti, più chiare verso la partenza
-    // (nella scelta sempre: è il suo segno)
+    // RUSH: immagini dell'intercettore lungo lo scatto in avanti, più chiare verso la partenza
+    // (nella scelta sempre: è il suo segno), comprese le ali a freccia
     if kind == PaddleKind::Rush {
         let dash = s.dash.or(s.preview.then_some((cx - f * s.w * 8.0, 1.0)));
         if let Some((from, fade)) = dash {
@@ -544,11 +889,22 @@ pub fn draw_paddle(r: &Renderer, s: &Shape, u: f32, look: Look) {
                     ..look.mark
                 };
                 draw_rectangle(gx - s.w / 2.0, top, s.w, s.h, color);
+                let wx = if f > 0.0 { gx - s.w / 2.0 - 6.0 * kx } else { gx + s.w / 2.0 };
+                draw_rectangle(wx, top, 6.0 * kx, 3.0 * ky, color);
+                draw_rectangle(wx, top + s.h - 3.0 * ky, 6.0 * kx, 3.0 * ky, color);
             }
         }
     }
 
-    let ops = kind_ops(kind, h, &s.anim);
+    // parallasse verticale (-1 in cima, +1 in fondo; 0 nell'anteprima): usata dalla prospettiva 2.5D di TITAN
+    let par = if s.preview {
+        0.0
+    } else {
+        ((cy / r.world_h - 0.5) * 2.0).clamp(-1.0, 1.0)
+    };
+    // booster accesi dallo scatto in avanti, con la distanza da casa in pixel arcade
+    let boost = s.dash.map_or(Boost::default(), |(from, fade)| Boost::new(fade, (cx - from).abs() / kx));
+    let ops = kind_ops(kind, h, &s.anim, par, boost);
     // da pixel arcade a coordinate di disegno, con l'inclinazione di TWIST attorno al centro
     let angle = -s.tilt * f;
     let (sin, cos) = angle.sin_cos();
@@ -561,7 +917,16 @@ pub fn draw_paddle(r: &Renderer, s: &Shape, u: f32, look: Look) {
             let (ww, hh) = (w * kx, h * ky);
             if angle == 0.0 {
                 let x0 = if f > 0.0 { cx + (x + ox + 0.5) * kx } else { cx - (x + ox + w + 0.5) * kx };
-                draw_rectangle(x0, top + (y + oy) * ky, ww, hh, color);
+                let mut ry0 = top + (y + oy) * ky;
+                let mut ry1 = ry0 + hh;
+                if let Some((cy0, cy1)) = s.clip_y {
+                    ry0 = ry0.max(cy0);
+                    ry1 = ry1.min(cy1);
+                    if ry1 <= ry0 {
+                        return;
+                    }
+                }
+                draw_rectangle(x0, ry0, ww, ry1 - ry0, color);
             } else {
                 let c = point(x + ox + w / 2.0, y + oy + h / 2.0);
                 draw_rectangle_ex(c.x, c.y, ww, hh, DrawRectangleParams {
@@ -572,8 +937,18 @@ pub fn draw_paddle(r: &Renderer, s: &Shape, u: f32, look: Look) {
             }
         }
         Op::Tri { p, .. } => {
-            let [a, b, c] = p.map(|(x, y)| point(x + ox, y + oy));
-            draw_triangle(a, b, c, color);
+            let mut pts = p.map(|(x, y)| point(x + ox, y + oy));
+            if let Some((cy0, cy1)) = s.clip_y {
+                let lo = pts[0].y.min(pts[1].y).min(pts[2].y);
+                let hi = pts[0].y.max(pts[1].y).max(pts[2].y);
+                if hi <= cy0 || lo >= cy1 {
+                    return;
+                }
+                for pt in &mut pts {
+                    pt.y = pt.y.clamp(cy0, cy1);
+                }
+            }
+            draw_triangle(pts[0], pts[1], pts[2], color);
         }
     };
     let role_of = |op: &Op| match *op {
@@ -583,22 +958,39 @@ pub fn draw_paddle(r: &Renderer, s: &Shape, u: f32, look: Look) {
     let mark_dark = scaled(look.mark, [0.6; 3]);
     let mark_light = lighter(look.mark, 0.45);
     let gray = rgb(180, 180, 180);
+    let gray_light = rgb(226, 226, 230);
     let dark = rgb(92, 92, 98);
+    let dark_deep = rgb(52, 52, 60);
     let color = |role: Role| match role {
         Role::Body => look.body,
         Role::Mark => look.mark,
         Role::MarkDark => mark_dark,
         Role::MarkLight => mark_light,
         Role::Gray => gray,
+        Role::GrayLight => gray_light,
         Role::Dark => dark,
+        Role::DarkDeep => dark_deep,
         Role::Black => BLACK,
-        Role::Signal => look.signal,
     };
 
-    // ombra portata grigio scuro, 1 pixel verso il retro e 1 in basso, sotto tutto
-    let shadow = rgb(48, 48, 58);
-    for op in ops.0.iter().chain(&ops.1) {
-        fill(op, shadow, -1.0, 1.0);
+    // ombra portata sotto tutto: per TITAN è molto più staccata e profonda (effetto altezza 2.5D),
+    // tranne quando ruota con il SUPER (evita l'ombra lontana che gira attorno allo scafo)
+    if kind == PaddleKind::Titan && angle == 0.0 {
+        let far_shadow = Color::from_rgba(26, 26, 38, 175);
+        let mid_shadow = Color::from_rgba(40, 40, 52, 115);
+        let sy_far = 3.5 - par * 1.5;
+        let sy_mid = 2.0 - par * 0.8;
+        for op in ops.0.iter().chain(&ops.1) {
+            fill(op, far_shadow, -4.5, sy_far);
+        }
+        for op in ops.0.iter().chain(&ops.1) {
+            fill(op, mid_shadow, -2.5, sy_mid);
+        }
+    } else {
+        let shadow = rgb(48, 48, 58);
+        for op in ops.0.iter().chain(&ops.1) {
+            fill(op, shadow, -1.0, 1.0);
+        }
     }
     for op in &ops.0 {
         fill(op, color(role_of(op)), 0.0, 0.0);
@@ -650,6 +1042,7 @@ pub fn draw_gallery(app: &App, kind: PaddleKind, zoom: f32) {
         tilt: if kind == PaddleKind::Twist { TWIST_MAX_TILT } else { 0.0 },
         dash: None,
         preview: true,
+        clip_y: None,
         anim: Anim::still(0.0),
     };
     let look = look(app, Some(kind), App::color(app.cfg.colors.white));
@@ -962,6 +1355,7 @@ impl PaddlePick {
                 tilt: if kind == PaddleKind::Twist { TWIST_MAX_TILT } else { 0.0 },
                 dash: None,
                 preview: true,
+                clip_y: None,
                 anim: Anim::still(get_time() as f32),
             };
             draw_paddle(r, &shape, u, look(app, Some(kind), white));

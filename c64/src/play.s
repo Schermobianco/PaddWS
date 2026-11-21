@@ -614,7 +614,7 @@ skip:
 .ifdef NTSC
 SID_TICK_MAX  = 3700
 .else
-SID_TICK_MAX  = 2700
+SID_TICK_MAX  = 2450
 .endif
 SID_LATE      = TV_BUDGET - SID_TICK_MAX
 SID_LATE_LINE = RASTER_LINE + SID_LATE / TV_LCYC - TV_LINES
@@ -623,7 +623,7 @@ SID_LATE_LINE = RASTER_LINE + SID_LATE / TV_LCYC - TV_LINES
 ; cicli dopo l'interrupt del frame dopo (quello dopo parte subito, ancora nel bordo, e recupera):
 ; gli sprite si rifanno lo stesso, e restano quelli di prima solo oltre il budget meno 1.500
 .ifdef NTSC
-KEEP_SPRITES_CYC = 1500
+KEEP_SPRITES_CYC = 1700
 .else
 KEEP_SPRITES_CYC = 3900
 .endif
@@ -664,7 +664,13 @@ KEEP_SPRITES_OMEGA = (TV_BUDGET - KEEP_SPRITES_CYC - 500) / TV_LCYC ; lo stesso 
 :   jsr frame_after
     bcs :+
     jsr compute_sprites
-:   jsr next_hud
+.ifndef NTSC
+:
+.endif
+    jsr next_hud
+.ifdef NTSC
+:
+.endif
     lda state                   ; OMEGA: lampo, musica e rete (omega.s), dopo gli sprite
     cmp #ST_PLAY
     bne music
@@ -868,7 +874,7 @@ tempo:
     beq base
     and #$20
     beq base
-    lda egg_red                 ; (con l'easter egg giallo e rosso si scambiano)
+    lda #COL_RED                 ; (con l'easter egg giallo e rosso si scambiano)
     bne set
 bullet:
     lsr a                       ; grigio scuro, medio, chiaro, medio: 8 frame ciascuno
@@ -879,7 +885,7 @@ bullet:
     lda bullet_grays,x
     bne set
 yellow:
-    lda egg_yel
+    lda #COL_YELLOW
     bne set
 base:
     lda #COL_DGRAY
@@ -898,7 +904,7 @@ bullet_grays: .byte COL_DGRAY, COL_MGRAY, COL_GRAY, COL_MGRAY
     lda #0
     ldx opt_asound
     beq :+
-    lda egg_song                ; SID_SONG_TITLE (con l'easter egg SID_SONG_EGG)
+    lda #SID_SONG_TITLE
 :   jmp sid_song
 .endproc
 
@@ -2233,7 +2239,7 @@ ov_wcol:  .byte COL_WHITE       ; per l'easter egg (si scrivono con color_span_r
     ; in NEXT chi ha vinto è giallo
     lda m_next
     beq :+
-    lda egg_yel
+    lda #COL_YELLOW
     sta ov_wcol
 :   lda m_players               ; in singolo solo GAME OVER
     cmp #2
@@ -3136,13 +3142,13 @@ line:
     lda tp_rowc,x
     cmp #COL_YELLOW
     bne :+
-    lda egg_yel
+    lda #COL_YELLOW
 :   sta ov_cx                   ; la fascia
     eor #COL_WHITE
     beq :+
     lda #COL_WHITE
     bne :++
-:   lda egg_yel
+:   lda #COL_YELLOW
 :   sta ov_c0                   ; il riflesso
     stx ov_t
     ldy #TP_W - 1

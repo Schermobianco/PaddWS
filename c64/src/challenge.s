@@ -1590,30 +1590,6 @@ INI_PAGES = >(__INICODE_SIZE__ + 255)
     jmp ch_screen
 .endproc
 
-.proc egg_check
-    ldx #2
-:   lda ch_name,x
-    cmp egg_name,x
-    bne done
-    dex
-    bpl :-
-    ldx #3
-:   lda egg_x,x
-    eor egg_flip,x
-    sta egg_x,x
-    dex
-    bpl :-
-    lda egg_yel
-    sta $d026                   ; segni gialli delle racchette (multicolore %11)
-done:
-    rts
-.endproc
-egg_name: .byte "RED"
-; egg_x, egg_yel, egg_red ed egg_song (video.s, in quest'ordine)
-egg_flip: .byte COL_YELLOW ^ COL_RED, COL_YELLOW ^ COL_RED, COL_YELLOW ^ COL_RED
-          .byte SID_SONG_TITLE ^ SID_SONG_EGG
-.assert egg_yel = egg_x + 1 .and egg_red = egg_x + 2 .and egg_song = egg_x + 3, error, "variabili dell'easter egg in fila"
-
 ; Nuova riga in classifica alla posizione ch_rank (le altre scendono), salvata nella flash; poi la
 ; classifica con la riga in evidenza.
 .segment "INICODE"
@@ -1714,8 +1690,7 @@ confirm:
     lda ch_pos
     cmp #3
     bcc draw
-    jsr egg_check
-    ; BAS (l'altro easter egg delle iniziali): sblocca il JUKEBOX, salvato con la classifica
+    ; BAS (easter egg delle iniziali): sblocca il JUKEBOX, salvato con la classifica
     ldx #2
 :   lda ch_name,x
     cmp bas_name,x
@@ -2931,7 +2906,7 @@ got:
     lda #COL_WHITE
     cpx #4
     bcs :+
-    lda egg_yel
+    lda #COL_YELLOW
 :   sta sh_col
     cpx #10
     bcc :+
@@ -3032,7 +3007,7 @@ yel:
     cmp #TC_YEL0
     lda #COL_WHITE
     bcc :+
-    lda egg_yel
+    lda #COL_YELLOW
 :   sta (ptr2),y
     inx
     iny
@@ -3048,7 +3023,7 @@ yel:
     sta sh_y,x
     lda #(CHARSET + 8 * TC_SPRITE - $C000) / 64
     sta sh_ptr,x
-    lda egg_red
+    lda #COL_RED
     sta sh_col,x
     dex
     bpl :-

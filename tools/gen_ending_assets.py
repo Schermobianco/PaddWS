@@ -47,7 +47,7 @@ N_NONE, N_SCORE, N_BONUS, N_TOTAL = 0, 1, 2, 3
 # ------------------------------------------------------------------ tempi (frame a 60 Hz)
 
 FPS = 60
-CONGRATS, PARADE, SCORE, CHAMPION, THE_END = 3.5, 9.0, 9.0, 7.0, 3.0
+CONGRATS, PARADE, SCORE, CHAMPION, THE_END = 3.5, 9.0, 9.0, 7.0, 4.5
 YOU_WIN_AT = 1.0
 PARADE_STEP, STAMP_AFTER = 1.0, 0.5
 SCORE_COUNT, BONUS_COUNT, TOTAL_AT = 3.0, 1.0, 4.5
@@ -249,7 +249,7 @@ def static_parts(t: Text) -> dict[int, list[tuple]]:
             ("TOTAL", 140, s, C_WHITE, 2, N_TOTAL, lx)],
         3: [("YOU ARE THE", 184, 1, C_WHITE, 0, N_NONE, None),
             ("PADD WS CHAMPION", 200, 1, C_YELLOW, 0, N_NONE, None)],
-        5: [("THE END", 120, 1, C_FLASH, 0, N_NONE, None)],
+        5: [("THE END", 178, 1, C_FLASH, 0, N_NONE, None)],
     }
 
 
@@ -301,13 +301,14 @@ def lines_of(t: Text, items: list[tuple], b: Builder) -> dict[int, int]:
 # ------------------------------------------------------------------ fuochi d'artificio
 
 FW_FPS = 15
-RISE = 14
+RISE = 12
 G = 0.12
 KINDS = ["ring", "willow", "palm", "chrysanthemum", "crackle", "crossette"]
-F_WHITE, F_YELLOW, F_RED = 1, 2, 3
-MARGIN = 130.0          # come ending_ui.rs con lo schermo 4:3 (640 unità di larghezza a 480 righe)
+# slot colore del punto (2 bit nella ROM): 1 = cuore bianco, 2 = primario del tema, 3 = secondario
+F_CORE, F_PRI, F_SEC = 1, 2, 3
+MARGIN = 90.0           # come ending_ui.rs con lo schermo 4:3 (640 unità di larghezza a 480 righe)
 SKY_W = 640.0
-FW_STRIDE = 80          # frame per fuoco nell'indice (razzo e scoppio: al massimo 14 + 62)
+FW_STRIDE = 80          # frame per fuoco nell'indice (razzo e scoppio: al massimo 12 + 62)
 
 
 class Rng:
@@ -334,9 +335,18 @@ def show() -> list[dict]:
     out: list[dict] = []
     start = 0
     while start < last:
-        out.append({"kind": KINDS[len(out) % len(KINDS)], "x": rng.below(1000) / 1000.0,
-                    "y": 70.0 + rng.below(160), "start": start, "seed": rng.next_u32() | 1})
-        start += 6 + rng.below(8)
+        idx = len(out)
+        out.append({"kind": KINDS[idx % len(KINDS)], "x": rng.below(1000) / 1000.0,
+                    "y": 60.0 + rng.below(168), "start": start, "seed": rng.next_u32() | 1,
+                    "theme": idx % 8})
+        start += 5 + rng.below(6)
+    # salva finale a tre scoppi coordinati (come ending_ui.rs)
+    for x, y, kind, theme, st, seed in (
+        (0.14, 96.0, "chrysanthemum", 0, 54, 0xCAFE0001),
+        (0.50, 74.0, "willow", 1, 56, 0xCAFE0062),
+        (0.86, 96.0, "chrysanthemum", 4, 58, 0xCAFE00C3),
+    ):
+        out.append({"kind": kind, "x": x, "y": y, "start": st, "seed": seed, "theme": theme})
     return out
 
 
@@ -345,7 +355,7 @@ def alive(k: float, i: int, t: int) -> bool:
 
 
 def particles(dots: list, t: int, n: int, speed: float, color: int, life: float, size: int, trail: int,
-              drag: float) -> None:
+              drag: float, tip: int | None = None) -> None:
     for a in range(n):
         ang = a * 2 * math.pi / n
         for back in range(trail + 1):
@@ -355,56 +365,74 @@ def particles(dots: list, t: int, n: int, speed: float, color: int, life: float,
             y = dist * math.sin(ang) + G * (tt * tt) / 2.0
             k = max(1.0 - tt / life, 0.0) * (1.0 - back / (trail + 1))
             if alive(k, a + back, tt):
-                dots.append((x, y, size if back == 0 else 1, color))
+                c = tip if (tip is not None and ((back == 0 and tt < 6) or back > 1)) else color
+                dots.append((x, y, size if back == 0 else 1, c))
 
 
 def burst(kind: str, t: int, seed: int) -> list:
-    """Punti (x, y, size, colore) dello scoppio al frame t, unità a 480 righe dal centro."""
+    """Punti (x, y, size, slot colore 1..3) dello scoppio al frame t, unità a 480 righe dal centro."""
     dots: list = []
+    # lampo iniziale allo scoppio
+    if t <= 2:
+        dots.append((0.0, 0.0, 2, F_CORE))
+        dots.append((-4.0, 0.0, 1, F_CORE))
+        dots.append((4.0, 0.0, 1, F_CORE))
+        dots.append((0.0, -4.0, 1, F_CORE))
+        dots.append((0.0, 4.0, 1, F_CORE))
+        if t == 1:
+            dots += [(-4.0, -4.0, 1, F_PRI), (4.0, -4.0, 1, F_PRI),
+                     (-4.0, 4.0, 1, F_SEC), (4.0, 4.0, 1, F_SEC)]
     if kind == "ring":
-        particles(dots, t, 20, 4.0, F_YELLOW, 26.0, 2, 0, 0.97)
+        particles(dots, t, 22, 4.2, F_PRI, 28.0, 2, 1, 0.97, F_CORE)
+        particles(dots, t, 11, 2.5, F_SEC, 24.0, 1, 0, 0.97)
     elif kind == "willow":
-        particles(dots, t, 24, 2.6, F_YELLOW, 50.0, 1, 6, 0.95)
+        particles(dots, t, 26, 2.9, F_PRI, 48.0, 1, 6, 0.95, F_SEC)
     elif kind == "palm":
-        particles(dots, t, 7, 4.5, F_RED, 34.0, 3, 4, 0.97)
+        particles(dots, t, 9, 4.7, F_PRI, 34.0, 3, 5, 0.97, F_SEC)
     elif kind == "chrysanthemum":
-        particles(dots, t, 16, 2.2, F_WHITE, 28.0, 2, 0, 0.97)
-        particles(dots, t, 28, 4.2, F_RED, 30.0, 2, 0, 0.97)
+        particles(dots, t, 14, 2.1, F_SEC, 26.0, 2, 1, 0.97, F_CORE)
+        particles(dots, t, 28, 4.5, F_PRI, 32.0, 2, 2, 0.97, F_CORE)
     elif kind == "crackle":
         rng = Rng(seed)
-        for i in range(60):
+        slots = (F_CORE, F_PRI, F_SEC, F_PRI)
+        for i in range(68):
             ang = rng.below(6283) / 1000.0
-            v = 0.5 + rng.below(3500) / 1000.0
+            v = 0.6 + rng.below(3800) / 1000.0
             dist = v * min(t, 18)
             x = dist * math.cos(ang)
             y = dist * math.sin(ang) + G * (t * t) / 3.0
             if t < 40 and (t + i) % 3 != 0:
-                dots.append((x, y, 1, F_WHITE if (t + i) % 2 == 1 else F_YELLOW))
+                dots.append((x, y, 1, slots[(t + i) & 3]))
     else:   # crossette
-        split = 12
+        split = 11
         for a in range(4):
             ang = a * math.pi / 2 + math.pi / 4
             tt = min(t, split)
-            bx = 4.5 * tt * math.cos(ang)
-            by = 4.5 * tt * math.sin(ang) + G * tt * tt / 2.0
+            bx = 4.6 * tt * math.cos(ang)
+            by = 4.6 * tt * math.sin(ang) + G * tt * tt / 2.0
             if t < split:
-                dots.append((bx, by, 2, F_WHITE))
+                dots.append((bx, by, 2, F_CORE))
+                dots.append((bx * 0.85, by * 0.85, 1, F_PRI))
                 continue
             u = t - split
+            sc = F_PRI if a % 2 == 0 else F_SEC
             for b in range(4):
-                ang2 = ang + (b - 1.5) * 0.5
-                x = bx + 2.5 * u * math.cos(ang2)
-                y = by + 2.5 * u * math.sin(ang2) + G * (u * u) / 2.0
-                k = max(1.0 - u / 22.0, 0.0)
+                ang2 = ang + (b - 1.5) * 0.55
+                x = bx + 2.7 * u * math.cos(ang2)
+                y = by + 2.7 * u * math.sin(ang2) + G * (u * u) / 2.0
+                k = max(1.0 - u / 24.0, 0.0)
                 if alive(k, a * 4 + b, u):
-                    dots.append((x, y, 2, F_YELLOW))
+                    dots.append((x, y, 2, sc if b % 2 == 0 else F_CORE))
     return dots
 
 
 def rocket(age: int, y: float) -> list:
     k = age / RISE
     ry = 480.0 - (480.0 - y) * (1.0 - (1.0 - k) ** 2) - y
-    return [(0.0, ry, 2, F_WHITE)] + [(0.0, ry + t * 6.0, 1, F_YELLOW) for t in (1, 2)]
+    out = [(0.0, ry, 2, F_CORE), (0.0, ry + 6.0, 1, F_PRI), (0.0, ry + 12.0, 1, F_SEC)]
+    if age % 2 == 0:
+        out.append((-2.0 if age % 4 == 0 else 2.0, ry + 16.0, 1, F_PRI))
+    return out
 
 
 def cells(dots: list) -> list[tuple[int, int, int]]:
@@ -554,18 +582,23 @@ def main() -> None:
     v += [f"localparam integer END_CRED_C0 = {c0}, END_CRED_LEN = {cred_len}, END_CRED_BASE = {cred_base};",
           f"localparam integer END_CRED_SMAX = {CRED_SMAX};",
           f"localparam integer END_FWS = {len(fws)}, END_FW_STRIDE = {FW_STRIDE};",
-          "// fuoco i: frame del lancio (a 15 Hz) e cella del punto dello scoppio (griglia 160x120)",
-          "function [6:0] fw_start(input [3:0] i);", "    case (i)",
-          *[f"        4'd{i}: fw_start = 7'd{fw['start']};" for i, fw in enumerate(fws)],
+          "// fuoco i: frame del lancio (a 15 Hz), cella dello scoppio (160x120) e tema colori (0..7)",
+          "function [6:0] fw_start(input [4:0] i);", "    case (i)",
+          *[f"        5'd{i}: fw_start = 7'd{fw['start']};" for i, fw in enumerate(fws)],
           "        default: fw_start = 7'd127;", "    endcase", "endfunction",
-          "function [7:0] fw_cx(input [3:0] i);", "    case (i)",
-          *[f"        4'd{i}: fw_cx = 8'd{fw_centre(fw)[0]};   // {fw['kind']}" for i, fw in enumerate(fws)],
+          "function [7:0] fw_cx(input [4:0] i);", "    case (i)",
+          *[f"        5'd{i}: fw_cx = 8'd{fw_centre(fw)[0]};   // {fw['kind']}" for i, fw in enumerate(fws)],
           "        default: fw_cx = 8'd0;", "    endcase", "endfunction",
-          "function [6:0] fw_cy(input [3:0] i);", "    case (i)",
-          *[f"        4'd{i}: fw_cy = 7'd{fw_centre(fw)[1]};" for i, fw in enumerate(fws)],
-          "        default: fw_cy = 7'd0;", "    endcase", "endfunction"]
-    if len(fws) > 15:
+          "function [6:0] fw_cy(input [4:0] i);", "    case (i)",
+          *[f"        5'd{i}: fw_cy = 7'd{fw_centre(fw)[1]};" for i, fw in enumerate(fws)],
+          "        default: fw_cy = 7'd0;", "    endcase", "endfunction",
+          "function [2:0] fw_theme(input [4:0] i);", "    case (i)",
+          *[f"        5'd{i}: fw_theme = 3'd{fw['theme']};" for i, fw in enumerate(fws)],
+          "        default: fw_theme = 3'd0;", "    endcase", "endfunction"]
+    if len(fws) > 31:
         raise SystemExit("troppi fuochi")
+    if len(fw_words) > 16384:
+        raise SystemExit(f"troppi punti nei fuochi: {len(fw_words)} > 16384")
     (GEN / "pong_ending.vh").write_text("\n".join(v) + "\n", newline="\n")
     print(f"finale: {len(b.rows)} righe di bitmap ({len(text_bytes)} byte), mappa {len(words)} righe, "
           f"{len(fws)} fuochi, {ndots} punti ({len(fw_words)} parole); parti {PART_LEN} = {sum(PART_LEN)} frame")

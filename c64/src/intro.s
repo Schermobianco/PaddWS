@@ -242,7 +242,7 @@ rung:
     lda in_f                    ; quello di adesso: giallo e grigio, 8 frame ciascuno
     and #8
     bne gray
-    lda egg_yel
+    lda #COL_YELLOW
     bne set
 beaten:
     lda in_mode                 ; (nell'allenamento nessuno battuto)
@@ -326,7 +326,6 @@ put:
     adc tn_n
     tax
     lda tn_map,x
-    jsr egg_color
 color:
     pha
     lda ptr+1
@@ -565,9 +564,6 @@ pad:
     ldx #COL_WHITE
     cmp in_t
     bcc :+
-    ldx #COL_RED
-    lda egg_x
-    beq :+
     ldx #COL_PURPLE
 :   ldy #IN_PADY
     lda #0

@@ -275,7 +275,8 @@ fn rising_strike_leaves_flat_and_breaks_at_45_degrees_late() {
     let x = rise_point(&mut m);
     let w = m.params.width;
     let at = (w >> 1) + (w >> 3);
-    assert!(x >= at && x < at + m.ball.dx.abs() + fixed::int(1), "s'impenna a 5/8: {x}");
+    assert!(x >= at && x < at + 2 * m.ball.dx.abs() + fixed::int(1), "s'impenna a 5/8: {x}");
+    assert_eq!(m.ball.boost, fixed::ONE + (fixed::ONE >> 2), "RISING STRIKE Lv.1: boost x1,25");
     assert_eq!(m.ball.vy, m.ball.vx.abs(), "a 45 gradi, verso l'alto (lontano dall'avversario)");
     assert!(m.next.as_ref().unwrap().rise_break.is_none());
 }
@@ -285,7 +286,8 @@ fn full_bar_rising_strike_breaks_later() {
     let mut m = rising_shot(2);
     let x = rise_point(&mut m);
     let at = m.params.width - (m.params.width >> 3);
-    assert!(x >= at && x < at + m.ball.dx.abs() + fixed::int(1), "s'impenna a 7/8: {x}");
+    assert!(x >= at && x < at + 2 * m.ball.dx.abs() + fixed::int(1), "s'impenna a 7/8: {x}");
+    assert_eq!(m.ball.boost, fixed::ONE + (fixed::ONE >> 1), "RISING STRIKE Lv.2: boost x1,50");
     assert_eq!(meter(&m, Side::Left), m.params.super_gain_hit, "spesi entrambi i settori");
 }
 

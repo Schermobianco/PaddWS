@@ -121,13 +121,14 @@ pub struct PaddleTuning {
     pub blaster_height: f64,
     pub blaster_speed: f64,
     /// BLASTER: colpi del caricatore, pausa minima tra due colpi (s), ricarica del caricatore
-    /// dal primo colpo (s), velocità del colpo (px per tick a 60 Hz) e metà della fascia coperta
-    /// dai due colpi paralleli (px)
+    /// dal primo colpo (s), velocità del colpo (px per tick a 60 Hz), metà della fascia coperta
+    /// dai due fasci laser (px) e durata del rallentamento inflitto all'avversario colpito (s)
     pub blaster_shots: u32,
     pub blaster_gap_seconds: f64,
     pub blaster_reload_seconds: f64,
     pub blaster_shot_speed: f64,
     pub blaster_band: f64,
+    pub blaster_slow_seconds: f64,
     /// BLASTER: ha lo scatto in avanti e spara con un comando a parte; senza scatto spara con
     /// il tasto dello scatto
     pub blaster_dash: bool,
@@ -160,14 +161,15 @@ impl Default for PaddleTuning {
             titan_speed: 0.8,
             hammer_multiplier: 1.25,
             hammer_speed: 0.75,
-            twist_transfer: 0.5,
+            twist_transfer: 0.75,
             blaster_height: 1.1,
             blaster_speed: 1.0,
-            blaster_shots: 4,
-            blaster_gap_seconds: 0.2,
+            blaster_shots: 6,
+            blaster_gap_seconds: 0.22,
             blaster_reload_seconds: 3.0,
             blaster_shot_speed: 14.0,
-            blaster_band: 6.0,
+            blaster_band: 26.0,
+            blaster_slow_seconds: 2.0,
             blaster_dash: false,
             rush_height: 0.85,
             rush_dash: 1.5,
@@ -213,10 +215,10 @@ impl Default for NextTuning {
             super_gain_conceded: 8,
             super_cost: 32,
             super_straight_multiplier: 2.0,
-            // MAX STRAIGHT SHOT almeno alla velocità massima dello scambio (0,5 x 2); RISING STRIKE
-            // vale per la sorpresa più che per la velocità e ha una soglia più bassa
-            super_min_speed_straight: 0.5,
-            super_min_speed_rise: 0.375,
+            // STRAIGHT SHOT almeno a 0,75 x max (x1,5 = 1,125x al Lv.1, x2 = 1,5x al Lv.2);
+            // RISING STRIKE almeno a 0,625 x max (con boost x1,25 al Lv.1 e x1,5 al Lv.2)
+            super_min_speed_straight: 0.75,
+            super_min_speed_rise: 0.625,
             paddles: PaddleTuning::default(),
         }
     }
@@ -417,6 +419,8 @@ pub struct Params {
     pub arcade_cooldown_ticks: u32,
     pub arcade_spawn_ticks: u32,
     pub arcade_share: u32,
+    /// ARCADE: finestra del doppio clic su USE a riserva vuota per chiamare una capsula (0,4 s)
+    pub arcade_tap_ticks: u32,
     pub hammer_mul: Fx,
     /// RUSH: tiro dalla posizione avanzata
     pub rush_mul: Fx,
@@ -426,6 +430,7 @@ pub struct Params {
     pub blaster_reload_ticks: u32,
     pub blaster_shot_speed: Fx,
     pub blaster_band: Fx,
+    pub blaster_slow_ticks: u32,
     pub blaster_dash: bool,
     pub guardian_barrier_x: Fx,
     /// GUARDIAN: y dell'estremo alto del muro (sotto la banda delle riserve, la y cresce verso
@@ -606,14 +611,16 @@ impl Params {
             arcade_cooldown_ticks: ticks(k.arcade_cooldown_seconds),
             arcade_spawn_ticks: ticks(k.arcade_spawn_seconds).max(1),
             arcade_share: k.arcade_share.min(3),
+            arcade_tap_ticks: ticks(0.4).max(1),
             hammer_mul: fixed::from_f64(k.hammer_multiplier),
             rush_mul: fixed::from_f64(k.rush_ball_multiplier),
             twist_transfer: fixed::from_f64(k.twist_transfer),
-            blaster_shots: k.blaster_shots.clamp(1, crate::next::MAX_SHOTS as u32) as u8,
+            blaster_shots: k.blaster_shots.clamp(1, 7) as u8,
             blaster_gap_ticks: ticks(k.blaster_gap_seconds),
             blaster_reload_ticks: ticks(k.blaster_reload_seconds).max(1),
             blaster_shot_speed: speed(k.blaster_shot_speed * s),
             blaster_band: px(k.blaster_band * sy),
+            blaster_slow_ticks: ticks(k.blaster_slow_seconds),
             blaster_dash: k.blaster_dash,
             guardian_barrier_x: px(k.guardian_barrier_x * sx),
             guardian_top: fixed::int(guardian_top),

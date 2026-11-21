@@ -60,7 +60,7 @@ E_CONGRATS  = 175               ; 3,5 s
 E_PARADE    = 450
 E_SCORE     = 450
 E_CHAMP     = FW_CHAMPION
-E_THEEND    = 150
+E_THEEND    = 225
 E_HOLD      = 100               ; titoli: l'ultima riga ferma al centro
 E_YOUWIN    = 50                ; YOU WIN! e la voce un secondo dopo CONGRATULATIONS
 E_SKIP      = 25                ; Start salta il finale dopo mezzo secondo
@@ -507,26 +507,55 @@ e_bcol:  .byte COL_WHITE
     jsr fresh_screen
     lda #$c8                    ; fine dei titoli: niente scorrimento
     sta $d016
+    lda #COL_GRAY               ; colori originali della nave vincitrice
+    sta $d025
     lda #0
     sta e_blink
     lda #COL_WHITE
     sta e_bcol
     jsr print_at
-    .byte 16, 11, "THE END", 0
+    .byte 16, 17, "THE END", 0
     lda ch_omega                ; OMEGA battuto: la riga in più
     beq :+
     jsr print_at
-    .byte 13, 14, "OMEGA DEFEATED", 0
-    lda egg_red
-    ldy #14
+    .byte 13, 20, "OMEGA DEFEATED", 0
+    lda #COL_RED
+    ldy #20
     jsr color_row
-:   rts
+:   ; astronave vincitrice (sprite 3, già costruita in SP_PAD0) sospesa al centro sopra THE END
+    lda #SP_PAD0
+    sta sh_ptr+3
+    ldx e_win
+    lda kind_col,x
+    sta sh_col+3
+    lda #SPR_X0 + 160 - 24
+    sta sh_x+3
+    lda #0
+    sta sh_msb
+    lda #SPR_Y0 + 66
+    sta sh_y+3
+    lda #$08
+    sta sh_mc
+    sta sh_yexp
+    sta sh_xexp
+    sta sh_enable
+    rts
 .endproc
 
 .proc theend_frame
     lda #E_FLASH_END
-    ldy #11
+    ldy #17
     jsr e_blinker
+    ; leggero ondeggiamento verticale della nave vincitrice (±3 px)
+    lda e_t
+    lsr a
+    lsr a
+    and #$07
+    tax
+    lda end_bob,x
+    clc
+    adc #SPR_Y0 + 66
+    sta sh_y+3
     lda #<E_THEEND
     ldx #>E_THEEND
     jsr at_time
@@ -534,6 +563,9 @@ e_bcol:  .byte COL_WHITE
     jmp close_enter
 :   rts
 .endproc
+end_bob: .byte 0, 1, 2, 3, 2, 1, 0, <(-1)
+e_win:   .byte 0                ; tipo di racchetta del vincitore (0-6)
+e_io:    .byte 0                ; fuori dall'overlay dei fuochi: resta 0 dopo la sfilata
 
 ; ------------------------------------------------------------------------------------ uscita
 
@@ -661,7 +693,7 @@ e_line:  .byte 0
 
 .proc champ_enter
     jsr fresh_screen
-    lda egg_red                 ; cielo multicolore (righe 0-17), il testo sotto bianco: COL_FWSKY,
+    lda #COL_RED                 ; cielo multicolore (righe 0-17), il testo sotto bianco: COL_FWSKY,
     ora #8                      ; con il giallo dell'easter egg (egg_check) al posto del rosso
     ldx #SKY_ROWS * 40 / 3
 :   sta $d800 - 1,x
@@ -689,8 +721,19 @@ e_line:  .byte 0
     sta $d016
     lda #COL_WHITE
     sta $d022
-    lda egg_yel
+    lda #COL_YELLOW
     sta $d023
+    ; salva il tipo di racchetta del vincitore (lo sprite SP_PAD0 si costruisce al frame 1 in fw_ship
+    ; così champ_enter resta ben sotto il budget PAL e NTSC)
+    ldx #0
+    lda ch_side
+    beq :+
+    ldx #1
+:   lda ch_kinds,x
+    cmp #K_NONE
+    bcc :+
+    lda #0
+:   sta e_win
     jmp fw_init                 ; (il cielo del secondo schermo lo pulisce il primo passo)
 .endproc
 
@@ -722,7 +765,7 @@ e_line:  .byte 0
     lda #0
     sta e_prl
     sta $d01b
-    lda egg_yel                 ; da qui alla fine $D025 giallo (il razzo dei fuochi; prima era il
+    lda #COL_YELLOW                 ; da qui alla fine $D025 giallo (il razzo dei fuochi; prima era il
     sta $d025                   ; grigio delle racchette), poi close_frame lo rimette
     rts
 .endproc
@@ -796,7 +839,6 @@ next:
     sta e_io
 :   rts
 .endproc
-e_io: .byte 0
 ; sprite del programma (nel .prg a $C000-$C7FF: banco PRG_BANK + 2, pagine $B8-$BF) e titolo
 ; dell'attract (banco PICK_BANK, TITLE_SRC), 2 pagine per volta
 E_SPR_BANK = PRG_BANK + ($C000 - $0800) / $4000
@@ -1364,7 +1406,7 @@ row:
     lda #COL_WHITE
     cpy #0
     beq :+
-    lda egg_yel
+    lda #COL_YELLOW
 :   pha
     ldy cred_col-1,x
     ldx e_row
@@ -1391,7 +1433,7 @@ next:
 .endproc
 
 
-; Stato dei fuochi a zero, razzi pronti.
+; Stato dei fuochi a zero, razzi e astronave vincitrice (sprite 3) pronti.
 .proc fw_init
     lda #0
     ldx #fw_vars_end - fw_vars - 1
@@ -1399,10 +1441,11 @@ next:
     dex
     bpl :-
     sta sh_enable
-    lda #%111                   ; razzi: sprite 0-2 multicolore, non espansi, davanti
+    lda #%00001111              ; razzi 0-2 e astronave vincitrice 3 multicolore
     sta sh_mc
-    lda #0
+    lda #%00001000              ; astronave 3 alta 2x come in partita
     sta sh_yexp
+    lda #0
     sta sh_xexp
     sta sh_msb
     sta $d01b
@@ -1414,11 +1457,18 @@ next:
     sta SCREEN + $400 + $3f8,x  ; (il secondo schermo ha i suoi puntatori)
     dex
     bpl :-
+    lda #SP_PAD0
+    sta sh_ptr+3
+    sta SCREEN + $400 + $3f8+3
+    ldx e_win
+    lda kind_col,x
+    sta sh_col+3
     rts
 .endproc
 
 .proc fw_frame
     jsr rockets
+    jsr fw_ship
     lda fw_phase
     bne :+
     ; fase 0: un passo nuovo, il cielo dello schermo nascosto vuoto, il fuoco 0
@@ -1608,6 +1658,8 @@ next:
 found:
     lda fs_kind,y
     sta sl_kind,x
+    lda fs_col,y
+    sta sl_col,x
     lda #1
     sta sl_on,x
     lda #0
@@ -1657,6 +1709,8 @@ found:
     bne :+
     rts
 :   stx fslot
+    lda sl_col,x
+    sta fw_col
     inc sl_age,x
     ldy sl_kind,x
     ; (t * 3) mod 10
@@ -1848,12 +1902,16 @@ vis:
     lda fage
     clc
     adc fi
-    sta fq
-    and #1
+    and #3
     beq :+
-    lda #$d0 - $c0              ; giallo
-:   eor #$c0                    ; bianco ($C0) o giallo ($D0)
-    sta fc
+    cmp #1
+    beq :++
+    lda #$e0                    ; colore del fuoco ($D800)
+    bne :+++
+:   lda #$c0                    ; bianco
+    bne :++
+:   lda #$d0                    ; giallo
+:   sta fc
     lda p_xh,x
     ldy p_yh,x
     jmp fw_plot
@@ -1967,8 +2025,209 @@ out:
     and #$0f
     ora fqd
     sta (fp),y
+    ; scintilla %11 ($E0): scrive il colore del fuoco nella Color RAM ($D800)
+    lda fc
+    cmp #$e0
+    bne out
+    lda fp+1
+    and #$03
+    ora #$d8
+    sta fp+1
+    lda fw_col
+    sta (fp),y
 out:
     rts
+.endproc
+
+; Salto Warp dell'astronave vincitrice (sprite 3) durante i fuochi d'artificio:
+;   frame 20..79  entrata rapida da sinistra (X-espansa nei primi 30 frame, poi normale)
+;   frame 80..174 crociera centrale con carica (ondeggio Y + vibrazione e lampi ciano alla fine)
+;   frame 175+    SCATTO IPERSPAZIALE! lampo bianco, X-espansione hardware ($D01D) e scatto a destra
+.proc fw_ship
+    lda e_t+1
+    jne off                     ; dopo frame 255: già uscita
+    lda e_t
+    cmp #1
+    bne no_build
+    ; costruisce in SP_PAD0 lo sprite dell'astronave vincitrice (frame 1: cielo vuoto, budget ampio)
+    ldx e_win
+    stx pi_kind
+    lda #0
+    sta pi_side
+    lda pv_rows,x
+    sta pi_n
+    lda #0
+    cpx #K_TWIST
+    bne :+
+    lda #3                      ; TWIST dritta
+:   cpx #K_BLASTER
+    bne :+
+    lda #128                    ; BLASTER carico
+:   sta pi_var
+    jsr pad_image
+    lda #1
+    sta pd_dirty
+    rts
+no_build:
+    cmp #20
+    jcc off
+    bne :+
+    ; avvio a sinistra (x = 8, X-espansa)
+    lda #8
+    sta fw_sxl
+    lda #0
+    sta fw_sxh
+    lda #5
+    sta fw_svx
+    lda sh_enable
+    ora #$08
+    sta sh_enable
+    lda sh_xexp
+    ora #$08
+    sta sh_xexp
+:   lda sh_enable
+    and #$08
+    jeq done
+    lda e_t
+    cmp #80
+    bcc entry
+    cmp #175
+    bcc cruise
+    ; --- fase 3: SCATTO IPERSPAZIALE ---
+    bne jump_go
+    lda #3
+    sta fw_svx
+    lda sh_xexp
+    ora #$08                    ; allungamento orizzontale hardware!
+    sta sh_xexp
+jump_go:
+    lda e_t
+    sec
+    sbc #175
+    cmp #6
+    bcs :+
+    lda #COL_WHITE
+    bne jcol
+:   lda #COL_CYAN
+jcol:
+    sta sh_col+3
+    lda e_t
+    and #1
+    bne :+
+    lda fw_svx
+    cmp #14
+    bcs :+
+    inc fw_svx
+:   lda fw_svx
+    jsr ship_add_x
+    lda #SPR_Y0 + 62
+    sta sh_y+3
+    ; uscita a destra: x >= 344 ($0158)
+    lda fw_sxh
+    beq place
+    lda fw_sxl
+    cmp #$58
+    jcs off
+    bcc place
+entry:
+    ; --- fase 1: entrata e decelerazione da sinistra ---
+    cmp #50
+    bcc :+
+    lda sh_xexp
+    and #$f7                    ; torna larga normale
+    sta sh_xexp
+:   lda e_t
+    cmp #45
+    bcc :+
+    lda #2
+    bne e_mv
+:   lda #3
+e_mv:
+    jsr ship_add_x
+    lda #SPR_Y0 + 62
+    sta sh_y+3
+    jmp place
+cruise:
+    ; --- fase 2: crociera + carica iperspazio ---
+    lda e_t
+    and #3
+    bne :+
+    lda #1
+    jsr ship_add_x
+:   ; ondeggio verticale (±2 px)
+    lda e_t
+    lsr a
+    lsr a
+    and #7
+    tax
+    lda end_bob,x
+    clc
+    adc #SPR_Y0 + 62
+    sta sh_y+3
+    ; ultimi 40 frame di carica (135..174): vibrazione e lampi ciano
+    lda e_t
+    cmp #135
+    bcc col_norm
+    and #2
+    beq col_norm
+    lda #COL_CYAN
+    bne ccol
+col_norm:
+    ldx e_win
+    lda kind_col,x
+ccol:
+    sta sh_col+3
+place:
+    ; carica: leggera vibrazione ±2 px negli ultimi 40 frame
+    lda fw_sxl
+    sta fq
+    lda fw_sxh
+    sta fq2
+    lda e_t
+    cmp #135
+    bcc no_jit
+    cmp #175
+    bcs no_jit
+    and #1
+    beq no_jit
+    lda fq
+    clc
+    adc #2
+    sta fq
+    bcc no_jit
+    inc fq2
+no_jit:
+    lda fq
+    sta sh_x+3
+    lda fq2
+    beq msb_clr
+    lda sh_msb
+    ora #$08
+    bne msb_set
+msb_clr:
+    lda sh_msb
+    and #$f7
+msb_set:
+    sta sh_msb
+done:
+    rts
+off:
+    lda sh_enable
+    and #$f7
+    sta sh_enable
+    lda sh_xexp
+    and #$f7
+    sta sh_xexp
+    rts
+.endproc
+
+.proc ship_add_x
+    clc
+    adc fw_sxl
+    sta fw_sxl
+    bcc :+
+    inc fw_sxh
+:   rts
 .endproc
 
 qbit: .byte 1, 2, 4, 8
@@ -1999,6 +2258,7 @@ fs_gy:    .byte FW_S_GY
 fs_v0l:   .lobytes FW_S_V0
 fs_v0h:   .hibytes FW_S_V0
 fs_acc:   .byte FW_S_ACC
+fs_col:   .byte FW_S_COL
 
 ; stato (fw_init lo azzera)
 fw_vars:
@@ -2006,6 +2266,10 @@ fw_phase: .res 1                ; frame del passo (0-2; NTSC 0-3)
 fw_step:  .res 1                ; passi dall'inizio
 fw_next:  .res 1                ; prossimo fuoco dello spettacolo
 fw_front: .res 1                ; schermo davanti: 0 o SCR_B
+fw_col:   .res 1                ; colore Color RAM ($D800) del fuoco in disegno
+fw_sxl:   .res 1                ; astronave vincitrice: x (16 bit) e velocità dello scatto
+fw_sxh:   .res 1
+fw_svx:   .res 1
 rk_on:    .res 3                ; razzi: frame rimasti (0 spento)
 rk_fw:    .res 3
 rk_yl:    .res 3
@@ -2014,6 +2278,7 @@ rk_vl:    .res 3
 rk_vh:    .res 3
 sl_on:    .res FW_SLOTS
 sl_kind:  .res FW_SLOTS
+sl_col:   .res FW_SLOTS
 sl_age:   .res FW_SLOTS
 sl_thr:   .res FW_SLOTS
 sl_cnt:   .res FW_SLOTS

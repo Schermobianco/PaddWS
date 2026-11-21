@@ -39,9 +39,9 @@ P_BOOST_LEVELS         = $00000009   ; livelli dell'area boost
 ; 
 .define T_MAX_NEXT $0002DBBC, $00041555, $00047DDE, $00054EEF
 ; mosse speciali: velocità orizzontale minima al colpo, STRAIGHT SHOT
-.define T_SM_MIN_STRAIGHT $00016DDE, $00020AAA, $00023EEF, $0002A777
+.define T_SM_MIN_STRAIGHT $000224CD, $00030FFF, $00035E66, $0003FB33
 ; RISING STRIKE
-.define T_SM_MIN_RISE $00011266, $000187FF, $0001AF33, $0001FD99
+.define T_SM_MIN_RISE $0001C955, $00028D55, $0002CEAA, $00035155
 ; NEXT
 P_CAP_HALF             = $00050000   ; metà lato della capsula
 P_CAP_SPEED            = $00010555   ; velocità orizzontale della capsula
@@ -69,14 +69,16 @@ P_STEER_ACCEL          = $00001F5C   ;
 P_ARCADE_COOLDOWN      = $0000005A   ; ARCADE: pausa tra due bonus
 P_ARCADE_SPAWN         = $000000B4   ; ARCADE: tick tra due capsule
 P_ARCADE_SHARE         = $00000002   ; ARCADE: capsule su 3 che vanno a lui
+P_ARCADE_TAP           = $00000018   ; ARCADE: finestra doppio clic per chiamare un bonus
 P_HAMMER_MUL           = $00014000   ; 
 P_RUSH_MUL             = $00012666   ; RUSH: tiro dalla posizione avanzata
-P_TWIST_TRANSFER       = $00008000   ; 
-P_BLASTER_SHOTS        = $00000004   ; colpi del caricatore
-P_BLASTER_GAP          = $0000000C   ; pausa tra due colpi
+P_TWIST_TRANSFER       = $0000C000   ; 
+P_BLASTER_SHOTS        = $00000006   ; colpi del caricatore
+P_BLASTER_GAP          = $0000000D   ; pausa tra due colpi
 P_BLASTER_RELOAD       = $000000B4   ; ricarica dal primo colpo
 P_SHOT_SPEED           = $0005B777   ; 
-P_BLASTER_BAND         = $00030000   ; metà della fascia dei due colpi
+P_BLASTER_BAND         = $000B0000   ; metà della fascia dei due fasci laser
+P_BLASTER_SLOW         = $00000078   ; rallentamento dell'avversario colpito dal laser
 P_BARRIER_X            = $00080000   ; GUARDIAN: x della barriera (lato sinistro)
 P_PAD_MAX_SPEED        = $00062000   ; velocità massima della racchetta (grafica di TWIST)
 P_GUARDIAN_X           = $00080000   ; barriera dal bordo

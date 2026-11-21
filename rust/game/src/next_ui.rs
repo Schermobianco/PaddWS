@@ -149,8 +149,9 @@ pub const PICK_SECONDS: f64 = 10.0;
 pub const READY_SECONDS: f64 = 1.2;
 /// Riga dei nomi e dei conteggi sopra le colonne della scelta (unità a 480 righe).
 const HEAD_Y: f32 = 132.0;
-/// Righe di velocità del RUSH quando scatta in avanti (l'avanzamento a schermo dura meno).
-const RUSH_GHOST_SECONDS: f64 = 0.25;
+/// Scatto in avanti: booster accesi di tutte le racchette e immagini del RUSH (l'avanzamento a
+/// schermo dura meno).
+const RUSH_GHOST_SECONDS: f64 = paddle_ui::BOOST_SECONDS as f64;
 /// Nome di una mossa speciale di livello `level`: al livello massimo con "MAX" davanti.
 pub fn special_title(special: Special, level: u8) -> String {
     if level >= MAX_SPECIAL_LEVEL {
@@ -192,25 +193,22 @@ const KICK_SHAKE_SECONDS: f64 = 0.15;
 /// Coda della palla con boost, curva, STEER e SLOW: posizioni dei tick precedenti (240 al secondo,
 /// quindi 0,1 s), larghe quanto la palla, che sfumano dal grigio al nero.
 const TRAIL_TICKS: usize = 24;
-/// Salto del TELEPORT, seguendo la palla in arrivo (frazioni della larghezza del campo, contate
-/// dal bordo del giocatore): la racchetta affonda nel primo portale mentre la palla va da metà
-/// campo a 0,4, poi esce dal secondo, sul punto d'arrivo, mentre va da `WARP_RISE` a 0,2: quando
-/// la palla arriva la racchetta è già tutta fuori. Passi di 32 pixel a 320x240, come nel core
-/// MiSTer.
-const WARP_RISE: f32 = 0.3;
-const WARP_STEP: f32 = 0.1;
+/// Salto del TELEPORT, seguendo la palla in arrivo dalla metà campo fino alla racchetta (così in
+/// posizione di dash, anche quello lungo del RUSH, l'animazione accelera e termina sempre prima
+/// dell'impatto): la racchetta affonda nel primo portale nei primi `WARP_SPAN` della corsa, poi
+/// esce dal secondo, sul punto d'arrivo, da `WARP_EXIT_AT` per altri `WARP_SPAN`.
+const WARP_SPAN: f32 = 0.32;
+const WARP_EXIT_AT: f32 = 0.36;
 /// metà larghezza della linea del portale (px a 240 righe)
-const WARP_LINE_HALF: f32 = 9.0;
+const WARP_LINE_HALF: f32 = 12.0;
 /// Bullet time, solo con i colori della palette (come sul MiSTer e sul C64): quello che è bianco
 /// diventa grigio, tranne la racchetta di chi l'ha attivato, che ha un bordo di accento; la coda
 /// della palla è lunga il doppio e lascia immagini grigie ogni `BULLET_GHOST_STEP` posizioni, fino
 /// a `BULLET_GHOST_TICKS` (meno immagini, e bordo che lampeggia, durante le rampe).
 const BULLET_GHOST_STEP: usize = 12;
 const BULLET_GHOST_TICKS: usize = 96;
-/// OMEGA: la racchetta è rossa (il rosso del timbro e dei fuochi); con l'easter egg RED, che
-/// scambia giallo e rosso, viola (lo scambio lascia stare i viola). A ogni trasformazione un lampo
-/// bianco di 8 frame.
-const OMEGA_RED: Color = Color::new(230.0 / 255.0, 40.0 / 255.0, 40.0 / 255.0, 1.0);
+/// OMEGA: la racchetta è viola (anche con l'easter egg RED, che lascia stare i viola). A ogni
+/// trasformazione un lampo bianco di 8 frame.
 const OMEGA_PURPLE: Color = Color::new(160.0 / 255.0, 64.0 / 255.0, 224.0 / 255.0, 1.0);
 pub const MORPH_FLASH_SECONDS: f64 = 8.0 / 60.0;
 /// OMEGA: a ogni trasformazione, con il lampo, il nome disegnato della forma nuova (la grafica delle
@@ -221,9 +219,9 @@ const MORPH_NAME_BLINK: f64 = 10.0 / 60.0;
 /// Altezza del centro del nome (frazione dell'altezza del campo, dall'alto).
 const MORPH_NAME_Y: f32 = 0.3;
 
-/// Colore della racchetta di OMEGA (vedi `OMEGA_RED`).
-pub fn omega_color(app: &App) -> Color {
-    if app.egg { OMEGA_PURPLE } else { OMEGA_RED }
+/// Colore della racchetta di OMEGA (viola, come il suo sigillo e il C64).
+pub fn omega_color(_app: &App) -> Color {
+    OMEGA_PURPLE
 }
 
 /// BULLET a schermo, per chi l'ha attivato.
@@ -443,57 +441,59 @@ fn field_share(game: &Match, side: usize) -> f32 {
     if side == 0 { share } else { 1.0 - share }
 }
 
-/// Avanzamento del salto del TELEPORT con la palla a `share` (vedi `field_share`): parte
-/// affondata nel primo portale e parte uscita dal secondo, da 0 a 1.
-fn warp_progress(share: f32) -> (f32, f32) {
-    let sunk = ((0.5 - share) / WARP_STEP).clamp(0.0, 1.0);
-    let out = ((WARP_RISE - share) / WARP_STEP).clamp(0.0, 1.0);
+/// Posizione della racchetta di `side` come frazione della larghezza del campo, dal suo bordo.
+fn pad_share(game: &Match, side: usize) -> f32 {
+    let share = to_f32(game.paddles[side].x) / to_f32(game.params.width);
+    if side == 0 { share } else { 1.0 - share }
+}
+
+/// Avanzamento del salto del TELEPORT con la palla a `share` e la racchetta a `pad` (da metà campo
+/// alla racchetta): parte affondata nel primo portale e parte uscita dal secondo, da 0 a 1.
+/// In posizione di dash la corsa dalla metà campo è più corta, quindi il salto accelera e termina
+/// sempre prima che la palla arrivi alla racchetta.
+fn warp_progress(share: f32, pad: f32) -> (f32, f32) {
+    let span = (0.5 - pad).max(0.05);
+    let t = ((0.5 - share) / span).clamp(0.0, 1.0);
+    let sunk = (t / WARP_SPAN).clamp(0.0, 1.0);
+    let out = ((t - WARP_EXIT_AT) / WARP_SPAN).clamp(0.0, 1.0);
     (sunk, out)
 }
 
-/// Salto del TELEPORT (coordinate del core, y verso l'alto): la racchetta affonda per `sunk` in
-/// una linea orizzontale sul lato verso cui salta ed esce per `out` da una seconda linea sul lato
-/// opposto della posizione d'arrivo. Disegna solo la parte oltre ciascuna linea; le linee hanno il
-/// colore di accento. Il secondo portale si apre a metà dell'affondo.
-#[allow(clippy::too_many_arguments)]
+/// Salto del TELEPORT (coordinate del core, y verso l'alto): la racchetta vera (con il suo tipo e
+/// i suoi dettagli) affonda per `sunk` in una linea orizzontale sul lato verso cui salta ed esce
+/// per `out` da una seconda linea sul lato opposto della posizione d'arrivo, ritagliata sulle due
+/// linee dei portali. Il secondo portale si apre a metà dell'affondo.
 fn draw_warp(
     r: &Renderer,
-    x: f32,
-    from: f32,
-    to: f32,
+    (x, ph): (f32, f32),
+    (from, to): (f32, f32),
     (sunk, out): (f32, f32),
-    pw: f32,
-    ph: f32,
     u: f32,
-    color: Color,
     line_color: Color,
+    mut draw_at: impl FnMut(f32, (f32, f32)),
 ) {
     let dir = if to > from { 1.0 } else { -1.0 };
-    // tratto di racchetta tra lo e hi, se non è vuoto
-    let span = |lo: f32, hi: f32| {
-        if hi > lo {
-            r.rect_centered(x, (lo + hi) / 2.0, pw, hi - lo, color);
-        }
-    };
     let line = |y: f32| r.rect_centered(x, y, 2.0 * WARP_LINE_HALF * u, 2.0 * u, line_color);
     if sunk < 1.0 {
         let edge = from + dir * ph / 2.0;
         let c = from + dir * ph * sunk;
-        if dir > 0.0 {
-            span(c - ph / 2.0, (c + ph / 2.0).min(edge));
+        let clip = if dir > 0.0 {
+            (r.screen_y(edge), r.world_h)
         } else {
-            span((c - ph / 2.0).max(edge), c + ph / 2.0);
-        }
+            (0.0, r.screen_y(edge))
+        };
+        draw_at(c, clip);
         line(edge);
     }
     if sunk >= 0.5 {
         let edge = to - dir * ph / 2.0;
         let c = to - dir * ph * (1.0 - out);
-        if dir > 0.0 {
-            span((c - ph / 2.0).max(edge), c + ph / 2.0);
+        let clip = if dir > 0.0 {
+            (0.0, r.screen_y(edge))
         } else {
-            span(c - ph / 2.0, (c + ph / 2.0).min(edge));
-        }
+            (r.screen_y(edge), r.world_h)
+        };
+        draw_at(c, clip);
         line(edge);
     }
 }
@@ -855,7 +855,7 @@ pub struct NextFx {
     pad_last: [f32; 2],
     /// secondi del lampo e settore del muro del GUARDIAN appena colpito
     barrier_flash: [(f64, usize); 2],
-    /// RUSH: secondi delle righe di velocità, dall'inizio dello scatto in avanti
+    /// secondi che restano dello scatto in avanti (booster accesi; RUSH anche le immagini)
     rush_ghost: [f64; 2],
     pad_home: [bool; 2],
     /// mosse speciali: barra prima del tick (per capire chi ha speso), scritta della mossa per
@@ -874,12 +874,14 @@ pub struct NextFx {
     morph_flash: [f64; 2],
     /// OMEGA: nome della forma nuova, lato di OMEGA e secondi che restano
     morph_name: Option<(PaddleKind, usize, f64)>,
-    /// racchette dei personaggi (`paddle_ui::Anim`): colpi della cartuccera e muro del GUARDIAN
-    /// prima del tick; secondi dallo sparo, dal colpo potente di HAMMER e dal colpo che fa
-    /// rientrare un corso del GUARDIAN (con l'altezza del colpo, 0 in cima e 1 in fondo); secondi
-    /// dalla rottura di ogni corso
+    /// racchette dei personaggi (`paddle_ui::Anim`): colpi della cartuccera, muro del GUARDIAN e
+    /// cooldown prima del tick; secondi dal gettone ARCADE, dallo sparo BLASTER, dal colpo potente
+    /// di HAMMER e dal colpo che fa rientrare un corso del GUARDIAN (con l'altezza del colpo, 0 in
+    /// cima e 1 in fondo); secondi dalla rottura di ogni corso
     ammo_before: [u8; 2],
     wall_before: [u8; 2],
+    cooldown_before: [u32; 2],
+    coin: [Option<f32>; 2],
     fire: [Option<f32>; 2],
     spark: [Option<(f32, f32)>; 2],
     recoil: [Option<(f32, f32)>; 2],
@@ -910,6 +912,8 @@ impl NextFx {
             morph_name: None,
             ammo_before: [0; 2],
             wall_before: [0; 2],
+            cooldown_before: [0; 2],
+            coin: [None; 2],
             fire: [None; 2],
             spark: [None; 2],
             recoil: [None; 2],
@@ -937,6 +941,7 @@ impl NextFx {
         let Some(n) = &game.next else { return };
         let pl = &n.players[side];
         match pl.kind {
+            Some(PaddleKind::Arcade) => self.coin[side] = Some(seconds),
             Some(PaddleKind::Blaster) => self.fire[side] = Some(seconds),
             Some(PaddleKind::Hammer | PaddleKind::Twist) => self.spark[side] = Some((seconds, 0.5)),
             Some(PaddleKind::Guardian) => {
@@ -954,7 +959,7 @@ impl NextFx {
         }
     }
 
-    /// Scritta di un bonus al centro in basso (come "P1 SMASH!").
+    /// Scritta di un bonus in alto al centro, sotto i punteggi (come "P1 SMASH!"), come sul MiSTer.
     pub fn show_label(&mut self, text: &str) {
         self.show_label_at(text, 0.0);
     }
@@ -991,6 +996,7 @@ impl NextFx {
             self.kinds_before = [n.players[0].kind, n.players[1].kind];
             self.ammo_before = n.players.each_ref().map(|pl| pl.ammo);
             self.wall_before = n.players.each_ref().map(|pl| pl.barrier);
+            self.cooldown_before = n.players.each_ref().map(|pl| pl.cooldown);
         }
     }
 
@@ -1089,6 +1095,16 @@ impl NextFx {
         let hit = events.has(Event::Hit) || events.has(Event::Boost) || events.has(Event::Super);
         let hitter = if b.vx > 0 { 0 } else { 1 };
         for (side, pl) in n.players.iter().enumerate() {
+            // ARCADE: doppio clic USE a riserva vuota (Event::Collect + cooldown appena partito)
+            if events.has(Event::Collect)
+                && pl.kind == Some(PaddleKind::Arcade)
+                && pl.count() == 0
+                && self.counts[side] == 0
+                && self.cooldown_before[side] == 0
+                && pl.cooldown > 0
+            {
+                self.coin[side] = Some(0.0);
+            }
             if pl.kind == Some(PaddleKind::Blaster) && pl.ammo < self.ammo_before[side] {
                 self.fire[side] = Some(0.0);
             }
@@ -1102,12 +1118,8 @@ impl NextFx {
                 let top = to_f32(pad.y) + to_f32(pad.height) / 2.0;
                 let at = ((top - to_f32(b.y)) / to_f32(pad.height)).clamp(0.0, 1.0);
                 match pl.kind {
-                    // il colpo potente è quello che prende il boost di HAMMER
-                    Some(PaddleKind::Hammer) if b.boost == game.params.hammer_mul => {
-                        self.spark[side] = Some((0.0, at));
-                    }
-                    // TWIST: l'onda a ogni colpo
-                    Some(PaddleKind::Twist) => self.spark[side] = Some((0.0, at)),
+                    // HAMMER (scintille + propulsore) e TWIST (onda): a ogni colpo, anche in dash
+                    Some(PaddleKind::Hammer | PaddleKind::Twist) => self.spark[side] = Some((0.0, at)),
                     Some(PaddleKind::Guardian) => self.recoil[side] = Some((0.0, at)),
                     _ => {}
                 }
@@ -1126,7 +1138,7 @@ impl NextFx {
             self.warp[toward] = Some(self.pad_last[toward]);
         }
         for (side, warp) in self.warp.iter_mut().enumerate() {
-            let out = warp_progress(field_share(game, side)).1 >= 1.0;
+            let out = warp_progress(field_share(game, side), pad_share(game, side)).1 >= 1.0;
             if side != toward || n.players[side].armed != Some(Bonus::Teleport) || out {
                 *warp = None;
             }
@@ -1169,6 +1181,11 @@ impl NextFx {
             *t < limit
         };
         for side in 0..2 {
+            if let Some(t) = &mut self.coin[side]
+                && !advance(t, paddle_ui::COIN_SECONDS)
+            {
+                self.coin[side] = None;
+            }
             if let Some(t) = &mut self.fire[side]
                 && !advance(t, paddle_ui::FIRE_SECONDS)
             {
@@ -1316,12 +1333,71 @@ impl NextFx {
             }
         }
 
-        // BLASTER: i colpi in volo, due tratti paralleli ciascuno
+        // BLASTER: colpi singoli (2 fasci laser verdi dai cannoni alari) oppure raggio laser
+        // continuo quando più colpi ravvicinati partono tenendo premuto il fuoco
+        let laser = app.assets.portraits.accent(PaddleKind::Blaster);
+        let laser_core = Color::new(
+            (laser.r + 0.55).min(1.0),
+            (laser.g + 0.35).min(1.0),
+            (laser.b + 0.55).min(1.0),
+            1.0,
+        );
+        let beam_pulse = 0.5 + 0.5 * ((game.tick as f32 / paddws_core::TICK_HZ as f32) * 32.0).sin();
+        let beam_span = 215.0 * (to_f32(game.params.scale));
         for (side, pl) in n.players.iter().enumerate() {
-            for shot in pl.shots.iter().flatten() {
-                let (sx, sy) = (to_f32(shot.x) + shake, to_f32(shot.y));
-                for dy in [-2.0 * u, 2.0 * u] {
-                    r.rect_centered(sx, sy + dy, 7.0 * u, u, tint(side, accent));
+            let mut active: Vec<(f32, f32)> = pl
+                .shots
+                .iter()
+                .flatten()
+                .map(|s| (to_f32(s.x) + shake, to_f32(s.y)))
+                .collect();
+            if active.is_empty() {
+                continue;
+            }
+            active.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let dir = if side == 0 { 1.0 } else { -1.0 };
+            // distanza verticale tra il centro della racchetta e i due cannoni alari (y = 9 e h - 9)
+            let gun_dy = (to_f32(game.paddles[side].height) / 2.0 - 9.0 * u).max(2.0 * u);
+            let draw_beam = |x0: f32, x1: f32, sy: f32| {
+                let cx = (x0 + x1) * 0.5;
+                let w = (x1 - x0).abs().max(9.0 * u);
+                let halo = Color {
+                    a: 0.24 + 0.16 * beam_pulse,
+                    ..tint(side, laser)
+                };
+                for dy in [-gun_dy, gun_dy] {
+                    r.rect_centered(cx, sy + dy, w, 3.0 * u, halo);
+                    r.rect_centered(cx, sy + dy, w, 1.5 * u, tint(side, laser));
+                    r.rect_centered(cx, sy + dy, w, 0.85 * u, tint(side, laser_core));
+                }
+            };
+            // collega in un raggio continuo i colpi consecutivi ravvicinati (sparati tenendo premuto)
+            let mut linked = vec![false; active.len()];
+            for i in 0..active.len().saturating_sub(1) {
+                let (x0, y0) = active[i];
+                let (x1, y1) = active[i + 1];
+                if (x1 - x0).abs() <= beam_span && (y1 - y0).abs() <= 12.0 * u {
+                    draw_beam(x0, x1, (y0 + y1) * 0.5);
+                    linked[i] = true;
+                    linked[i + 1] = true;
+                }
+            }
+            // se il raggio è attivo dalla navicella, collega la bocca dei cannoni al primo colpo
+            if pl.kind == Some(PaddleKind::Blaster) && self.fire[side].is_some_and(|t| t < 0.25) {
+                let pad = &game.paddles[side];
+                let muzzle_x = to_f32(if side == 0 { pad.right() } else { pad.left() }) + shake + dir * 3.0 * u;
+                let pad_y = to_f32(pad.y);
+                let near = if side == 0 { 0 } else { active.len() - 1 };
+                let (nx, ny) = active[near];
+                if (nx - muzzle_x).abs() <= beam_span && (ny - pad_y).abs() <= 12.0 * u && (linked[near] || active.len() >= 2) {
+                    draw_beam(muzzle_x, nx, (ny + pad_y) * 0.5);
+                }
+            }
+            // colpi singoli isolati (e teste brillanti del raggio dai due cannoni)
+            for &(sx, sy) in &active {
+                for dy in [-gun_dy, gun_dy] {
+                    r.rect_centered(sx, sy + dy, 9.0 * u, 1.5 * u, tint(side, laser));
+                    r.rect_centered(sx + dir * 2.0 * u, sy + dy, 4.0 * u, 0.85 * u, tint(side, laser_core));
                 }
             }
         }
@@ -1496,21 +1572,54 @@ impl NextFx {
         } else {
             white
         };
-        // chi ha il BULLET armato, in attesa della palla: un bordo di accento attorno alla
-        // racchetta che pulsa piano (acceso 3/4 di secondo, spento 1/4); nel bullet time no, la
-        // racchetta si distingue già perché resta nitida e a colori
-        let armed_blink = (game.tick / u64::from(paddws_core::TICK_HZ / 4)) % 4 != 3;
-        if bullet.is_some_and(|b| b.side == side && !b.on && armed_blink) {
-            let m = 3.0 * u;
-            let (bx, by) = (x - pw / 2.0 - m, r.screen_y(y) - ph / 2.0 - m);
-            draw_rectangle_lines(bx, by, pw + 2.0 * m, ph + 2.0 * m, u, accent);
-        }
+        let pl = &n.players[side];
+        let front = if side == 0 { 1.0 } else { -1.0 };
+        // la racchetta con il segno del suo tipo e lo stato delle sue animazioni (l'orologio è
+        // quello della partita: si ferma con la pausa)
+        let hz = paddws_core::TICK_HZ as f32;
+        let anim = Anim {
+            t: game.tick as f32 / hz,
+            vy: -to_f32(pad.motion) * hz / 60.0 / u,
+            coin: self.coin[side],
+            ammo: pl.ammo,
+            reload: (pl.reload > 0)
+                .then(|| 1.0 - pl.reload as f32 / game.params.blaster_reload_ticks.max(1) as f32),
+            fire: self.fire[side],
+            spark: self.spark[side],
+            wall: std::array::from_fn(|i| (pl.barrier & (1 << i) == 0).then_some(self.wall_age[side][i])),
+            build,
+            recoil: self.recoil[side].map(|(_, at)| at),
+            dashing: self.rush_ghost[side] > 0.0,
+        };
         if let Some(from) = self.warp[side] {
-            let progress = warp_progress(field_share(game, side));
-            draw_warp(r, x, from, y, progress, pw, ph, u, white, accent);
+            let progress = warp_progress(field_share(game, side), pad_share(game, side));
+            let look = paddle_ui::look(app, pl.kind, skin);
+            draw_warp(
+                r,
+                (x, ph),
+                (from, y),
+                progress,
+                u,
+                accent,
+                |cy, clip| {
+                    let shape = Shape {
+                        kind: pl.kind,
+                        x,
+                        y: cy,
+                        w: pw,
+                        h: ph,
+                        front,
+                        tilt: 0.0,
+                        dash: None,
+                        preview: false,
+                        clip_y: Some(clip),
+                        anim,
+                    };
+                    paddle_ui::draw_paddle(r, &shape, u, look);
+                },
+            );
             return;
         }
-        let pl = &n.players[side];
         // RUSH vibra appena, a casa e avanzato: avanti e indietro di mezzo pixel arcade
         let x = if pl.kind == Some(PaddleKind::Rush) {
             x + if (game.tick / 8).is_multiple_of(2) {
@@ -1532,7 +1641,7 @@ impl NextFx {
             None => x,
         };
         let steering = n.steer.is_some_and(|s| s as usize == side);
-        // RUSH: immagini dello scatto dalla posizione di casa, che sfumano
+        // scatto dalla posizione di casa: booster accesi e, per RUSH, immagini che sfumano
         let dash = (self.rush_ghost[side] > 0.0)
             .then(|| (to_f32(pad.home_x) + shake, (self.rush_ghost[side] / RUSH_GHOST_SECONDS) as f32));
         let tilt = if pl.kind == Some(PaddleKind::Twist) {
@@ -1540,37 +1649,35 @@ impl NextFx {
         } else {
             0.0
         };
-        // la racchetta con il segno del suo tipo e lo stato delle sue animazioni (l'orologio è
-        // quello della partita: si ferma con la pausa)
-        let hz = paddws_core::TICK_HZ as f32;
-        let anim = Anim {
-            t: game.tick as f32 / hz,
-            vy: -to_f32(pad.motion) * hz / 60.0 / u,
-            ammo: pl.ammo,
-            fire: self.fire[side],
-            spark: self.spark[side],
-            wall: std::array::from_fn(|i| (pl.barrier & (1 << i) == 0).then_some(self.wall_age[side][i])),
-            build,
-            recoil: self.recoil[side].map(|(_, at)| at),
-            dashing: self.rush_ghost[side] > 0.0,
-        };
-        let body = |color: Color| {
+        let body_rot = |color: Color, rot: f32| {
+            // avversario colpito dal laser del BLASTER: lieve alone verde che segnala il rallentamento
+            if pl.laser_slow > 0 {
+                let pulse = 0.5 + 0.5 * ((game.tick as f32 / hz) * 28.0).sin();
+                let laser = app.assets.portraits.accent(PaddleKind::Blaster);
+                let cy = r.screen_y(y);
+                let zap = Color {
+                    a: 0.25 + 0.35 * pulse,
+                    ..laser
+                };
+                draw_rectangle_lines(x - pw * 0.5 - 2.0 * u, cy - ph * 0.5 - 2.0 * u, pw + 4.0 * u, ph + 4.0 * u, u, zap);
+            }
             let shape = Shape {
                 kind: pl.kind,
                 x,
                 y,
                 w: pw,
                 h: ph,
-                front: if side == 0 { 1.0 } else { -1.0 },
-                tilt,
+                front,
+                tilt: rot,
                 dash,
                 preview: false,
+                clip_y: None,
                 anim,
             };
-            let mut look = paddle_ui::look(app, pl.kind, color);
-            look.signal = accent;
+            let look = paddle_ui::look(app, pl.kind, color);
             paddle_ui::draw_paddle(r, &shape, u, look);
         };
+        let body = |color: Color| body_rot(color, tilt);
         // colpo di una mossa: lampo della racchetta (giallo; con la MAX giallo e bianco a scatti)
         let mut flash = None;
         if let Some((special, max, t)) = kick {
@@ -1587,18 +1694,9 @@ impl NextFx {
                 draw_icon(Bonus::Steer, ix, r.screen_y(y) - 4.5 * u, u, accent);
             }
             Some(Bonus::Super) if pl.super_anim == SuperAnim::Spin => {
+                // la racchetta vera (astronave del personaggio) ruota su se stessa attorno al centro
                 let angle = game.tick as f32 * 0.09;
-                draw_rectangle_ex(
-                    x,
-                    r.screen_y(y),
-                    pw,
-                    ph,
-                    DrawRectangleParams {
-                        offset: vec2(0.5, 0.5),
-                        rotation: angle,
-                        color: white,
-                    },
-                );
+                body_rot(skin, -angle * front);
             }
             Some(b) => {
                 body(if blink { gray } else { skin });
@@ -1835,8 +1933,12 @@ impl NextFx {
                 (0.0, (1.0 - (e - close - CRT_STEP) / CRT_STEP).max(0.0))
             };
             let font = &app.assets.font_text;
-            let y = h - 34.0 * s;
-            let back = Rect::new(w / 2.0 - 120.0 * s, y - 20.0 * s, 240.0 * s, 40.0 * s);
+            // in alto sotto i punteggi, nella stessa posizione del MiSTer (LABEL_MID = 46 su 240,
+            // riquadro alto 20 pixel arcade e largo quanto la scritta con 4 pixel di margine per lato)
+            let y = 46.0 * u;
+            let bw = r.text_width(text, font, r.text_1x()) + 8.0 * u;
+            let bh = 20.0 * u;
+            let back = Rect::new(w / 2.0 - bw / 2.0, y - bh / 2.0, bw, bh);
             if open > 0.0 {
                 // il riquadro nero, la scritta e, fuori dalla fascia aperta, di nuovo il nero; durante
                 // l'apertura e la chiusura i bordi della fascia sono bianchi
@@ -1907,5 +2009,46 @@ mod omega_tests {
         assert!(fx.morph_name.is_some());
         fx.update(0.02);
         assert!(fx.morph_name.is_none());
+    }
+
+    /// ARCADE: il doppio clic su USE a riserva vuota avvia l'animazione del gettone (0,5 s).
+    #[test]
+    fn arcade_double_click_triggers_coin_animation() {
+        let params = paddws_core::Params::new(&paddws_core::Tuning::default());
+        let loadout = [Bonus::Smash, Bonus::Teleport, Bonus::Slow];
+        let mut m = Match::new_next_paddles(params, [loadout; 2], [Some(PaddleKind::Arcade), None], 7);
+        m.serve_timer = 0;
+        let mut fx = NextFx::new();
+        let mut press = paddws_core::Input::default();
+        press.players[0].activate = true;
+        // primo clic: apre la finestra, nessun gettone
+        fx.before_tick(&m);
+        let ev1 = m.step(&press);
+        fx.after_tick(&m, ev1, 1.0);
+        assert!(fx.coin[0].is_none());
+        // secondo clic: chiama il bonus e fa partire l'animazione del gettone
+        fx.before_tick(&m);
+        let ev2 = m.step(&press);
+        fx.after_tick(&m, ev2, 1.0);
+        assert_eq!(fx.coin[0], Some(0.0));
+        fx.update(f64::from(paddle_ui::COIN_SECONDS) - 0.01);
+        assert!(fx.coin[0].is_some());
+        fx.update(0.02);
+        assert!(fx.coin[0].is_none());
+    }
+
+    /// TELEPORT: il salto termina sempre prima che la palla arrivi alla racchetta, anche in dash
+    /// normale (0,25) e in dash lungo del RUSH (0,344).
+    #[test]
+    fn teleport_warp_finishes_before_ball_reaches_dashed_paddle() {
+        for pad in [20.0 / 320.0, 80.0 / 320.0, 110.0 / 320.0] {
+            // appena passata la metà campo: inizia l'affondo, non ancora uscita
+            let (s0, o0) = warp_progress(0.49, pad);
+            assert!(s0 > 0.0 && o0 == 0.0);
+            // ben prima che la palla arrivi alla racchetta: salto già completato
+            let margin = (0.5 - pad) * 0.25;
+            let (s1, o1) = warp_progress(pad + margin, pad);
+            assert_eq!((s1, o1), (1.0, 1.0), "pad={pad}");
+        }
     }
 }

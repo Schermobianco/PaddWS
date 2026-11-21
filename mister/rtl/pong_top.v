@@ -1355,8 +1355,10 @@ always @(posedge clk) begin
     fwd_q <= {joy1[4], joy0[4]};
     sel_q <= {joy1[6], joy0[6]};
     act_q <= {joy1[7], joy0[7]};
-    // lo scatto che completa un gesto diventa la mossa
-    fwd_pending <= fwd_pending | (fwd_edge & ~{g_code[1] != 2'd0, g_code[0] != 2'd0});
+    // lo scatto che completa un gesto diventa la mossa; per BLASTER tenere premuto A spara a raffica continua
+    fwd_pending <= fwd_pending | (fwd_edge & ~{g_code[1] != 2'd0, g_code[0] != 2'd0}) |
+                   {nxt && kind1[2:0] == K_BLASTER && joy1[4] && fwd_q[1],
+                    nxt && kind0[2:0] == K_BLASTER && joy0[4] && fwd_q[0]};
     if (g_code[0] != 2'd0) spc_pending[0] <= g_code[0];
     if (g_code[1] != 2'd0) spc_pending[1] <= g_code[1];
     sel_pending <= sel_pending | ({joy1[6], joy0[6]} & ~sel_q);
@@ -1703,17 +1705,23 @@ end
 
 // salto del TELEPORT: animazione dei portali dalla y della racchetta alla fine del frame
 // precedente (la logica la sposta in un tick solo); l'avanzamento segue la palla (next_render) e
-// il salto finisce quando la racchetta è tutta fuori (palla a 2/10 del campo dal suo bordo), al
-// colpo o al punto
-localparam integer WARP_OUT_PX = 64;
+// accelera in posizione di dash (64 px da casa, 112 in dash normale, 136 in dash lungo RUSH) così
+// il salto finisce sempre prima che la palla arrivi alla racchetta
 reg       warp_on = 1'b0;
 reg       warp_side = 1'b0;
 reg signed [31:0] warp_from = 32'sd0, last_y0 = 32'sd0, last_y1 = 32'sd0;
+function [9:0] warp_out_px(input who);
+    reg [9:0] pd;
+    begin
+        pd = who ? FIELD_W - pad1_x[25:16] : pad0_x[25:16];
+        warp_out_px = (pd >= 10'd96) ? 10'd136 : (pd >= 10'd48) ? 10'd112 : 10'd64;
+    end
+endfunction
 function warp_done(input who);
     reg [9:0] d;
     begin
         d = who ? FIELD_W - ball_x[25:16] : ball_x[25:16];
-        warp_done = d <= WARP_OUT_PX || (who ? player1[19:16] : player0[19:16]) != 4'd0 ||
+        warp_done = d <= warp_out_px(who) || (who ? player1[19:16] : player0[19:16]) != 4'd0 ||
                     (who ? ball_vx <= 0 : ball_vx >= 0);
     end
 endfunction
@@ -1743,7 +1751,7 @@ wire [1:0] warp_hide = {warp_on && warp_side, warp_on && !warp_side};
 // FIRE_FRAMES frame; il colpo della racchetta (la palla riparte dall'altra parte) per HIT_FRAMES frame,
 // con la riga del colpo dalla cima della racchetta: scintille dell'HAMMER (solo il colpo potente, con
 // il suo boost), onda del TWIST, corso del GUARDIAN che rientra.
-localparam [2:0] K_HAMMER = 3'd2, K_TWIST = 3'd3, K_BLASTER = 3'd4, K_RUSH = 3'd5, K_GUARDIAN = 3'd6;
+localparam [2:0] K_ARCADE = 3'd0, K_HAMMER = 3'd2, K_TWIST = 3'd3, K_BLASTER = 3'd4, K_RUSH = 3'd5, K_GUARDIAN = 3'd6;
 localparam [5:0] BARRIER_FRAMES = 6'd42;
 localparam [4:0] FIRE_FRAMES = 5'd26, HIT_FRAMES = 5'd30;
 reg [3:0] rush_frames [0:1];
@@ -1755,6 +1763,17 @@ reg [4:0] fire_frames [0:1];
 reg [2:0] ammo_last [0:1];
 reg [4:0] hit_frames [0:1];
 reg [5:0] hit_row [0:1];
+reg [3:0] caps_last = 4'd0;     // capsule attive al frame prima (per il gettone di ARCADE)
+wire [3:0] caps_now = {caps_flags[15], caps_flags[11], caps_flags[7], caps_flags[3]};
+wire [3:0] caps_new = caps_now & ~caps_last;
+wire [1:0] arcade_coin = {
+    nxt && sound_events[4] && kind1[2:0] == K_ARCADE && player1[3:0] == 4'd8 &&
+        ((caps_new[0] && !caps_vx[31]) || (caps_new[1] && !caps_vx[63]) ||
+         (caps_new[2] && !caps_vx[95]) || (caps_new[3] && !caps_vx[127])),
+    nxt && sound_events[4] && kind0[2:0] == K_ARCADE && player0[3:0] == 4'd8 &&
+        ((caps_new[0] && caps_vx[31]) || (caps_new[1] && caps_vx[63]) ||
+         (caps_new[2] && caps_vx[95]) || (caps_new[3] && caps_vx[127]))
+};
 wire       hit_event = sound_events[1] || sound_events[2] || sound_events[6];
 wire       hitter = ball_vx < 0;   // la palla riparte verso il lato opposto di chi ha colpito
 wire [2:0] hit_kind = hitter ? kind1[2:0] : kind0[2:0];
@@ -1775,6 +1794,7 @@ always @(posedge clk) begin
         end
         rush_home <= 2'b11;
         dash_snap <= 2'b00;
+        caps_last <= 4'd0;
     end else begin
         if (frame_start) begin
             dash_snap <= 2'b00;
@@ -1804,10 +1824,12 @@ always @(posedge clk) begin
             end
             ammo_last[0] <= kind0[10:8];
             ammo_last[1] <= kind1[10:8];
+            caps_last <= caps_now;
             if (nxt && kind0[2:0] == K_BLASTER && kind0[10:8] < ammo_last[0]) fire_frames[0] <= FIRE_FRAMES;
             if (nxt && kind1[2:0] == K_BLASTER && kind1[10:8] < ammo_last[1]) fire_frames[1] <= FIRE_FRAMES;
-            if (nxt && hit_event && ((hit_kind == K_HAMMER && ball_boost == P_HAMMER_MUL) ||
-                                     hit_kind == K_TWIST || hit_kind == K_GUARDIAN)) begin
+            if (arcade_coin[0]) hit_frames[0] <= HIT_FRAMES;
+            if (arcade_coin[1]) hit_frames[1] <= HIT_FRAMES;
+            if (nxt && hit_event && (hit_kind == K_HAMMER || hit_kind == K_TWIST || hit_kind == K_GUARDIAN)) begin
                 hit_frames[hitter] <= HIT_FRAMES;
                 hit_row[hitter] <= hit_at;
             end
@@ -1823,6 +1845,8 @@ function [1:0] rush_level(input [3:0] f);
 endfunction
 wire [3:0] rush_fade = {rush_kind[1] ? rush_level(rush_frames[1]) : 2'd0,
                         rush_kind[0] ? rush_level(rush_frames[0]) : 2'd0};
+// booster accesi dallo scatto in avanti, per tutte le racchette dei personaggi: frame che restano
+wire [7:0] boost_age = {typed_kind[1] ? rush_frames[1] : 4'd0, typed_kind[0] ? rush_frames[0] : 4'd0};
 wire [11:0] barrier_age = {barrier_frames[1], barrier_frames[0]};
 wire [9:0]  fire_age = {fire_frames[1], fire_frames[0]};
 wire [9:0]  hit_age = {hit_frames[1], hit_frames[0]};
@@ -2039,7 +2063,7 @@ next_render next_draw (
     .warp_on(warp_on), .warp_side(warp_side), .warp_from(warp_from),
     .omega_pad(omega_pad), .omega_flash(omega_flash), .omega_egg(egg),
     .kind0(kind0), .kind1(kind1), .shots_x(shots_x), .shots_y(shots_y),
-    .pad0_motion(pad0_motion), .pad1_motion(pad1_motion), .rush_fade(rush_fade), .barrier_age(barrier_age),
+    .pad0_motion(pad0_motion), .pad1_motion(pad1_motion), .rush_fade(rush_fade), .boost_age(boost_age), .barrier_age(barrier_age),
     .fire_age(fire_age), .hit_age(hit_age), .hit_rows(hit_rows), .building(counting), .build_f(mframe[7:0]),
     .wall0(wall0), .wall1(wall1), .wall_hit0(wall_hit0), .wall_hit1(wall_hit1),
     .sup(sup), .super0(super0), .super1(super1), .move_ok({move_avail(1'b1), move_avail(1'b0)}),

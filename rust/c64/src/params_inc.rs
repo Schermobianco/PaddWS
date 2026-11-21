@@ -178,6 +178,11 @@ pub fn params_inc() -> String {
             p.arcade_share as i32,
             "ARCADE: capsule su 3 che vanno a lui",
         ),
+        (
+            "P_ARCADE_TAP",
+            p.arcade_tap_ticks as i32,
+            "ARCADE: finestra doppio clic per chiamare un bonus",
+        ),
         ("P_HAMMER_MUL", p.hammer_mul, ""),
         ("P_RUSH_MUL", p.rush_mul, "RUSH: tiro dalla posizione avanzata"),
         ("P_TWIST_TRANSFER", p.twist_transfer, ""),
@@ -189,7 +194,12 @@ pub fn params_inc() -> String {
             "ricarica dal primo colpo",
         ),
         ("P_SHOT_SPEED", p.blaster_shot_speed, ""),
-        ("P_BLASTER_BAND", p.blaster_band, "metà della fascia dei due colpi"),
+        ("P_BLASTER_BAND", p.blaster_band, "metà della fascia dei due fasci laser"),
+        (
+            "P_BLASTER_SLOW",
+            p.blaster_slow_ticks as i32,
+            "rallentamento dell'avversario colpito dal laser",
+        ),
         (
             "P_BARRIER_X",
             p.guardian_barrier_x,

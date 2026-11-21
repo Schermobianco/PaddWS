@@ -18,7 +18,8 @@
 // in pick_*.ppm) e la CPU riceve STEER armato a ogni palla in arrivo: salva i primi due tiri guidati.
 // Argomento "kinds": come "next", poi nella scelta della racchetta i tipi dei due lati vengono da
 // PONG_KINDS ("4,6" se manca: BLASTER contro GUARDIAN, codici di `PaddleKind`) e il giocatore
-// conferma con Y; salva la scelta in kpick_*.ppm e la partita ogni 40 frame in k_*.ppm.
+// conferma con Y; salva la scelta in kpick_*.ppm e la partita ogni 40 frame in k_*.ppm (con
+// PONG_KINDS_EVERY=1 anche ogni frame da 300 a 340, durante la raffica di scatti: booster accesi).
 // Argomenti "win" e "winup": partita a due portata a 10-10, salva il GAME OVER con il vincitore
 // (punteggi verso i giocatori o dritti). "perfect" e "perfectup": la stessa portata a 11-0, che il primo
 // suono della partita chiude: il GAME OVER con PERFECT al posto di GAME OVER sopra P1 WINS; stampa le
@@ -843,8 +844,10 @@ int main(int argc, char** argv) {
             }
             if (kinds_test && game_at < 0 && r->pong_top__DOT__mode == 5) game_at = frames;
             const bool kpick_shot = kinds_test && paddle_at >= 0 && (frames == paddle_at + 20 || frames == paddle_at + 40);
+            static const bool kinds_every = std::getenv("PONG_KINDS_EVERY") != nullptr;
             const bool kgame_shot = kinds_test && game_at >= 0 && frames > game_at + 180 &&
-                                    ((frames - game_at) % 40 == 0 || (frames - game_at <= 480 && (frames - game_at) % 10 == 0));
+                                    ((frames - game_at) % 40 == 0 || (frames - game_at <= 480 && (frames - game_at) % 10 == 0) ||
+                                     (kinds_every && frames - game_at >= 300 && frames - game_at <= 340));
             if (kinds_test && game_at >= 0 && frames > game_at + 1000) break;
             // "challenge": un fotogramma per schermata, poi si passa oltre
             bool ch_shot = false;

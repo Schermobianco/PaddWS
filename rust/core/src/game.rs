@@ -411,8 +411,8 @@ impl Match {
         let before = [self.paddles[0].y, self.paddles[1].y];
         self.apply_input(input, &mut events);
 
-        // BULLET: rallenta la racchetta dell'avversario di chi l'ha attivato
-        let slow = self.bullet_shifts();
+        // BULLET e rallentamento da colpo laser del BLASTER sulle racchette
+        let slow = self.paddle_slow_shifts();
         for ((pad, y), slow) in self.paddles.iter_mut().zip(before).zip(slow) {
             pad.update(&self.params, slow);
             pad.motion += (pad.y - y - pad.motion) >> 2;
@@ -524,10 +524,18 @@ impl Match {
         }
     }
 
+    /// Shift di rallentamento delle due racchette (BULLET avversario o colpo laser del BLASTER).
+    pub fn paddle_slow_shifts(&self) -> [u32; 2] {
+        match &self.next {
+            Some(n) => Side::BOTH.map(|side| n.paddle_slow_shift(side, &self.params)),
+            None => [0, 0],
+        }
+    }
+
     /// Posiziona una racchetta in base alla distanza dal bordo alto (input dell'encoder).
     fn set_paddle_top(&mut self, side: Side, offset: i32) {
         let h = self.params.height;
-        let slow = self.bullet_shifts()[side as usize];
+        let slow = self.paddle_slow_shifts()[side as usize];
         let pad = &mut self.paddles[side as usize];
         let half = pad.height / 2;
         let goal = (h - fixed::int(offset) - half).clamp(half, h - half);

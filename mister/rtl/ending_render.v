@@ -46,10 +46,49 @@ module ending_render #(
 
 `include "pong_ending.vh"
 
-localparam [23:0] BLACK = 24'h000000, WHITE = 24'hFFFFFF, YELLOW = 24'hFFD225, RED = 24'hE62828;
+localparam [23:0] BLACK = 24'h000000, WHITE = 24'hFFFFFF, YELLOW = 24'hFFD225, RED = 24'hFF3434,
+                  CYAN = 24'h38ECFF, MAGENTA = 24'hFF48DC, GREEN = 24'h48FF68, ORANGE = 24'hFF8A24;
 localparam [2:0]  P_CONGRATS = 3'd0, P_PARADE = 3'd1, P_SCORE = 3'd2, P_CHAMPION = 3'd3, P_CREDITS = 3'd4,
                   P_THE_END = 3'd5;
 localparam integer FB_CELLS = 160 * 120;             // una pagina del framebuffer
+
+// tema del fuoco (0..7) + slot del punto (1 cuore, 2 primario, 3 secondario) -> indice colore 1..7
+function [2:0] theme_col(input [2:0] th, input [1:0] slot);
+    if (slot == 2'd1)
+        theme_col = 3'd1;                            // bianco
+    else if (slot == 2'd2) case (th)
+        3'd0: theme_col = 3'd4;                      // ciano
+        3'd1: theme_col = 3'd2;                      // giallo
+        3'd2: theme_col = 3'd6;                      // verde
+        3'd3: theme_col = 3'd3;                      // rosso
+        3'd4: theme_col = 3'd5;                      // magenta
+        3'd5: theme_col = 3'd7;                      // arancio
+        3'd6: theme_col = 3'd4;                      // ciano
+        default: theme_col = 3'd5;                   // magenta
+    endcase else case (th)
+        3'd0: theme_col = 3'd5;                      // magenta
+        3'd1: theme_col = 3'd7;                      // arancio
+        3'd2: theme_col = 3'd4;                      // ciano
+        3'd3: theme_col = 3'd2;                      // giallo
+        3'd4: theme_col = 3'd4;                      // ciano
+        3'd5: theme_col = 3'd3;                      // rosso
+        3'd6: theme_col = 3'd6;                      // verde
+        default: theme_col = 3'd4;                   // ciano
+    endcase
+endfunction
+
+function [23:0] fw_rgb(input [2:0] c);
+    case (c)
+        3'd1: fw_rgb = WHITE;
+        3'd2: fw_rgb = YELLOW;
+        3'd3: fw_rgb = RED;
+        3'd4: fw_rgb = CYAN;
+        3'd5: fw_rgb = MAGENTA;
+        3'd6: fw_rgb = GREEN;
+        3'd7: fw_rgb = ORANGE;
+        default: fw_rgb = BLACK;
+    endcase
+endfunction
 
 // ------------------------------------------------------------------ parti e tempi (una volta per frame)
 
@@ -185,38 +224,39 @@ assign st_scroll = scroll;
 
 reg [15:0] from [0:END_FW_SIZE-1];
 initial $readmemh(FW_ROM, from);
-// framebuffer dei fuochi: due pagine da 160x120 celle, 0 niente, 1 bianco, 2 giallo, 3 rosso
-reg [1:0]  fb [0:2*FB_CELLS-1];
+// framebuffer dei fuochi: due pagine da 160x120 celle a 3 bit (0 nero, 1..7 colori vivaci)
+reg [2:0]  fb [0:2*FB_CELLS-1];
 
 wire [8:0] x = hc;
 wire [8:0] y = vc;
 // la pagina mostrata, cella (x / 2, y / 2)
 wire [15:0] fa = (front ? FB_CELLS : 0) + {y[8:1], 7'd0} + {2'd0, y[8:1], 5'd0} + {8'd0, x[8:1]};
-reg  [1:0]  fq = 2'd0;
+reg  [2:0]  fq = 3'd0;
 reg         q_fw = 1'b0;
 always @(posedge clk) begin
     fq <= fb[fa];
     q_fw <= active && part == P_CHAMPION && x < 9'd320 && y < 9'd240;
 end
 always @(posedge clk)
-    rgb <= (q_fw && fq != 2'd0) ? ((fq == 2'd1) ? WHITE : (fq == 2'd2) ? YELLOW : RED) : BLACK;
+    rgb <= (q_fw && fq != 3'd0) ? fw_rgb(fq) : BLACK;
 
 // ------------------------------------------------------------------ disegnatore dei fuochi
 
 localparam [2:0] D_IDLE = 3'd0, D_CLEAR = 3'd1, D_FW = 3'd2, D_I0 = 3'd3, D_I1 = 3'd4, D_I2 = 3'd5,
                  D_DOT0 = 3'd6, D_DOT1 = 3'd7;
 reg  [2:0]  dstate = D_IDLE;
-reg  [12:0] faddr = 13'd0;
+reg  [13:0] faddr = 14'd0;
 reg  [15:0] fdata = 16'd0;
 reg  [14:0] clr = 15'd0;            // cancellazione: cella della pagina nascosta
-reg  [3:0]  fi = 4'd0;               // fuoco in corso
+reg  [4:0]  fi = 5'd0;              // fuoco in corso (fino a 31)
+reg  [2:0]  ftheme = 3'd0;          // tema colori del fuoco in corso
 reg  [6:0]  pn = 7'd0;
-reg  [7:0]  dleft = 8'd0;            // punti rimasti
+reg  [7:0]  dleft = 8'd0;           // punti rimasti
 reg  [7:0]  fcx = 8'd0;
 reg  [6:0]  fcy = 7'd0;
 reg         we = 1'b0;
 reg  [15:0] waddr = 16'd0;
-reg  [1:0]  wdata = 2'd0;
+reg  [2:0]  wdata = 3'd0;
 wire [7:0]  age = {1'b0, pn} - {1'b0, fw_start(fi)};
 // punto: cella dello scoppio più lo scostamento (dx 6 bit e dy 8 bit con segno)
 wire signed [9:0] px = $signed({2'b0, fcx}) + $signed({{4{fdata[5]}}, fdata[5:0]});
@@ -240,10 +280,10 @@ always @(posedge clk) begin
         D_CLEAR: begin
             we <= 1'b1;
             waddr <= back + {1'b0, clr};
-            wdata <= 2'd0;
+            wdata <= 3'd0;
             clr <= clr + 15'd1;
             if (clr == FB_CELLS - 1) begin
-                fi <= 4'd0;
+                fi <= 5'd0;
                 dstate <= D_FW;
             end
         end
@@ -251,34 +291,36 @@ always @(posedge clk) begin
         D_FW: begin
             if (fi == END_FWS) dstate <= D_IDLE;
             else if (!age[7] && age < END_FW_STRIDE) begin
-                faddr <= {{1'b0, fi, 6'd0} + {3'd0, fi, 4'd0} + {4'd0, age}, 1'b0};   // (fi * 80 + age) * 2
+                faddr <= {{2'd0, fi, 6'd0} + {4'd0, fi, 4'd0} + {5'd0, age}, 1'b0};   // (fi * 80 + age) * 2
                 fcx <= fw_cx(fi);
                 fcy <= fw_cy(fi);
+                ftheme <= fw_theme(fi);
                 dstate <= D_I0;
             end else
-                fi <= fi + 4'd1;
+                fi <= fi + 5'd1;
         end
-        D_I0: begin faddr <= faddr + 13'd1; dstate <= D_I1; end
-        D_I1: begin faddr <= fdata[12:0]; dstate <= D_I2; end        // inizio dei punti
+        D_I0: begin faddr <= faddr + 14'd1; dstate <= D_I1; end
+        D_I1: begin faddr <= fdata[13:0]; dstate <= D_I2; end        // inizio dei punti
         D_I2: begin
             dleft <= fdata[7:0];
             if (fdata[7:0] == 8'd0) begin
-                fi <= fi + 4'd1;
+                fi <= fi + 5'd1;
                 dstate <= D_FW;
             end else
                 dstate <= D_DOT0;
         end
         D_DOT0: dstate <= D_DOT1;                                       // il punto arriva dalla ROM
         D_DOT1: begin
-            if (px >= 0 && px < 160 && py >= 0 && py < 120) begin
+            // tagliato sopra le scritte del campione (py < 86 -> y < 172)
+            if (px >= 0 && px < 160 && py >= 0 && py < 86) begin
                 we <= 1'b1;
                 waddr <= back + {py[6:0], 7'd0} + {2'd0, py[6:0], 5'd0} + {8'd0, px[7:0]};
-                wdata <= fdata[15:14];
+                wdata <= theme_col(ftheme, fdata[15:14]);
             end
-            faddr <= faddr + 13'd1;
+            faddr <= faddr + 14'd1;
             dleft <= dleft - 8'd1;
             if (dleft == 8'd1) begin
-                fi <= fi + 4'd1;
+                fi <= fi + 5'd1;
                 dstate <= D_FW;
             end else
                 dstate <= D_DOT0;

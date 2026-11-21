@@ -6,18 +6,191 @@
 //! restano in hardware (ending_render): qui arrivano dai registri.
 
 use crate::assets::ending as e;
-use crate::assets::game::KIND_NAMES;
-use crate::assets::portraits;
-use crate::cast::{OMEGA, centered, portrait};
+use crate::assets::game::{KIND_H, KIND_NAMES, SIN_Q8};
+use crate::assets::{portraits, ships};
+use crate::cast::{OMEGA, centered, paddle_warp, portrait};
 use crate::dl::{CLASS_A, Dl, Kind, Obj, text_w};
-use crate::pal::{GRAY, OMEGA_Q, RED, WHITE, YELLOW};
+use crate::pal::{CYAN, GRAY, OMEGA_Q, PADS, RED, SHIP, WHITE, YELLOW};
 use crate::regs::{Omega, Regs, field};
 
 const P_PARADE: u32 = 1;
+const P_CHAMPION: u32 = 3;
 const P_CREDITS: u32 = 4;
 const P_THE_END: u32 = 5;
 /// tipi della scala nell'ordine dei livelli (PaddleKind)
 const LADDER: [usize; 7] = [0, 3, 2, 1, 4, 5, 6];
+
+/// Colore del personaggio `kind` nella tavolozza delle racchette (`pal::PADS + 13 + 3 * kind`).
+const fn kind_mark(kind: usize) -> u8 {
+    PADS + 13 + 3 * kind as u8
+}
+
+/// Lampo iperspaziale centrato in `(cx, cy)` con progresso `num / den` in `(0, 1)`.
+#[inline(never)]
+fn warp_flash(d: &mut Dl, cx: i32, cy: i32, num: i32, den: i32, mark: u8) {
+    if num <= 0 || num >= den {
+        return;
+    }
+    // inviluppo triangolare morbido (0 -> 256 -> 0)
+    let env = if num * 2 <= den {
+        num * 512 / den
+    } else {
+        (den - num) * 512 / den
+    };
+    let w = 14 + (env * 124) / 256;
+    let h = ((env * 5) / 256).max(1);
+    d.rect(cx - w / 2, cy - h / 2 - 1, w, h + 2, CYAN);
+    let iw = (w * 4) / 5;
+    d.rect(cx - iw / 2, cy - h / 2, iw, h, WHITE);
+    let vh = (env * 28) / 256;
+    if vh > 0 {
+        d.rect(cx - 1, cy - vh / 2, 3, vh, mark);
+        let ivh = (vh * 4) / 5;
+        d.rect(cx, cy - ivh / 2, 1, ivh.max(1), WHITE);
+    }
+}
+
+/// Salto Warp dell'astronave vincitrice durante `P_CHAMPION` (`pf = 0..419` a 60 Hz):
+/// linee velocità durante carica e scatto, entrata da lampo a sinistra, crociera e carica al
+/// centro, scatto iperspaziale con allungamento hardware (`sx = 1, 2`) e lampo verso destra.
+#[inline(never)]
+fn draw_champion_warp(d: &mut Dl, pf: i32, winner: usize) {
+    let mark = kind_mark(winner);
+    // linee velocità orizzontali: carica (132..207) e scatto (207..288)
+    let inten = if (132..207).contains(&pf) {
+        (pf - 132) * 166 / 75
+    } else if (207..288).contains(&pf) {
+        (288 - pf) * 256 / 81
+    } else {
+        0
+    };
+    if inten > 4 {
+        let count = (18 * inten / 256).max(1);
+        for i in 0..count {
+            let s = (i as u32).wrapping_mul(2_654_435_761);
+            let y = if i % 3 == 0 {
+                (92 + ((s >> 8) % 64) as i32 - 32).clamp(4, 166)
+            } else {
+                4 + (s % 162) as i32
+            };
+            let spd = 5 + ((s >> 12) % 6) as i32;
+            let len = ((12 + ((s >> 16) % 40) as i32) * inten / 256).max(4);
+            let phase = ((s >> 4) % 420) as i32;
+            let x = 360 - (phase + pf * spd) % 420;
+            let col = match i & 3 {
+                0 => WHITE,
+                1 => CYAN,
+                2 => mark,
+                _ => YELLOW,
+            };
+            d.rect(x, y, len, if i % 7 == 0 { 2 } else { 1 }, col);
+        }
+    }
+
+    // lampo di ingresso a sinistra (0.35..0.85 s -> frame 21..51)
+    if (21..51).contains(&pf) {
+        warp_flash(d, 32, 92, pf - 21, 30, mark);
+    }
+
+    // astronave (0.45..4.25 s -> frame 27..255)
+    if (27..255).contains(&pf) {
+        let (x, y, sx, strength) = if pf < 108 {
+            // decelerazione dall'iperspazio (27..108)
+            let k = (pf - 27) * 256 / 81;
+            let inv = 256 - k;
+            let ease = 256 - ((((inv * inv) >> 8) * inv) >> 8);
+            let sx = if ease < 160 { 1u32 } else { 0u32 };
+            let wave = (SIN_Q8[((k >> 3) & 63) as usize] * 6) >> 8;
+            (-24 + (ease * 158) / 256, 92 + wave, sx, 76 + ((256 - ease) * 180) / 256)
+        } else if pf < 207 {
+            // crociera trionfale + carica iperspazio (108..207)
+            let k = (pf - 108) * 256 / 99;
+            let jitter = if k > 140 {
+                (if (pf >> 1) & 1 != 0 { 1 } else { -1 }) * ((k - 140) * 3 / 116)
+            } else {
+                0
+            };
+            let wave = (SIN_Q8[((pf * 5 / 6) & 63) as usize] * 5) >> 8;
+            (134 + (k * 44) / 256 + jitter, 92 + wave, 0u32, 90 + (k * 166) / 256)
+        } else {
+            // SCATTO IPERSPAZIALE! (207..255)
+            let k = (pf - 207) * 256 / 48;
+            let k3 = (((k * k) >> 8) * k) >> 8;
+            let sx = if k < 96 { 1u32 } else { 2u32 };
+            (178 + (k3 * 290) / 256, 92, sx, 340)
+        };
+
+        // scia di plasma orizzontale dai motori
+        let h_px = KIND_H[winner];
+        let n_streaks = (6 + (8 * strength) / 256).min(14);
+        let tick_seed = (pf >> 1) as u32;
+        for i in 0..n_streaks {
+            let s = ((i + 1) as u32)
+                .wrapping_mul(1_103_515_245)
+                .wrapping_add(tick_seed.wrapping_mul(12_345));
+            let dy = ((((s >> 8) % 100) as i32 - 50) * h_px) / 140;
+            let max_back = (22 + (64 * strength) / 256).max(8) as u32;
+            let max_len = (10 + (32 * strength) / 256).max(4) as u32;
+            let back = 6 + ((s >> 16) % max_back) as i32;
+            let len = 4 + ((s >> 20) % max_len) as i32;
+            let py = y + dy;
+            if (2..168).contains(&py) {
+                let col = match i % 3 {
+                    0 => WHITE,
+                    1 => CYAN,
+                    _ => mark,
+                };
+                d.rect(x - back - len, py, len, if i % 5 == 0 { 2 } else { 1 }, col);
+            }
+        }
+
+        // nave reale allungata in hardware + lampo bianco iniziale allo scatto
+        paddle_warp(d, winner as u32, x, y, true, sx);
+        if (206..=212).contains(&pf) {
+            d.rect(x - 10, y - h_px / 2, 20, h_px, WHITE);
+        }
+    }
+
+    // lampo di uscita verso destra (3.42..4.05 s -> frame 205..243)
+    if (205..243).contains(&pf) {
+        let dt = pf - 205;
+        warp_flash(d, 184 + dt * 3, 92, dt, 38, mark);
+    }
+}
+
+/// Illustrazione isometrica 160x90 della nave vincitrice sospesa sopra `THE END`, con stelle che
+/// scorrono piano dietro.
+#[inline(never)]
+fn draw_the_end_ship(d: &mut Dl, pf: i32, winner: usize) {
+    let mark = kind_mark(winner);
+    for i in 0..16u32 {
+        let s = i.wrapping_mul(2_654_435_761);
+        let x0 = (s % 320) as i32;
+        let y0 = ((s >> 9) % 156) as i32;
+        let spd = 1 + ((s >> 17) % 3) as i32;
+        let x = (x0 + (pf * spd) / 3) % 320;
+        let y = (y0 - (pf * spd) / 6).rem_euclid(156);
+        let col = match i % 4 {
+            0 => WHITE,
+            1 => CYAN,
+            2 => mark,
+            _ => YELLOW,
+        };
+        let sz = if i % 5 == 0 { 2 } else { 1 };
+        d.rect(x, y + 4, sz, sz, col);
+    }
+    let img = &ships::ART[winner];
+    let mut rows = [0i32; 90];
+    for (v, row) in rows.iter_mut().enumerate() {
+        *row = v as i32 * ships::ROW_WORDS;
+    }
+    let lt = d.lines(&rows);
+    let hover = (SIN_Q8[((pf >> 1) & 63) as usize] * 2) >> 8;
+    let mut o = d.img_obj((320 - img.w as i32) / 2, 36 + hover, img, SHIP);
+    o.lt = Some(lt);
+    o.ltrow = true;
+    d.push(&o);
+}
 
 /// Parola della mappa della riga y nella parte in corso (0 = riga vuota).
 fn entry(part: u32, y: i32, scroll: i32) -> u32 {
@@ -52,10 +225,12 @@ fn dec7(v: u32) -> [u8; 7] {
 
 pub fn draw(r: &Regs, om: &Omega, d: &mut Dl) {
     let w = r.w[41];
+    let pf = field(w, 0, 11) as i32;
     let part = field(w, 11, 3);
     let beats = field(w, 14, 5) as i32;
     let stage = field(w, 19, 2);
     let fl = field(w, 21, 1) != 0;
+    let winner = field(r.w[47], 9, 3).min(6) as usize;
     let disp = [
         r.w[42] & 0xFF_FFFF,
         r.w[43] & 0xFF_FFFF,
@@ -63,6 +238,12 @@ pub fn draw(r: &Regs, om: &Omega, d: &mut Dl) {
     ];
     let scroll = (r.w[44] & 1023) as i32;
     d.class = CLASS_A;
+
+    if part == P_CHAMPION {
+        draw_champion_warp(d, pf, winner);
+    } else if part == P_THE_END {
+        draw_the_end_ship(d, pf, winner);
+    }
 
     // ---- scritte e cifre: righe consecutive con la stessa voce (tranne la riga) diventano un oggetto
     let mut rows = [0i32; 240];
@@ -140,10 +321,10 @@ pub fn draw(r: &Regs, om: &Omega, d: &mut Dl) {
         }
     }
 
-    // dopo OMEGA battuto: OMEGA DEFEATED in rosso sotto THE END (ending_ui.rs, 40 righe sotto a 480)
+    // dopo OMEGA battuto: OMEGA DEFEATED in rosso sotto THE END
     if part == P_THE_END && om.won {
         let t = b"OMEGA DEFEATED";
-        d.text((320 - text_w(t)) / 2, e::WIN5_TOP + 20, t, RED, 0);
+        d.text((320 - text_w(t)) / 2, e::WIN5_TOP + 22, t, RED, 0);
     }
     if part != P_PARADE {
         return;

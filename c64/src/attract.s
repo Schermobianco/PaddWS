@@ -24,7 +24,7 @@ mask_right: .byte $ff, $7f, $3f, $1f, $0f, $07, $03, $01   ; tutti tranne i prim
 ; strisce non disegnano la bitmap)
 .segment "BOOTCODE"
 boot_lines: .word boot_0, 0, boot_2, boot_3, boot_4, boot_5
-boot_0: .byte "PADD WS  V4.0", 0
+boot_0: .byte "PADD WS  V4.6", 0
 boot_2: .byte "RAM ........ OK", 0
 boot_3: .byte "ROM ........ OK", 0
 boot_4: .byte "VIDEO PAL ... OK", 0
@@ -354,7 +354,7 @@ part3:
     bpl :-
     rts
 part4:
-    lda egg_yel                 ; (COL_BLACK << 4) | COL_YELLOW, o il rosso con l'easter egg
+    lda #COL_YELLOW                 ; (COL_BLACK << 4) | COL_YELLOW, o il rosso con l'easter egg
 .assert COL_BLACK = 0, error, "bitmap: il nero nel nibble alto"
 :   sta SCREEN2,x
     sta SCREEN2+$100,x
@@ -479,7 +479,7 @@ title_rows_hi:
     bpl :-
     lda #MODE_OFF               ; schermo spento mentre si pulisce la bitmap, già tutto giallo
     sta sh_mode                 ; (bordo compreso, come poi con strisce, logo e titolo)
-    lda egg_yel
+    lda #COL_YELLOW
     sta sh_bg
     lda #BM_PARTS
     sta at_clear
@@ -859,7 +859,7 @@ whole:
     jmp done
 :   lda #MODE_BITMAP
     sta sh_mode
-    lda egg_yel
+    lda #COL_YELLOW
     sta sh_bg
 done:
     jsr at_tick

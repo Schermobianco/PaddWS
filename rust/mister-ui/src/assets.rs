@@ -68,62 +68,69 @@ pub const IMG_NAME_RUSH: Img = Img { base: 3292, w: 50, h: 14, bpp_sh: 2, stride
 pub const IMG_NAME_GUARDIAN: Img = Img { base: 3404, w: 77, h: 14, bpp_sh: 2, stride_sh: 4 };
 pub const IMG_WARNING: Img = Img { base: 3628, w: 192, h: 38, bpp_sh: 2, stride_sh: 5 };
 pub const IMG_NAME_OMEGA: Img = Img { base: 4844, w: 80, h: 33, bpp_sh: 2, stride_sh: 4 };
-pub const IMG_PAD_PREVIEW_0: Img = Img { base: 5372, w: 5, h: 33, bpp_sh: 3, stride_sh: 1 };
-pub const IMG_PAD_PREVIEW_1: Img = Img { base: 5438, w: 14, h: 51, bpp_sh: 3, stride_sh: 2 };
-pub const IMG_PAD_PREVIEW_2: Img = Img { base: 5642, w: 8, h: 41, bpp_sh: 3, stride_sh: 1 };
-pub const IMG_PAD_PREVIEW_3: Img = Img { base: 5724, w: 20, h: 41, bpp_sh: 3, stride_sh: 3 };
-pub const IMG_PAD_PREVIEW_4: Img = Img { base: 6052, w: 14, h: 45, bpp_sh: 3, stride_sh: 2 };
-pub const IMG_PAD_PREVIEW_5: Img = Img { base: 6232, w: 28, h: 35, bpp_sh: 3, stride_sh: 3 };
-pub const IMG_PAD_PREVIEW_6: Img = Img { base: 6512, w: 8, h: 33, bpp_sh: 3, stride_sh: 1 };
-pub const IMG_PAD_PLAIN_3: Img = Img { base: 6578, w: 5, h: 41, bpp_sh: 3, stride_sh: 1 };
-pub const IMG_PAD_PLAIN_5: Img = Img { base: 6660, w: 14, h: 35, bpp_sh: 3, stride_sh: 2 };
-pub const IMG_PICK_NET: Img = Img { base: 6800, w: 2, h: 160, bpp_sh: 0, stride_sh: 0 };
-pub const IMG_CAP_FRAME: Img = Img { base: 6960, w: 12, h: 12, bpp_sh: 0, stride_sh: 0 };
-pub const IMG_VS3: Img = Img { base: 6972, w: 48, h: 24, bpp_sh: 0, stride_sh: 1 };
-pub const IMG_HT_SPRITE_0: Img = Img { base: 8880, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_HT_SPRITE_1: Img = Img { base: 9008, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_HT_SPRITE_2: Img = Img { base: 9136, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_HT_SPRITE_3: Img = Img { base: 9264, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_HT_SPRITE_4: Img = Img { base: 9392, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_HT_SPRITE_5: Img = Img { base: 9520, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_HT_SPRITE_6: Img = Img { base: 9648, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_HT_SPRITE_7: Img = Img { base: 9776, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_HT_SPRITE_8: Img = Img { base: 9904, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_HT_SPRITE_9: Img = Img { base: 10032, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_HT_ARROW: Img = Img { base: 10160, w: 5, h: 7, bpp_sh: 0, stride_sh: 0 };
-pub const IMG_PT_BIG_ARCADE: Img = Img { base: 13157, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
-pub const IMG_PT_BIG_TITAN: Img = Img { base: 14301, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
-pub const IMG_PT_BIG_HAMMER: Img = Img { base: 15445, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
-pub const IMG_PT_BIG_TWIST: Img = Img { base: 16589, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
-pub const IMG_PT_BIG_BLASTER: Img = Img { base: 17733, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
-pub const IMG_PT_BIG_RUSH: Img = Img { base: 18877, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
-pub const IMG_PT_BIG_GUARDIAN: Img = Img { base: 20021, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
-pub const IMG_PT_BIG_OMEGA: Img = Img { base: 21165, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
-pub const IMG_PT_SMALL_ARCADE: Img = Img { base: 22309, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_PT_SMALL_TITAN: Img = Img { base: 22437, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_PT_SMALL_HAMMER: Img = Img { base: 22565, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_PT_SMALL_TWIST: Img = Img { base: 22693, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_PT_SMALL_BLASTER: Img = Img { base: 22821, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_PT_SMALL_RUSH: Img = Img { base: 22949, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_PT_SMALL_GUARDIAN: Img = Img { base: 23077, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_PT_SMALL_OMEGA: Img = Img { base: 23205, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_PT_MID_ARCADE: Img = Img { base: 23333, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_ARCADE_DEFEATED: Img = Img { base: 23909, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_TITAN: Img = Img { base: 24485, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_TITAN_DEFEATED: Img = Img { base: 25061, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_HAMMER: Img = Img { base: 25637, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_HAMMER_DEFEATED: Img = Img { base: 26213, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_TWIST: Img = Img { base: 26789, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_TWIST_DEFEATED: Img = Img { base: 27365, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_BLASTER: Img = Img { base: 27941, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_BLASTER_DEFEATED: Img = Img { base: 28517, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_RUSH: Img = Img { base: 29093, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_RUSH_DEFEATED: Img = Img { base: 29669, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_GUARDIAN: Img = Img { base: 30245, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_GUARDIAN_DEFEATED: Img = Img { base: 30821, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_OMEGA: Img = Img { base: 31397, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_OMEGA_DEFEATED: Img = Img { base: 31973, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
-pub const IMG_PT_MID_OMEGA_LOCKED: Img = Img { base: 32549, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PAD_PREVIEW_0: Img = Img { base: 5372, w: 10, h: 33, bpp_sh: 3, stride_sh: 2 };
+pub const IMG_PAD_PREVIEW_1: Img = Img { base: 5504, w: 21, h: 51, bpp_sh: 3, stride_sh: 3 };
+pub const IMG_PAD_PREVIEW_2: Img = Img { base: 5912, w: 18, h: 41, bpp_sh: 3, stride_sh: 3 };
+pub const IMG_PAD_PREVIEW_3: Img = Img { base: 6240, w: 22, h: 41, bpp_sh: 3, stride_sh: 3 };
+pub const IMG_PAD_PREVIEW_4: Img = Img { base: 6568, w: 19, h: 45, bpp_sh: 3, stride_sh: 3 };
+pub const IMG_PAD_PREVIEW_5: Img = Img { base: 6928, w: 34, h: 35, bpp_sh: 3, stride_sh: 4 };
+pub const IMG_PAD_PREVIEW_6: Img = Img { base: 7488, w: 17, h: 33, bpp_sh: 3, stride_sh: 3 };
+pub const IMG_PAD_PLAIN_3: Img = Img { base: 7752, w: 14, h: 41, bpp_sh: 3, stride_sh: 2 };
+pub const IMG_PAD_PLAIN_5: Img = Img { base: 7916, w: 17, h: 35, bpp_sh: 3, stride_sh: 3 };
+pub const IMG_PICK_NET: Img = Img { base: 8196, w: 2, h: 160, bpp_sh: 0, stride_sh: 0 };
+pub const IMG_CAP_FRAME: Img = Img { base: 8356, w: 12, h: 12, bpp_sh: 0, stride_sh: 0 };
+pub const IMG_VS3: Img = Img { base: 8368, w: 48, h: 24, bpp_sh: 0, stride_sh: 1 };
+pub const IMG_HT_SPRITE_0: Img = Img { base: 10276, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_HT_SPRITE_1: Img = Img { base: 10404, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_HT_SPRITE_2: Img = Img { base: 10532, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_HT_SPRITE_3: Img = Img { base: 10660, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_HT_SPRITE_4: Img = Img { base: 10788, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_HT_SPRITE_5: Img = Img { base: 10916, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_HT_SPRITE_6: Img = Img { base: 11044, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_HT_SPRITE_7: Img = Img { base: 11172, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_HT_SPRITE_8: Img = Img { base: 11300, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_HT_SPRITE_9: Img = Img { base: 11428, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_HT_ARROW: Img = Img { base: 11556, w: 5, h: 7, bpp_sh: 0, stride_sh: 0 };
+pub const IMG_PT_BIG_ARCADE: Img = Img { base: 14553, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_PT_BIG_TITAN: Img = Img { base: 15697, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_PT_BIG_HAMMER: Img = Img { base: 16841, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_PT_BIG_TWIST: Img = Img { base: 17985, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_PT_BIG_BLASTER: Img = Img { base: 19129, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_PT_BIG_RUSH: Img = Img { base: 20273, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_PT_BIG_GUARDIAN: Img = Img { base: 21417, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_PT_BIG_OMEGA: Img = Img { base: 22561, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_PT_SMALL_ARCADE: Img = Img { base: 23705, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_PT_SMALL_TITAN: Img = Img { base: 23833, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_PT_SMALL_HAMMER: Img = Img { base: 23961, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_PT_SMALL_TWIST: Img = Img { base: 24089, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_PT_SMALL_BLASTER: Img = Img { base: 24217, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_PT_SMALL_RUSH: Img = Img { base: 24345, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_PT_SMALL_GUARDIAN: Img = Img { base: 24473, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_PT_SMALL_OMEGA: Img = Img { base: 24601, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_PT_MID_ARCADE: Img = Img { base: 24729, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_ARCADE_DEFEATED: Img = Img { base: 25305, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_TITAN: Img = Img { base: 25881, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_TITAN_DEFEATED: Img = Img { base: 26457, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_HAMMER: Img = Img { base: 27033, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_HAMMER_DEFEATED: Img = Img { base: 27609, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_TWIST: Img = Img { base: 28185, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_TWIST_DEFEATED: Img = Img { base: 28761, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_BLASTER: Img = Img { base: 29337, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_BLASTER_DEFEATED: Img = Img { base: 29913, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_RUSH: Img = Img { base: 30489, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_RUSH_DEFEATED: Img = Img { base: 31065, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_GUARDIAN: Img = Img { base: 31641, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_GUARDIAN_DEFEATED: Img = Img { base: 32217, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_OMEGA: Img = Img { base: 32793, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_OMEGA_DEFEATED: Img = Img { base: 33369, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_PT_MID_OMEGA_LOCKED: Img = Img { base: 33945, w: 64, h: 72, bpp_sh: 2, stride_sh: 3 };
+pub const IMG_SHIP_ARCADE: Img = Img { base: 34521, w: 160, h: 90, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_SHIP_TITAN: Img = Img { base: 36321, w: 160, h: 90, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_SHIP_HAMMER: Img = Img { base: 38121, w: 160, h: 90, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_SHIP_TWIST: Img = Img { base: 39921, w: 160, h: 90, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_SHIP_BLASTER: Img = Img { base: 41721, w: 160, h: 90, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_SHIP_RUSH: Img = Img { base: 43521, w: 160, h: 90, bpp_sh: 2, stride_sh: 0 };
+pub const IMG_SHIP_GUARDIAN: Img = Img { base: 45321, w: 160, h: 90, bpp_sh: 2, stride_sh: 0 };
 
 /// Attract (assets/attract/attract.json, come pong_attract.vh).
 pub mod at {
@@ -151,7 +158,7 @@ pub mod at {
     pub const WINNER_Y: i32 = 132;
     pub const STRIPE_ROWS: [i32; 3] = [96, 115, 134];
     pub const WS_OFF: [(i32, i32); 2] = [(0, 15), (30, 45)];
-    pub const BOOT_LINES: [&[u8]; 6] = [b"PADD WS  V4.0", b"", b"RAM ........ OK", b"ROM ........ OK", b"VIDEO 240P .. OK", b"AUDIO ...... OK"];
+    pub const BOOT_LINES: [&[u8]; 6] = [b"PADD WS  V4.6", b"", b"RAM ........ OK", b"ROM ........ OK", b"VIDEO 240P .. OK", b"AUDIO ...... OK"];
     pub const STRIPE_LEFT_END: [i32; 43] = [0, 8, 15, 22, 29, 35, 40, 45, 50, 55, 58, 62, 65, 68, 71, 73, 75, 76, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 77, 77, 76, 76, 76, 75, 75, 75];
     pub const STRIPE_RIGHT_START: [i32; 43] = [320, 312, 304, 296, 290, 283, 277, 272, 267, 263, 258, 255, 251, 248, 246, 243, 241, 239, 238, 238, 238, 238, 238, 238, 238, 238, 238, 238, 238, 238, 238, 238, 238, 238, 238, 238, 239, 240, 240, 240, 241, 241, 241];
 }
@@ -163,7 +170,7 @@ pub mod game {
     /// altezza in pixel delle racchette di ogni tipo (PaddleKind)
     pub const KIND_H: [i32; 7] = [32, 48, 40, 40, 44, 34, 32];
     pub const PW: i32 = 4;
-    pub const BLASTER_SHOTS: i32 = 4;
+    pub const BLASTER_SHOTS: i32 = 6;
     /// lato delle capsule in partita (e nella scelta dei bonus)
     pub const CAP: i32 = 12;
     pub const BONUS_NAMES: [&[u8]; 8] = [b"TELEPORT", b"SMASH", b"SLOW", b"CURVE", b"GHOST", b"SUPER", b"STEER", b"BULLET"];
@@ -209,7 +216,7 @@ pub mod howto {
     pub const LEG_X1: i32 = 88;
     pub const LEG_X2: i32 = 170;
     /// prima parola delle righe delle scritte (20 parole per riga; la riga 92 è vuota)
-    pub const TEXT_BASE: u32 = 7020;
+    pub const TEXT_BASE: u32 = 8416;
     /// riga delle scritte di ogni riga dello schermo, per controllo (joystick, paddle, spinner)
     pub const ROWS: [[u8; 240]; 3] = [
         [92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 0, 1, 2, 3, 4, 5, 6, 92, 92, 92, 92, 92, 92, 92, 7, 8, 9, 10, 11, 12, 13, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 14, 15, 16, 17, 18, 19, 20, 92, 92, 92, 92, 92, 92, 92, 21, 22, 23, 24, 25, 26, 27, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 28, 29, 30, 31, 32, 33, 34, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 35, 36, 37, 38, 39, 40, 41, 92, 92, 92, 92, 92, 92, 92, 42, 43, 44, 45, 46, 47, 48, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 28, 29, 30, 31, 32, 33, 34, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 49, 50, 51, 52, 53, 54, 55, 56, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 57, 58, 59, 60, 61, 62, 63, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 64, 65, 66, 67, 68, 69, 70, 92, 92, 92, 92, 92],
@@ -222,22 +229,22 @@ pub mod howto {
 pub mod pads {
     use crate::Img;
     pub const PREVIEW: [(Img, i32, i32); 7] = [
-        (Img { base: 5372, w: 5, h: 33, bpp_sh: 3, stride_sh: 1 }, -1, 0),
-        (Img { base: 5438, w: 14, h: 51, bpp_sh: 3, stride_sh: 2 }, -10, 0),
-        (Img { base: 5642, w: 8, h: 41, bpp_sh: 3, stride_sh: 1 }, -4, 0),
-        (Img { base: 5724, w: 20, h: 41, bpp_sh: 3, stride_sh: 3 }, -9, 0),
-        (Img { base: 6052, w: 14, h: 45, bpp_sh: 3, stride_sh: 2 }, -7, 0),
-        (Img { base: 6232, w: 28, h: 35, bpp_sh: 3, stride_sh: 3 }, -24, 0),
-        (Img { base: 6512, w: 8, h: 33, bpp_sh: 3, stride_sh: 1 }, -4, 0),
+        (Img { base: 5372, w: 10, h: 33, bpp_sh: 3, stride_sh: 2 }, -6, 0),
+        (Img { base: 5504, w: 21, h: 51, bpp_sh: 3, stride_sh: 3 }, -17, 0),
+        (Img { base: 5912, w: 18, h: 41, bpp_sh: 3, stride_sh: 3 }, -14, 0),
+        (Img { base: 6240, w: 22, h: 41, bpp_sh: 3, stride_sh: 3 }, -11, 0),
+        (Img { base: 6568, w: 19, h: 45, bpp_sh: 3, stride_sh: 3 }, -12, 0),
+        (Img { base: 6928, w: 34, h: 35, bpp_sh: 3, stride_sh: 4 }, -30, 0),
+        (Img { base: 7488, w: 17, h: 33, bpp_sh: 3, stride_sh: 3 }, -13, 0),
     ];
     pub const PLAIN: [(Img, i32, i32); 7] = [
-        (Img { base: 5372, w: 5, h: 33, bpp_sh: 3, stride_sh: 1 }, -1, 0),
-        (Img { base: 5438, w: 14, h: 51, bpp_sh: 3, stride_sh: 2 }, -10, 0),
-        (Img { base: 5642, w: 8, h: 41, bpp_sh: 3, stride_sh: 1 }, -4, 0),
-        (Img { base: 6578, w: 5, h: 41, bpp_sh: 3, stride_sh: 1 }, -1, 0),
-        (Img { base: 6052, w: 14, h: 45, bpp_sh: 3, stride_sh: 2 }, -7, 0),
-        (Img { base: 6660, w: 14, h: 35, bpp_sh: 3, stride_sh: 2 }, -10, 0),
-        (Img { base: 6512, w: 8, h: 33, bpp_sh: 3, stride_sh: 1 }, -4, 0),
+        (Img { base: 5372, w: 10, h: 33, bpp_sh: 3, stride_sh: 2 }, -6, 0),
+        (Img { base: 5504, w: 21, h: 51, bpp_sh: 3, stride_sh: 3 }, -17, 0),
+        (Img { base: 5912, w: 18, h: 41, bpp_sh: 3, stride_sh: 3 }, -14, 0),
+        (Img { base: 7752, w: 14, h: 41, bpp_sh: 3, stride_sh: 2 }, -10, 0),
+        (Img { base: 6568, w: 19, h: 45, bpp_sh: 3, stride_sh: 3 }, -12, 0),
+        (Img { base: 7916, w: 17, h: 35, bpp_sh: 3, stride_sh: 3 }, -13, 0),
+        (Img { base: 7488, w: 17, h: 33, bpp_sh: 3, stride_sh: 3 }, -13, 0),
     ];
     /// Colori dei valori 1..=33 dei pixel (a partire da pal::PADS + 1).
     pub const PAL: [u32; 33] = [
@@ -247,9 +254,9 @@ pub mod pads {
         0x46BE46, 0x2A722A, 0x99DB99, 0x3CC8DC, 0x247884, 0x94E1EC, 0x5A96FF, 0x365A99,
         0xA4C5FF,
     ];
-    /// Corpo e corpo in ombra di OMEGA (valori 1 e 2): rosso, e viola con l'easter egg.
+    /// Corpo e corpo in ombra di OMEGA (valori 1 e 2): viola (anche con l'easter egg).
     pub const OMEGA_BODY: [[u32; 2]; 2] = [
-        [0xE62828, 0xBF2223],
+        [0xA040E0, 0x8536C5],
         [0xA040E0, 0x8536C5],
     ];
 }
@@ -261,8 +268,8 @@ pub mod ending {
     pub const LEN2: i32 = 540;
     pub const LEN3: i32 = 420;
     pub const LEN4: i32 = 1526;
-    pub const LEN5: i32 = 180;
-    pub const TOTAL: i32 = 3416;
+    pub const LEN5: i32 = 270;
+    pub const TOTAL: i32 = 3506;
     pub const YOU_WIN_AT: i32 = 60;
     pub const SKIP_AFTER: i32 = 30;
     pub const BEAT: i32 = 30;
@@ -274,7 +281,7 @@ pub mod ending {
     pub const TEXT_ROWS: i32 = 299;
     pub const TEXT_BYTES: i32 = 11960;
     pub const MAP_SIZE: i32 = 833;
-    pub const FW_SIZE: i32 = 7658;
+    pub const FW_SIZE: i32 = 11812;
     pub const GLYPH_H: i32 = 8;
     pub const CELL: i32 = 8;
     pub const STRIP_ROW0: i32 = 0;
@@ -303,17 +310,17 @@ pub mod ending {
     pub const WIN3_TOP: i32 = 180;
     pub const WIN3_H: i32 = 23;
     pub const WIN3_BASE: i32 = 141;
-    pub const WIN5_TOP: i32 = 116;
+    pub const WIN5_TOP: i32 = 174;
     pub const WIN5_H: i32 = 7;
     pub const WIN5_BASE: i32 = 164;
     pub const CRED_C0: i32 = 281;
     pub const CRED_LEN: i32 = 662;
     pub const CRED_BASE: i32 = 171;
     pub const CRED_SMAX: i32 = 820;
-    pub const FWS: i32 = 10;
+    pub const FWS: i32 = 15;
     pub const FW_STRIDE: i32 = 80;
     /// prima parola delle righe di bitmap (10 parole per riga)
-    pub const TEXT_BASE: u32 = 10167;
+    pub const TEXT_BASE: u32 = 11563;
     /// mappa delle righe: [8:0] riga, [12:9] riga del glifo, [21:13] x, [23:22] scala, [25:24] colore,
     /// [27:26] gruppo, [29:28] riga del punteggio
     pub const MAP: [u32; 833] = [
@@ -440,6 +447,24 @@ pub mod portraits {
     pub const MID_LOCKED: Img = IMG_PT_MID_OMEGA_LOCKED;
     /// colori RGB dei ruoli 1-7 di ogni personaggio
     pub const PAL: [[u32; 7]; 8] = [[0x000000, 0xFFFFFF, 0xC3C3C3, 0x828282, 0x464646, 0xFFD21E, 0x8C7411], [0x000000, 0xFFFFFF, 0xC3C3C3, 0x828282, 0x464646, 0xE67828, 0x7F4216], [0x000000, 0xFFFFFF, 0xC3C3C3, 0x828282, 0x464646, 0xE62828, 0x7F1616], [0x000000, 0xFFFFFF, 0xC3C3C3, 0x828282, 0x464646, 0x9646C8, 0x53276E], [0x000000, 0xFFFFFF, 0xC3C3C3, 0x828282, 0x464646, 0x46BE46, 0x276927], [0x000000, 0xFFFFFF, 0xC3C3C3, 0x828282, 0x464646, 0x3CC8DC, 0x216E79], [0x000000, 0xFFFFFF, 0xC3C3C3, 0x828282, 0x464646, 0x5A96FF, 0x32538C], [0x000000, 0xFFFFFF, 0xC3C3C3, 0x828282, 0x464646, 0xE040FF, 0x7B238C]];
+}
+
+/// Illustrazioni isometriche delle astronavi (assets/ships/*.png, 160x90 a 4 bpp) per THE END.
+pub mod ships {
+    use crate::Img;
+    use crate::assets::*;
+    pub const ART: [Img; 7] = [IMG_SHIP_ARCADE, IMG_SHIP_TITAN, IMG_SHIP_HAMMER, IMG_SHIP_TWIST, IMG_SHIP_BLASTER, IMG_SHIP_RUSH, IMG_SHIP_GUARDIAN];
+    pub const ROW_WORDS: i32 = 20;
+    /// Tavolozza 1..=15 di ciascuna astronave (caricata in pal::SHIP durante THE END).
+    pub const PAL: [[u32; 15]; 7] = [
+        [0xEAECF0, 0x7E828E, 0xA8ACB6, 0x585C68, 0xCED2DA, 0x363A44, 0xFFFFFF, 0x523610, 0x825614, 0xFFD22A, 0xB68016, 0xFFEA76, 0xE2AA1C, 0xFFF8C4, 0x1C1E26],
+        [0xEAECF0, 0xCED2DA, 0xA8ACB6, 0x7E828E, 0x585C68, 0xFFFFFF, 0xE67A28, 0x363A44, 0xBC5A1A, 0xFCA448, 0x883E12, 0x54260E, 0xFFD07C, 0xFFEEBA, 0x1C1E26],
+        [0xEAECF0, 0xCED2DA, 0xA8ACB6, 0x585C68, 0xE6302C, 0x7E828E, 0x363A44, 0xFFFFFF, 0xBA2222, 0xFC6C4C, 0x84181A, 0xFFB27A, 0x4E1012, 0xFFE8BA, 0x1C1E26],
+        [0xFFFFFF, 0xEAECF0, 0xCED2DA, 0xA8ACB6, 0x9C4ED4, 0x7E828E, 0x585C68, 0x7A36AC, 0x54247C, 0xC07EEE, 0xE0B4FC, 0x30144A, 0x363A44, 0x1C1E26, 0x000000],
+        [0xFFFFFF, 0xCED2DA, 0xA8ACB6, 0x7E828E, 0xEAECF0, 0x585C68, 0x38A234, 0x52D244, 0x363A44, 0x226E24, 0x90F680, 0xCEFFC4, 0x123E18, 0x1C1E26, 0xEAFFE4],
+        [0xEAECF0, 0xCED2DA, 0x3CC8DE, 0xFFFFFF, 0xBAF8FE, 0xA8ACB6, 0x76E8F4, 0x7E828E, 0x186A7E, 0x269AB2, 0x585C68, 0x0E3E4C, 0x363A44, 0x1C1E26, 0x000000],
+        [0xEAECF0, 0xA8ACB6, 0xCED2DA, 0xFFFFFF, 0x585C68, 0x3A70D0, 0x8CBCFF, 0x363A44, 0x7E828E, 0x5A96FF, 0x244A96, 0x142A5C, 0xC0DEFF, 0x1C1E26, 0x000000],
+    ];
 }
 /// Icone 9x9 dei bonus (codici dei bonus).
 pub const IMG_ICON: [Img; 8] = [IMG_ICON_0, IMG_ICON_1, IMG_ICON_2, IMG_ICON_3, IMG_ICON_4, IMG_ICON_5, IMG_ICON_6, IMG_ICON_7];

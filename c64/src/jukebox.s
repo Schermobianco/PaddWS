@@ -176,7 +176,7 @@ pnext:
     ; scritte e colori
     jsr print_at
     .byte 16, 1, "JUKEBOX", 0
-    lda egg_yel
+    lda #COL_YELLOW
     ldx #1
     jsr paint_row
     jsr print_at
@@ -203,7 +203,7 @@ pnext:
     lda #COL_WHITE
     ldx #14
     jsr paint_row
-    lda egg_yel                 ; le celle degli oscilloscopi, gialle
+    lda #COL_YELLOW                 ; le celle degli oscilloscopi, gialle
     ldx #SC_ROW
 :   jsr paint_row
     inx

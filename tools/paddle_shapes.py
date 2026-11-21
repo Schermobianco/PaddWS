@@ -54,13 +54,18 @@ class Anim:
     """Stato delle animazioni, come `paddle_ui::Anim` (le pose sono a 8 al secondo)."""
     t: float = 0.0
     vy: float = 0.0
-    ammo: int = 4
+    coin: float | None = None
+    ammo: int = 6
     fire: float | None = None
     spark: tuple[float, float] | None = None
     wall: list[float | None] = field(default_factory=lambda: [None] * SECTORS)
     build: float | None = None
     recoil: float | None = None
     dashing: bool = False
+    # accensione dei booster allo scatto in avanti (`Boost` di paddle_ui.rs): fase 3 (lampo), 2, 1
+    # o 0, e allungamento delle fiamme in pixel
+    boost_stage: int = 0
+    boost_extra: int = 0
 
 
 class Ops:
@@ -96,38 +101,34 @@ def pose(t: float) -> int:
     return math.floor(t * 8)
 
 
+def flicker(t: float) -> int:
+    """Sfarfallio delle fiamme a 16 al secondo (0 o 1)."""
+    return math.floor(t * 16) % 2
+
+
+def boost_of(fade: float, dist: float) -> tuple[int, int]:
+    """Fase e allungamento dei booster da `fade` (1 appena partito, poi 0) e dalla distanza da casa."""
+    left = jround(fade * 15)
+    dist = max(0, jround(dist))
+    if left >= 13:
+        return 3, dist
+    if left >= 7:
+        return 2, dist // 2
+    if left >= 1:
+        return 1, dist // 4
+    return 0, 0
+
+
+def ignite(r: "Ops", x_end: int, y: int, rows: int) -> None:
+    """Lampo dell'accensione dietro un ugello che finisce alla colonna `x_end`."""
+    r.late_rect(x_end - 3, y - 2, 3, rows + 4, MARK)
+    r.late_rect(x_end - 3, y - 1, 3, rows + 2, MARK_LIGHT)
+    r.late_rect(x_end - 2, y, 2, rows, BODY)
+
+
 def smooth(u: float) -> float:
     u = min(max(u, 0.0), 1.0)
     return u * u * (3 - 2 * u)
-
-
-def coin_slot(r: Ops, h: int, t: float) -> None:
-    s = pose(t) % 24
-    top = h // 2 - 4
-    lit = 10 <= s <= 13 and s % 2 == 0
-    r.rect(-1, top, 1, 8, MARK if lit else DARK)
-    if s <= 5:
-        y = top - 7 + s
-        r.rect(-2, y + 1, 3, 1, MARK)
-        r.rect(-1, y, 1, 3, MARK)
-    elif s <= 8:
-        r.rect(-1, top, 1, (6, 4, 2)[s - 6], MARK)
-
-
-def heavy_step(r: Ops, h: int, a: Anim, x0: int) -> None:
-    t = pose(a.t) / 8
-    m = 4 if abs(a.vy) > 0.5 else 2
-    for yc, d in ((h - 3, 1), (2, -1)):
-        for k in range(m):
-            p = (t * 0.9 + k / m + (0 if d > 0 else 0.37)) % 1
-            if p > 0.85:
-                continue
-            x = jround(x0 - p * 9)
-            y = jround(yc + d * (p * 4 + (k % 2) * 2))
-            if p < 0.45:
-                r.rect(x - 1, y, 2, 2, GRAY)
-            else:
-                r.rect(x, y, 1, 1, DARK)
 
 
 RING_SECONDS = 0.5
@@ -150,20 +151,6 @@ def ring(r: Ops, h: int, s: float) -> None:
             deg += 40 / rad
 
 
-def tails(r: Ops, ax: int, ay: int, sw: int, n1: int, n2: int, a: Anim) -> None:
-    t = pose(a.t) / 8
-    bend = min(max(-a.vy * 0.6, -1.2), 1.2)
-    calm = 1 - min(abs(bend), 1.0)
-    for i, (n, spread, y0) in enumerate(((n1, -0.5, 0), (n2, 0.6, 2))):
-        if a.dashing:
-            n += 2
-        for j in range(1, n + 1):
-            wave = 0.0 if a.dashing else math.sin(t * 5 + j * 1.3 + i * 2) * (0.3 + 0.7 * calm) * j / n * 1.4
-            lean = 0.25 if a.dashing else 1.0
-            dy = jround(ay + y0 + lean * spread * j + bend * j + wave)
-            r.rect(ax - sw * j, dy, sw, 1, MARK_DARK if i == 1 and j == n else MARK)
-
-
 def build_offset(i: int, t: float) -> int | None:
     land = 0.4 + 0.3 * (SECTORS - 1 - i)
     if t < land - 0.25:
@@ -174,8 +161,33 @@ def build_offset(i: int, t: float) -> int | None:
 
 
 def wall(r: Ops, h: int, a: Anim) -> None:
-    tq = pose(a.t)
+    tq = pose(a.t) % 120
+    mid = h // 2
+    # chiglia posteriore, stabilizzatori blu e due propulsori ionici a cono
+    r.rect(-7, 5, 4, h - 10, GRAY)
+    r.rect(-8, mid - 3, 3, 6, DARK)
+    r.rect(-7, mid - 2, 2, 4, MARK)
+    r.rect(-5, 2, 3, 3, MARK)
+    r.rect(-5, h - 5, 3, 3, MARK)
+    moving = abs(a.vy) > 0.5 or a.boost_stage > 0
+    for idx, ey in enumerate((7, h - 9)):
+        r.rect(-8, ey - 1, 1, 4, DARK_DEEP)
+        p = (tq + idx * 2) % 4
+        fl = ((6, 7, 8, 7)[p] if moving else (4, 5, 6, 5)[p]) + a.boost_extra
+        jlen = fl - 1
+        clen = max(2, fl // 2)
+        r.late_rect(-9, ey - 1, 1, 4, MARK)
+        r.late_rect(-8 - jlen, ey, jlen, 2, MARK_LIGHT)
+        r.late_rect(-8 - clen, ey, clen, 2, BODY)
+        r.late_rect(-9 - fl, ey + (p % 2), 2, 1, MARK)
+        if moving:
+            s = (tq + idx) % 2
+            r.late_rect(-10 - fl - s, ey + s, 1, 1, MARK_LIGHT)
+        if a.boost_stage == 3:
+            ignite(r, -9, ey, 2)
+
     alive = sum(1 for w in a.wall if w is None)
+    scan = tq % SECTORS
     recoil = None if a.recoil is None else min(int(a.recoil * SECTORS), SECTORS - 1)
     for i in range(SECTORS):
         dy = 0
@@ -191,58 +203,163 @@ def wall(r: Ops, h: int, a: Anim) -> None:
         y1 = jround(h * (i + 1) / SECTORS)
         ys = y0 + 1 if i > 0 else y0
         hh = y1 - ys
-        joints = ((-4, 0) if i % 2 else (-2,)) if not r.narrow else ((-5, -1) if i % 2 else (-3,))
-
-        def crack():
-            rect(-4, ys + 1, 1, 2, BLACK)
-            rect(-3, ys + 3, 1, 1, BLACK)
-            rect(-2, ys + 4, 1, 2, BLACK)
-            rect(0, ys + 2, 1, 2, BLACK)
-        rect(-6, y0, 8, y1 - y0, BODY)
         age = a.wall[i]
         if age is None:
-            if alive == 1 and tq % 4 < 2:
-                rect(-6, ys, 8, hh, MARK_LIGHT)
-            for jx in joints:
-                rect(jx, ys, 1, hh, MARK)
+            warn = alive == 1 and (tq % 4) < 2
+            rect(-2, y0, 4, y1 - y0, MARK_LIGHT if warn else BODY)
+            rect(-2, ys, 1, hh, MARK_LIGHT if (scan == i or warn) else MARK)
         elif age < 0.15:
-            for jx in joints:
-                rect(jx, ys, 1, hh, MARK)
-            crack()
+            rect(-2, y0, 4, y1 - y0, MARK_LIGHT)
+            rect(-1, ys + 1, 2, max(1, hh - 2), MARK)
         else:
-            rect(-6, ys, 8, hh, DARK)
-            crack()
+            rect(-2, y0, 4, y1 - y0, DARK)
+            rect(-1, ys + 1, 2, max(1, hh - 2), DARK_DEEP)
             if age < BREAK_SECONDS:
                 p = (age - 0.15) / 0.5
                 for j in range(4):
                     w, role = (1, GRAY) if j % 2 else (2, DARK)
                     rect(jround(-7 - p * (5 + 2 * j)), jround(ys + 1 + j * 1.5 + (j - 1.5) * p * 3), w, 1, role)
         if i > 0:
-            rect(-6, y0, 8, 1, MARK)
+            gap = BLACK if (a.wall[i] is not None and a.wall[i - 1] is not None) else MARK
+            rect(-2, y0, 4, 1, gap)
+    r.late_rect(-3, 0, 1, h, BLACK)
 
 
 def kind_ops(kind: int, h: int, a: Anim, pw: int = 5) -> Ops:
     r = Ops(pw)
     mid = h // 2
+    tq = pose(a.t) % 120
+    moving = abs(a.vy) > 0.5 or a.boost_stage > 0
+    extra = a.boost_extra
+    ignited = a.boost_stage == 3
     if kind == ARCADE:
-        r.rect(-3, 0, 5, h, BODY)
-        coin_slot(r, h, a.t)
+        coin_f = int(math.floor(a.coin * 60)) if (a.coin is not None and a.coin < 0.5) else None
+        coin_flash = coin_f is not None and coin_f >= 18
+        r.rect(-3, 4, 5, h - 8, BODY)
+        r.rect(-3, 1, 5, 3, GRAY)
+        r.rect(-2, 0, 4, 1, GRAY)
+        r.rect(-3, h - 4, 5, 3, GRAY)
+        r.rect(-2, h - 1, 4, 1, GRAY)
+        r.late_rect(-3, 4, 4, 1, DARK)
+        r.late_rect(-3, h - 5, 4, 1, DARK)
+        r.rect(-5, 6, 2, 5, GRAY)
+        r.rect(-5, h - 11, 2, 5, GRAY)
+        r.rect(-6, 7, 1, 3, DARK)
+        r.rect(-6, h - 10, 1, 3, DARK)
+        lit = (tq % 8) < 2
+        r.rect(-4, mid - 4, 4, 8, DARK)
+        cabin = BODY if (coin_f is not None and 18 <= coin_f < 22) else (MARK_LIGHT if (coin_flash or lit) else MARK)
+        r.rect(-3, mid - 3, 3, 6, cabin)
+        r.late_rect(-2, mid - 2, 1, 4, BLACK)
+        f = tq % 4
+        fl = (3 if moving else 2) + extra
+        for ey in (8, h - 9):
+            r.rect(-6 - fl - (f % 2), ey, fl, 1, MARK_LIGHT)
+            r.rect(-8 - f * 2 - extra, ey + (1 if f % 2 else -1), 1, 1, MARK)
+            if ignited:
+                ignite(r, -6, ey, 1)
+        if coin_f is not None:
+            if coin_f < 12:
+                cx = -17 + coin_f
+                r.late_rect(cx, mid - 1, 4, 2, MARK)
+                r.late_rect(cx + 1, mid - 2, 2, 4, MARK)
+                r.late_rect(cx + 1, mid - 2, 2, 1, MARK_LIGHT)
+                r.late_rect(cx + 1, mid + 1, 2, 1, MARK_DARK)
+                if (coin_f // 3) % 2 == 0:
+                    r.late_rect(cx + 1, mid - 1, 1, 2, BODY)
+                else:
+                    r.late_rect(cx + 2, mid - 1, 1, 2, MARK_LIGHT)
+            elif coin_f < 14:
+                r.late_rect(-5, mid - 2, 3, 4, MARK)
+                r.late_rect(-5, mid - 2, 2, 1, MARK_LIGHT)
+                r.late_rect(-4, mid - 1, 1, 2, BODY)
+            elif coin_f < 16:
+                r.late_rect(-4, mid - 2, 2, 4, MARK_LIGHT)
+                r.late_rect(-3, mid - 1, 1, 2, BODY)
+            elif coin_f < 18:
+                r.late_rect(-3, mid - 2, 1, 4, BODY)
+            else:
+                d, srole = (0, BODY) if coin_f < 22 else ((1, MARK_LIGHT) if coin_f < 26 else (2, MARK))
+                r.late_rect(-2 - d * 2, mid - 5 - d, 1, 1, srole)
+                r.late_rect(-2 - d * 2, mid + 4 + d, 1, 1, srole)
+                r.late_rect(-5 - d * 2, mid - 2 - d, 1, 1, srole)
+                r.late_rect(-5 - d * 2, mid + 1 + d, 1, 1, srole)
     elif kind == TITAN:
-        yb = jround(h / 2) - 2
+        yb = jround(h / 2) - 3
+        for idx, my in enumerate((2, h - 12)):
+            r.rect(-11, my, 4, 10, GRAY)
+            r.rect(-10, my + 2, 2, 6, DARK)
+            r.rect(-12, my + 1, 1, 8, DARK_DEEP)
+            p = (tq + idx * 2) % 4
+            fl = ((6, 8, 7, 8)[p] if moving else (4, 5, 6, 5)[p]) + extra
+            mlen = (fl + 1) // 2
+            jlen = fl - 1
+            clen = max(2, fl // 2)
+            r.late_rect(-13, my + 2, 1, 6, MARK)
+            r.late_rect(-12 - mlen, my + 3, mlen, 4, MARK)
+            r.late_rect(-13, my + 3, 1, 4, MARK_LIGHT)
+            r.late_rect(-12 - jlen, my + 4, jlen, 2, MARK_LIGHT)
+            r.late_rect(-12 - clen, my + 4, clen, 2, BODY)
+            r.late_rect(-13 - fl, my + 4 + (p % 2), 2, 1, MARK)
+            if moving:
+                s = (tq + idx) % 3
+                r.late_rect(-14 - fl - s, my + 3 + ((s + idx) % 3), 1, 1, MARK_LIGHT if s == 0 else MARK)
+            if ignited:
+                ignite(r, -13, my + 4, 2)
+        r.rect(-8, 1, 2, h - 2, DARK_DEEP)
+        r.rect(-7, 1, 1, h - 2, DARK)
+        r.rect(-7, h, 9, 2, DARK_DEEP)
+        r.rect(-6, h, 8, 1, DARK)
         r.rect(-6, 0, 8, h, BODY)
-        r.rect(-6, yb, 7, 4, MARK)
-        for x in (-4, -2, 0):
-            r.rect(x, yb + 1, 1, 1, MARK_DARK)
-        r.rect(-9, yb - 1, 3, 6, GRAY)
-        r.rect(-8, yb, 1, 4, DARK)
-        heavy_step(r, h, a, -8)
+        r.rect(-6, 6, 1, h - 12, DARK)
+        r.rect(-5, 6, 6, h - 12, GRAY_LIGHT)
+        r.rect(-4, 7, 5, h - 14, BODY)
+        r.late_rect(-6, 11, 6, 1, DARK)
+        r.late_rect(-6, h - 12, 6, 1, DARK)
+        r.late_rect(-7, yb + 1, 7, 7, DARK_DEEP)
+        r.late_rect(-6, yb - 1, 7, 8, DARK)
+        r.late_rect(-5, yb, 6, 6, MARK)
+        r.late_rect(-5, yb, 6, 1, MARK_LIGHT)
+        r.late_rect(-5, yb + 5, 6, 1, MARK_DARK)
+        r.late_rect(-4, yb + 1, 4, 4, GRAY_LIGHT)
+        r.late_rect(-3, yb + 2, 2, 2, DARK_DEEP)
+        r.late_rect(-2, yb + 2, 1, 2, MARK_LIGHT)
     elif kind == HAMMER:
-        r.rect(-6, 0, 8, h, BODY)
-        r.late_rect(-6, 0, 1, h, DARK)
         yc = jround(h / 2)
-        r.rect(-4, yc - 4, 4, 8, DARK)
-        r.rect(-3, yc - 3, 2, 6, MARK)
-        r.rect(-3, yc - 1, 2, 1, MARK_DARK)
+        r.rect(-4, 0, 6, h, BODY)
+        r.rect(-4, 0, 2, 5, GRAY)
+        r.rect(-4, h - 5, 2, 5, GRAY)
+        r.rect(-3, 5, 2, h - 10, MARK)
+        r.late_rect(-4, 5, 1, h - 10, DARK)
+        r.rect(-10, yc - 5, 6, 10, GRAY)
+        r.rect(-8, yc - 4, 4, 8, DARK)
+        r.rect(-7, yc - 3, 3, 6, MARK)
+        r.rect(-11, yc - 6, 2, 12, DARK)
+        r.late_rect(-10, yc - 4, 1, 8, GRAY_LIGHT)
+        s = a.spark[0] if a.spark is not None else None
+        surge = 3 if (s is not None and s < 0.14) else (2 if (s is not None and s < 0.25) else (1 if (s is not None and s < 0.35) else 0))
+        piston_beat = (tq % 2) == 1
+        fl = (11 if surge == 3 else (9 if surge == 2 else (7 if surge == 1 else (4, 5, 4, 3)[tq % 4])))
+        tlen = 3 if fl >= 9 else (2 if fl >= 6 else 1)
+        mlen = (fl * 2) // 3
+        fl += extra  # i booster allungano il getto e la punta, non il cono
+        jlen = fl - 1
+        clen = max(2, fl // 2)
+        if surge == 3:
+            r.late_rect(-12, yc - 4, 1, 8, MARK)
+        r.late_rect(-11 - tlen, yc - 3, tlen, 6, MARK)
+        r.late_rect(-11 - mlen, yc - 2, mlen, 4, MARK)
+        if surge >= 1:
+            r.late_rect(-11 - max(1, mlen // 2), yc - 2, max(1, mlen // 2), 4, MARK_LIGHT)
+        r.late_rect(-11 - jlen, yc - 1, jlen, 2, MARK_LIGHT)
+        r.late_rect(-11 - clen, yc - 1, clen, 2, BODY)
+        r.late_rect(-12 - fl, yc - 1 + (tq % 2), 2, 1, MARK)
+        if surge >= 2:
+            r.late_rect(-11 - fl, yc - 1 + (tq % 2), 1, 1, MARK_LIGHT)
+        if ignited:
+            ignite(r, -11, yc - 1, 2)
+        if surge >= 2 or piston_beat:
+            r.shift(-1)
         if a.spark is not None and a.spark[0] < SPARK_SECONDS:
             s, at = a.spark
             p = (pose(s) + 1) / 4
@@ -254,44 +371,145 @@ def kind_ops(kind: int, h: int, a: Anim, pw: int = 5) -> Ops:
                     r.rect(jround(1 + math.cos(an) * dd), jround(yh + math.sin(an) * dd), 1, 1,
                            MARK if p < 0.6 else MARK_DARK)
     elif kind == TWIST:
-        r.rect(-3, 0, 5, h, BODY)
-        r.rect(-1, 2, 1, h - 4, MARK)
-        r.rect(-2, mid - 2, 3, 4, MARK)
+        r.rect(-3, 3, 5, h - 6, BODY)
+        r.rect(-2, 1, 4, 2, BODY)
+        r.rect(-1, 0, 3, 1, GRAY)
+        r.rect(-2, h - 3, 4, 2, BODY)
+        r.rect(-1, h - 1, 3, 1, GRAY)
+        r.rect(-6, 7, 3, 6, MARK)
+        r.rect(-7, 9, 2, 3, GRAY)
+        r.rect(-6, h - 13, 3, 6, MARK)
+        r.rect(-7, h - 12, 2, 3, GRAY)
+        r.rect(-5, mid - 5, 5, 10, MARK)
+        r.late_rect(-4, mid - 4, 3, 8, MARK_DARK)
+        r.late_rect(-3, mid - 3, 2, 6, MARK)
+        r.late_rect(-2, mid - 2, 2, 1, BODY)
+        r.late_rect(-2, mid + 1, 2, 1, BODY)
+        ph = tq % 4
+        dy = -1 if ph == 1 else (1 if ph == 3 else 0)
+        fl = ((2, 3, 2, 3)[ph] if moving else (0, 1, 0, 1)[ph]) + extra
+        clen = 2 + fl // 2
+        r.rect(-7, mid - 2, 2, 4, DARK)
+        r.late_rect(-9, mid - 2, 2, 4, MARK)
+        r.late_rect(-10 - fl, mid - 1 + dy, 3 + fl, 2, MARK_LIGHT)
+        r.late_rect(-7 - clen, mid - 1 + dy, clen, 2, BODY)
+        r.late_rect(-12 - fl, mid - 1 + dy + (ph % 2), 2, 1, MARK)
+        if ignited:
+            ignite(r, -9, mid - 1, 2)
+        p = tq % 2
+        if a.vy < -0.5:
+            r.late_rect(-13 - p, h - 8, 3, 3 + p, MARK)
+            r.late_rect(-11, h - 3 + p, 2, 3, MARK)
+            r.late_rect(-11, h - 10, 3, 4 + p, MARK_LIGHT)
+            r.late_rect(-10, h - 6, 2, 4 + p, MARK_LIGHT)
+            r.late_rect(-9, h - 11, 2, 3, BODY)
+            r.late_rect(-9, h - 8, 1, 3, BODY)
+            r.late_rect(-13 - p, h - 2 + p, 1, 1, BODY)
+        elif a.vy > 0.5:
+            r.late_rect(-13 - p, 5 - p, 3, 3 + p, MARK)
+            r.late_rect(-11, -p, 2, 3, MARK)
+            r.late_rect(-11, 6 - p, 3, 4 + p, MARK_LIGHT)
+            r.late_rect(-10, 2 - p, 2, 4 + p, MARK_LIGHT)
+            r.late_rect(-9, 8, 2, 3, BODY)
+            r.late_rect(-9, 5, 1, 3, BODY)
+            r.late_rect(-13 - p, 1 - p, 1, 1, BODY)
         if a.spark is not None and a.spark[0] < RING_SECONDS:
             ring(r, h, a.spark[0])
     elif kind == BLASTER:
         fr = None if a.fire is None else a.fire * 60
         recoil = fr is not None and fr < 3
-        barrel = 1 if recoil else 2 if fr is not None and fr < 8 else 3
-        # corpo con gli spigoli del davanti smussati (gli stessi pixel tagliati di prima sul MiSTer)
+        barrel = 1 if recoil else (2 if (fr is not None and fr < 8) else 3)
         r.rect(-3, 0, 3, h, BODY)
         r.rect(0, 2, 2, h - 4, BODY)
-        r.rect(-0, 1, 1, 1, BODY)
-        r.rect(-0, h - 2, 1, 1, BODY)
-        r.rect(2, mid - 3, barrel, 2, GRAY)
-        r.rect(2, mid + 1, barrel, 2, GRAY)
+        r.rect(0, 1, 1, 1, BODY)
+        r.rect(0, h - 2, 1, 1, BODY)
+        r.rect(-6, 3, 3, 5, GRAY)
+        r.rect(-6, h - 8, 3, 5, GRAY)
+        for idx, ey in enumerate((5, h - 6)):
+            r.rect(-7, ey - 1, 1, 3, DARK_DEEP)
+            p = (tq + idx * 2) % 4
+            fl = ((6, 8, 7, 8)[p] if moving else (4, 5, 6, 5)[p]) + extra
+            mlen = (fl + 1) // 2
+            jlen = fl - 1
+            clen = max(2, fl // 2)
+            r.late_rect(-7 - mlen, ey - 1, mlen, 3, MARK)
+            r.late_rect(-8, ey - 1, 1, 3, MARK_LIGHT)
+            r.late_rect(-7 - jlen, ey, jlen, 1, MARK_LIGHT)
+            r.late_rect(-7 - clen, ey, clen, 1, BODY)
+            r.late_rect(-8 - fl, ey, 2, 1, MARK)
+            if moving:
+                s = (tq + idx) % 3
+                r.late_rect(-9 - fl - s, ey - 1 + ((s + idx) % 3), 1, 1, MARK_LIGHT if s == 0 else MARK)
+            if ignited:
+                ignite(r, -8, ey, 1)
+        r.late_rect(-3, mid - 4, 1, 2, MARK)
+        r.late_rect(-1, mid - 4, 1, 2, MARK)
+        r.late_rect(-2, mid - 2, 1, 1, MARK_DARK)
+        r.late_rect(-2, mid - 1, 1, 2, MARK)
+        r.late_rect(-2, mid + 1, 1, 1, MARK_DARK)
+        r.late_rect(-3, mid + 2, 1, 2, MARK)
+        r.late_rect(-1, mid + 2, 1, 2, MARK)
+        r.rect(-1, 8, 1, 2, MARK)
+        r.rect(2, 8, barrel, 2, GRAY)
+        r.rect(-1, h - 10, 1, 2, MARK)
+        r.rect(2, h - 10, barrel, 2, GRAY)
         if recoil:
-            x = 2 + barrel
-            r.rect(x, mid - 4, 1, 3, SIGNAL)
-            r.rect(x, mid + 1, 1, 3, SIGNAL)
-            r.rect(x + 1, mid - 2, 2, 4, SIGNAL)
-            r.rect(x + 3, mid - 1, 1, 2, SIGNAL)
-        tails(r, -3, 3, 2, 3, 2, a)
+            fx = 2 + barrel
+            for fy in (7, h - 11):
+                r.rect(fx, fy, 2, 4, MARK)
+                r.rect(fx + 1, fy + 1, 3, 2, MARK_LIGHT)
+                r.rect(fx + 1, fy + 1, 2, 2, BODY)
+                r.rect(fx + 4, fy + 1, 2, 2, MARK_LIGHT)
         y0 = mid - 9
-        r.rect(-4, y0, 1, 21, DARK)
-        ammo = min(a.ammo, 4)
-        for i in range(4 - ammo, 4):
-            r.rect(-6, y0 + 1 + i * 5, 2, 3, SIGNAL)
-        if fr is not None and 2 <= fr < 26:
-            p = (fr - 2) / 24
-            slot = max(3 - ammo, 0)
-            r.rect(jround(-7 - p * 10), jround(y0 + 1 + slot * 5 - 6 * math.sin(p * math.pi) + p * 4), 2, 1, SIGNAL)
+        r.rect(-6, y0, 3, 21, DARK)
+        ammo = min(a.ammo, 6)
+        fill = (0, 3, 6, 9, 13, 16, 19)[ammo]
+        if fill > 0:
+            top = y0 + 20 - fill
+            r.rect(-6, top, 2, fill, MARK)
+            r.rect(-6, top, 2, min(fill, 2), MARK_LIGHT)
         if recoil:
             r.shift(-1)
     elif kind == RUSH:
         r.rect(-3, 0, 5, h, BODY)
-        r.rect(-3, 3, 4, 2, MARK)
-        tails(r, -3, 3, 3, 3, 2, a)
+        r.rect(-6, 1, 3, 5, BODY)
+        r.rect(-9, 0, 4, 3, MARK)
+        r.rect(-11, 0, 2, 2, MARK_DARK)
+        r.rect(-6, h - 6, 3, 5, BODY)
+        r.rect(-9, h - 3, 4, 3, MARK)
+        r.rect(-11, h - 2, 2, 2, MARK_DARK)
+        r.rect(-3, mid - 4, 3, 8, DARK)
+        r.rect(-2, mid - 3, 2, 6, MARK)
+        r.late_rect(-1, mid - 2, 1, 4, MARK_LIGHT)
+        r.rect(-5, mid - 2, 2, 4, GRAY)
+        # postbruciatore: quattro pose irregolari, alone e punta che sfarfallano a 16 al secondo,
+        # diamanti d'urto che scorrono e scintille
+        p = tq % 4
+        fz = flicker(a.t)
+        fl = ((11, 13, 12, 14)[p] if a.dashing else (5, 7, 6, 8)[p] + (2 if moving else 0)) + extra
+        lean = 0 if a.dashing else (-1 if a.vy > 0.5 else (1 if a.vy < -0.5 else 0))
+        olen = (fl + 1) // 2 + fz
+        jlen = fl - 1
+        clen = fl // 4 + 1
+        r.late_rect(-5 - olen, mid - 2, olen, 4, MARK)
+        r.late_rect(-5 - jlen, mid - 1 + lean, jlen, 2, MARK_LIGHT)
+        r.late_rect(-5 - clen, mid - 1, clen, 2, BODY)
+        for k in range(2):
+            d = clen + 1 + tq % 3 + 3 * k
+            if d < jlen - 1:
+                r.late_rect(-6 - d, mid - 1 + lean, 1, 2, BODY)
+        r.late_rect(-6 - fl, mid - 1 + lean + fz, 2, 1, MARK)
+        if moving:
+            sp = tq % 3
+            r.late_rect(-7 - fl - sp, mid - 2 + (p + sp) % 4, 1, 1, MARK_LIGHT if sp == 0 else MARK)
+        if ignited:
+            ignite(r, -5, mid - 1, 2)
+        wlen = 4 if a.dashing else 2
+        w1 = tq % 3
+        w2 = (tq + 1) % 3
+        wrole = MARK_LIGHT if a.dashing else MARK
+        r.rect(-12 - w1 - wlen, 1, wlen, 1, wrole)
+        r.rect(-12 - w2 - wlen, h - 2, wlen, 1, wrole)
     elif kind == GUARDIAN:
         wall(r, h, a)
     return r
@@ -344,7 +562,7 @@ def render(kind: int, h: int, a: Anim | None = None, tilt: int = 0, shadow: bool
         return pixel(ops, u, v)
     out = {}
     for v in range(-20, h + 20):
-        for u in range(-30, 20):
+        for u in range(-80, 20):
             c = role(u, v)
             if c == NONE and shadow and role(u + 1, v - 1) not in (NONE,):
                 c = SHADOW

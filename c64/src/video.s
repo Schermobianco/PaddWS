@@ -28,6 +28,7 @@ COL_WHITE  = 1
 COL_RED    = 2
 COL_CYAN   = 3
 COL_PURPLE = 4
+COL_DGREEN = 5                  ; verde: colore dedicato del BLASTER
 COL_BLUE   = 6
 COL_YELLOW = 7
 COL_ORANGE = 8
@@ -55,11 +56,12 @@ IMG_BYTES = 3 * PAD_ROWS
 PAD_FAT    = 4                  ; prima colonna doppia del corpo nell'immagine
 PAD_BODY_X = 2 * PAD_FAT        ; pixel dell'immagine prima del corpo
 PAD_BLINK  = 4                  ; racchetta grigia a tratti con un bonus armato (ogni 4 tick)
-; colori dello sprite multicolore della racchetta
+; colori dello sprite multicolore della racchetta: %01 grigio condiviso, %10 colore dedicato del
+; personaggio ($D027+i, indipendente per P1 e P2), %11 bianco condiviso ($D026, scafo)
 COLOR_NONE   = 0
 COLOR_GRAY   = 1                ; %01: $D025
-COLOR_WHITE  = 2                ; %10: colore dello sprite
-COLOR_YELLOW = 3                ; %11: $D026, il giallo dei segni
+COLOR_YELLOW = 2                ; %10: colore dedicato del tipo ($D027+i)
+COLOR_WHITE  = 3                ; %11: $D026, bianco dello scafo
 
 ; sprite della partita: la palla sopra tutto, poi le bande grigie EVO sopra le racchette
 SPN_BAND = 1                    ; 1 e 2: bande delle racchette sinistra e destra
@@ -227,30 +229,13 @@ pd_dirty:  .res 2               ; immagine da copiare nella RAM degli sprite
     sta $dae8,x
     inx
     bne :-
-    ; multicolore degli sprite delle racchette: %01 grigio, %11 giallo (segni dei tipi di NEXT)
+    ; multicolore degli sprite delle racchette: %01 grigio, %11 bianco (scafo condiviso);
+    ; %10 è il colore individuale dello sprite ($D027+i), dedicato a ciascuna astronave
     lda #COL_GRAY
     sta $d025
-    lda #COL_YELLOW
-    sta $d026
-    sta egg_yel                 ; easter egg spento (egg_check)
-    lda #COL_RED
-    sta egg_red
-    lda #SID_SONG_TITLE
-    sta egg_song
-    lda #0
-    sta egg_x
-.ifdef EGGTEST
-    ; prova per VICE (-Define EGGTEST): easter egg acceso dall'avvio, come dopo le iniziali RED
-    ldx #3
-:   lda egg_x,x
-    eor egg_flip,x
-    sta egg_x,x
-    dex
-    bpl :-
-    lda egg_yel
+    lda #COL_WHITE
     sta $d026
     lda #0
-.endif
     sta $d01b                   ; sprite davanti ai caratteri
     lda #0
     sta sh_enable
@@ -902,12 +887,8 @@ voice_count:  .res 3            ; VOICE_COUNT (voice.inc): RTS o il salto al con
 .assert voice_count = VOICE_COUNT, error, "VOICE_COUNT fuori posto"
 bar_orig:     .res 8 * BAR_CHARS ; caratteri che la barra delle mosse speciali prende in NEXT
 .assert bar_orig = $FFC3, error, "originali dei caratteri della barra fuori posto (gen/pick_bank.bin)"
-; easter egg (egg_check, challenge.s): li prepara video_init, li scambia egg_check; in quest'ordine
-egg_x:        .res 1            ; 0, o COL_YELLOW ^ COL_RED con l'easter egg (color_span)
-egg_yel:      .res 1            ; il giallo: COL_YELLOW, o COL_RED con l'easter egg
-egg_red:      .res 1            ; il rosso: COL_RED, o COL_YELLOW
-egg_song:     .res 1            ; canzone del titolo: SID_SONG_TITLE, o SID_SONG_EGG
-egg_buf:      .res 3            ; il comando di SID_SONG_EGG dalla cartuccia (egg_stage, sid.s)
+hibss_free:   .res 4            ; liberi dopo la rimozione dell'easter egg RED (tieniamo VOICE_VOL fisso)
+egg_buf:      .res 3            ; il comando di SID_SONG_EGG dalla cartuccia (egg_stage, sid.s, jukebox)
 ; VOLUME del menu: qui, a un indirizzo fisso, perché lo legge anche il player delle voci (voice.s)
 opt_volume:   .res 1            ; passo, da 0 (0%) a VOLUME_STEPS - 1 (100%)
 sid_vol:      .res 1            ; il suo volume del SID, 0-15 (vol_levels, sid.s)
@@ -1335,7 +1316,7 @@ armed:
     lda nx_steer_s
     cmp m_lo
     bne :+
-    lda egg_yel
+    lda #COL_YELLOW
     sta m_t
     lda #B_STEER
     jmp show
@@ -1419,12 +1400,12 @@ have:
     lda cap_bonus,y
     cmp #B_BULLET
     bne :+
-    lda egg_yel
+    lda #COL_YELLOW
     sta sh_col,x
 :   lda cap_bonus,y
     cmp #B_SUPER
     bne :+
-    lda egg_yel
+    lda #COL_YELLOW
     sta sh_col,x
     lda tick
     and #CAP_BLINK
@@ -1809,10 +1790,10 @@ white:
     and #%1100
     cmp #%1100
     bne :+
-    lda egg_yel
+    lda #COL_YELLOW
     bne color
 :
-    jsr om_white                ; (OMEGA rossa, omega.s)
+    jsr om_white                ; colore dedicato del tipo (o viola per OMEGA, omega.s)
 color:
     sta sh_col+SPN_PAD,y
     ; l'immagine dipende da righe, tipo e variante: si rifà (e apply_shadows la copia) solo
@@ -2033,10 +2014,16 @@ TILT1 = P_PAD_MAX_SPEED / 6
 TILT2 = P_PAD_MAX_SPEED / 2
 TILT3 = P_PAD_MAX_SPEED * 5 / 6
 
-; Caricatore del BLASTER con A colpi (come su PC, un rettangolino giallo per colpo e niente
-; ricarica a schermo): dal basso un tratto di n / 4 righe per colpo, l'ultima riga spenta.
-; pi_seg righe per tratto, pi_full righe dei tratti; ritorna A = colpi.
+; Barra di carica laser del BLASTER: i colpi (0..P_BLASTER_SHOTS) si mappano su BLASTER_VIS + 1
+; livelli visivi (0..4) per stare nei posti degli sprite di OMEGA prima di VOL_TAB.
+; mag_setup mappa A colpi in livello visivo e prosegue in mag_vis (usata anche da pad_prep).
+BLASTER_VIS = 4
+bl_vis: .byte 0, 1, 2, 2, 3, 3, 4
 .proc mag_setup
+    tay
+    lda bl_vis,y
+.endproc
+.proc mag_vis
     sta pi_ammo
     lda pi_n
     lsr a
@@ -2053,7 +2040,7 @@ TILT3 = P_PAD_MAX_SPEED * 5 / 6
     lda pi_ammo
     rts
 .endproc
-.assert P_BLASTER_SHOTS = 4, error, "caricatore del BLASTER: un tratto di n / 4 righe per colpo"
+.assert P_BLASTER_SHOTS = 6, error, "caricatore del BLASTER: bl_vis mappa 0..6 in 0..4"
 
 ; Immagine della racchetta di pi_side in sh_img (63 byte, 3 per riga): pi_n righe di corpo con i
 ; segni del tipo pi_kind alla risoluzione dello sprite multicolore (celle 2x2), le forme della
@@ -2193,20 +2180,12 @@ fast:
     lda pi_kind
     cmp #K_BLASTER
     bne copy
-    ; caricatore: j = n - 1 - k dal basso; tratti gialli (l'ultima riga spenta), sopra niente
+    ; barra di ricarica del laser: j = n - 1 - k dal basso; barra verde continua alta pi_full righe
     lda pi_n
     clc
     sbc pi_k
     cmp pi_full
     bcs copy
-:   cmp pi_seg
-    bcc :+
-    sbc pi_seg
-    jmp :-
-:   clc
-    adc #1
-    cmp pi_seg
-    beq copy
     ldx #3                      ; pi_basey
 copy:
     lda pi_base,x
@@ -2251,7 +2230,7 @@ MK_ROW  = 15
     .byte (base << 6) | (off & $3F), col | (color << 4)
 .endmacro
 
-; GUARDIAN: corso 0, prima fuga alla riga floor(n / 5), giunto alla prima riga del corso.
+; GUARDIAN: corso 0, prima fuga alla riga floor(n / 5).
 .proc guardian_init
     lda #0
     sta g_course
@@ -2259,8 +2238,6 @@ MK_ROW  = 15
     sta g_acc
     jsr div5
     sta g_cut
-    lda #1
-    sta g_joint
     rts
 .endproc
 
@@ -2350,12 +2327,13 @@ same:
     ldy pi_ys
     jmp skip
 yellow:
-    ; riga gialla: %10 (bianco) diventa %11 (giallo), gli altri colori restano
+    ; riga accento: %11 (bianco) diventa %10 (colore dedicato del tipo), gli altri colori restano
     ldx #2
 :   lda pi_row,x
     lsr a
     and #$55
-    ora pi_row,x
+    eor #$ff
+    and pi_row,x
     sta pi_row,x
     dex
     bpl :-
@@ -2390,10 +2368,9 @@ row_back:
     rts
 .endproc
 
-; GUARDIAN: riga pi_k del muro (pi_row ha già il corpo e la colonna del retro): le fughe gialle sulle
-; tre colonne alle righe floor(n * i / 5), i = 1-4; un giunto giallo alla prima riga di ogni corso
-; (colonna del retro nei corsi dispari, del corpo nei pari); i corsi dei settori persi (bit di
-; pi_var, bit 0 il corso in alto) grigi.
+; GUARDIAN (BASTION-5): riga pi_k delle 5 piastre scudo (colonne del corpo PAD_FAT e PAD_FAT+1):
+; le fughe gialle alle righe floor(n * i / 5), i = 1-4; i settori persi (bit di pi_var, bit 0 in
+; alto) grigi. La chiglia posteriore con gli stabilizzatori la disegna mk_guardian via mark_plot.
 .proc guardian_row
     lda pi_k
     cmp g_cut
@@ -2402,7 +2379,7 @@ row_back:
     cmp #G_SECTORS - 1
     bcs course
     lda #COLOR_YELLOW           ; fuga, poi il corso dopo
-    jsr fill3
+    jsr fill2
     inc g_course
     lda g_acc
     clc
@@ -2410,102 +2387,112 @@ row_back:
     sta g_acc
     jsr div5
     sta g_cut
-    lda #1
-    sta g_joint
     rts
 course:
     ldx g_course
     lda pi_var
     and bit_of,x
-    beq whole
-    lda #0                      ; settore perso: grigio, senza giunto
-    sta g_joint
-    lda #COLOR_GRAY
-    jmp fill3
-whole:
-    lda g_joint
     beq done
-    lda #0
-    sta g_joint
-    lda #COLOR_YELLOW
-    sta pi_c
-    lda g_course
-    and #1
-    eor #1
-    clc
-    adc #PAD_FAT - 1            ; dispari: colonna del retro, pari: del corpo
-    jmp plot
+    lda #COLOR_GRAY             ; settore perso: grigio
+    jmp fill2
 done:
     rts
 .endproc
 
-; Le tre colonne del muro (retro e corpo) della riga nel colore A.
-.proc fill3
+; Le due colonne dello scudo (corpo) della riga nel colore A.
+.proc fill2
     sta pi_c
-    lda #PAD_FAT - 1
-    jsr plot
     lda #PAD_FAT
     jsr plot
     lda #PAD_FAT + 1
     jmp plot
 .endproc
 
-; colonna del retro per tipo (ARCADE, TITAN, HAMMER, TWIST, BLASTER, RUSH, GUARDIAN, nessuno): TITAN e
-; GUARDIAN più spessi, HAMMER con il bordo grigio sul retro
-back_col: .byte 0, COLOR_WHITE, COLOR_GRAY, 0, 0, 0, COLOR_WHITE, 0
+; colonna del retro per tipo (ARCADE, TITAN, HAMMER, TWIST, BLASTER, RUSH, GUARDIAN, nessuno):
+; TITAN corazzato spesso (bianco), HAMMER striscia da battaglia (gialla) sul retro del fronte
+back_col: .byte 0, COLOR_WHITE, COLOR_YELLOW, 0, 0, 0, 0, 0
 ; segni per tipo (mk_first: primo byte in mk_tab di ogni tipo, poi la fine)
 mk_first:
     .byte mk_arcade - mk_tab, mk_titan - mk_tab, mk_hammer - mk_tab, mk_twist - mk_tab
-    .byte mk_blaster - mk_tab, mk_rush - mk_tab, mk_end - mk_tab, mk_end - mk_tab, mk_end - mk_tab
+    .byte mk_blaster - mk_tab, mk_rush - mk_tab, mk_guardian - mk_tab, mk_end - mk_tab, mk_end - mk_tab
 mk_tab:
-mk_arcade:                      ; il gettone al centro del corpo
-    pad_mark MK_HALF, -1, MK_ROW, 0
-    pad_mark MK_HALF, 0, MK_ROW, 0
-mk_titan:                       ; cintura e fibbia sul retro
-    pad_mark MK_HALF, -2, 1, COLOR_GRAY
-    pad_mark MK_HALF, -2, 2, COLOR_GRAY
-    pad_mark MK_HALF, -1, MK_ROW, 0
-    pad_mark MK_HALF, -1, 1, COLOR_GRAY
-    pad_mark MK_HALF, -1, 2, COLOR_YELLOW
-    pad_mark MK_HALF, 0, MK_ROW, 0
-    pad_mark MK_HALF, 0, 1, COLOR_GRAY
-    pad_mark MK_HALF, 0, 2, COLOR_YELLOW
-    pad_mark MK_HALF, 1, 1, COLOR_GRAY
-    pad_mark MK_HALF, 1, 2, COLOR_GRAY
-mk_hammer:                      ; la punta del manico al centro
+mk_arcade:                      ; VAUS-84: calotte grigie, cabina dorata, due alette/ugelli dietro
+    pad_mark MK_TOP, 0, PAD_FAT, COLOR_GRAY
+    pad_mark MK_TOP, 3, 3, COLOR_GRAY
+    pad_mark MK_TOP, 3, 2, COLOR_YELLOW
     pad_mark MK_HALF, -1, PAD_FAT, COLOR_YELLOW
     pad_mark MK_HALF, 0, PAD_FAT, COLOR_YELLOW
-    pad_mark MK_HALF, 1, PAD_FAT, COLOR_YELLOW
-mk_twist:                       ; lo stemma al centro, inclinato con il corpo
+    pad_mark MK_END, -4, 3, COLOR_GRAY
+    pad_mark MK_END, -4, 2, COLOR_YELLOW
+    pad_mark MK_END, -1, PAD_FAT, COLOR_GRAY
+mk_titan:                       ; COLOSSUS: cintura/ponte al centro e due enormi pod motori dietro
+    pad_mark MK_TOP, 1, 2, COLOR_GRAY
+    pad_mark MK_TOP, 2, 2, COLOR_GRAY
+    pad_mark MK_TOP, 2, 1, COLOR_YELLOW
     pad_mark MK_HALF, -1, MK_ROW, 0
     pad_mark MK_HALF, 0, MK_ROW, 0
+    pad_mark MK_HALF, 0, PAD_FAT, COLOR_GRAY
+    pad_mark MK_END, -3, 2, COLOR_GRAY
+    pad_mark MK_END, -3, 1, COLOR_YELLOW
+    pad_mark MK_END, -2, 2, COLOR_GRAY
+mk_hammer:                      ; ANVIL-MK1: nave-martello a "T" con punte grigie e reattore centrale
+    pad_mark MK_TOP, 0, 3, COLOR_GRAY
+    pad_mark MK_HALF, -1, 2, COLOR_GRAY
+    pad_mark MK_HALF, -1, 1, COLOR_YELLOW
+    pad_mark MK_HALF, 0, 2, COLOR_YELLOW
+    pad_mark MK_HALF, 0, 1, COLOR_YELLOW
+    pad_mark MK_HALF, 0, 0, COLOR_YELLOW
+    pad_mark MK_HALF, 1, 2, COLOR_GRAY
+    pad_mark MK_HALF, 1, 1, COLOR_YELLOW
+    pad_mark MK_END, -1, 3, COLOR_GRAY
+mk_twist:                       ; VORTEX: visiera inclinata con il corpo, pod giroscopici e ugello
+    pad_mark MK_HALF, -2, 3, COLOR_GRAY
+    pad_mark MK_HALF, -1, MK_ROW, 0
+    pad_mark MK_HALF, 0, MK_ROW, 0
+    pad_mark MK_HALF, 0, 2, COLOR_YELLOW
     pad_mark MK_HALF, 1, MK_ROW, 0
-mk_blaster:                     ; spigoli smussati, lembi della bandana, canne grigie davanti
+    pad_mark MK_HALF, 2, 3, COLOR_GRAY
+mk_blaster:                     ; VIPER-X: muso smussato, ali corte, livrea a "X", 2 cannoni alari
     pad_mark MK_TOP, 0, PAD_FAT + 1, COLOR_NONE
-    pad_mark MK_TOP, 0, 3, COLOR_YELLOW
-    pad_mark MK_TOP, 0, 2, COLOR_YELLOW
-    pad_mark MK_TOP, 1, 1, COLOR_YELLOW
-    pad_mark MK_TOP, 1, 0, COLOR_YELLOW
-    pad_mark MK_HALF, -2, PAD_FAT + 2, COLOR_GRAY
-    pad_mark MK_HALF, 1, PAD_FAT + 2, COLOR_GRAY
+    pad_mark MK_TOP, 1, 3, COLOR_GRAY
+    pad_mark MK_TOP, 3, PAD_FAT + 2, COLOR_GRAY
+    pad_mark MK_HALF, -1, PAD_FAT, COLOR_YELLOW
+    pad_mark MK_HALF, 0, PAD_FAT + 1, COLOR_YELLOW
+    pad_mark MK_HALF, 1, PAD_FAT, COLOR_YELLOW
+    pad_mark MK_END, -4, PAD_FAT + 2, COLOR_GRAY
+    pad_mark MK_END, -2, 3, COLOR_GRAY
     pad_mark MK_END, -1, PAD_FAT + 1, COLOR_NONE
-mk_rush:                        ; fascia in cima con i lembi dietro
-    pad_mark MK_TOP, 1, PAD_FAT, COLOR_YELLOW
-    pad_mark MK_TOP, 1, 3, COLOR_YELLOW
-    pad_mark MK_TOP, 1, 2, COLOR_YELLOW
+mk_rush:                        ; MACH-ZERO: intercettore ad ali a freccia, cockpit e ugello nitro
+    pad_mark MK_TOP, 0, 3, COLOR_WHITE
+    pad_mark MK_TOP, 0, 2, COLOR_YELLOW
     pad_mark MK_TOP, 0, 1, COLOR_YELLOW
-    pad_mark MK_TOP, 0, 0, COLOR_YELLOW
-    pad_mark MK_TOP, 2, 3, COLOR_YELLOW
-    pad_mark MK_TOP, 3, 2, COLOR_YELLOW
-    pad_mark MK_TOP, 3, 1, COLOR_YELLOW
+    pad_mark MK_HALF, -1, PAD_FAT, COLOR_YELLOW
+    pad_mark MK_HALF, 0, PAD_FAT, COLOR_YELLOW
+    pad_mark MK_HALF, 0, 3, COLOR_GRAY
+    pad_mark MK_HALF, 0, 2, COLOR_YELLOW
+    pad_mark MK_END, -1, 3, COLOR_WHITE
+    pad_mark MK_END, -1, 2, COLOR_YELLOW
+    pad_mark MK_END, -1, 1, COLOR_YELLOW
+mk_guardian:                    ; BASTION-5: chiglia grigia, ponte e stabilizzatori gialli dietro
+    pad_mark MK_TOP, 1, 3, COLOR_YELLOW
+    pad_mark MK_HALF, -1, 3, COLOR_GRAY
+    pad_mark MK_HALF, 0, 3, COLOR_GRAY
+    pad_mark MK_HALF, 0, 2, COLOR_YELLOW
+    pad_mark MK_HALF, 1, 3, COLOR_GRAY
+    pad_mark MK_END, -2, 3, COLOR_YELLOW
 mk_end:
 .assert K_ARCADE = 0 .and K_TITAN = 1 .and K_HAMMER = 2 .and K_TWIST = 3 .and K_BLASTER = 4 .and K_RUSH = 5 .and K_GUARDIAN = 6, error, "segni delle racchette nell'ordine dei tipi"
 
-; corpo di TWIST: due colonne doppie bianche dalla colonna f (0-10), 3 byte per f
+; colore dedicato di ciascuna astronave (%10 = $D027+i): ARCADE, TITAN, HAMMER, TWIST, BLASTER,
+; RUSH, GUARDIAN, OMEGA
+kind_col:
+    .byte COL_YELLOW, COL_ORANGE, COL_RED, COL_PURPLE, COL_DGREEN, COL_CYAN, COL_LBLUE, COL_PURPLE
+
+; corpo di TWIST: due colonne doppie bianche (%11) dalla colonna f (0-10), 3 byte per f
 body2:
-    .byte $A0, $00, $00,  $28, $00, $00,  $0A, $00, $00,  $02, $80, $00
-    .byte $00, $A0, $00,  $00, $28, $00,  $00, $0A, $00,  $00, $02, $80
-    .byte $00, $00, $A0,  $00, $00, $28,  $00, $00, $0A
+    .byte $F0, $00, $00,  $3C, $00, $00,  $0F, $00, $00,  $03, $C0, $00
+    .byte $00, $F0, $00,  $00, $3C, $00,  $00, $0F, $00,  $00, $03, $C0
+    .byte $00, $00, $F0,  $00, $00, $3C,  $00, $00, $0F
 
 img_base: .byte 0, IMG_BYTES
 prep_base: .byte SP_PREP0, SP_PREP0 + 7
@@ -2764,7 +2751,7 @@ end:
     sta tr_cm                   ; coda grigia
     lda nx_super
     beq slow
-    lda egg_yel
+    lda #COL_YELLOW
     sta sh_col
     lda nx_super_a
     cmp #2
@@ -2914,12 +2901,12 @@ TRAIL_KEY = 2 * (TRAIL_N + 1) + 1   ; firma: tr_qxk, tr_qyk, tr_s (di seguito in
 ; circa 4.000 (misurati con paddws-c64 frames). Il disegno si fa solo se il frame resta sotto
 ; circa 16.500 cicli: nei frame più carichi aspetta, intanto c'è la forma della cache più simile.
 ; Sul PAL la ricerca si fa sempre (255: il massimo che frame_after conta, e i 18.000 cicli sono
-; quasi tutto il frame); sull'NTSC solo con 1.900 cicli ancora liberi (firma, confronti e lo sprite,
+; quasi tutto il frame); sull'NTSC solo con 2.200 cicli ancora liberi (firma, confronti e lo sprite,
 ; fino a circa 1.700), se no dopo sprite e HUD pesanti il frame passava il giro del raster
-.if (TV_BUDGET - 1900) / TV_LCYC > 255
+.if (TV_BUDGET - 2200) / TV_LCYC > 255
 TRAIL_LATE_FIND = 255
 .else
-TRAIL_LATE_FIND = (TV_BUDGET - 1900) / TV_LCYC
+TRAIL_LATE_FIND = (TV_BUDGET - 2200) / TV_LCYC
 .endif
 TRAIL_LATE = (TV_BUDGET - (5600)) / TV_LCYC
 ; una metà del disegno in sospeso (trail_first o trail_rest con lo sprite: fino a circa 2.700)
@@ -3894,7 +3881,7 @@ var:
     bcc :+
     sbc #7
     ldy #K_BLASTER
-    cmp #P_BLASTER_SHOTS
+    cmp #BLASTER_VIS
     bcs om_done
 :   sty pi_kind
 rows:
@@ -3909,7 +3896,7 @@ image:
     ldy pi_kind
     cpy #K_BLASTER
     bne :+
-    jsr mag_setup               ; BLASTER: variante = colpi nel caricatore
+    jsr mag_vis                 ; BLASTER: variante = livello visivo della barra (0..BLASTER_VIS)
 :   ldy pi_side
     tya
     asl a
@@ -3962,16 +3949,16 @@ dst:
 .endproc
 
 ; immagini da preparare per tipo (ARCADE, TITAN, HAMMER, TWIST, BLASTER, RUSH, GUARDIAN, nessuno)
-prep_count: .byte 1, 1, 1, 7, P_BLASTER_SHOTS + 1, 1, 1, 1
+prep_count: .byte 1, 1, 1, 7, BLASTER_VIS + 1, 1, 1, 1
 .segment "SMCODE"               ; (in partita NEXT sempre in memoria, come le mosse speciali; la
                                 ; legge solo il lato di OMEGA)
 ; variante dell'immagine dritta, a grandezza intera, per tipo (TWIST non inclinata, BLASTER pieno)
-om_dvar: .byte 0, 0, 0, 3, P_BLASTER_SHOTS, 0, 0
+om_dvar: .byte 0, 0, 0, 3, BLASTER_VIS, 0, 0
 .assert K_ARCADE = 0 .and K_GUARDIAN = CH_LEVELS - 1 .and K_TWIST > K_ARCADE .and K_BLASTER > K_ARCADE, error, "OMEGA: una forma per tipo"
 ; posto delle varianti per tipo ($80 nessuna): TWIST per inclinazione 0-6 (3 è la forma), BLASTER
-; per colpi 0 - P_BLASTER_SHOTS - 1 da 7
+; per livelli visivi 0 - BLASTER_VIS - 1 da 7
 om_xb:   .byte $80, $80, $80, 0, 7, $80, $80
-OM_XSLOTS = 7 + P_BLASTER_SHOTS
+OM_XSLOTS = 7 + BLASTER_VIS
 ; Le varianti stanno negli 8 sprite della rotazione del SUPER del lato di OMEGA (che non ruota:
 ; spin_prep li salta) e le altre in SP_OMX, dopo le icone delle mosse.
 SP_OMX = SM_ICON0 + 4
@@ -4050,7 +4037,7 @@ no:
     sec
 :   rts
 .endproc
-.assert P_BLASTER_SHOTS + 1 <= 7, error, "immagini del BLASTER: al massimo 7 per lato"
+.assert BLASTER_VIS + 1 <= 7, error, "immagini del BLASTER: al massimo 7 per lato"
 
 .segment "NEXTBSS"
 pp_side:  .res 1                ; lato in preparazione (2: finito)
@@ -4067,10 +4054,19 @@ pp_dst:   .res 1                ; sprite in preparazione
 ; dopo.
 LATE_BIG   = (TV_BUDGET - (10000)) / TV_LCYC
 LATE_SMALL = (TV_BUDGET - (6000)) / TV_LCYC
+.ifdef NTSC
+LATE_HUD   = (TV_BUDGET - (2000)) / TV_LCYC         ; NTSC: musica già a inizio frame, hud_slot costa ~350 cicli
+.else
+LATE_HUD   = LATE_SMALL
+.endif
 LATE_SPIN  = (TV_BUDGET - (13000)) / TV_LCYC         ; un'immagine della rotazione del SUPER costa fino a circa 10.400
 
 .proc frame_late
     lda #LATE_BIG
+    bne frame_after
+.endproc
+.proc frame_late_hud
+    lda #LATE_HUD
     bne frame_after
 .endproc
 .proc frame_late_small
@@ -4562,7 +4558,11 @@ place:
     clc
     adc #SPR_Y0
     sta sh_y+SPN_PAD,y
-    lda #COL_WHITE
+    tya
+    asl a
+    asl a
+    tax
+    jsr om_white
     sta sh_col+SPN_PAD,y
     jmp icon
 :   lda bit_of+SPN_PAD,y        ; affondata: niente racchetta
@@ -4574,7 +4574,11 @@ icon:
     beq no_icon
     lda #SP_WARP
     sta sh_ptr+SPN_ICON,y
-    lda #COL_WHITE
+    tya
+    asl a
+    asl a
+    tax
+    jsr om_white
     sta sh_col+SPN_ICON,y
     lda wp_ex_top
     clc
@@ -4612,7 +4616,9 @@ remember:
     rts
 .endproc
 
-; A = distanza in pixel della palla dal bordo di chi salta (al massimo 255).
+; A = distanza in pixel della palla dal bordo di chi salta (al massimo 255), accelerata verso la
+; metà campo quando la racchetta è in dash (2x a x >= 48, 4x a x >= 96 come sul MiSTer) così
+; l'animazione del TELEPORT si completa sempre prima che la palla arrivi alla racchetta.
 .proc warp_d
     lda ball_x+2
     ldx ball_x+3
@@ -4632,7 +4638,47 @@ left:
     cpx #0
     beq :+
     lda #$ff
-:   rts
+:   cmp #WARP_SUNK
+    bcs done                    ; non ha ancora passato la metà campo
+    sta m_lo                    ; d grezzo (0..159)
+    lda #WARP_SUNK
+    sec
+    sbc m_lo
+    sta m_t                     ; distanza percorsa oltre la metà campo (1..160)
+    lda wp_side
+    asl a
+    asl a
+    tax
+    lda pad_x+2,x               ; distanza della racchetta dal suo bordo (8 bit bastano: 20..110)
+    ldy wp_side
+    beq pd_ok
+    eor #$ff
+    sec
+    adc #<(P_WIDTH >> 16)
+pd_ok:
+    cmp #48
+    bcc no_scale
+    asl m_t                     ; dash normale: 2x
+    bcs sat
+    cmp #96
+    bcc scale_done
+    asl m_t                     ; dash lungo (RUSH): 4x
+    bcs sat
+scale_done:
+    lda m_t
+    cmp #WARP_SUNK
+    bcc :+
+sat:
+    lda #WARP_SUNK
+    sta m_t
+:   lda #WARP_SUNK
+    sec
+    sbc m_t
+    rts
+no_scale:
+    lda m_lo
+done:
+    rts
 .endproc
 
 ; A = clamp(A - wp_d, 0, WARP_STEP): quanto è avanzata una fase che comincia con la palla a A pixel.
@@ -4725,7 +4771,7 @@ clear:
     tay
     iny
     inc wp_y
-    lda #$A0
+    lda #$F0
 body:
     sta (ptr),y
     iny
@@ -4734,7 +4780,7 @@ body:
     cpy wp_y
     bcc body
 portal:
-    ; portale: righe da (edge - top - 1) / 2 a (edge - top) / 2, colonne doppie 0-9
+    ; portale: righe da (edge - top - 1) / 2 a (edge - top) / 2, colonne doppie 0-9 (%10: colore tipo)
     lda wp_edge
     sec
     sbc wp_top
@@ -4751,12 +4797,12 @@ prow:
     asl a
     adc m_lo
     tay
-    lda #$FF
+    lda #$AA
     sta (ptr),y
     iny
     sta (ptr),y
     iny
-    lda #$F0
+    lda #$A0
     sta (ptr),y
     lda m_lo
     cmp wp_y

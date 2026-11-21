@@ -92,6 +92,8 @@ pub struct Ui {
     game: game::GameState,
     /// colori del corpo di OMEGA già scritti nella tavolozza delle racchette: con l'easter egg o no
     pad_egg: Option<bool>,
+    /// illustrazione isometrica caricata in `pal::SHIP` (durante `THE END`), None = ritratti attivi
+    ship_pal: Option<usize>,
 }
 
 impl Default for Ui {
@@ -106,6 +108,7 @@ impl Ui {
             seq: 0,
             game: game::GameState { glint_ph: 0 },
             pad_egg: None,
+            ship_pal: None,
         }
     }
 
@@ -148,6 +151,27 @@ impl Ui {
             self.pad_egg = Some(r.egg);
             for (j, c) in assets::pads::OMEGA_BODY[r.egg as usize].iter().enumerate() {
                 p.write(map::PAL + pal::PADS_OMEGA as u32 + 1 + j as u32, *c);
+            }
+        }
+        // illustrazione isometrica della nave vincitrice su THE END: carica i 15 colori in pal::SHIP
+        // (i primi 15 di PORTRAIT, liberi su THE END) e ripristina i ritratti all'uscita
+        let om_peek = regs::Omega::new(&r);
+        let want_ship = (r.mode == regs::M_ENDING
+            && !(om_peek.won && om_peek.shatter < omega::SHATTER)
+            && regs::field(r.w[41], 11, 3) == 5)
+            .then(|| regs::field(r.w[47], 9, 3).min(6) as usize);
+        if self.ship_pal != want_ship {
+            self.ship_pal = want_ship;
+            if let Some(k) = want_ship {
+                for (j, &c) in assets::ships::PAL[k].iter().enumerate() {
+                    p.write(map::PAL + pal::SHIP as u32 + 1 + j as u32, c);
+                }
+            } else {
+                for k in 0..2 {
+                    for (j, &c) in assets::portraits::PAL[k].iter().enumerate() {
+                        p.write(map::PAL + pal::PORTRAIT as u32 + 8 * k as u32 + 1 + j as u32, c);
+                    }
+                }
             }
         }
         let mut d = Dl::new(p);

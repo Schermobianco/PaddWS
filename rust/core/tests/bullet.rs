@@ -3,7 +3,8 @@
 
 use paddws_core::fixed::{self, mul};
 use paddws_core::{
-    Bonus, Capsule, Cpu, Event, Input, Match, PaddleKind, Params, PlayerInput, Rng, Shot, Side, TICK_HZ, Tuning, slowed,
+    Bonus, Capsule, Cpu, Event, Input, Match, PaddleKind, Params, PlayerInput, Rng, Shot, Side, TICK_HZ, Tuning,
+    bullet_ball_slow, slowed, slowed_extra,
 };
 
 const LOADOUTS: [[Bonus; 3]; 2] = [
@@ -150,10 +151,12 @@ fn ball_paddle_capsules_and_shots_slow_down_but_not_the_owner() {
         if t == TICK_HZ / 4 {
             assert!(m.paddles[1].y < plain.paddles[1].y, "l'avversario resta indietro");
         }
-        // palla: passo rallentato, velocità memorizzata invariata
+        // palla: passo rallentato in modo adattivo, velocità memorizzata invariata
         assert_eq!((m.ball.vx, m.ball.vy), ball_v);
-        assert_eq!(m.ball.dx, slowed(mul(ball_v.0, m.ball.boost), k));
-        assert_eq!(m.ball.y - before.ball.y, slowed(ball_v.1, k));
+        let raw_dx = mul(ball_v.0, m.ball.boost);
+        let (bk, bex) = bullet_ball_slow(raw_dx.abs(), k, &p);
+        assert_eq!(m.ball.dx, slowed_extra(raw_dx, bk, bex));
+        assert_eq!(m.ball.y - before.ball.y, slowed_extra(ball_v.1, bk, bex));
         // capsula e colpi: rallentano la capsula e il colpo dell'avversario, non quello di chi lo usa
         if let (Some(c), Some(c0)) = (n.capsules[0], before.next.as_ref().unwrap().capsules[0]) {
             assert_eq!(c.x - c0.x, slowed(c.vx, k));
@@ -183,6 +186,28 @@ fn speeds_are_unchanged_after_the_bullet() {
     assert_eq!(m.next.as_ref().unwrap().bullet, None);
     assert_eq!((m.ball.vx, m.ball.vy), (-v.0, v.1));
     assert_eq!(m.ball.dx, mul(-v.0, m.ball.boost), "di nuovo a piena velocità");
+}
+
+#[test]
+fn bullet_slows_fast_balls_strongly_without_stalling_slow_balls() {
+    let p = params();
+    let u = p.serve_unit;
+    // a regime (slow = 1)
+    assert_eq!(bullet_ball_slow(u * 2, 1, &p), (2, 0), "palla lenta: al massimo -25%");
+    assert_eq!(bullet_ball_slow(u * 6, 1, &p), (1, 0), "palla media: -50%");
+    assert_eq!(bullet_ball_slow(u * 12, 1, &p), (1, 1), "palla veloce: -75%");
+    assert_eq!(bullet_ball_slow(u * 24, 1, &p), (1, 2), "palla velocissima (SMASH/SUPER): -87,5%");
+    // in partita reale: un SUPER da 24x rallenta a 1/8 (3x) invece di 1/2 (12x)
+    let mut m = make([None, None], Side::Left);
+    let vx = -(u * 24);
+    m.ball.vx = vx;
+    m.ball.vy = u * 6;
+    m.step(&activate(Side::Left));
+    for _ in 0..p.bullet_ramp_ticks + 1 {
+        m.step(&Input::default());
+    }
+    assert_eq!(m.ball.dx, slowed_extra(vx, 1, 2));
+    assert_eq!(m.ball.dx.abs(), u * 3);
 }
 
 #[test]

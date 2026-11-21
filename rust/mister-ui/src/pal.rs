@@ -54,9 +54,14 @@ pub const TL_WHITE: u8 = 106;
 pub const OMEGA_Q: u8 = 115;
 /// bordo delle caselle della griglia della scelta
 pub const CELL_FRAME: u8 = 116;
+/// ciano brillante dell'effetto iperspazio e delle stelle di THE END
+pub const CYAN: u8 = 117;
 /// Ritratti dei personaggi (assets::portraits, 4 bit per pixel: il ruolo + 1): la base della tavolozza
 /// del personaggio k (i sette tipi, poi OMEGA) è PORTRAIT + 8 k; i colori li scrive `Ui::init`.
 pub const PORTRAIT: u8 = 120;
+/// Illustrazione isometrica dell'astronave vincitrice su THE END (15 colori, caricati da `Ui::poll`
+/// sopra i primi 15 indici di PORTRAIT — non usati su THE END — e ripristinati all'uscita).
+pub const SHIP: u8 = PORTRAIT;
 /// Racchette dei personaggi fuori dalla partita (assets::pads, 8 bit per pixel: il colore è la base più
 /// il valore del pixel, da 1 a `pads::PAL.len()`): PADS con il corpo bianco, PADS_OMEGA con quello di
 /// OMEGA (rosso, viola con l'easter egg). I colori li scrive `Ui`.
@@ -83,7 +88,7 @@ const DR: u32 = 0x5A0A0A;
 const GH: u32 = 0x7F6912;
 
 /// Colori RGB a 24 bit, nell'ordine degli indici.
-pub const COLORS: [u32; 117] = [
+pub const COLORS: [u32; 118] = [
     0x000000, 0x000000, K, W, Y, 0xD4F7C8, 0xB4B4B4, DG, 0x8C1414, GH, 0x9A9A9A, 0x5E5E5E, 0x303030, 0xA9B0B8,
     0x2E2607, 0x5C4C0D, // TL
     0, K, W, Y, DY, TG, DG, R, // TL_HI (la voce 24 è il rosso scuro di TL)
@@ -98,6 +103,6 @@ pub const COLORS: [u32; 117] = [
     0x4A4A4A, 0x3F3F3F, R, // 90: racchette della scelta
     0, W, Y, 0xA9B0B8, 0, 0x2E2607, 0x5C4C0D, 0x8A7114, 0, 0xB4B4B4, 0x3F3F3F, 0x3F3F3F, 0, 0x2E2607, 0x2E2607,
     0x5C4C0D, // 106: viola di OMEGA, poi TL_WHITE (ruoli 1-8)
-    0xA040E0, W, W, W, W, W, W, W, W, // 115: punto di domanda di OMEGA, bordo delle caselle
-    0xE040FF, 0x464646,
+    0xA040E0, W, W, W, W, W, W, W, W, // 115: punto di domanda di OMEGA, bordo delle caselle, ciano iperspazio
+    0xE040FF, 0x464646, 0x38ECFF,
 ];

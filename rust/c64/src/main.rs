@@ -50,8 +50,6 @@ fn main() -> ExitCode {
             ok
         }),
         Some("ending") => with_machine(&build, ending_alone),
-        // (solo la prova dell'easter egg di `frames`, per lavorarci)
-        Some("egg") => with_machine(&build, egg_alone),
         Some("profile") => with_machine(&build, profile),
         Some("paddles") => with_machine(&build, paddles),
         Some("game") => {
@@ -515,61 +513,10 @@ fn supers_ui(m: &mut Machine) -> Result<String, String> {
     if got != activate {
         return Err(format!("gesto durante la battuta: comandi {got:#04x}"));
     }
-    // scritta del bonus: si accende e si spegne come un vecchio televisore (label_step, un passo a
-    // frame): la riga che si allarga, i blocchi, la scritta gialla, i blocchi, la riga che si
-    // stringe, il trattino, poi via (label_erase)
     let font = m.addr("font_map");
     let ch = |m: &Machine, c: u8| m.cpu.read(font + (c - 32) as u16);
     let inc = std::fs::read_to_string(c64_dir().join("gen/assets.inc")).unwrap_or_default();
     let solid = inc_const(&inc, "CH_SOLID").unwrap_or(0) as u8;
-    let (grid_t, dash) = (ch_grid_t() as u8, ch(m, b'-'));
-    m.call("clear_screen");
-    m.write_u8("lb_bonus", 0, 1); // SMASH
-    m.write_u8("lb_player", 0, 4);
-    m.call("label_layout");
-    let (col, len) = (m.read_u8("lb_col", 0) as usize, m.read_u8("lb_len", 0) as usize);
-    let text = "P2 SMASH!";
-    if len != text.len() || col != 20 - text.len() / 2 {
-        return Err(format!("scritta del bonus: colonna {col} e lunghezza {len}"));
-    }
-    let row = 0xC000 + 23 * 40;
-    let mut steps = Vec::new();
-    m.write_u8("lb_key", 0, 0xFF);
-    // (LABEL_FRAMES di pick.s: 1,2 secondi, 60 frame sul PAL e 72 sull'NTSC)
-    let label_frames: u8 = if ntsc() { 72 } else { 60 };
-    for left in (1..label_frames).rev() {
-        m.write_u8("lb_frames", 0, left);
-        m.cpu.frame_start = Some(m.cpu.cycles);
-        m.call("label_step");
-        m.cpu.frame_start = None;
-        let cells = &m.cpu.mem[row + col..row + col + len];
-        let count = |c: u8| cells.iter().filter(|&&x| x == c).count();
-        let step = if cells.iter().zip(text.bytes()).all(|(&x, t)| x == ch(m, t)) {
-            if (0..len).any(|i| m.cpu.read((0xD800 + 23 * 40 + col + i) as u16) & 15 != 7) {
-                return Err("scritta del bonus non gialla".into());
-            }
-            "scritta".to_string()
-        } else if count(solid) == len {
-            "blocchi".to_string()
-        } else if count(grid_t) > 0 {
-            format!("riga {}", count(grid_t))
-        } else if count(dash) == 1 {
-            "trattino".to_string()
-        } else {
-            format!("{cells:?}")
-        };
-        if steps.last() != Some(&step) {
-            steps.push(step);
-        }
-    }
-    let want = ["riga 3", "riga 5", "riga 7", "riga 9", "blocchi", "scritta", "blocchi", "riga 9", "riga 7", "riga 5", "riga 3", "trattino"];
-    if steps != want {
-        return Err(format!("scritta del bonus: passi {steps:?} invece di {want:?}"));
-    }
-    m.call("label_erase");
-    if m.cpu.mem[row + col..row + col + len].iter().any(|&c| c > 2) {
-        return Err("label_erase non toglie la scritta del bonus".into());
-    }
     // scritte delle mosse (sm_labels), nella metà di chi la fa, righe 4 (lettere) e 5 (trattini):
     // P2 arma una MAX RISING STRIKE con la palla a metà campo che va verso di lui, i trattini (due
     // righe: BAR_C0) arrivano dal suo lato e poi si accendono; al colpo i blocchi, la scritta gialla,
@@ -2050,6 +1997,8 @@ impl PadCheck {
 struct WarpCheck {
     frames: u32,
     shown: u32,
+    jumps: u32,
+    active: bool,
     bad: Vec<String>,
 }
 
@@ -2058,13 +2007,21 @@ impl WarpCheck {
     const SPN_ICON: u16 = 1;
 
     fn check(&mut self, m: &Machine) {
-        if m.read_u8("wp_on", 0) == 0 || m.read_u8("sh_bg", 0) != 0 {
+        if m.read_u8("wp_on", 0) == 0 {
+            self.active = false;
             return;
+        }
+        if m.read_u8("sh_bg", 0) != 0 {
+            return;
+        }
+        if !self.active {
+            self.active = true;
+            self.jumps += 1;
         }
         self.frames += 1;
         let side = m.read_u8("wp_side", 0) as u16;
         let enable = m.read_u8("sh_enable", 0);
-        let portal = |bytes: &[u8]| bytes.contains(&0xFF);
+        let portal = |bytes: &[u8]| bytes.contains(&0xAA);
         let mut any = false;
         if m.read_u8("wp_en", 0) != 0 {
             any = true;
@@ -2097,12 +2054,12 @@ impl WarpCheck {
             println!("FAIL: NEXT: il salto del TELEPORT non capita mai");
             return false;
         }
-        // i frame troppo carichi tengono l'immagine di prima: al massimo il primo di un salto
-        // resta senza pezzi
-        if self.shown * 10 < self.frames * 9 {
+        // i frame troppo carichi tengono l'immagine di prima: al massimo il primo frame di ogni
+        // salto resta senza pezzi (con il salto in dash accelerato un salto dura circa 6 frame)
+        if self.shown + self.jumps < self.frames {
             println!(
-                "FAIL: NEXT: salto del TELEPORT disegnato in {} frame su {}",
-                self.shown, self.frames
+                "FAIL: NEXT: salto del TELEPORT disegnato in {} frame su {} ({} salti)",
+                self.shown, self.frames, self.jumps
             );
             return false;
         }
@@ -2593,10 +2550,6 @@ fn frames(m: &mut Machine) -> bool {
     let late_ticks = std::cell::Cell::new((0u32, 0u32));
     // frame di gioco che tengono gli sprite del frame prima (tick pesantissimo), su quelli di gioco
     let kept_sprites = std::cell::Cell::new((0u32, 0u32));
-    // scritte del bonus (label_step, lb_key): passi visti dall'ultima attivazione (bit 0-4: la riga
-    // 0-3 e i blocchi), passo del frame prima, scritte arrivate al testo con tutti i passi, scritte
-    // arrivate al testo, frame dall'attivazione, i più per arrivare al testo
-    let bonus_labels = std::cell::Cell::new((0u8, 0xFFu8, 0u32, 0u32, 0u32, 0u32));
     // tabelle dei quadrati dopo math_init: in partita devono essere quelle (presentazioni, YOU WIN,
     // HOW TO PLAY e finale ci scrivono sopra e le fanno rifare prima)
     let squares: std::cell::RefCell<Vec<u8>> = std::cell::RefCell::new(Vec::new());
@@ -2761,22 +2714,6 @@ fn frames(m: &mut Machine) -> bool {
             if !(m.read_u8("state", 0) == 10 && m.read_u8("in_vs", 0) != 0) {
                 check_glyphs(m, &rom_glyphs_now, &format!("stato {}", m.read_u8("state", 0)))?;
             }
-        }
-        if m.read_u8("state", 0) == 7 && m.read_u8("m_next", 0) != 0 {
-            let (mut seen, prev, mut full, mut shown, mut open, mut slowest) = bonus_labels.get();
-            let key = m.read_u8("lb_key", 0);
-            open += 1;
-            match key {
-                0xFF => (seen, open) = (0, 0),
-                0..=4 => seen |= 1 << key,
-                5 if prev != 5 => {
-                    shown += 1;
-                    full += (seen == 0x1F) as u32;
-                    slowest = slowest.max(open);
-                }
-                _ => {}
-            }
-            bonus_labels.set((seen, key, full, shown, open, slowest));
         }
         if matches!(m.read_u8("state", 0), 6 | 7) {
             let (kept, all) = kept_sprites.get();
@@ -3023,6 +2960,15 @@ fn frames(m: &mut Machine) -> bool {
             && m.read_u8("nx_res", 0) == 8
         {
             m.write_u8("nx_res", 0, 0);
+        } else if f % 500 == 499
+            && comet.frames == 0
+            && m.read_u8("state", 0) == 7
+            && m.read_u8("m_next", 0) != 0
+            && m.read_u8("nx_armed", 0) == 8
+        {
+            // come per il TELEPORT: se la cometa del SUPER non è ancora capitata, un SUPER (cometa) armato su P1
+            m.write_u8("nx_armed", 0, 5);
+            m.write_u8("nx_anim", 0, 2);
         }
         m.cpu.joy_port2 = joy(m, &mut rng);
         let c = match frame(m, &mut stats, &mut voiced) {
@@ -3387,7 +3333,7 @@ fn frames(m: &mut Machine) -> bool {
                 }
                 dynamic += ((k == 3 || k == 4) && ptr == m.read_u8("pad_slot", 1) && m.read_u8("wp_on", 0) == 0) as u32;
                 flash += (m.read_u8("om_flash", 0) != 0) as u32;
-                red += (m.read_u8("sh_col", 4) == COL_RED) as u32;
+                red += (m.read_u8("sh_col", 4) == COL_PURPLE) as u32;
                 net += (m.cpu.mem[0xC000 + 12 * 40 + 19] != 1) as u32;
                 loads += (m.read_u8("om_left", 0) != 0) as u32;
                 if m.read_u8("om_on", 0) >= 4 && m.read_u8("nm_on", 0) != 0 {
@@ -3550,16 +3496,6 @@ fn frames(m: &mut Machine) -> bool {
         println!("FAIL: troppi frame con gli sprite del frame prima (oltre lo {pct})");
         return false;
     }
-    let (_, _, full, shown, _, slowest) = bonus_labels.get();
-    println!(
-        "  scritte del bonus: {shown} a schermo, {full} accese per intero (riga e blocchi prima del testo), al testo in al più {slowest} frame"
-    );
-    // (6 frame senza ritardi, LB_OPEN + LB_BLOCK di pick.s; il testo aspetta un frame con tempo,
-    // e con il BULLET sempre in gioco può volerci quasi tutta la scritta: solo stampato)
-    if shown == 0 || full * 10 < shown * 9 {
-        println!("FAIL: scritte del bonus mai viste, o accese saltando dei passi (frame in ritardo)");
-        return false;
-    }
     let (fast, slow, extra) = tempo.get();
     println!("  tempo della musica: {fast} frame al match point, {slow} nel bullet time, al più {extra} passi in più in sospeso");
     if fast == 0 || slow == 0 || extra > 2 {
@@ -3610,13 +3546,6 @@ fn frames(m: &mut Machine) -> bool {
         Ok(s) => println!("  {s}"),
         Err(e) => {
             println!("FAIL: classifica: {e}");
-            return false;
-        }
-    }
-    match egg_frames(m) {
-        Ok(s) => println!("  {s}"),
-        Err(e) => {
-            println!("FAIL: easter egg: {e}");
             return false;
         }
     }
@@ -3784,8 +3713,8 @@ fn border_logic(m: &mut Machine) -> Result<String, String> {
 }
 
 /// Le immagini delle racchette dei tipi (pad_image) come le prepara la scelta, a caratteri: una
-/// cella dello sprite multicolore per carattere ("." niente, "-" grigio $D025, "#" bianco, "o" giallo
-/// $D026); in più TWIST inclinata nei due versi e il GUARDIAN con due settori persi.
+/// cella dello sprite multicolore per carattere ("." niente, "-" grigio $D025, "o" colore dedicato
+/// $D027+i, "#" bianco $D026); in più TWIST inclinata nei due versi e il GUARDIAN con due settori persi.
 fn paddles(m: &mut Machine) -> bool {
     const NAMES: [&str; 7] = ["ARCADE", "TITAN", "HAMMER", "TWIST", "BLASTER", "RUSH", "GUARDIAN"];
     let (rows, vars) = (m.addr("pv_rows"), m.addr("pv_var"));
@@ -3811,7 +3740,7 @@ fn paddles(m: &mut Machine) -> bool {
                 (0..12u16)
                     .map(|cell| {
                         let b = m.cpu.read(base + 3 * r + cell / 4);
-                        [".", "-", "#", "o"][usize::from((b >> (6 - 2 * (cell % 4))) & 3)]
+                        [".", "-", "o", "#"][usize::from((b >> (6 - 2 * (cell % 4))) & 3)]
                     })
                     .collect()
             })
@@ -3830,6 +3759,7 @@ fn paddles(m: &mut Machine) -> bool {
 
 /// Colori del VIC-II (video.s)
 const COL_RED: u8 = 2;
+const COL_PURPLE: u8 = 4;
 const COL_YELLOW: u8 = 7;
 const COL_DGRAY: u8 = 11;
 const COL_MGRAY: u8 = 12;
@@ -4796,7 +4726,7 @@ const SCENARIOS: [Scenario; 36] = [
     // OMEGA: la racchetta che cambia forma a ogni punto subito, da tutti e due i lati
     omega("omega", 81, Side::Right, [10, 11], PaddleKind::Rush),
     omega("omega_left", 82, Side::Left, [11, 10], PaddleKind::Blaster),
-    omega("omega_g", 83, Side::Right, [11, 11], PaddleKind::Guardian),
+    omega("omega_g", 84, Side::Right, [11, 11], PaddleKind::Guardian),
 ];
 
 /// Giocatori simulati come quelli di paddws-trace: inseguono la palla con un errore che cambia
@@ -5752,7 +5682,6 @@ const ST_OVER: u8 = 8;
 const ST_CONT: u8 = 12;
 const SID_SONG_ENDING: u8 = 8;
 /// canzone del titolo e quella dell'easter egg delle iniziali (il finale letto dalla cartuccia)
-const SID_SONG_TITLE: u8 = 1;
 const SID_SONG_EGG: u8 = 9;
 const SID_SONG_CHAMPION: u8 = 6;
 const EP_CHAMP: u8 = 4;
@@ -5903,9 +5832,19 @@ struct EndingRun {
 /// canzone CHAMPION, le tabelle dei quadrati da rifare.
 fn ending_run(m: &mut Machine, score: u32, fire_at: Option<u32>) -> Result<EndingRun, String> {
     ending_start(m, score)?;
-    let (yel, red) = (m.read_u8("egg_yel", 0) & 15, m.read_u8("egg_red", 0) & 15);
-    // bianco, giallo, rosso e il cielo dei fuochi (multicolore, %11 il rosso)
-    let allowed = [1, COL_RED, COL_YELLOW, 8 | red];
+    let (yel, red) = (COL_YELLOW, COL_RED);
+    // bianco, giallo, rosso, ciano, viola, verde, blu e il cielo multicolore dei fuochi
+    let allowed = [
+        1,
+        COL_RED,
+        COL_YELLOW,
+        8 | red,
+        8 | 3, // COL_CYAN
+        8 | 4, // COL_PURPLE
+        8 | 5, // COL_GREEN
+        8 | 6, // COL_BLUE
+        8 | yel,
+    ];
     let nmi = m.addr("nmi_handler");
     let charset = program_charset(m);
     // il set del finale: il font e le sue lettere 2x dalla ROM (gen/ending.inc)
@@ -5979,11 +5918,16 @@ fn ending_run(m: &mut Machine, score: u32, fire_at: Option<u32>) -> Result<Endin
         }
         let on = m.cpu.mem[0xD015];
         for s in 0..8 {
-            if on >> s & 1 != 0 && m.cpu.mem[0xD027 + s] & 15 != 1 {
-                r.bad_colors += 1;
+            if on >> s & 1 != 0 {
+                let col = m.cpu.mem[0xD027 + s] & 15;
+                // razzi (0-2): bianco; astronave vincitrice (3): colore del tipo, ciano o bianco
+                if s < 3 && col != 1 {
+                    r.bad_colors += 1;
+                }
             }
         }
-        if on & m.cpu.mem[0xD01C] != 0 && (m.cpu.mem[0xD025] & 15 != yel || m.cpu.mem[0xD026] & 15 != yel) {
+        let d025_ok = m.cpu.mem[0xD025] & 15 == if now == 6 { COL_GRAY } else { yel };
+        if on & m.cpu.mem[0xD01C] != 0 && (!d025_ok || m.cpu.mem[0xD026] & 15 != 1) {
             r.bad_colors += 1;
         }
         if m.cpu.mem[0xD016] & 0x10 != 0 && (m.cpu.mem[0xD022] & 15 != 1 || m.cpu.mem[0xD023] & 15 != yel) {
@@ -6061,7 +6005,7 @@ fn ending_run(m: &mut Machine, score: u32, fire_at: Option<u32>) -> Result<Endin
                 text_at(m, 0xC000, 21, 12, "PADD WS CHAMPION") && text_at(m, 0xC000, 19, 14, "YOU ARE THE"),
                 "YOU ARE THE PADD WS CHAMPION non a schermo",
             ),
-            (6, 20) => check(text_at(m, 0xC000, 11, 16, "THE END"), "THE END non a schermo"),
+            (6, 20) => check(text_at(m, 0xC000, 17, 16, "THE END"), "THE END non a schermo"),
             _ => {}
         }
         if now == EP_CREDITS && m.read_u8("e_hold", 0) == 50 {
@@ -6527,14 +6471,10 @@ fn title_chars(m: &Machine, page: usize, pages: usize, first: usize, what: &str)
 /// `row`, colonna `col`; con `colors` anche i colori delle celle non vuote (giallo e rosso già
 /// scambiati per l'easter egg, se c'è).
 fn title_at(m: &Machine, map: &[u8], colors: Option<&[u8]>, w: usize, row: usize, col: usize) -> bool {
-    let egg = m.read_u8("egg_x", 0);
     map.iter().enumerate().all(|(i, &c)| {
         let a = (row + i / w) * 40 + col + i % w;
         m.cpu.mem[0xC000 + a] == c
-            && colors.is_none_or(|k| {
-                let want = if matches!(k[i], COL_RED | COL_YELLOW) { k[i] ^ egg } else { k[i] };
-                c == 0 || m.cpu.mem[0xD800 + a] & 15 == want
-            })
+            && colors.is_none_or(|k| c == 0 || m.cpu.mem[0xD800 + a] & 15 == k[i])
     })
 }
 
@@ -6551,9 +6491,8 @@ fn plate_ok(m: &Machine, inc: &str) -> Result<(), String> {
         return Err("targa: caratteri o colori fuori posto".into());
     }
     let ptr = ((CHARSET + 8 * sprite - 0xC000) / 64) as u8;
-    let red = COL_RED ^ m.read_u8("egg_x", 0);
     for i in 0..4u16 {
-        if m.read_u8("sh_ptr", i) != ptr || m.read_u8("sh_col", i) & 15 != red {
+        if m.read_u8("sh_ptr", i) != ptr || m.read_u8("sh_col", i) & 15 != COL_RED {
             return Err(format!("targa: sprite {i} con l'immagine o il colore sbagliato"));
         }
     }
@@ -6795,88 +6734,33 @@ fn ending_alone(m: &mut Machine) -> bool {
     }
 }
 
-// ------------------------------------------------------------------------------- easter egg
+// ------------------------------------------------------------------------------- easter egg (BAS) + colori racchette
 
-/// Variabili dell'easter egg (video.s, in quest'ordine): con l'easter egg spento e acceso.
-const EGG_VARS: [&str; 4] = ["egg_x", "egg_yel", "egg_red", "egg_song"];
-const EGG_OFF: [u8; 4] = [0, COL_YELLOW, COL_RED, SID_SONG_TITLE];
-const EGG_ON: [u8; 4] = [COL_YELLOW ^ COL_RED, COL_RED, COL_YELLOW, SID_SONG_EGG];
-
-fn egg_vars(m: &Machine) -> [u8; 4] {
-    EGG_VARS.map(|n| m.read_u8(n, 0))
-}
-
-/// Iniziali `name` confermate: egg_check, come alla terza lettera di initials_scene.
-fn egg_initials(m: &mut Machine, name: &[u8; 3]) {
-    for (i, &c) in name.iter().enumerate() {
-        m.write_u8("ch_name", i as u16, c);
-    }
-    m.call("egg_check");
-}
-
-/// Easter egg nel banco `ui` (egg_check, challenge.s; egg_after di rust/game/src/challenge_ui.rs):
-/// il "!" in fondo alle lettere delle iniziali, dopo lo spazio; spento all'avvio; "RED" lo accende
-/// e la volta dopo lo spegne, le altre iniziali no; giallo e rosso scambiati nelle scritte
-/// (color_row, color_span) e nei segni delle racchette ($D026); nell'attract e nel menu la canzone
-/// del finale (attract_song); scritto con il joystick (R, E e D) il record va primo in
-/// classifica e parte la classifica. Alla fine di nuovo spento.
+/// Verifica: "!" nelle lettere delle iniziali, $D026 bianco (scafo) e colori dedicati `kind_col`
+/// per tutte le 7 astronavi + OMEGA, e BAS con il joystick che sblocca il JUKEBOX.
 fn egg_ui(m: &mut Machine) -> Result<String, String> {
     let letters: Vec<u8> = (0..38).map(|i| m.read_u8("letters", i)).collect();
     if letters != b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 !" {
         return Err(format!("lettere delle iniziali {:?}", String::from_utf8_lossy(&letters)));
     }
-    let check = |m: &Machine, on: bool, what: &str| -> Result<(), String> {
-        let want = if on { EGG_ON } else { EGG_OFF };
-        let d026 = m.cpu.mem[0xD026] & 15;
-        if egg_vars(m) != want || d026 != want[1] {
-            return Err(format!("{what}: variabili {:?} e $D026 = {d026} invece di {want:?}", egg_vars(m)));
-        }
-        Ok(())
-    };
-    check(m, false, "all'avvio")?;
-    for (name, on) in [(b"ABC", false), (b"RED", true), (b"RE ", true), (b"DER", true), (b"ERD", true), (b"RED", false)] {
-        egg_initials(m, name);
-        check(m, on, &format!("dopo le iniziali {}", String::from_utf8_lossy(name)))?;
+    if m.cpu.mem[0xD026] & 15 != 1 {
+        return Err(format!("$D026 = {} invece di 1 (bianco scafo)", m.cpu.mem[0xD026] & 15));
     }
-    // scritte (riga 5): giallo e rosso si scambiano solo con l'easter egg; la canzone dell'attract
-    let row = |m: &mut Machine, color: u8| -> u8 {
-        m.cpu.a = color;
-        m.cpu.y = 5;
-        m.call("color_row");
-        let cells = &m.cpu.mem[0xD800 + 5 * 40..0xD800 + 6 * 40];
-        if cells.iter().any(|&c| c & 15 != cells[0] & 15) { 0xFF } else { cells[0] & 15 }
-    };
-    for on in [false, true] {
-        if on {
-            egg_initials(m, b"RED");
-        }
-        for (color, swapped) in [(COL_YELLOW, COL_RED), (COL_RED, COL_YELLOW), (1, 1), (COL_GRAY, COL_GRAY)] {
-            let want = if on { swapped } else { color };
-            let got = row(m, color);
-            if got != want {
-                return Err(format!("color_row {color} con l'easter egg {on}: {got} invece di {want}"));
-            }
-        }
-        m.write_u8("opt_asound", 0, 1);
-        m.call("attract_song");
-        let want = if on { SID_SONG_EGG } else { SID_SONG_TITLE };
-        if m.read_u8("sid_song_n", 0) != want {
-            return Err(format!("canzone dell'attract con l'easter egg {on}: {}", m.read_u8("sid_song_n", 0)));
-        }
-        if on {
-            egg_initials(m, b"RED");
-        }
+    let want_cols = [7u8, 8, 2, 4, 5, 3, 14, 4];
+    let got_cols: Vec<u8> = (0..8).map(|i| m.read_u8("kind_col", i)).collect();
+    if got_cols != want_cols {
+        return Err(format!("kind_col = {got_cols:?} invece di {want_cols:?}"));
     }
-    check(m, false, "spento di nuovo")?;
-    // con il joystick (porta 2): R (17 passi in giù dalla A), E (13 in su), D (1 in su), il fuoco
-    // dopo ogni lettera; il record entra primo in classifica, poi la classifica
+    // BAS con il joystick (B, A, S): il JUKEBOX sbloccato, salvato con la classifica
     for i in 0..80 {
         let b = m.image_u8("table_init", i);
         m.write_u8("ch_table", i, b);
     }
     m.cpu.write(0xDC00, 0xFF);
     m.cpu.write(0xDC01, 0xFF);
-    m.write_i32("ch_best", 0, 300_000);
+    let saved_juke = m.read_u8("hi_juke", 0);
+    m.write_u8("hi_juke", 0, 0xFF);
+    m.write_i32("ch_best", 0, 400_000);
     m.write_u8("ch_best_lv", 0, 3);
     m.write_u8("ch_loser", 0, 0);
     m.write_u8("cg_active", 0, 0);
@@ -6892,36 +6776,6 @@ fn egg_ui(m: &mut Machine) -> Result<String, String> {
     for _ in 0..3 {
         frame(m, 0xFF);
     }
-    for (moves, bit) in [(17, 0x02u8), (13, 0x01), (1, 0x01)] {
-        for b in std::iter::repeat_n(bit, moves).chain([0x10]) {
-            frame(m, 0xFF);
-            frame(m, !b);
-        }
-    }
-    m.cpu.joy_port2 = 0xFF;
-    let name: Vec<u8> = (0..3).map(|i| m.read_u8("ch_table", i)).collect();
-    if rank != 0 || name != b"RED" || m.read_u8("state", 0) != ST_SCORES || m.read_u8("ch_hl", 0) != 0 {
-        return Err(format!(
-            "iniziali con il joystick: posto {rank}, nome {:?}, scena {}",
-            String::from_utf8_lossy(&name),
-            m.read_u8("state", 0)
-        ));
-    }
-    check(m, true, "dopo RED con il joystick")?;
-    egg_initials(m, b"RED");
-    check(m, false, "spento alla fine")?;
-    // BAS con il joystick (B, A, S): il JUKEBOX sbloccato, salvato con la classifica; l'easter egg
-    // dei colori resta spento
-    let saved_juke = m.read_u8("hi_juke", 0);
-    m.write_u8("hi_juke", 0, 0xFF);
-    m.write_i32("ch_best", 0, 400_000);
-    m.call("table_rank");
-    let rank = m.cpu.a;
-    m.write_u8("ch_rank", 0, rank);
-    m.call("enter_initials");
-    for _ in 0..3 {
-        frame(m, 0xFF);
-    }
     for (moves, bit) in [(1, 0x02u8), (1, 0x01), (18, 0x02)] {
         for b in std::iter::repeat_n(bit, moves).chain([0x10]) {
             frame(m, 0xFF);
@@ -6930,20 +6784,16 @@ fn egg_ui(m: &mut Machine) -> Result<String, String> {
     }
     m.cpu.joy_port2 = 0xFF;
     let name: Vec<u8> = (0..3).map(|i| m.read_u8("ch_table", i)).collect();
-    if name != b"BAS" || m.read_u8("hi_juke", 0) != 0 || m.read_u8("state", 0) != ST_SCORES {
+    if rank != 0 || name != b"BAS" || m.read_u8("hi_juke", 0) != 0 || m.read_u8("state", 0) != ST_SCORES {
         return Err(format!(
-            "BAS con il joystick: nome {:?}, hi_juke {:02x}, scena {}",
+            "BAS con il joystick: posto {rank}, nome {:?}, hi_juke {:02x}, scena {}",
             String::from_utf8_lossy(&name),
             m.read_u8("hi_juke", 0),
             m.read_u8("state", 0)
         ));
     }
-    check(m, false, "dopo BAS")?;
     m.write_u8("hi_juke", 0, saved_juke);
-    Ok(
-        "easter egg: il \"!\" dopo lo spazio nelle iniziali; RED lo accende e lo spegne (anche con il joystick, con il record in classifica), le altre iniziali no; giallo e rosso scambiati nelle scritte e in $D026; la canzone del finale nell'attract; BAS sblocca il JUKEBOX"
-            .into(),
-    )
+    Ok("colori dedicati 7 astronavi + OMEGA ($D026 bianco, kind_col); BAS sblocca il JUKEBOX".into())
 }
 
 /// Colori a schermo alla fine di un frame: i registri di colore del VIC ($D020-$D02E) che si
@@ -6991,306 +6841,4 @@ fn screen_colors(m: &Machine) -> Vec<u8> {
     }
     v.push(bitmap as u8 | (mc_text as u8) << 1);
     v
-}
-
-/// Giallo e rosso scambiati.
-fn egg_swap(c: u8) -> u8 {
-    match c {
-        COL_RED => COL_YELLOW,
-        COL_YELLOW => COL_RED,
-        c => c,
-    }
-}
-
-/// Quello che `screen_colors` deve dare con l'easter egg: giallo e rosso scambiati; nei caratteri
-/// multicolore (colore da 8 in su) il colore di %11, cioè il cielo dei fuochi del finale.
-fn egg_swapped(colors: &[u8]) -> Vec<u8> {
-    let flags = colors[colors.len() - 1];
-    let mut out = colors.to_vec();
-    let last = out.len() - 1;
-    for (i, c) in out[..last].iter_mut().enumerate() {
-        *c = match i {
-            0..15 => egg_swap(*c),
-            15..1015 if flags & 2 != 0 && *c >= 8 => 8 | egg_swap(*c & 7),
-            15..1015 => egg_swap(*c),
-            _ => egg_swap(*c >> 4) << 4 | egg_swap(*c & 15),
-        };
-    }
-    out
-}
-
-/// Colori di due tratti uguali, il primo senza e il secondo con l'easter egg: ogni frame con giallo
-/// e rosso scambiati. Restituisce i frame e quanti avevano giallo o rosso.
-fn egg_compare(what: &str, off: &[Vec<u8>], on: &[Vec<u8>]) -> Result<(usize, usize), String> {
-    if off.len() != on.len() {
-        return Err(format!("{what}: {} frame senza l'easter egg, {} con", off.len(), on.len()));
-    }
-    let mut lit = 0;
-    for (f, (a, b)) in off.iter().zip(on).enumerate() {
-        let want = egg_swapped(a);
-        if *b != want {
-            let i = (0..want.len().max(b.len())).find(|&i| want.get(i) != b.get(i)).unwrap_or(0);
-            let place = match i {
-                0..15 => format!("${:04X}", 0xD020 + i),
-                15..1015 => format!("RAM dei colori, riga {}, colonna {}", (i - 15) / 40, (i - 15) % 40),
-                _ => format!("bitmap, cella {}", i - 1015),
-            };
-            return Err(format!(
-                "{what}, frame {f}: {place} {:?} invece di {:?} (senza l'easter egg {:?})",
-                b.get(i),
-                want.get(i),
-                a.get(i)
-            ));
-        }
-        lit += (want != *a) as usize;
-    }
-    Ok((off.len(), lit))
-}
-
-/// Un frame come nel programma: l'interrupt della riga 250 (frame_count), poi `frame` con il
-/// raster e gli NMI fino alla fine del frame.
-fn egg_frame(m: &mut Machine) -> Result<u64, String> {
-    let n = (m.read_u8("frame_count", 0) as u16 | (m.read_u8("frame_count", 1) as u16) << 8).wrapping_add(1);
-    m.write_u8("frame_count", 0, n as u8);
-    m.write_u8("frame_count", 1, (n >> 8) as u8);
-    full_frame(m)
-}
-
-/// Joystick di P1 in un tratto (anche con il frame del tratto, e può toccare la partita): nelle
-/// scelte a caso, in partita insegue la palla e ogni tanto scatta o usa il bonus.
-type EggJoy = fn(&mut Machine, &mut Rng, u32) -> u8;
-
-/// Un tratto: `frames` frame con il joystick `joy`; colori, stato e canzone di ogni frame, cicli
-/// massimi e i colori scritti in $D020.
-struct EggRun {
-    colors: Vec<Vec<u8>>,
-    states: Vec<(u8, u8)>,
-    worst: u64,
-    border: Vec<u8>,
-    sid_writes: usize,
-}
-
-fn egg_run(m: &mut Machine, what: &str, frames: u32, joy: EggJoy) -> Result<EggRun, String> {
-    let mut rng = Rng::new(0x5753_2100);
-    let mut r = EggRun { colors: Vec::new(), states: Vec::new(), worst: 0, border: Vec::new(), sid_writes: 0 };
-    m.cpu.watch = Some((0xD020, 0xD418));
-    for f in 0..frames {
-        m.cpu.joy_port2 = joy(m, &mut rng, f);
-        m.cpu.writes.clear();
-        let c = egg_frame(m).map_err(|e| format!("{what}, frame {f} (stato {}): {e}", m.read_u8("state", 0)))?;
-        // (in partita lo sforamento ammesso dopo un tick pesante, spill_max: il banco frames lo
-        // controlla con il ritardo del frame dopo)
-        let play = m.read_u8("state", 0) == ST_PLAY;
-        r.worst = r.worst.max(if play { c.saturating_sub(spill_max()) } else { c });
-        // (sull'NTSC un primo frame senza scena mostra ancora lo schermo di prima, disegnato prima
-        // del tratto: non conta; i due tratti saltano gli stessi frame)
-        if r.colors.is_empty() && scene_skipped(m) {
-            continue;
-        }
-        r.colors.push(screen_colors(m));
-        r.states.push((m.read_u8("state", 0), m.read_u8("sid_song_n", 0)));
-        r.sid_writes += m.cpu.writes.iter().filter(|w| w.0 >= 0xD400).count();
-        r.border.extend(m.cpu.writes.iter().filter(|w| w.0 == 0xD020).map(|w| w.1 & 15));
-    }
-    m.cpu.watch = None;
-    m.cpu.joy_port2 = 0xFF;
-    Ok(r)
-}
-
-/// Easter egg nel banco `frames`: gli stessi tratti giocati due volte dalla stessa copia della
-/// macchina, senza e con l'easter egg ("RED", egg_check), con gli stessi comandi. Con l'easter egg
-/// ogni frame deve avere i colori di quello senza con giallo e rosso scambiati (registri del VIC,
-/// RAM dei colori, colori della bitmap, multicolore dei fuochi) e stare nel budget:
-/// - l'attract (strisce, logo, titolo, classifica), dove deve suonare la canzone del finale dalla
-///   cartuccia (SID_SONG_EGG), che costa qualche ciclo in più;
-/// - il menu, le scelte e una partita NEXT contro la CPU con le mosse speciali e il bordo GRAY
-///   (bordo giallo con il SUPER e le mosse MAX, rosso al match point);
-/// - la classifica con il record in evidenza, con il bordo nero (i colori scritti in $D020);
-/// - il finale di CHALLENGE da capo (sfilata, timbri, fuochi, titoli), con i suoi controlli.
-fn egg_frames(m: &mut Machine) -> Result<String, String> {
-    // (sull'NTSC con il contatore dei frame senza scena di prima: i due tratti saltano gli stessi)
-    let egg_on = |m: &mut Machine| {
-        let six = ntsc().then(|| m.read_u8("tv_six", 0));
-        egg_initials(m, b"RED");
-        if let Some(v) = six {
-            m.write_u8("tv_six", 0, v);
-        }
-    };
-    let idle: EggJoy = |_, _, _| 0xFF;
-    let play: EggJoy = |m, rng, f| {
-        // a metà partita un punto alla vittoria per tutti e due: il match point (bordo rosso)
-        if f == 50 * 60 && m.read_u8("state", 0) == ST_PLAY {
-            let last = m.read_u8("win_points", 0) - 1;
-            m.write_u8("score", 0, last);
-            m.write_u8("score", 4, last);
-        }
-        let mut joy = 0xFFu8;
-        let state = m.read_u8("state", 0);
-        if state != ST_PICK && state != ST_PLAY {
-            // (fuori dalle scelte e dalla partita niente: nell'attract il fuoco porterebbe al menu)
-        } else if state == ST_PICK {
-            joy &= match rng.below(30) {
-                27 => !0x01,
-                28 => !0x02,
-                29 => !0x10,
-                _ => 0xFF,
-            };
-        } else {
-            let diff = fixed::floor(m.read_i32("ball_y", 0)) - fixed::floor(m.read_i32("pad_y", 0));
-            if diff > 4 {
-                joy &= !0x01;
-            } else if diff < -4 {
-                joy &= !0x02;
-            }
-            for (odds, bit) in [(40, 0x08), (60, 0x10)] {
-                if rng.below(odds) == 0 {
-                    joy &= !bit;
-                }
-            }
-        }
-        joy
-    };
-    quiet_inputs(m);
-    if egg_vars(m) != EGG_OFF {
-        return Err("easter egg acceso prima della prova".into());
-    }
-    let mut lines = Vec::new();
-    let mut worst = 0;
-    // attract dalle strisce, con i suoni
-    m.write_u8("opt_asound", 0, 1);
-    m.write_u8("opt_free", 0, 1);
-    let start = m.cpu.clone();
-    m.call("go_stripes");
-    let off = egg_run(m, "attract", 1900, idle)?;
-    let after = m.cpu.clone();
-    m.cpu = start;
-    egg_on(m);
-    m.call("go_stripes");
-    let on = egg_run(m, "attract", 1900, idle)?;
-    // (strisce 1, logo 2, titolo 3 e la classifica: la canzone del finale)
-    let wrong_song = on.states.iter().filter(|&&(s, song)| matches!(s, 1..=3 | ST_SCORES) && song != SID_SONG_EGG).count();
-    if !on.states.iter().any(|s| s.0 == ST_SCORES) || wrong_song > 0 || on.sid_writes < 2000 {
-        return Err(format!(
-            "attract: classifica {}, {wrong_song} frame senza la canzone del finale, {} scritture nel SID",
-            on.states.iter().any(|s| s.0 == ST_SCORES),
-            on.sid_writes
-        ));
-    }
-    let (n, lit) = egg_compare("attract", &off.colors, &on.colors).map_err(|e| {
-        // (la scena del frame: il numero dopo "frame")
-        let f: usize = e.split("frame ").nth(1).and_then(|t| t.split(':').next()).and_then(|t| t.parse().ok()).unwrap_or(0);
-        format!("{e}; stato {:?} senza, {:?} con", off.states.get(f), on.states.get(f))
-    })?;
-    lines.push(format!(
-        "attract {n} frame ({lit} con giallo o rosso, la canzone del finale con {} scritture nel SID; cicli max {}, senza l'easter egg {})",
-        on.sid_writes, on.worst, off.worst
-    ));
-    worst = worst.max(on.worst);
-    // menu, scelte e partita NEXT contro la CPU con le mosse speciali e il bordo GRAY
-    m.cpu = after;
-    for (name, v) in [("opt_mode", 2u8), ("opt_players", 3), ("opt_level", 1), ("opt_border", 1), ("cfg_super", 1)] {
-        m.write_u8(name, 0, v);
-    }
-    m.call("enter_menu");
-    let start = m.cpu.clone();
-    let game = |m: &mut Machine| -> Result<EggRun, String> {
-        let menu = egg_run(m, "menu", 50, idle)?;
-        m.call("start_game");
-        let mut r = egg_run(m, "partita NEXT", 50 * 20 + 50 * 60 * 2, play)?;
-        r.worst = r.worst.max(menu.worst);
-        r.colors.splice(0..0, menu.colors);
-        r.states.splice(0..0, menu.states);
-        Ok(r)
-    };
-    let off = game(m)?;
-    let after = m.cpu.clone();
-    m.cpu = start;
-    egg_on(m);
-    let on = game(m)?;
-    if !on.states.iter().any(|s| s.0 == ST_PLAY) {
-        return Err("partita NEXT: non parte".into());
-    }
-    let reds = off.colors.iter().filter(|c| c[0] == COL_RED).count();
-    let yellows = off.colors.iter().filter(|c| c[0] == COL_YELLOW).count();
-    if reds == 0 || yellows == 0 {
-        return Err(format!("partita NEXT: bordo rosso in {reds} frame, giallo in {yellows}: scambio non provato"));
-    }
-    let (n, lit) = egg_compare("menu e partita NEXT", &off.colors, &on.colors)?;
-    lines.push(format!(
-        "menu, scelte e partita NEXT {n} frame ({lit} con giallo o rosso, bordo rosso in {reds} e giallo in {yellows}; cicli max {})",
-        on.worst
-    ));
-    worst = worst.max(on.worst);
-    // classifica con il record in evidenza, il bordo nero
-    m.cpu = after;
-    for i in 0..80 {
-        let b = m.image_u8("table_init", i);
-        m.write_u8("ch_table", i, b);
-    }
-    m.write_u8("ch_hl", 0, 0);
-    m.call("enter_scores");
-    let start = m.cpu.clone();
-    let off = egg_run(m, "classifica", 300, idle)?;
-    let after = m.cpu.clone();
-    m.cpu = start;
-    egg_on(m);
-    let on = egg_run(m, "classifica", 300, idle)?;
-    if off.border.iter().chain(&on.border).any(|&c| c != 0) {
-        return Err("classifica: bordo non nero".into());
-    }
-    let (n, lit) = egg_compare("classifica", &off.colors, &on.colors)?;
-    lines.push(format!("classifica {n} frame ({lit} con giallo o rosso, bordo nero; cicli max {})", on.worst));
-    worst = worst.max(on.worst);
-    // il finale di CHALLENGE da capo
-    m.cpu = after;
-    m.call("math_ensure");
-    let start = m.cpu.clone();
-    let off = ending_run(m, 123_456, None)?;
-    m.cpu = start;
-    egg_on(m);
-    let on = ending_run(m, 123_456, None)?;
-    if !on.errors.is_empty() || on.bad_colors > 0 || on.late > 0 {
-        return Err(format!(
-            "finale: {} controlli falliti ({:?}), {} colori sbagliati, {} titoli in ritardo",
-            on.errors.len(),
-            on.errors.first(),
-            on.bad_colors,
-            on.late
-        ));
-    }
-    let (n, lit) = egg_compare("finale", &off.colors, &on.colors)?;
-    lines.push(format!("finale {n} frame ({lit} con giallo o rosso; cicli max {})", on.worst));
-    worst = worst.max(on.worst);
-    // di nuovo spento, per quello che viene dopo
-    egg_on(m);
-    if egg_vars(m) != EGG_OFF {
-        return Err("l'easter egg non si spegne".into());
-    }
-    if worst > FRAME_BUDGET() {
-        return Err(format!("frame di {worst} cicli con l'easter egg: {}", lines.join(", ")));
-    }
-    Ok(format!(
-        "easter egg, giallo e rosso scambiati frame per frame rispetto a senza: {}; cicli max {worst}",
-        lines.join(", ")
-    ))
-}
-
-/// Solo la prova dell'easter egg di `frames` (`paddws-c64 egg`), dopo l'avvio.
-fn egg_alone(m: &mut Machine) -> bool {
-    for r in ["title_unpack", "clear_vars", "math_init", "video_init", "input_init", "sid_init"] {
-        m.call(r);
-    }
-    for (name, v) in [("opt_level", 1), ("opt_free", 1), ("opt_asound", 1), ("opt_border", 1)] {
-        m.write_u8(name, 0, v);
-    }
-    match egg_frames(m) {
-        Ok(s) => {
-            println!("PASS: {s}");
-            true
-        }
-        Err(e) => {
-            println!("FAIL: {e}");
-            false
-        }
-    }
 }

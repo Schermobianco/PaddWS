@@ -217,6 +217,8 @@ _pad:
     sta events
     sta events+1
     sta nx_btimer               ; BULLET spento (pad_update lo guarda in tutte le partite)
+    sta nx_lslow                ; nessun rallentamento da laser
+    sta nx_lslow+4
     sta sm_on                   ; mosse speciali spente (next_init le accende in NEXT)
     ; generatore dal seme (lo zero è un punto fisso di xorshift)
     mov32 rng, cfg_seed
@@ -412,6 +414,7 @@ _zero:
     sta pad_speed+3,x
 _move:
     lda nx_btimer
+    ora nx_lslow,x
     jne _slow
     add32 t0, {pad_y,x}, {pad_speed,x}
 _moved:
@@ -435,7 +438,7 @@ _stop:
     rts
 _slow:
     mov32 s_v, {pad_speed,x}
-    jsr bullet_shift_x
+    jsr pad_slow_shift_x
     jsr slow_v
     add32 t0, {pad_y,x}, s_v
     jmp _moved
@@ -558,8 +561,9 @@ _store:
     ; i tipi lenti seguono la manopola con una velocità massima
 :   mov32 s_v, {pad_step,x}
     lda nx_btimer
+    ora nx_lslow,x
     beq _step
-    jsr bullet_shift_x
+    jsr pad_slow_shift_x
     beq _step
     pha
     or32 s_v

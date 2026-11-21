@@ -293,13 +293,13 @@ def next_chars(cs: Charset, lines: list[str], spare: list[int]) -> bytes:
     dash = [1 if 1 <= y <= 5 else 0 for y in range(8)]
     lines.append(f"CH_BAR_R = {cs.add(tuple(0x01 * d for d in dash), unique=True)}    ; pixel 7 della colonna")
     lines.append(f"CH_BAR_L = {cs.add(tuple(0x80 * d for d in dash), unique=True)}    ; pixel 0 della colonna")
-    # colpo del BLASTER: due tratti di 7 pixel nelle righe 1 e 5 del carattere, dal pixel p (0, 2,
-    # 4, 6) del primo carattere; quello che avanza nel secondo
+    # fascio laser del BLASTER (uno per cannone alare): tratto di 7x2 pixel al centro del
+    # carattere (righe 3-4), dal pixel p (0, 2, 4, 6) del primo carattere; il resto nel secondo
     shot = []
     for p in (0, 2, 4, 6):
         bits = sum(0x80 >> x for x in range(p, p + 7) if x < 8), sum(0x80 >> (x - 8) for x in range(p, p + 7) if x >= 8)
         for half in bits:
-            shot.append(cs.add((0, half, 0, 0, 0, half, 0, 0)) if half else 0)
+            shot.append(cs.add((0, 0, 0, half, half, 0, 0, 0)) if half else 0)
     lines.append(".define SHOT_CHARS " + ", ".join(str(c) for c in shot) + "    ; per fase: primo, secondo")
     # STEER: segni dove finisce la guida, 2 pixel a cavallo di due colonne, alti 6 righe in cima e
     # in fondo allo schermo
@@ -913,14 +913,18 @@ def fireworks_tables() -> list[str]:
     crackle = []
     for i in range(20):
         ang = rng.uniform(0, math.tau)
-        crackle.append((*v(0.5 + rng.uniform(0, 3.5), ang), W))
+        crackle.append((*v(0.5 + rng.uniform(0, 3.5), ang), (W, Y, R)[i % 3]))
     split = life(12)
     cross = [(*v(4.5, a * math.pi / 2 + math.pi / 4), W) for a in range(4) for _ in range(4)]
-    cross_split = [(*v(2.5, a * math.pi / 2 + math.pi / 4 + (b - 1.5) * 0.5), Y) for a in range(4) for b in range(4)]
+    cross_split = [(*v(2.5, a * math.pi / 2 + math.pi / 4 + (b - 1.5) * 0.5), R if (a + b) % 2 == 0 else Y)
+                   for a in range(4) for b in range(4)]
+    # anello bicolore (tema %11 + giallo %10 alternati) così ogni scoppio sfoggia il proprio colore
+    ring_bi = [(*v(4.0, a * math.tau / 18), R if a % 2 == 0 else Y) for a in range(18)]
+    willow_bi = [(*v(2.6, 0.13 + a * math.tau / 12), R if a % 2 == 0 else Y) for a in range(12)]
     # tipo: scintille, vita, gravità, attrito (shift, 0 = niente), scia, blocco, divisione, crepitio
     kinds = [
-        ("RING", ring(18, 4.0, Y), life(26), FW_GRAV, 5, 0, 0, 0, 0),
-        ("WILLOW", ring(12, 2.6, Y, 0.13), life(50), FW_GRAV, 5, 2, 0, 0, 0),
+        ("RING", ring_bi, life(26), FW_GRAV, 5, 0, 0, 0, 0),
+        ("WILLOW", willow_bi, life(50), FW_GRAV, 5, 2, 0, 0, 0),
         ("PALM", ring(7, 4.5, R, 0.3), life(34), FW_GRAV, 5, 2, 0, 0, 0),
         ("CHRYSANTHEMUM", ring(8, 2.2, W, 0.2) + ring(14, 4.2, R), life(30), FW_GRAV, 5, 0, 0, 0, 0),
         ("CRACKLE", crackle, life(40), 2, 0, 0, life(18), 0, 1),
@@ -942,7 +946,10 @@ def fireworks_tables() -> list[str]:
         vy.append(y)
         vc.append(c)
     assert len(vx) < 256
-    # lo spettacolo: i tipi a turno, uno ogni 7-14 passi fino a poco prima della fine
+    # colori VIC-II multicolore in Color RAM ($D800: bit 3 acceso + colore 0..7):
+    # ciano (3), rosso (2), viola (4), verde (5), blu (6), giallo (7)
+    sky_cols = [8 + 3, 8 + 2, 8 + 4, 8 + 5, 8 + 3, 8 + 6, 8 + 4, 8 + 2, 8 + 5, 8 + 7]
+    # lo spettacolo: i tipi a turno, uno ogni 6-12 passi fino a poco prima della fine
     show = []
     last = FW_CHAMPION // FW_FRAMES - life(30)
     start = 0
@@ -954,8 +961,9 @@ def fireworks_tables() -> list[str]:
         v0 = round((200 - cy) * 256 / (FW_RISE / 2 + 0.5))
         acc = round(v0 / FW_RISE)
         assert v0 < 0x10000 and acc < 256
-        show.append((start, len(show) % len(kinds), gx, gy, v0, acc))
-        start += round((6 + rng.randrange(8)) / FW_T)
+        col = sky_cols[len(show) % len(sky_cols)]
+        show.append((start, len(show) % len(kinds), gx, gy, v0, acc, col))
+        start += round((5 + rng.randrange(7)) / FW_T)
     lines = [
         "; fuochi d'artificio: tipi (anello, salice, palma, crisantemo, crepitio, croce che si divide)",
         f"FW_FRAMES = {FW_FRAMES}    ; frame per passo",
@@ -975,6 +983,7 @@ def fireworks_tables() -> list[str]:
         lines.append(f".define FW_S_{key} " + ", ".join(str(s[i]) for s in show) + ", 255" * (key == "STEP"))
     lines.append(".define FW_S_V0 " + ", ".join(str(s[4]) for s in show))
     lines.append(".define FW_S_ACC " + ", ".join(str(s[5]) for s in show))
+    lines.append(".define FW_S_COL " + ", ".join(str(s[6]) for s in show))
     return lines
 
 

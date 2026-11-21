@@ -1597,6 +1597,9 @@ struct Controls {
     direction: i8,
     fast: bool,
     forward: bool,
+    /// BLASTER: tasto di fuoco tenuto premuto (raggio continuo automatico)
+    fire_hold: bool,
+    mouse_hold: Option<f64>,
     /// NEXT: seleziona e attiva un bonus (valgono per un solo tick)
     select: bool,
     activate: bool,
@@ -1848,6 +1851,9 @@ impl Play {
         let window = app.cfg.paddle.double_click_time / 1000.0;
         let now = get_time();
         let moves = self.game.super_moves();
+        for c in &mut self.controls {
+            c.fire_hold = false;
+        }
         for &side in self.active_sides() {
             let (up, down, forward) = CONTROLS[side as usize];
             let c = &mut self.controls[side as usize];
@@ -1873,6 +1879,9 @@ impl Play {
             }
             if input::pressed(forward) {
                 c.dash(now, moves);
+            }
+            if self.game.paddle_kind(side) == Some(PaddleKind::Blaster) && input::down(forward) {
+                c.fire_hold = true;
             }
             if self.fx.is_some() {
                 let (select, activate) = next_ui::BONUS_KEYS[side as usize];
@@ -1919,6 +1928,9 @@ impl Play {
                 if moves && let Some(special) = c.stick.dash(now) {
                     c.special = Some(special);
                 }
+            }
+            if self.game.paddle_kind(side) == Some(PaddleKind::Blaster) && pads.held(slot, Control::A) {
+                c.fire_hold = true;
             }
             if self.fx.is_some() {
                 c.select |= pads.pressed(slot, Control::B);
@@ -2089,6 +2101,21 @@ impl Play {
                 self.controls[side as usize].gesture.track(value as f32, now);
             }
         }
+        // mouse spinner con BLASTER: clic rapido = colpo singolo, tasto sinistro tenuto premuto = raggio continuo
+        if app.cfg.mouse.spinner
+            && sides.contains(&Side::Left)
+            && self.game.paddle_kind(Side::Left) == Some(PaddleKind::Blaster)
+        {
+            let c = &mut self.controls[0];
+            if is_mouse_button_down(MouseButton::Left) {
+                let start = *c.mouse_hold.get_or_insert(now);
+                if now - start >= 0.14 {
+                    c.fire_hold = true;
+                }
+            } else {
+                c.mouse_hold = None;
+            }
+        }
         for e in &app.knob_events {
             if !sides.iter().any(|s| *s as usize == e.player) {
                 continue;
@@ -2129,11 +2156,13 @@ impl Play {
             cmd.direction = c.direction;
             cmd.fast = c.fast;
             cmd.forward = std::mem::take(&mut c.forward);
+            cmd.fire = c.fire_hold;
             if let Some(special) = c.special.take()
                 && ready
             {
                 cmd.special = Some(special);
                 cmd.forward = false;
+                cmd.fire = false;
             }
             cmd.select = std::mem::take(&mut c.select);
             cmd.activate = std::mem::take(&mut c.activate);

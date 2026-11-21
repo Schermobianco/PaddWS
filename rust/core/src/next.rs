@@ -119,6 +119,37 @@ pub const fn slowed(v: Fx, shift: u32) -> Fx {
     if shift == 0 { v } else { v - (v >> shift) }
 }
 
+/// Passo di movimento rallentato dal BULLET con eventuale dimezzamento ulteriore (`extra` shift a
+/// destra): `slowed(v, shift) >> extra`. Usato per la palla, che nel BULLET rallenta in modo
+/// adattivo alla propria velocità senza divisioni.
+pub const fn slowed_extra(v: Fx, shift: u32, extra: u32) -> Fx {
+    slowed(v, shift) >> extra
+}
+
+/// Rallentamento adattivo della palla nel BULLET `(shift, extra)` in base alla sua velocità
+/// orizzontale effettiva `abs_dx = |dx|`:
+/// - `<= 4 * serve_unit` (palla lenta): `(2, 0)` (-25%, non la blocca);
+/// - `<= 8 * serve_unit` (media): `(slow, 0)` (-25% in rampa, -50% a regime);
+/// - `<= 16 * serve_unit` (veloce, es. HAMMER/RUSH/scambio): `(slow, 1)` (-37,5% in rampa, -75%);
+/// - `> 16 * serve_unit` (velocissima, es. SMASH/SUPER/MAX): `(slow, 2)` (-43,75% in rampa, -87,5%).
+///
+/// Solo confronti e shift interi: identico su PC, MiSTer e C64.
+pub const fn bullet_ball_slow(abs_dx: Fx, slow: u32, p: &Params) -> (u32, u32) {
+    if slow == 0 {
+        return (0, 0);
+    }
+    let cap = p.serve_unit << 2;
+    if abs_dx <= cap {
+        (2, 0)
+    } else if abs_dx <= cap << 1 {
+        (slow, 0)
+    } else if abs_dx <= cap << 2 {
+        (slow, 1)
+    } else {
+        (slow, 2)
+    }
+}
+
 /// Tipo di racchetta di NEXT, per tutta la partita. `None` in `NextPlayer::kind` è la racchetta
 /// di NEXT senza tipo (quella del core MiSTer di oggi): ARCADE ha la stessa fisica, ma una
 /// pausa più breve tra due bonus.
@@ -256,6 +287,10 @@ pub struct NextPlayer {
     pub ammo: u8,
     pub gap: u32,
     pub reload: u32,
+    /// BLASTER avversario: tick residui di rallentamento lieve (-25%) dopo essere stati colpiti dal laser
+    pub laser_slow: u32,
+    /// ARCADE: finestra residua per il doppio clic su USE a riserva vuota (chiama una capsula)
+    pub arcade_tap: u32,
     /// GUARDIAN: settori del muro ancora in piedi, un bit per settore (`GUARDIAN_SECTORS`)
     pub barrier: u8,
     /// mosse speciali: barra (0..=`Params::super_meter_max`, resta da un punto all'altro come la
@@ -282,6 +317,8 @@ impl NextPlayer {
             ammo: 0,
             gap: 0,
             reload: 0,
+            laser_slow: 0,
+            arcade_tap: 0,
             barrier: 0,
             meter: 0,
             straight: 0,
@@ -473,6 +510,17 @@ impl Next {
         }
     }
 
+    /// Shift di rallentamento della racchetta di `side`: BULLET avversario oppure colpo laser del
+    /// BLASTER (-50%, shift 1). Se sono attivi entrambi vince lo shift più forte (1).
+    pub fn paddle_slow_shift(&self, side: Side, p: &Params) -> u32 {
+        let bullet = self.bullet_shift_for(side, p);
+        if bullet == 1 || self.players[side as usize].laser_slow > 0 {
+            1
+        } else {
+            bullet
+        }
+    }
+
     /// Fine del BULLET (alla ribattuta o al punto).
     fn end_bullet(&mut self) {
         self.bullet = None;
@@ -524,7 +572,7 @@ impl Next {
     /// la stessa, le accelerazioni di CURVE e STEER; la velocità memorizzata non cambia.
     pub(crate) fn ball_motion(&mut self, ball: &mut Ball, p: &Params, paddles: &[Paddle; 2], dx: &mut Fx, dy: &mut Fx) {
         let limit = ball.vx.abs(); // mai più ripida di 45 gradi
-        let slow = self.bullet_shift(p);
+        let (bshift, bextra) = bullet_ball_slow((*dx).abs(), self.bullet_shift(p), p);
         // RISING STRIKE: passata la soglia s'impenna di colpo verso il bordo lontano dalla
         // racchetta verso cui va
         if let Some(at) = self.rise_break {
@@ -540,7 +588,7 @@ impl Next {
             }
         }
         if self.curve != 0 {
-            ball.vy = (ball.vy + slowed(self.curve, slow)).clamp(-limit, limit);
+            ball.vy = (ball.vy + slowed_extra(self.curve, bshift, bextra)).clamp(-limit, limit);
             *dy = ball.vy;
         }
         if let Some(side) = self.steer {
@@ -561,12 +609,12 @@ impl Next {
                 } else {
                     -p.steer_accel
                 };
-                ball.vy = (ball.vy + slowed(accel, slow)).clamp(-steep, steep);
+                ball.vy = (ball.vy + slowed_extra(accel, bshift, bextra)).clamp(-steep, steep);
                 *dy = ball.vy;
             }
         }
-        *dx = slowed(*dx, slow);
-        *dy = slowed(*dy, slow);
+        *dx = slowed_extra(*dx, bshift, bextra);
+        *dy = slowed_extra(*dy, bshift, bextra);
         if self.slow.is_none() {
             self.slow_timer = self.slow_timer.saturating_sub(1);
         }
@@ -660,6 +708,41 @@ fn in_dash_span(c: &Capsule, pad: &Paddle, half: Fx) -> bool {
     x >= (pad.home_x.min(pad.fwd_x) - reach) >> 16 && x <= (pad.home_x.max(pad.fwd_x) + reach) >> 16
 }
 
+/// Genera una capsula dalla mezzeria diretta verso `side` nel primo posto libero (false se tutti
+/// occupati). Usata sia dal timer periodico sia dal doppio clic dell'ARCADE a riserva vuota.
+fn spawn_capsule_to(n: &mut Next, side: Side, p: &Params, rng: &mut crate::rng::Rng) -> bool {
+    let Some(slot) = n.capsules.iter_mut().find(|c| c.is_none()) else {
+        return false;
+    };
+    let half = p.capsule_half;
+    let (low, high) = (half + ONE, p.height - p.capsule_margin_top - half);
+    // un'estrazione a 16 bit: sotto `super_cut` SUPER, sotto `bullet_cut` BULLET,
+    // altrimenti uno dei bonus scelti (vedi `Params::super_cut`)
+    let roll = rng.bits16();
+    let bonus = if roll < p.super_cut {
+        Bonus::Super
+    } else if roll < p.bullet_cut {
+        Bonus::Bullet
+    } else {
+        n.players[side as usize].loadout[rng.below(LOADOUT_SIZE as u32) as usize]
+    };
+    let y = low + mul(high - low, rng.frac());
+    let vx = if side == Side::Left {
+        -p.capsule_speed
+    } else {
+        p.capsule_speed
+    };
+    *slot = Some(Capsule {
+        x: p.width / 2,
+        y,
+        vx,
+        vy: p.capsule_drift * rng.sign(),
+        bonus,
+    });
+    n.spawned += 1;
+    true
+}
+
 impl Match {
     /// Nuova partita NEXT a due giocatori con i bonus scelti da ciascuno.
     pub fn new_next(params: Params, loadouts: [[Bonus; LOADOUT_SIZE]; 2], seed: u32) -> Self {
@@ -710,6 +793,7 @@ impl Match {
         pl.ammo = if kind == PaddleKind::Blaster { self.params.blaster_shots } else { 0 };
         pl.gap = 0;
         pl.reload = 0;
+        pl.arcade_tap = 0;
     }
 
     /// OMEGA: la racchetta di `side` cambia forma a ogni punto dell'avversario (`omega_form`).
@@ -862,7 +946,24 @@ impl Match {
         if bullet_on && pl.selected_bonus() == Some(Bonus::Bullet) {
             return;
         }
-        let Some(bonus) = pl.take_selected() else { return };
+        let Some(bonus) = pl.take_selected() else {
+            // ARCADE: con la riserva vuota, doppio clic su USE chiama subito una capsula verso di
+            // sé (se non ne sta già arrivando una)
+            if pl.kind == Some(PaddleKind::Arcade) {
+                if pl.arcade_tap > 0 {
+                    pl.arcade_tap = 0;
+                    let coming = n.capsules.iter().any(|c| c.is_some_and(|c| c.toward() == side));
+                    if !coming && spawn_capsule_to(n, side, p, rng) {
+                        n.players[side as usize].cooldown = p.bonus_cooldown_ticks;
+                        events.add(Event::Collect);
+                    }
+                } else {
+                    pl.arcade_tap = p.arcade_tap_ticks;
+                }
+            }
+            return;
+        };
+        pl.arcade_tap = 0;
         pl.cooldown = pl.cooldown_ticks(p);
         events.add(Event::Activate);
         match bonus {
@@ -962,6 +1063,8 @@ impl Match {
         for pl in &mut n.players {
             pl.cooldown = pl.cooldown.saturating_sub(1);
             pl.gap = pl.gap.saturating_sub(1);
+            pl.laser_slow = pl.laser_slow.saturating_sub(1);
+            pl.arcade_tap = pl.arcade_tap.saturating_sub(1);
             // BLASTER: finita la ricarica il caricatore torna pieno
             if pl.reload > 0 {
                 pl.reload -= 1;
@@ -1006,7 +1109,7 @@ impl Match {
                 p.spawn_ticks
             };
             n.spawn_timer = base + rng.below(p.spawn_jitter);
-            if let Some(slot) = n.capsules.iter_mut().find(|c| c.is_none()) {
+            if n.capsules.iter().any(Option::is_none) {
                 let side = if arcade[0] != arcade[1] {
                     let fan = if arcade[0] { Side::Left } else { Side::Right };
                     if rng.below(3) < p.arcade_share {
@@ -1019,30 +1122,7 @@ impl Match {
                 } else {
                     Side::Right
                 };
-                // un'estrazione a 16 bit: sotto `super_cut` SUPER, sotto `bullet_cut` BULLET,
-                // altrimenti uno dei bonus scelti (vedi `Params::super_cut`)
-                let roll = rng.bits16();
-                let bonus = if roll < p.super_cut {
-                    Bonus::Super
-                } else if roll < p.bullet_cut {
-                    Bonus::Bullet
-                } else {
-                    n.players[side as usize].loadout[rng.below(LOADOUT_SIZE as u32) as usize]
-                };
-                let y = low + mul(high - low, rng.frac());
-                let vx = if side == Side::Left {
-                    -p.capsule_speed
-                } else {
-                    p.capsule_speed
-                };
-                *slot = Some(Capsule {
-                    x: p.width / 2,
-                    y,
-                    vx,
-                    vy: p.capsule_drift * rng.sign(),
-                    bonus,
-                });
-                n.spawned += 1;
+                spawn_capsule_to(n, side, p, rng);
             }
         }
 
@@ -1078,7 +1158,9 @@ impl Match {
         }
 
         // BLASTER: il colpo attraversa la palla, raccoglie la prima capsula che tocca (con la
-        // riserva piena la distrugge) e si ferma sulla racchetta avversaria o fuori dal campo
+        // riserva piena la distrugge) e si ferma sulla racchetta avversaria (rallentandola
+        // leggermente) o fuori dal campo
+        let mut hit_opp = [false; 2];
         for side in Side::BOTH {
             // BULLET: rallentano i colpi dell'avversario di chi l'ha attivato
             let slow = n.bullet_shift_for(side, p);
@@ -1108,9 +1190,17 @@ impl Match {
                     Side::Left => sx >= opp.left(),
                     Side::Right => sx <= opp.right(),
                 } && (sy - opp.y).abs() <= opp.height / 2 + p.blaster_band;
-                if stopped || sx < 0 || sx > p.width {
+                if stopped {
+                    hit_opp[side.opponent() as usize] = true;
+                    pl.shots[i] = None;
+                } else if sx < 0 || sx > p.width {
                     pl.shots[i] = None;
                 }
+            }
+        }
+        for (s, hit) in hit_opp.into_iter().enumerate() {
+            if hit {
+                n.players[s].laser_slow = p.blaster_slow_ticks;
             }
         }
     }
@@ -1140,9 +1230,10 @@ impl Match {
         }
         let pl = &mut n.players[side as usize];
         match pl.kind {
-            // la palla prende parte della velocità della racchetta, sempre entro i 45 gradi
+            // la palla prende parte della velocità della racchetta, fino a ~60 gradi (1,75 × |vx|)
             Some(PaddleKind::Twist) => {
-                let limit = b.vx.abs();
+                let abs_vx = b.vx.abs();
+                let limit = abs_vx + (abs_vx >> 1) + (abs_vx >> 2);
                 b.vy = (b.vy + mul(paddles[side as usize].motion, p.twist_transfer)).clamp(-limit, limit);
             }
             // un tiro più veloce, ma solo se la palla non ha già un boost (scatto) e non c'è SMASH o SUPER
@@ -1203,11 +1294,13 @@ impl Match {
             n.special_level = level;
             events.add(Event::SpecialHit);
         } else if pl.rise > 0 {
-            // parte orizzontale e s'impenna passati i 5/8 del campo (livello 1) o i 7/8 (livello
-            // 2), contati da chi ha colpito: vedi `ball_motion`
+            // parte orizzontale più veloce (x1,25 al livello 1, x1,5 al livello 2, così non
+            // rallenta mai azzerando vy) e s'impenna passati i 5/8 del campo (livello 1) o i 7/8
+            // (livello 2), contati da chi ha colpito: vedi `ball_motion`
             let level = core::mem::take(&mut pl.rise);
             b.vy = 0;
             raise_vx(b, side, p.super_min_vx_rise);
+            b.boost += b.boost >> (1 + (MAX_SPECIAL_LEVEL - level) as u32);
             let ahead = if level >= MAX_SPECIAL_LEVEL {
                 p.width - (p.width >> 3)
             } else {
@@ -1234,6 +1327,10 @@ impl Match {
             n.slow = None;
             if n.bullet_on {
                 n.end_bullet();
+            }
+            for pl in &mut n.players {
+                pl.laser_slow = 0;
+                pl.arcade_tap = 0;
             }
             if n.super_moves {
                 for pl in &mut n.players {

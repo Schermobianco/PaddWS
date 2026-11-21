@@ -471,7 +471,7 @@ colors:
     lda #13
     sta pr_col
     jsr pr_color_addr
-    lda egg_yel
+    lda #COL_YELLOW
     asl a
     asl a
     asl a

@@ -1141,54 +1141,8 @@ done:
     rts
 .endproc
 
-; Celle gialle sul nero ($70) dello schermo $C000 (i colori delle bitmap delle schermate dei
-; personaggi) nella riga A, dalla colonna X per Y celle: del colore di egg_yel (rosso con l'easter
-; egg). Le scritte; i ritratti tengono i loro colori, come sul PC.
-.proc egg_span
-    sty v_n
-    tay
-    txa
-    clc
-    adc row_lo,y
-    sta ptr
-    lda row_hi,y
-    adc #0
-    sta ptr+1
-    lda egg_yel
-    asl a
-    asl a
-    asl a
-    asl a
-    sta m_t
-    ldy v_n
-:   dey
-    bmi done
-    lda (ptr),y
-    cmp #COL_YELLOW << 4
-    bne :-
-    lda m_t
-    sta (ptr),y
-    bne :-                      ; (sempre: non è nero)
-done:
-    rts
-.endproc
-
-; Il colore A, con giallo e rosso scambiati se c'è l'easter egg (egg_check). Cambia solo A.
-.proc egg_color
-    cmp #COL_RED
-    beq :+
-    cmp #COL_YELLOW
-    bne :++
-:   eor egg_x
-:   rts
-.endproc
-
-; Colore A per v_n celle dalla colonna Y della riga X. Con l'easter egg (egg_check) giallo e rosso
-; si scambiano qui, per tutte le scritte.
+; Colore A per v_n celle dalla colonna Y della riga X.
 color_span:
-    jsr egg_color
-; Lo stesso con il colore già scambiato (egg_yel, egg_red): i titoli di coda del finale, che
-; scrivono i colori davanti al raster.
 .proc color_span_raw
     pha
     lda row_lo,x
@@ -1323,7 +1277,7 @@ slot:
     cmp hud_res,y
     beq :+
     sty m_lo
-    jsr frame_late_small        ; frame già avanti: il posto al prossimo
+    jsr frame_late_hud          ; frame già avanti: il posto al prossimo (su NTSC soglia leggera)
     bcs :+
     ldy m_lo
     lda m_t
@@ -1479,13 +1433,10 @@ empty_tmp = m_p                 ; quattro caratteri del posto vuoto (m_p non ser
     sta bar_flash
     sta bar_flash+1
     sta sv_n                    ; nessun colpo a schermo
-    sta lb_frames               ; nessuna scritta, nessun segno di STEER
-    sta mv_st                   ; (nemmeno delle mosse speciali)
+    sta mv_st                   ; nessuna scritta delle mosse speciali, nessun segno di STEER
     sta mv_st+1
     sta st_drawn
     sta bl_on                   ; schermo nuovo: mezzeria e punteggi bianchi
-    sta lb_prev
-    sta lb_prev+1
     sta fx_pages                ; immagini degli effetti da copiare (la bitmap è cambiata)
     sta tr_ready                ; e la coda da ridisegnare
     sta pp_side                 ; e le immagini delle racchette
@@ -1553,10 +1504,7 @@ colors:
     sbc #HW_BITMAP              ; (C = 1)
     pha
     clc
-    ldx egg_x
-    beq :+
-    adc #4                      ; (C = 0)
-:   adc #$80                    ; (C = 0)
+    adc #$80                    ; (C = 0)
     sta ef_src+2
     pla
     clc
@@ -1763,7 +1711,7 @@ row:
     lda m_lo
     and #%010101
     beq :+
-    ldx egg_yel
+    ldx #COL_YELLOW
 :   txa
     sta (ptr),y
     dey
@@ -1795,11 +1743,11 @@ bar_cols: .byte 0, 38           ; colonne della barriera (pixel 7-8 e 311-312)
 
 ; ------------------------------------------------------------------------------------ BLASTER
 
-; Colpi del BLASTER: due tratti gialli di 7 pixel, 2 sopra e 2 sotto la riga del colpo, come sul
-; MiSTer; in caratteri (gli sprite sono finiti), a passi di 2 pixel e sulla riga di caratteri più
-; vicina. Si disegnano a inizio frame, nel vblank, rimettendo prima quello che c'era sotto quelli
-; del frame prima. Chi scrive sul campo cancella prima i colpi (shots_erase).
-SHOT_MAX_CELLS = 4 * MAX_SHOTS   ; fino a due celle per colpo, tutti e due i giocatori
+; Colpi del BLASTER: due fasci laser verdi paralleli all'altezza dei due cannoni alari (±11 px dal
+; centro della racchetta), in caratteri a passi di 2 pixel. Si disegnano a inizio frame, nel vblank,
+; rimettendo prima quello che c'era sotto quelli del frame prima. Chi scrive sul campo cancella
+; prima i colpi (shots_erase).
+SHOT_MAX_CELLS = 8 * MAX_SHOTS   ; fino a due celle x due fasci per colpo, tutti e due i giocatori
 
 .proc next_shots
     ; fuori dalla partita lo schermo è già un altro: i colpi si dimenticano
@@ -1811,6 +1759,15 @@ SHOT_MAX_CELLS = 4 * MAX_SHOTS   ; fino a due celle per colpo, tutti e due i gio
     jsr shots_erase
     lda m_next
     jeq done
+    lda shot_on
+    ora shot_on+1
+    ora shot_on+2
+    ora shot_on+3
+    ora shot_on+4
+    ora shot_on+5
+    ora shot_on+6
+    ora shot_on+7
+    jeq done
     ldy #0
 shot:
     lda shot_on,y
@@ -1820,19 +1777,6 @@ shot:
     asl a
     asl a
     tax                         ; X = posto * 4
-    ; riga: (200 - y - 3) / 8, solo sotto le riserve e i punteggi
-    lda #<((P_HEIGHT >> 16) - 3)
-    sec
-    sbc shot_y+2,x
-    bcc skip
-    lsr a
-    lsr a
-    lsr a
-    cmp #4
-    bcc skip
-    cmp #25
-    bcs skip
-    sta v_row
     ; colonna e fase: x0 = int(x) - 3, colonna x0 / 8, fase x0 & 6
     lda shot_x+2,x
     sec
@@ -1849,33 +1793,28 @@ shot:
     sta v_col
     cmp #40
     bcs skip
-    ; la cella: schermo in ptr, colore in m_a (pagina zero libera a inizio frame)
-    ldy v_row
-    lda row_lo,y
-    clc
-    adc v_col
-    sta ptr
-    sta m_a
-    lda row_hi,y
-    adc #0
-    sta ptr+1
-    adc #>($d800 - SCREEN)      ; (C = 0: SCREEN + 1.000 non passa $FFFF)
-    sta m_a+1
     lda v_n
     and #6
-    sta m_t                     ; fase * 2 = indice in shot_chars
-    tax
-    lda shot_chars,x
-    ldy #0
-    jsr shot_cell
-    ldx m_t
-    lda shot_chars+1,x
-    beq skip                    ; fase 0: tutto nel primo carattere
-    ldy v_col
-    cpy #39
-    bcs skip
-    ldy #1                      ; la cella a destra
-    jsr shot_cell
+    tay                         ; fase * 2 = indice in shot_chars
+    lda shot_chars,y
+    sta ns_c0
+    lda shot_chars+1,y
+    sta ns_c1
+    lda shot_y+2,x
+    sta v_row
+    ; fascio dal cannone superiore (y_schermo = 200 - y - 11)
+    lda #<((P_HEIGHT >> 16) - 11)
+    sec
+    sbc v_row
+    bcc bot
+    jsr shot_beam
+bot:
+    ; fascio dal cannone inferiore (y_schermo = 200 - y + 11)
+    lda #<((P_HEIGHT >> 16) + 11)
+    sec
+    sbc v_row
+    bcc skip
+    jsr shot_beam
 skip:
     ldy ns_k
 next:
@@ -1890,14 +1829,50 @@ leave:
     rts
 .endproc
 
+; Disegna un fascio laser alla riga schermo A (solo sotto le riserve e i punteggi, righe 4..24),
+; colonna v_col e caratteri ns_c0 / ns_c1.
+.proc shot_beam
+    lsr a
+    lsr a
+    lsr a
+    cmp #4
+    bcc done
+    cmp #25
+    bcs done
+    tay
+    lda row_lo,y
+    clc
+    adc v_col
+    sta ptr
+    sta m_a
+    lda row_hi,y
+    adc #0
+    sta ptr+1
+    ora #$18                    ; $C0..$C3 -> $D8..$DB (Color RAM)
+    sta m_a+1
+    ldx sv_n
+    lda ns_c0
+    ldy #0
+    jsr shot_cell
+    lda ns_c1
+    beq save                    ; fase 0: tutto nel primo carattere
+    ldy v_col
+    cpy #39
+    bcs save
+    ldy #1                      ; la cella a destra
+    jsr shot_cell
+save:
+    stx sv_n
+done:
+    rts
+.endproc
+
 shot_chars: .byte SHOT_CHARS
 
-; Carattere A del colpo, giallo, nella cella ptr + Y (colore in m_a + Y), salvando quello che c'è.
+; Carattere A del colpo (fascio laser verde), nella cella ptr + Y (colore in m_a + Y), salvando
+; quello che c'è all'indice X (incrementato).
 .proc shot_cell
     sta m_lo
-    ldx sv_n
-    cpx #SHOT_MAX_CELLS
-    bcs full
     tya
     clc
     adc ptr
@@ -1912,10 +1887,9 @@ shot_chars: .byte SHOT_CHARS
     lda (m_a),y
     and #$0f                    ; il nibble alto della RAM del colore non esiste
     sta sv_col,x
-    lda egg_yel
+    lda #COL_GREEN
     sta (m_a),y
-    inc sv_n
-full:
+    inx
     rts
 .endproc
 
@@ -1923,17 +1897,16 @@ full:
 .proc shots_erase
     ldx sv_n
     beq done
+    ldy #0
 :   dex
     lda sv_lo,x
     sta ptr
     lda sv_hi,x
     sta ptr+1
-    ldy #0
     lda sv_ch,x
     sta (ptr),y
     lda ptr+1
-    clc
-    adc #>($d800 - SCREEN)
+    ora #$18                    ; $C0..$C3 -> $D8..$DB
     sta ptr+1
     lda sv_col,x
     sta (ptr),y
@@ -1949,6 +1922,9 @@ bar_shown: .res 2               ; settori del muro a schermo
 bar_prev:  .res 2               ; settori in piedi al frame prima
 bar_flash: .res 2               ; frame di lampeggio rimasti
 bar_fbit:  .res 2               ; e settore che lampeggia
+.segment "BSS"
+ns_c0:     .res 1               ; caratteri del colpo corrente (fase * 2 e + 1)
+ns_c1:     .res 1
 sv_n:      .res 1               ; celle dei colpi a schermo
 sv_lo:     .res SHOT_MAX_CELLS
 sv_hi:     .res SHOT_MAX_CELLS
@@ -1958,88 +1934,15 @@ sv_col:    .res SHOT_MAX_CELLS
 
 ; ------------------------------------------------------------------------------------ effetti
 
-LABEL_ROW    = 23               ; scritta del bonus attivato, in basso
-LABEL_FRAMES = (60 * TV_HZ + 25) / 50 ; 1,2 secondi
-; accensione e spegnimento da vecchio televisore (next_ui.rs, CRT_STEP e CRT_DOT a 50 Hz), al
-; frame e = 0..LABEL_FRAMES - 2 (label_step): una riga bianca (CH_GRID_T) che si allarga dal centro
-; in LB_OPEN frame, LB_BLOCK frame di blocchi pieni (la fascia che si apre), la scritta; alla fine
-; LB_BLOCK frame di blocchi, la riga che si stringe in LB_OPEN, un trattino al centro per LB_DOT
-LB_OPEN   = 4
-LB_BLOCK  = 2
-LB_DOT    = 3
-LB_CLOSE  = LABEL_FRAMES - 1 - LB_DOT - LB_OPEN - LB_BLOCK
-LB_TEXT   = 5                   ; passi a schermo (lb_key): 0-3 la riga, 4 i blocchi, 5 la
-LB_BLOCKS = 4                   ; scritta, 6 il trattino
-LB_DASH   = 6
-
-; Dopo il tick della partita: scritta "P1 SMASH!" del bonus attivato (chi ha una capsula in meno
-; nella riserva; il bonus è quello armato, o SLOW e BULLET che non restano armati: il BULLET si
-; riconosce da chi lo ha da questo tick, come sul PC), segni di STEER in cima e in fondo dove
-; finisce la guida e i colori del bullet time.
+; Dopo il tick della partita: colori del bullet time, scritte delle mosse speciali, rete
+; dell'avversario e segni di STEER in cima e in fondo dove finisce la guida.
 .proc next_fx_scene
     lda m_next
     bne :+
     rts
 :   jsr bullet_look
-    lda events
-    and #EV_ACTIVATE
-    beq timer
-    ldx #0
-    jsr res_count
-    ldy #0
-    cmp lb_prev
-    bcc :+
-    ldy #4
-:   lda #B_BULLET
-    ldx nx_bside
-    cpx lb_bprev
-    beq :+
-    cpy nx_bside
-    beq bonus
-:   lda nx_armed,y
-    cmp #B_NONE
-    bne bonus
-    lda #B_SLOW
-bonus:
-    pha                         ; bonus e giocatore
-    tya
-    pha
-    lda lb_frames
-    beq :+
-    jsr label_erase             ; la scritta di prima
-:   pla
-    sta lb_player
-    pla
-    sta lb_bonus
-    jsr label_layout
-    lda #LABEL_FRAMES           ; si accende dal prossimo frame (label_step)
-    sta lb_frames
-    lda #0
-    sta lb_wait
-    lda #$ff
-    sta lb_key
-    bne mark
-timer:
-    lda lb_frames
-    beq mark
-    dec lb_frames
-    bne :+
-    jsr label_erase
-    jmp mark
-:   jsr label_step
-mark:
     jsr sm_labels               ; le scritte delle mosse speciali
     jsr net_tick                ; la rete dell'avversario
-counts:
-    ; riserve dopo il tick, per il confronto del prossimo
-    ldx #0
-    jsr res_count
-    sta lb_prev
-    ldx #4
-    jsr res_count
-    sta lb_prev+1
-    lda nx_bside
-    sta lb_bprev
     ; STEER: 1 + lato di chi guida, 0 senza guida
     lda #0
     ldx nx_steer
@@ -2175,7 +2078,7 @@ mark:
     clc
     adc #>($d800 - SCREEN)
     sta ptr+1
-    lda egg_yel
+    lda #COL_YELLOW
     sta (ptr),y
     dey
     sta (ptr),y
@@ -2188,230 +2091,7 @@ erase:
     rts
 .endproc
 
-; Colonna e lunghezza della scritta "P1 SMASH!" (dal bonus lb_bonus, fino al primo spazio).
-.proc label_layout
-    lda lb_bonus
-    asl a
-    tay
-    lda bonus_names,y
-    sta ptr2
-    lda bonus_names+1,y
-    sta ptr2+1
-    ldy #0
-:   lda (ptr2),y
-    beq :+
-    cmp #' '
-    beq :+
-    iny
-    cpy #8
-    bne :-
-:   sty lb_nlen
-    tya
-    clc
-    adc #4                      ; "P1 " + nome + "!"
-    sta lb_len
-    lsr a
-    eor #$ff
-    sec
-    adc #20
-    sta lb_col
-    rts
-.endproc
-
-; La scritta "P1 SMASH!", gialla.
-.proc label_draw
-    jsr shots_erase
-    jsr label_layout
-    ; P1 / P2
-    lda lb_player
-    beq :+
-    lda #<s_p2
-    ldy #>s_p2
-    jmp :++
-:   lda #<s_p1
-    ldy #>s_p1
-:   sta ptr2
-    sty ptr2+1
-    ldx lb_col
-    ldy #LABEL_ROW
-    jsr print_str               ; X avanza oltre "P1 "
-    stx v_col
-    lda lb_bonus
-    asl a
-    tay
-    lda bonus_names,y
-    sta ptr2
-    lda bonus_names+1,y
-    sta ptr2+1
-    lda #LABEL_ROW
-    sta v_row
-    ldy #0
-:   cpy lb_nlen
-    beq :+
-    lda (ptr2),y
-    sty v_n
-    ldx v_col
-    jsr put_ascii
-    inc v_col
-    ldy v_n
-    iny
-    bne :-
-:   lda #'!'
-    ldx v_col
-    jsr put_ascii
-    lda lb_len
-    sta v_n
-    ldy lb_col
-    ldx #LABEL_ROW
-    lda #COL_YELLOW
-    jmp color_span
-.endproc
-
-; Un passo della scritta del bonus (vedi LB_OPEN), solo quando cambia e se il frame ha tempo;
-; altrimenti lb_frames torna indietro di uno e il passo si ritenta al prossimo frame, per al più
-; LB_WAIT frame di fila (in partita molti frame arrivano qui tardi: saltando subito i passi, la
-; scritta compariva già piena; aspettando sempre, con il BULLET restava ferma a metà).
-LB_WAIT = 3
-.proc label_step
-    lda lb_frames               ; e = LABEL_FRAMES - 1 - lb_frames (0..58)
-    eor #$ff
-    sec
-    adc #LABEL_FRAMES - 1
-    cmp #LB_OPEN                ; la riga che si allarga: passo e
-    bcc got
-    cmp #LB_OPEN + LB_BLOCK
-    bcc blocks
-    cmp #LB_CLOSE
-    bcc text
-    cmp #LB_CLOSE + LB_BLOCK
-    bcc blocks
-    cmp #LB_CLOSE + LB_BLOCK + LB_OPEN
-    bcs dash
-    sbc #LB_CLOSE + LB_BLOCK - 1    ; (C = 0) la riga che si stringe: passo 3 .. 0
-    eor #3
-    bpl got                     ; (sempre)
-blocks:
-    lda #LB_BLOCKS
-    bne got
-text:
-    lda #LB_TEXT
-    bne got
-dash:
-    lda #LB_DASH
-got:
-    cmp lb_key
-    beq done
-    pha
-    cmp #LB_TEXT                ; prima ci sono ancora sprite, riserve e SID: la scritta con
-    beq big                     ; frame_late, riga, blocchi e trattino (poche celle uguali) fino a
-    jsr frame_late_small        ; dove arrivano le riserve
-    jmp :+
-big:
-    jsr frame_late
-:   pla
-    bcs late
-    ldx #0
-    stx lb_wait
-    sta lb_key
-    cmp #LB_TEXT
-    bne :+
-    jmp label_draw
-:   pha
-    jsr label_erase             ; vuota, con la mezzeria
-    pla
-    cmp #LB_BLOCKS
-    beq block
-    bcs one
-    ; la riga: (passo + 1) * lunghezza / 4 celle, arrotondate in su
-    tax
-    inx
-    lda #3
-:   clc
-    adc lb_len
-    dex
-    bne :-
-    lsr a
-    lsr a
-    ldx #CH_GRID_T
-    bne run
-block:
-    lda lb_len
-    ldx #CH_SOLID
-    bne run
-one:
-    lda #1
-    ldx font_map + '-' - 32
-run:
-    ; A celle del carattere X al centro della scritta, bianche
-    stx m_t
-    sta v_n
-    lda lb_len
-    sec
-    sbc v_n
-    lsr a
-    clc
-    adc lb_col
-    tay
-    ldx v_n
-:   lda m_t
-    sta SCREEN + LABEL_ROW * 40,y
-    lda #COL_WHITE
-    sta $d800 + LABEL_ROW * 40,y
-    iny
-    dex
-    bne :-
-    rts
-late:
-    lda lb_wait                 ; il conto della scritta aspetta al più LB_WAIT frame, poi va
-    cmp #LB_WAIT                ; avanti (nei frame sempre pesanti i passi si saltano)
-    bcs done
-    inc lb_wait
-    inc lb_frames
-done:
-    rts
-.endproc
-
-; Toglie la scritta e rimette la mezzeria.
-.proc label_erase
-    jsr shots_erase
-    ldy #LABEL_ROW
-    lda row_lo,y
-    clc
-    adc lb_col
-    sta ptr
-    lda row_hi,y
-    adc #0
-    sta ptr+1
-    ldy lb_len
-    lda #CH_BLANK
-:   dey
-    sta (ptr),y
-    bne :-
-    lda lb_len
-    sta v_n
-    ldy lb_col
-    ldx #LABEL_ROW
-    lda bl_on                   ; la mezzeria del colore che ha (grigia nel bullet time)
-    tax
-    lda look_color,x
-    ldx #LABEL_ROW
-    jsr color_span
-    lda #LABEL_ROW
-    sta v_row
-    jmp center_line_row
-.endproc
-
 .segment "NEXTBSS"
-lb_prev:   .res 2               ; bonus nella riserva dopo il tick prima
-lb_bprev:  .res 1               ; e chi aveva il BULLET (nx_bside)
-lb_bonus:  .res 1
-lb_player: .res 1               ; 0 sinistro, 4 destro
-lb_frames: .res 1               ; frame rimasti della scritta
-lb_key:    .res 1               ; il suo passo a schermo (label_step; $ff nessuno)
-lb_wait:   .res 1               ; frame di fila che il passo ha aspettato (label_step)
-lb_nlen:   .res 1
-lb_len:    .res 1
-lb_col:    .res 1
 st_drawn:  .res 1               ; segni di STEER a schermo: 0, o 1 + lato di chi guida
 bl_on:     .res 1               ; colori del bullet time a schermo
 .segment "CODE"
@@ -2475,7 +2155,7 @@ place:
     clc
     adc pi_side
     sta sh_ptr+SPN_PAD,y
-    lda #COL_WHITE
+    lda kind_col,x
     sta sh_col+SPN_PAD,y
     lda bit_of+SPN_PAD,y
     ora sh_enable
@@ -2517,7 +2197,7 @@ done:
     .byte ((h4 >> 16) + 1) / 2, ((h5 >> 16) + 1) / 2, ((h6 >> 16) + 1) / 2, ((h7 >> 16) + 1) / 2
 .endmacro
 pv_rows: pv_rows_of T_KIND_H
-pv_var:  .byte 0, 0, 0, 3 + 3, P_BLASTER_SHOTS * 32, 0, 0, 0
+pv_var:  .byte 0, 0, 0, 3 + 3, BLASTER_VIS * 32, 0, 0, 0
 pv_x:    .byte SPR_X0 + 14 * 8 + 4 - 12, SPR_X0 + 25 * 8 + 4 - 12
 .assert SPR_X0 + 25 * 8 + 4 - 12 < 256, error, "anteprime: bit alto della x"
 .segment "NEXTBSS"

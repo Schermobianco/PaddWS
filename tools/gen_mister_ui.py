@@ -262,11 +262,14 @@ def paddle_images(gfx: Gfx) -> list[str]:
             h = heights[k]
             px = ps.render(k, h, tilt=3 if preview and k == ps.TWIST else 0, pw=pw)
             if preview and k == ps.RUSH:
-                # immagini dello scatto dietro, come la scelta del PC (sotto la racchetta)
+                # immagini dello scatto dietro, come la scelta del PC (sotto l'intercettore), con le ali
                 for g, role in ((1, ps.GHOST1), (2, ps.GHOST2), (3, ps.GHOST3)):
                     u0 = -3 - 2 * pw * (4 - g)
                     for u in range(u0, u0 + pw):
                         for v in range(h):
+                            px.setdefault((u, v), role)
+                    for u in range(u0 - 6, u0):
+                        for v in (0, 1, 2, h - 3, h - 2, h - 1):
                             px.setdefault((u, v), role)
             u0, u1 = min(p[0] for p in px), max(p[0] for p in px) + 1
             v0, v1 = min(p[1] for p in px), max(p[1] for p in px) + 1
@@ -287,9 +290,9 @@ def paddle_images(gfx: Gfx) -> list[str]:
     for i in range(0, len(colors), 8):
         out.append("        " + " ".join(f"0x{r:02X}{g:02X}{b:02X}," for r, g, b in colors[i:i + 8]))
     out.append("    ];")
-    # corpo di OMEGA: rosso, viola con l'easter egg; e il suo tono in ombra
-    omega = [(0xE6, 0x28, 0x28), (0xA0, 0x40, 0xE0)]
-    out.append("    /// Corpo e corpo in ombra di OMEGA (valori 1 e 2): rosso, e viola con l'easter egg.")
+    # corpo di OMEGA: viola (anche con l'easter egg RED) e il suo tono in ombra
+    omega = [(0xA0, 0x40, 0xE0), (0xA0, 0x40, 0xE0)]
+    out.append("    /// Corpo e corpo in ombra di OMEGA (valori 1 e 2): viola (anche con l'easter egg).")
     out.append("    pub const OMEGA_BODY: [[u32; 2]; 2] = [")
     for c in omega:
         s = ps.body_shade(c)
@@ -482,6 +485,65 @@ def portrait_assets(gfx: Gfx) -> list[str]:
     return out
 
 
+SHIPS_DIR = ROOT / "assets" / "ships"
+SHIP_W, SHIP_H = 160, 90
+
+
+def ship_assets(gfx: Gfx) -> list[str]:
+    """Illustrazioni isometriche delle astronavi (assets/ships/*.png, 160x90 a 4 bit per pixel):
+    indice 0 trasparente (sfondo nero), 1..15 i 15 colori principali di ciascuna nave; righe
+    impaccate (20 parole per riga, usate con ltrow nella schermata THE END)."""
+    row_words_set = set()
+    pals = []
+    for n in KINDS:
+        src = Image.open(SHIPS_DIR / f"{n}.png").convert("RGB")
+        # campionamento nativo 5:1 (224x126), poi riduzione pulita a 160x90
+        nat = src.resize((src.width // 5, src.height // 5), Image.NEAREST)
+        small = nat.resize((SHIP_W, SHIP_H), Image.NEAREST)
+        px_rgb = list(small.getdata())
+        counts: dict[tuple[int, int, int], int] = {}
+        for c in px_rgb:
+            if c != (0, 0, 0):
+                counts[c] = counts.get(c, 0) + 1
+        # fino a 15 colori più frequenti (quasi tutte le navi ne hanno 14-16 non neri)
+        top = [c for c, _ in sorted(counts.items(), key=lambda kv: -kv[1])[:15]]
+        while len(top) < 15:
+            top.append((0, 0, 0))
+
+        def nearest(c: tuple[int, int, int]) -> int:
+            if c == (0, 0, 0):
+                return 0
+            best_i, best_d = 1, 10**9
+            for idx, tc in enumerate(top, start=1):
+                d = (c[0] - tc[0]) ** 2 + (c[1] - tc[1]) ** 2 + (c[2] - tc[2]) ** 2
+                if d < best_d:
+                    best_d, best_i = d, idx
+            return best_i
+
+        cache = {c: nearest(c) for c in counts}
+        grid = [[0 if small.getpixel((x, y)) == (0, 0, 0) else cache[small.getpixel((x, y))]
+                 for x in range(SHIP_W)] for y in range(SHIP_H)]
+        row_words_set.add(gfx.add_packed(f"ship_{n}", grid, 4))
+        pals.append("[" + ", ".join(f"0x{r:02X}{g:02X}{b:02X}" for r, g, b in top) + "]")
+    assert len(row_words_set) == 1
+    assert len(gfx.words) <= 0xC000, f"ROM grafica oltre 0xC000 ({len(gfx.words)} parole)"
+    out = [
+        "",
+        "/// Illustrazioni isometriche delle astronavi (assets/ships/*.png, 160x90 a 4 bpp) per THE END.",
+        "pub mod ships {",
+        "    use crate::Img;",
+        "    use crate::assets::*;",
+        "    pub const ART: [Img; 7] = [" + ", ".join(rust_name(f"ship_{n}") for n in KINDS) + "];",
+        f"    pub const ROW_WORDS: i32 = {row_words_set.pop()};",
+        "    /// Tavolozza 1..=15 di ciascuna astronave (caricata in pal::SHIP durante THE END).",
+        "    pub const PAL: [[u32; 15]; 7] = [",
+        *[f"        {p}," for p in pals],
+        "    ];",
+        "}",
+    ]
+    return out
+
+
 def rust_name(name: str) -> str:
 
     return "IMG_" + name.upper()
@@ -515,6 +577,7 @@ def main() -> None:
     howto = howto_assets(gfx)
     ending = ending_assets(gfx)
     portraits = portrait_assets(gfx)
+    ships = ship_assets(gfx)
 
     OUT.mkdir(parents=True, exist_ok=True)
     font_rom = [glyphs[c][y] if i < len(CHARS) else 0 for i, c in enumerate(CHARS + "\0" * (256 - len(CHARS)))
@@ -571,6 +634,7 @@ def main() -> None:
     lines += paddles
     lines += ending
     lines += portraits
+    lines += ships
     lines.append("/// Icone 9x9 dei bonus (codici dei bonus).")
     lines.append("pub const IMG_ICON: [Img; 8] = [" + ", ".join(rust_name(f"icon_{b}") for b in range(8)) + "];")
     lines.append("/// Nomi disegnati degli avversari (PaddleKind).")

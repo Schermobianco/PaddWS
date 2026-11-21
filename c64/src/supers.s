@@ -581,7 +581,7 @@ put:
     ldx mv_shown
     cpx mv_n
     bcc color
-:   lda egg_yel
+:   lda #COL_YELLOW
     ldx mv_k
     cpx mv_lit
     bcc color
@@ -612,7 +612,7 @@ mv_hcol: .byte COL_WHITE, COL_WHITE, COL_YELLOW, COL_YELLOW, COL_WHITE
 .proc mv_color
     cmp #COL_YELLOW
     bne :+
-    lda egg_yel
+    lda #COL_YELLOW
 :   rts
 .endproc
 
@@ -738,7 +738,7 @@ done:
     clc
     adc #SM_ICON0 - SP_ICON0
     pha
-    lda egg_yel
+    lda #COL_YELLOW
     sta m_t
     pla
     sec
@@ -822,31 +822,27 @@ done:
     sta sm_fxp
     jsr sm_floor
     cpy #3
-    bcs rise
+    bcc boost
+    tya                         ; RISING STRIKE: 3-4; a sinistra 1-2 (cpx: C = 1)
+    cpx #0
+    bne :+
+    sbc #2
+:   sta sm_rise
+boost:
     mov32 n_t, ball_boost
-    tya
-    eor #$ff
-    sec
-    adc #P_SUPER_STRAIGHT_SHIFT + MAX_LEVEL
-    tay
+    ldx boost_shift-1,y
     beq add
-:   lsr n_t+3                   ; il boost è positivo
+:   lsr n_t+3                   ; il boost è positivo (STRAIGHT: x1,5 / x2; RISE: x1,25 / x1,5)
     ror n_t+2
     ror n_t+1
     ror n_t
-    dey
+    dex
     bne :-
 add:
     add32 ball_boost, ball_boost, n_t
 done:
     rts
-rise:
-    tya                         ; 3-4; a sinistra 1-2 (cpx: C = 1)
-    cpx #0
-    bne :+
-    sbc #2
-:   sta sm_rise
-    rts
+boost_shift: .byte P_SUPER_STRAIGHT_SHIFT + 1, P_SUPER_STRAIGHT_SHIFT, 2, 1
 flight_of: .byte 1, 1 + 4, 2, 2 + 4
 .endproc
 
@@ -1083,7 +1079,7 @@ no: lda #0
 .endif
     lda sm_fl                   ; tiro della mossa: palla gialla, bianca a lampi all'impennata
     beq pads
-    ldx egg_yel
+    ldx #COL_YELLOW
     lda sm_flash
     beq :+
     dec sm_flash
@@ -1139,7 +1135,7 @@ pad:
     lsr a
     lsr a
     tax
-    lda egg_yel
+    lda #COL_YELLOW
     sta sh_col + SPN_PAD,x
 :   rts
 .endproc
@@ -1185,7 +1181,7 @@ cell:
     cmp sector,x
     lda #COL_GRAY
     bcc :+
-    lda egg_yel
+    lda #COL_YELLOW
 :   sta $d800 + 40 * BAR_ROW,y
     iny
     inx

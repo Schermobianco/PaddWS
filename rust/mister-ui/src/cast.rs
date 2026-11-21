@@ -128,6 +128,19 @@ pub fn plain_paddle(d: &mut Dl, kind: u32, cx: i32, cy: i32, right: bool, omega:
     pad_image(d, &pads::PLAIN, kind, cx, cy, right, if omega { PADS_OMEGA } else { PADS });
 }
 
+/// Racchetta del tipo `kind` allungata orizzontalmente di `1 << sx` (`0=1x, 1=2x, 2=4x`) centrata
+/// in `(cx, cy)`: usata nello scatto iperspaziale del finale.
+#[inline(never)]
+pub fn paddle_warp(d: &mut Dl, kind: u32, cx: i32, cy: i32, right: bool, sx: u32) {
+    let (img, _t0, r0) = &pads::PLAIN[kind as usize];
+    let w = (img.w as i32) << sx;
+    let mut o = d.img_obj(cx - w / 2, cy - (KIND_H[kind as usize] >> 1) + r0, img, PADS);
+    o.w = w;
+    o.sx = sx;
+    o.fx = !right;
+    d.push(&o);
+}
+
 /// Immagine della racchetta `kind` di `set` (colonna t = 0 al retro del corpo, specchiata se è
 /// rivolta a sinistra) centrata in (cx, cy), con la tavolozza da `base`.
 fn pad_image(d: &mut Dl, set: &[(Img, i32, i32); 7], kind: u32, cx: i32, cy: i32, right: bool, base: u8) {

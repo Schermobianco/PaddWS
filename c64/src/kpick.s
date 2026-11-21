@@ -139,8 +139,12 @@ done:
 
 ; Secondi rimasti: draw_secs (pick.s) scrive le cifre del punteggio, 3x3 caratteri, nello schermo
 ; di testo, che qui sono i colori della bitmap; quando cambiano, i loro glifi vanno nella bitmap e i
-; colori tornano bianchi.
+; colori tornano bianchi. Se kp_job ha già occupato il frame, rimanda di un frame (20 ms).
+KP_SECS_LATE = (TV_BUDGET - 8500) / TV_LCYC
 .proc kp_secs
+    lda #KP_SECS_LATE
+    jsr frame_after
+    bcs done
     lda pk_secs
     pha
     jsr draw_secs
@@ -345,19 +349,6 @@ side:
 :   ldx kp_x
     dex
     bpl side
-    ; scritte gialle: rosse con l'easter egg (titolo, OK, READY!)
-    ldy #40
-    lda #0
-    tax
-    jsr egg_span
-    ldy #40
-    lda #KP_LABEL_ROW
-    ldx #0
-    jsr egg_span
-    ldy #40
-    lda #KP_HINT_ROW
-    ldx #0
-    jsr egg_span
     lda #3                      ; i due pannelli (kp_job) e gli OK
     sta pk_dirty
     jsr kp_dirty
@@ -680,7 +671,7 @@ spr_xy:
     txa
 place:
     sta sh_x,y
-    lda egg_yel                 ; (rosso con l'easter egg)
+    lda #COL_YELLOW                 ; (rosso con l'easter egg)
     sta sh_col,y
     lda bit_of,y
     ora sh_enable

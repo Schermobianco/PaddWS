@@ -271,6 +271,19 @@ player:
     lda #IN_FORWARD
 :   ora #IN_OFFSET
     sta in_flags,x
+    ; BLASTER: tenendo premuto il pulsante del paddle continua a sparare
+    lda m_next
+    beq pad_done
+    lda nx_kind,x
+    cmp #K_BLASTER
+    bne pad_done
+    lda btn_prev
+    and away,y                  ; P1: JOY_LEFT, P2: JOY_RIGHT
+    beq pad_done
+    lda in_flags,x
+    ora #IN_FIRE
+    sta in_flags,x
+pad_done:
     jmp next
 joystick:
     ; direzione: su +1, giù -1
@@ -349,7 +362,19 @@ forward:
     ora #IN_FORWARD
     sta m_t
 flags:
+    ; BLASTER: tenendo il joystick verso l'avversario continua a sparare
+    lda m_next
+    beq :+
+    lda nx_kind,x
+    cmp #K_BLASTER
+    bne :+
+    lda joy,y
+    and toward,y
+    beq :+
     lda m_t
+    ora #IN_FIRE
+    sta m_t
+:   lda m_t
     sta in_flags,x
 next:
     iny

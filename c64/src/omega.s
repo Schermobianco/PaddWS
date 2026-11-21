@@ -149,18 +149,20 @@ done:
 .endproc
 .endif
 
-; Colore della racchetta X (da video.s, al posto del bianco di sempre): quella di OMEGA rossa, viola
-; con l'easter egg RED (il rosso diventa giallo), bianca nel lampo della trasformazione. Y resta.
+; Colore dedicato della racchetta del giocatore X (0 o 4): colore del tipo (kind_col), oppure
+; viola per OMEGA (bianco nel lampo della trasformazione). Y resta.
 .proc om_white
-    lda #COL_WHITE
     cpx nx_morph
-    bne done
+    bne normal
+    lda #COL_WHITE
     ldx om_flash
     bne done
-    lda #COL_RED
-    ldx egg_x
-    beq done
     lda #COL_PURPLE
+    rts
+normal:
+    lda nx_kind,x
+    tax
+    lda kind_col,x
 done:
     rts
 .endproc
@@ -409,7 +411,6 @@ cell:
     adc nm_cn
     tay
     lda (ptr2),y
-    jsr egg_color
     ldy nm_y
     sta (m_a),y
 next:
