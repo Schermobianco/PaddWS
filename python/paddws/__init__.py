@@ -1,3 +1,3 @@
 """PADD WS - Pong da tavolo a due giocatori per desktop e cabinati Raspberry Pi."""
 
-__version__ = "4.6.0-dev"
+__version__ = "4.6.0"
