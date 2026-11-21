@@ -3,6 +3,7 @@ use paddws_core::{
     Bonus, Capsule, Event, Fx, GUARDIAN_SECTORS, GUARDIAN_WALL, Input, Match, PaddleKind, Params, PlayerInput, Side,
     SuperAnim, TICK_HZ, Tuning, guardian_sector,
 };
+use paddws_core::Cpu;
 
 const LOADOUTS: [[Bonus; 3]; 2] = [
     [Bonus::Smash, Bonus::Teleport, Bonus::Curve],
@@ -404,30 +405,85 @@ fn blaster_shot_steals_a_capsule_heading_to_the_opponent() {
 }
 
 #[test]
-fn blaster_fires_four_shots_in_a_row_then_reloads() {
+fn blaster_fires_six_shots_in_a_row_then_reloads() {
     let mut m = make_kinds([Some(PaddleKind::Blaster), None]);
     m.next.as_mut().unwrap().spawn_timer = u32::MAX;
     m.ball.vx = -fixed::int(1);
     m.ball.x = m.params.width - fixed::int(100);
+    // sposta la racchetta avversaria fuori linea per provare i colpi fino al fondo
+    m.paddles[1].y = m.params.height - m.paddles[1].height / 2;
     let mut fire = Input::default();
     fire.players[0].fire = true;
     let gap = m.params.blaster_gap_ticks;
     let mut shots = 0;
-    for _ in 0..5 * (gap + 1) {
+    let mut max_in_flight = 0;
+    for _ in 0..6 * (gap + 1) {
         shots += m.step(&fire).has(Event::Fire) as u32;
+        let in_flight = m.next.as_ref().unwrap().players[0].shots.iter().filter(|s| s.is_some()).count();
+        max_in_flight = max_in_flight.max(in_flight);
     }
-    assert_eq!(m.params.blaster_shots, 4);
-    assert_eq!(shots, 4, "quattro colpi di fila, poi il caricatore è vuoto");
+    assert_eq!(m.params.blaster_shots, 6);
+    assert_eq!(shots, 6, "sei colpi di fila, poi la carica è scarica");
     let pl = &m.next.as_ref().unwrap().players[0];
     assert_eq!(pl.ammo, 0);
-    assert!(
-        pl.shots.iter().filter(|s| s.is_some()).count() >= 2,
-        "più colpi in volo insieme"
-    );
-    // il caricatore torna pieno alla fine della ricarica, contata dal primo colpo
+    assert!(max_in_flight >= 2, "più colpi in volo insieme");
+    // la carica torna piena alla fine della ricarica, contata dal primo colpo
     let reload = m.params.blaster_reload_ticks;
     idle(&mut m, reload);
     assert_eq!(m.next.as_ref().unwrap().players[0].ammo, m.params.blaster_shots);
+}
+
+#[test]
+fn blaster_laser_slows_opponent_paddle_on_hit() {
+    let mut m = make_kinds([Some(PaddleKind::Blaster), None]);
+    m.next.as_mut().unwrap().spawn_timer = u32::MAX;
+    m.serve_timer = u32::MAX;
+    // spara verso l'avversario fermo davanti alla stessa altezza
+    let mut fire = Input::default();
+    fire.players[0].fire = true;
+    assert!(m.step(&fire).has(Event::Fire));
+    // aspetta che il laser colpisca la racchetta destra
+    let mut hit = false;
+    for _ in 0..TICK_HZ * 2 {
+        m.step(&Input::default());
+        if m.next.as_ref().unwrap().players[1].laser_slow > 0 {
+            hit = true;
+            break;
+        }
+    }
+    assert!(hit, "il laser del BLASTER deve rallentare l'avversario colpito");
+    assert_eq!(m.paddle_slow_shifts()[1], 1);
+    // a fine durata il rallentamento sparisce
+    let slow_ticks = m.params.blaster_slow_ticks;
+    idle(&mut m, slow_ticks + 1);
+    assert_eq!(m.next.as_ref().unwrap().players[1].laser_slow, 0);
+    assert_eq!(m.paddle_slow_shifts()[1], 0);
+}
+
+#[test]
+fn twist_angles_shots_up_to_sixty_degrees() {
+    let mut m = make_kinds([Some(PaddleKind::Twist), None]);
+    m.next.as_mut().unwrap().spawn_timer = u32::MAX;
+    aim_at_paddle(&mut m, Side::Left);
+    // racchetta TWIST che sale forte mentre impatta la palla: può superare i 45° fino a 1,75 * |vx| (~60°)
+    m.paddles[0].y = m.params.height / 3;
+    m.ball.y = m.paddles[0].y + fixed::int(12);
+    m.ball.vy = m.ball.vx.abs();
+    let mut up = Input::default();
+    up.players[0].direction = 1;
+    let mut hit = false;
+    for _ in 0..TICK_HZ * 2 {
+        m.paddles[0].motion = m.paddles[0].max_speed;
+        if m.step(&up).has(Event::Hit) {
+            hit = true;
+            break;
+        }
+    }
+    assert!(hit);
+    let abs_vx = m.ball.vx.abs();
+    let limit_60 = abs_vx + (abs_vx >> 1) + (abs_vx >> 2);
+    assert!(m.ball.vy > abs_vx, "TWIST deve poter angolare oltre i 45 gradi");
+    assert!(m.ball.vy <= limit_60, "TWIST non deve superare ~60 gradi (1,75 * |vx|)");
 }
 
 #[test]
@@ -461,6 +517,36 @@ fn arcade_gets_more_capsules() {
         arcade[1] as f64 > 0.7 * plain[1] as f64,
         "l'avversario ne riceve poche meno: {arcade:?}"
     );
+}
+
+#[test]
+fn arcade_double_click_activate_when_empty_spawns_capsule() {
+    let mut m = make_kinds([Some(PaddleKind::Arcade), Some(PaddleKind::Titan)]);
+    m.next.as_mut().unwrap().spawn_timer = u32::MAX;
+    m.serve_timer = 0;
+    let mut act = Input::default();
+    act.players[0].activate = true;
+    // primo clic a riserva vuota: arma solo la finestra del doppio clic, nessuna capsula
+    assert!(!m.step(&act).has(Event::Collect));
+    assert!(m.next.as_ref().unwrap().capsules.iter().all(Option::is_none));
+    assert!(m.next.as_ref().unwrap().players[0].arcade_tap > 0);
+    // secondo clic entro 0,4 s: genera subito una capsula diretta verso ARCADE
+    idle(&mut m, 10);
+    assert!(m.step(&act).has(Event::Collect));
+    let n = m.next.as_ref().unwrap();
+    let cap = n.capsules.iter().flatten().next().expect("capsula chiamata da ARCADE");
+    assert_eq!(cap.toward(), Side::Left);
+    assert_eq!(n.players[0].cooldown, m.params.bonus_cooldown_ticks - 1);
+    // durante il cooldown un altro doppio clic non genera una seconda capsula
+    assert!(!m.step(&act).has(Event::Collect));
+    assert!(!m.step(&act).has(Event::Collect));
+    assert_eq!(m.next.as_ref().unwrap().capsules.iter().flatten().count(), 1);
+    // un'altra racchetta (TITAN) non chiama capsule col doppio clic
+    let mut act2 = Input::default();
+    act2.players[1].activate = true;
+    assert!(!m.step(&act2).has(Event::Collect));
+    assert!(!m.step(&act2).has(Event::Collect));
+    assert_eq!(m.next.as_ref().unwrap().capsules.iter().flatten().count(), 1);
 }
 
 #[test]
@@ -570,4 +656,42 @@ fn slow_paddle_follows_the_encoder_with_a_top_speed() {
         titan.step(&input);
     }
     assert_eq!(titan.paddles[0].y, top(&titan));
+}
+
+/// Un minuto di partita CPU contro CPU con i tipi `kinds`: chiama `each` dopo ogni tick con lo
+/// stato prima del tick e gli eventi.
+fn cpu_minute(kinds: [Option<PaddleKind>; 2], mut each: impl FnMut(&Match, &Match, &[Event])) {
+    let mut m = make_kinds(kinds);
+    let mut cpus = [Cpu::new(&m.params, 3, Side::Left, 11), Cpu::new(&m.params, 3, Side::Right, 12)];
+    for _ in 0..TICK_HZ * 60 {
+        let mut input = Input::default();
+        for cpu in &mut cpus {
+            input.players[cpu.side() as usize] = cpu.input(&m);
+        }
+        let before = m.clone();
+        let events: Vec<Event> = m.step(&input).iter().collect();
+        each(&before, &m, &events);
+    }
+}
+
+#[test]
+fn cpu_blaster_shoots_the_opponent_paddle_to_slow_it() {
+    let mut hits = 0;
+    cpu_minute([Some(PaddleKind::Blaster), Some(PaddleKind::Titan)], |before, after, _| {
+        let slow = |m: &Match| m.next.as_ref().unwrap().players[1].laser_slow;
+        hits += (slow(after) > slow(before)) as u32;
+    });
+    assert!(hits >= 2, "colpi laser della CPU sulla racchetta avversaria in un minuto: {hits}");
+}
+
+#[test]
+fn cpu_arcade_calls_a_capsule_with_a_double_click_when_empty() {
+    let mut calls = 0;
+    cpu_minute([Some(PaddleKind::Arcade), Some(PaddleKind::Titan)], |before, after, events| {
+        // capsula chiamata: Collect a riserva vuota con la pausa tra due bonus appena partita
+        let (b, a) = (&before.next.as_ref().unwrap().players[0], &after.next.as_ref().unwrap().players[0]);
+        let called = events.contains(&Event::Collect) && b.count() == 0 && b.cooldown == 0 && a.cooldown > 0;
+        calls += called as u32;
+    });
+    assert!(calls >= 2, "capsule chiamate dalla CPU ARCADE in un minuto: {calls}");
 }

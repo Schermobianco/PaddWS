@@ -488,19 +488,29 @@ impl Cpu {
         }
 
         if blaster {
-            // BLASTER: spara quando una capsula che vuole è davanti alla racchetta
-            let pl = &m.next.as_ref().unwrap().players[i];
-            let aligned = m.next.as_ref().unwrap().capsules.iter().flatten().any(|c| {
+            // BLASTER: spara quando una capsula che vuole è davanti alla racchetta, oppure contro la
+            // racchetta avversaria quando la palla va verso di lei: se il laser la prende (la
+            // fascia del core, a pixel interi) la rallenta mentre deve rispondere; non se è già
+            // rallentata
+            let n = m.next.as_ref().unwrap();
+            let pl = &n.players[i];
+            let o = self.side.opponent() as usize;
+            let opp = &m.paddles[o];
+            let px = |v: Fx| v >> fixed::FRAC_BITS;
+            let at_opponent = !coming
+                && n.players[o].laser_slow == 0
+                && (px(opp.y) - px(pad.y)).abs() <= px(opp.height >> 1) + px(m.params.blaster_band);
+            let aligned = n.capsules.iter().flatten().any(|c| {
                 let ahead = match self.side {
                     Side::Left => c.x > pad.right(),
                     Side::Right => c.x < pad.left(),
                 };
-                ahead && (c.y - pad.y).abs() <= m.params.capsule_half && self.wants(m, c)
+                ahead && (px(c.y) - px(pad.y)).abs() <= px(m.params.capsule_half) && self.wants(m, c)
             });
             let odds = if self.forward_odds > 0 { self.forward_odds } else { 60 };
             // un colpo alla volta: la CPU non spreca il caricatore sulla stessa capsula
             let idle = pl.shots.iter().all(Option::is_none);
-            let fire = pl.can_fire() && idle && aligned && self.rng.below(odds) == 0;
+            let fire = pl.can_fire() && idle && (aligned || at_opponent) && self.rng.below(odds) == 0;
             // senza scatto si spara con il suo tasto
             if m.params.blaster_dash {
                 cmd.fire = fire;
@@ -550,8 +560,20 @@ impl Cpu {
             } else if on_bullet && n.bullet.is_some() {
                 cmd.select = pl.count() > 1;
             } else {
+                // ARCADE a riserva vuota: doppio clic su USE, che chiama subito una capsula verso di
+                // sé; il primo clic con la probabilità dei bonus, il secondo passato un quarto della
+                // finestra (come una persona). Pausa, bonus armato, battuta e capsula già in arrivo
+                // li controlla il core, che allora ignora il clic
+                let tap = m.params.arcade_tap_ticks;
+                let calling = pl.kind == Some(PaddleKind::Arcade) && pl.count() == 0;
                 if ready {
                     cmd.activate = self.rng.below(self.bonus_odds) == 0;
+                } else if calling {
+                    cmd.activate = if pl.arcade_tap > 0 {
+                        pl.arcade_tap + (tap >> 2) <= tap
+                    } else {
+                        self.rng.below(self.bonus_odds) == 0
+                    };
                 }
                 if pl.count() > 1 && self.rng.below(self.bonus_odds * 2) == 0 {
                     cmd.select = true;

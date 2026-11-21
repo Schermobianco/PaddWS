@@ -452,7 +452,7 @@ bonus:
     ldx c_side
     jsr res_count
     sta c_n
-    jeq done
+    jeq arcade
     ; pronto (c_k): niente di armato, pausa finita, palla in arrivo, non durante la battuta
     lda #0
     sta c_k
@@ -555,6 +555,28 @@ done:
     mov32 {cpu_rng,x}, rng
     mov32 rng, cpu_saved_rng
     rts
+arcade:
+    ; ARCADE a riserva vuota: doppio clic su USE, che chiama subito una capsula verso di sé
+    ; (Cpu::input). Il primo clic con la probabilità dei bonus, il secondo passato un quarto della
+    ; finestra; pausa, bonus armato, battuta e capsula già in arrivo li controlla next.s
+    ; (done sta appena sopra: salti corti all'indietro)
+    lda nx_kind,x
+    bne done                    ; K_ARCADE = 0
+    lda nx_atap,x
+    beq first_tap
+    cmp #P_ARCADE_TAP - P_ARCADE_TAP / 4 + 1
+    bcs done                    ; troppo presto per il secondo clic
+    bcc press_activate
+first_tap:
+    lda cpu_bonus,x
+    jsr below_zero
+    bcc done
+press_activate:
+    lda c_flags
+    ora #IN_ACTIVATE
+    sta c_flags
+    bne done                    ; (sempre: IN_ACTIVATE non è zero)
+.assert K_ARCADE = 0 .and IN_ACTIVATE <> 0, error, "cpu: ARCADE e IN_ACTIVATE"
 .endproc
 
 ; Cpu::bullet_rescue per la CPU c_side (X): C = 1 se la palla, in arrivo e vista (cb_aim), è
@@ -621,6 +643,16 @@ done:
     rts
 .endproc
 
+; A = |A - y della racchetta X| in pixel interi (le y stanno in un byte). Y resta.
+.proc dy_pad
+    sec
+    sbc pad_y+2,x
+    bcs :+
+    eor #$ff                    ; C = 0: il complemento a due
+    adc #1
+:   rts
+.endproc
+
 ; Cpu::wants: C = 1 se la CPU c_side vuole la capsula c_k (che c'è): quelle verso di sé finché la
 ; riserva non è piena; il BLASTER, che le raccoglie sparando, anche quelle dell'avversario (con la
 ; riserva piena solo quelle, per distruggerle).
@@ -683,7 +715,8 @@ found:
 .endproc
 
 ; BLASTER della CPU c_side: spara (IN_FORWARD) se può, se non ha colpi in volo, se una capsula
-; che vuole è davanti alla racchetta (entro mezzo lato di capsula) e il generatore lo concede.
+; che vuole è davanti alla racchetta (entro mezzo lato di capsula) o la racchetta avversaria è
+; nella fascia del laser mentre la palla va verso di lei, e il generatore lo concede.
 .proc cpu_fire
     ldx c_side
     ; pl.can_fire(): colpi nel caricatore, pausa finita (un posto libero c'è: sono tutti liberi)
@@ -699,6 +732,7 @@ found:
     ora shot_on+3,x
     jne no
 .assert MAX_SHOTS = 4, error, "cpu_fire: quattro posti per giocatore"
+.assert P_CAP_HALF >> 16 < 255 .and P_BLASTER_BAND >> 16 < 128, error, "cpu_fire: distanze in un byte"
     ; una capsula allineata che vuole
     lda #0
     sta c_k
@@ -723,17 +757,35 @@ right:
     blt32 {cap_x,y}, c_a, height
     jmp next
 height:
-    ; |c.y - pad.y| <= mezzo lato della capsula
-    sub32 c_a, {cap_y,y}, {pad_y,x}
-    abs32 c_a, c_a
-    blt32 {#P_CAP_HALF}, c_a, next
+    ; |c.y - pad.y| <= mezzo lato della capsula, a pixel interi
+    lda cap_y+2,y
+    jsr dy_pad
+    cmp #<(P_CAP_HALF >> 16) + 1
+    bcs next
     jsr cpu_wants
-    bcs aligned
+    jcs aligned
 next:
     inc c_k
     lda c_k
     cmp #4
     jne loop
+    ; nessuna capsula: la racchetta avversaria, se la palla va verso di lei e non è già
+    ; rallentata, quando è nella fascia del laser, a pixel interi (|y - y avversaria| <= mezza
+    ; racchetta avversaria + P_BLASTER_BAND); le y stanno in un byte
+    lda c_coming
+    bne no
+    txa                         ; X = c_side (anche dopo cpu_wants)
+    eor #4
+    tay
+    lda nx_lslow,y
+    bne no
+    lda pad_y+2,y
+    jsr dy_pad
+    sec
+    sbc pad_half+2,y            ; dentro la racchetta avversaria
+    bcc aligned
+    cmp #<(P_BLASTER_BAND >> 16) + 1
+    bcc aligned                 ; o nella fascia oltre il suo bordo
 no:
     rts
 aligned:
