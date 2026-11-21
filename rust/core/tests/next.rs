@@ -685,6 +685,25 @@ fn cpu_blaster_shoots_the_opponent_paddle_to_slow_it() {
 }
 
 #[test]
+fn cpu_blaster_lines_up_with_a_paddle_away_from_the_centre() {
+    // un giocatore che resta contro il bordo alto (come una persona che non torna al centro): il
+    // BLASTER della CPU va a mettersi alla sua altezza mentre la palla va verso di lui e gli spara
+    let mut m = make_kinds([Some(PaddleKind::Blaster), Some(PaddleKind::Titan)]);
+    let mut cpu = Cpu::new(&m.params, 3, Side::Left, 11);
+    let mut hits = 0;
+    for _ in 0..TICK_HZ * 60 {
+        let mut input = Input::default();
+        input.players[0] = cpu.input(&m);
+        input.players[1].direction = 1;
+        let before = m.next.as_ref().unwrap().players[1].laser_slow;
+        m.step(&input);
+        hits += (m.next.as_ref().unwrap().players[1].laser_slow > before) as u32;
+    }
+    assert!(m.paddles[1].y > m.params.height * 3 / 4, "la racchetta umana sta in alto");
+    assert!(hits >= 8, "colpi laser della CPU sulla racchetta lontana dal centro in un minuto: {hits}");
+}
+
+#[test]
 fn cpu_arcade_calls_a_capsule_with_a_double_click_when_empty() {
     let mut calls = 0;
     cpu_minute([Some(PaddleKind::Arcade), Some(PaddleKind::Titan)], |before, after, events| {

@@ -17,6 +17,11 @@ crea il commit e il tag `vX.Y.Z`.
 ## [4.6.1] - 2026-11-21
 
 ### Modificato
+- Ritratti dei personaggi ridisegnati: scelta della racchetta, schermo VS e sfilata del finale (PC,
+  web, Deck, MiSTer e C64).
+- La CPU con il BLASTER, mentre la palla va verso l'avversario, si mette alla sua altezza per
+  colpirlo con il laser; prima sparava solo se ci si trovava già per caso (PC, web, Deck, MiSTer e
+  C64).
 - MiSTer: i ritratti grandi e medi e le illustrazioni delle astronavi stanno nella DDR3 invece che
   nella memoria interna dell'FPGA, che era piena al 99%. La grafica è nel file `paddws.zip`, da
   mettere in `games/mame/` (è nello zip della release e in update_all): il `.mra` la carica all'avvio.

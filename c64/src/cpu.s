@@ -348,7 +348,24 @@ capsule:
     lda m_next
     beq target_done
     jsr cpu_capsule
-    bcc target_done
+    bcs found
+    ; Cpu::hunts: il BLASTER, con la palla che va verso l'avversario, colpi nel caricatore e
+    ; l'avversario non già rallentato dal laser, si mette alla sua altezza per sparargli (il
+    ; caricatore ha colpi solo per il BLASTER: set_kind)
+    ldx c_side
+    lda nx_ammo,x
+    beq target_done
+    jsr cpu_opp
+    bne target_done
+    ldx #0
+:   lda pad_y,y                 ; c_y = y della racchetta avversaria
+    sta c_y,x
+    iny
+    inx
+    cpx #4
+    bne :-
+    beq target_done             ; sempre
+found:
     ldy c_k4
     mov32 c_y, {cap_y,y}
 target_done:
@@ -643,6 +660,18 @@ done:
     rts
 .endproc
 
+; Y = l'avversario della CPU X; Z = 1 se la palla va verso di lui e il laser del BLASTER non lo ha
+; già rallentato (il bersaglio del BLASTER, in cpu_fire e nella scelta di dove andare).
+.proc cpu_opp
+    txa
+    eor #4
+    tay
+    lda c_coming
+    bne :+
+    lda nx_lslow,y
+:   rts
+.endproc
+
 ; A = |A - y della racchetta X| in pixel interi (le y stanno in un byte). Y resta.
 .proc dy_pad
     sec
@@ -772,12 +801,7 @@ next:
     ; nessuna capsula: la racchetta avversaria, se la palla va verso di lei e non è già
     ; rallentata, quando è nella fascia del laser, a pixel interi (|y - y avversaria| <= mezza
     ; racchetta avversaria + P_BLASTER_BAND); le y stanno in un byte
-    lda c_coming
-    bne no
-    txa                         ; X = c_side (anche dopo cpu_wants)
-    eor #4
-    tay
-    lda nx_lslow,y
+    jsr cpu_opp                 ; X = c_side (anche dopo cpu_wants)
     bne no
     lda pad_y+2,y
     jsr dy_pad

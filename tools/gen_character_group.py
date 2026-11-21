@@ -31,31 +31,30 @@ OUT_LOCKED = ROOT / "assets" / "characters" / "group_locked.jpg"
 W, H = 3840, 2160
 
 # OMEGA in sagoma: colore di fondo, quanto resta della luminosità del disegno, quanto resta della
-# scia viola; riquadro degli occhi in pixel di source/omega.jpg (lì il viola resta acceso)
+# scia viola; riquadro della lente HAL-9000 in pixel di source/omega.jpg (1376x768)
 SILHOUETTE = np.array([14, 10, 20], dtype=float)
-SHADE = 0.10
-AURA = 0.30
-OMEGA_EYES = (1330, 280, 1620, 410)
+SHADE = 0.14
+AURA = 0.28
+OMEGA_EYES = (634, 222, 742, 330)
 
 # soglia (massimo dei tre canali) oltre la quale un pixel non è fondo
 INK = 45
 
 # dal fondo verso il primo piano: (nome, altezza del riquadro, centro x, fondo y, specchiato)
+# Composizione epica con OMEGA alto dietro e GUARDIAN davanti al centro con lo scudo
 LAYOUT = [
-    ("omega", 1450, 1920, 1570, False),
-    ("hammer", 780, 640, 1470, False),
-    ("twist", 780, 1200, 1550, False),
-    ("blaster", 700, 3200, 1450, False),
-    # specchiato: lo scudo guarda il centro e il colpo di BLASTER non gli arriva in faccia
-    ("guardian", 800, 2640, 1550, True),
-    # il fondo piatto del blocco coincide con il bordo inferiore: RUSH esce dall'inquadratura
-    ("rush", 820, 3020, 2178, False),
-    ("arcade", 880, 1010, 2150, False),
-    ("titan", 1080, 1980, 2150, False),
+    ("omega",    1620, 1920, 1780, False),
+    ("blaster",   900, 1020, 1060, True),
+    ("rush",      860, 2940,  960, False),
+    ("hammer",   1040,  760, 1660, False),
+    ("titan",    1040, 3040, 1740, False),
+    ("arcade",    980,  760, 2140, False),
+    ("twist",     960, 3080, 2150, False),
+    ("guardian", 1180, 1920, 2150, False),
 ]
 
-# frazione della larghezza da sfumare a destra: il laser di BLASTER è tagliato dal bordo
-# nell'immagine originale e così si dissolve invece di finire di netto
+# frazione della larghezza da sfumare a destra (prima dell'eventuale specchiatura): il laser di
+# BLASTER è tagliato dal bordo nell'immagine originale e così si dissolve invece di finire di netto
 FADE_RIGHT = {"blaster": 0.13}
 
 
@@ -74,17 +73,20 @@ def dilate(m: np.ndarray, r: int) -> np.ndarray:
 
 def silhouette(rgba: Image.Image, eyes: tuple[float, float, float, float]) -> Image.Image:
     """Il personaggio quasi nero: un'ombra della luminosità sopra `SILHOUETTE`, il viola della scia
-    smorzato, il viola degli occhi (nel riquadro `eyes`, in pixel di `rgba`) acceso."""
+    smorzato, e la lente HAL-9000 (ellisse in `eyes`, in pixel di `rgba`) accesa."""
     a = np.asarray(rgba).astype(float)
     rgb = a[..., :3]
     lum = rgb @ np.array([0.299, 0.587, 0.114])
     out = SILHOUETTE + lum[..., None] * SHADE
-    magenta = (rgb[..., 0] > 150) & (rgb[..., 2] > 150) & (rgb[..., 1] < 110)
+    magenta = (rgb[..., 0] > 120) & (rgb[..., 2] > 120) & (rgb[..., 1] < 110)
     ys, xs = np.mgrid[0:rgba.height, 0:rgba.width]
     ex0, ey0, ex1, ey1 = eyes
-    in_eyes = (xs >= ex0) & (xs < ex1) & (ys >= ey0) & (ys < ey1)
-    out = np.where((magenta & ~in_eyes)[..., None], rgb * AURA, out)
-    out = np.where((magenta & in_eyes)[..., None], rgb, out)
+    cx, cy = (ex0 + ex1) / 2.0, (ey0 + ey1) / 2.0
+    rx, ry = max((ex1 - ex0) / 2.0, 1.0), max((ey1 - ey0) / 2.0, 1.0)
+    in_lens = ((xs - cx) / rx) ** 2 + ((ys - cy) / ry) ** 2 <= 1.0
+    glow = in_lens & (rgb[..., 0] > 90) & (rgb[..., 2] > 90)
+    out = np.where((magenta & ~glow)[..., None], rgb * AURA, out)
+    out = np.where(glow[..., None], rgb, out)
     a[..., :3] = out
     return Image.fromarray(a.clip(0, 255).astype(np.uint8))
 

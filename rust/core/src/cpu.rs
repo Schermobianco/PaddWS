@@ -438,6 +438,10 @@ impl Cpu {
             && let Some(c) = n.capsules.iter().flatten().find(|c| self.wants(m, c))
         {
             target = c.y;
+        } else if !coming && self.hunts(m) {
+            // BLASTER: con la palla che va verso l'avversario si mette alla sua altezza, così il
+            // laser lo può prendere (lo sparo è più sotto)
+            target = m.paddles[self.side.opponent() as usize].y;
         }
         self.last_target = target;
         let diff = target - pad.y;
@@ -636,6 +640,15 @@ impl Cpu {
             && distance <= dx << self.bullet_shift
             && (aim - pad.y).abs() > half + m.ball.radius
             && self.error.abs() <= half
+    }
+
+    /// BLASTER con colpi nel caricatore e l'avversario non già rallentato dal laser: va a mettersi
+    /// alla sua altezza per sparargli.
+    fn hunts(&self, m: &Match) -> bool {
+        m.paddle_kind(self.side) == Some(PaddleKind::Blaster)
+            && m.next.as_ref().is_some_and(|n| {
+                n.players[self.side as usize].ammo > 0 && n.players[self.side.opponent() as usize].laser_slow == 0
+            })
     }
 
     /// La CPU va a prendere questa capsula: quelle verso di sé finché la riserva non è piena; il

@@ -394,8 +394,10 @@ int main(int argc, char** argv) {
     };
     // grafica nella DDR3 (rtl/gfx_ddr.v): modello della DDR3 (parole a 64 bit da 0x3000_0000, ogni
     // richiesta accettata subito, dati dopo DDR_LATENCY cicli di clk_cpu) e caricamento del file
-    // paddws_gfx.rom come fa il .mra all'avvio (ioctl, indice 0, rispettando ioctl_wait), finito il
-    // reset. Con PONG_NO_GFX=1 il file non si carica (il core senza la grafica dei personaggi).
+    // paddws_gfx.rom come fa il .mra all'avvio (ioctl, indice 0, rispettando ioctl_wait) con il reset
+    // alto, come Main_MiSTer (status[0] alto mentre manda le ROM, tolto alla fine): il reset dura
+    // almeno 20 ms e comunque fino alla fine del caricamento. Con PONG_NO_GFX=1 il file non si carica
+    // (il core senza la grafica dei personaggi).
     const int DDR_LATENCY = 20;
     const uint32_t DDR_BASE = 0x06000000;
     std::vector<uint64_t> ddr(1 << 16, 0);
@@ -597,7 +599,13 @@ int main(int argc, char** argv) {
             }
             std::printf("checkpoint %s.bin al frame %d\n", ckpt.c_str(), frames);
         }
-        top.reset = ++cycle < 400000;   // 20 ms di reset
+        top.reset = ++cycle < 400000 || gfx_on;   // 20 ms di reset, o fino alla fine del caricamento
+        if (gfx_on && cycle > 4000000) {
+            // 200 ms: sul MiSTer la barra del caricamento resterebbe ferma
+            std::fprintf(stderr, "caricamento di paddws_gfx.rom fermo al byte %zu di %zu (ioctl_wait %d)\n",
+                         gfx_i, gfx_file.size(), int(top.ioctl_wait));
+            return 1;
+        }
         top.egg_clear = top.reset;      // come il reset del MiSTer al caricamento del core
         // mezzo ciclo di clk (20 MHz) con i fronti di clk_cpu (60 MHz, CPU_RATIO volte): clk_cpu scende,
         // sale e scende insieme a clk, come le uscite della stessa PLL
@@ -607,9 +615,9 @@ int main(int argc, char** argv) {
             top.eval();
             if (top.clk_cpu) ddr_edge();
         }
-        // caricamento di paddws_gfx.rom: dalla fine del reset, un byte ogni 2 cicli di clk (fermo con
-        // ioctl_wait)
-        if (!top.reset && !gfx_on && gfx_i == 0 && !gfx_file.empty() && !nv_on) {
+        // caricamento di paddws_gfx.rom: dall'inizio, durante il reset, un byte ogni 2 cicli di clk
+        // (fermo con ioctl_wait)
+        if (!gfx_on && gfx_i == 0 && !gfx_file.empty() && !nv_on) {
             gfx_on = true;
             top.ioctl_index = 0;
             top.ioctl_download = 1;

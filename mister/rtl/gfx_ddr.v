@@ -20,6 +20,8 @@ module gfx_ddr (
     input  wire        clk_sys,
     input  wire        clk_cpu,
     input  wire        reset,             // (clk_cpu) ferma la copia; il caricamento e gfx_ok restano
+                                          // (il MiSTer tiene il core in reset mentre manda le ROM
+                                          // del .mra: il caricamento deve andare avanti lo stesso)
 
     // caricamento dalla SD (dominio di clk_sys, da hps_io)
     input  wire        ioctl_download,
@@ -115,12 +117,11 @@ always @(posedge clk_cpu) begin
             default: ;
         endcase
     end
-    if (reset) begin
-        state <= S_IDLE;
-        cnt <= 14'd0;
-        DDRAM_RD <= 1'b0;
-        DDRAM_WE <= 1'b0;
-    end else case (state)
+    // il caricamento non guarda il reset: Main_MiSTer manda le ROM del .mra con status[0] alto (reset
+    // del core) e lo toglie solo alla fine, quindi con il reset fermo qui ioctl_wait resterebbe alto
+    // per sempre (barra del caricamento ferma all'inizio). Il reset ferma solo la copia; una
+    // richiesta alla DDR3 già partita finisce comunque, come vuole l'Avalon.
+    case (state)
         S_IDLE: begin
             if (wr_pend && !wr_done) begin
                 // caricamento: una parola a 64 bit
@@ -128,7 +129,7 @@ always @(posedge clk_cpu) begin
                 DDRAM_DIN <= buf64;
                 DDRAM_WE <= 1'b1;
                 state <= S_WRITE;
-            end else if (cnt != 14'd0 && gfx_ok) begin
+            end else if (cnt != 14'd0 && gfx_ok && !reset) begin
                 DDRAM_ADDR <= BASE + {10'd0, src[19:1]};
                 DDRAM_RD <= 1'b1;
                 state <= S_READ;
@@ -145,9 +146,9 @@ always @(posedge clk_cpu) begin
         end
         S_WAIT: if (DDRAM_DOUT_READY) begin
             beat <= DDRAM_DOUT;
-            state <= src[0] ? S_HI : S_LO;
+            state <= reset ? S_IDLE : src[0] ? S_HI : S_LO;
         end
-        S_LO: begin
+        S_LO: if (reset) state <= S_IDLE; else begin
             win_we <= 1'b1;
             win_addr <= dst;
             win_data <= beat[31:0];
@@ -156,7 +157,7 @@ always @(posedge clk_cpu) begin
             cnt <= cnt - 14'd1;
             state <= (cnt == 14'd1) ? S_IDLE : S_HI;
         end
-        S_HI: begin
+        S_HI: if (reset) state <= S_IDLE; else begin
             win_we <= 1'b1;
             win_addr <= dst;
             win_data <= beat[63:32];
@@ -167,6 +168,8 @@ always @(posedge clk_cpu) begin
         end
         default: state <= S_IDLE;
     endcase
+    // copia annullata dal reset (dopo le scritture del firmware: vince il reset)
+    if (reset) cnt <= 14'd0;
 end
 
 endmodule

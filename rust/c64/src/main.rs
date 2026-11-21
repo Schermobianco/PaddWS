@@ -2182,10 +2182,13 @@ impl CometCheck {
             return false;
         }
         let flying = self.frames - self.waiting;
-        // (e in almeno metà del volo: non sempre in attesa)
+        // (e in almeno metà del volo: non sempre in attesa). Sull'NTSC no: i frame del SUPER costano
+        // circa 13.000 cicli, oltre light(), e dopo un rimbalzo la cometa nuova aspetta un frame
+        // leggero, che in un volo lungo può non arrivare per più di un secondo (budget NTSC in
+        // sospeso); resta il controllo sui frame che avevano il tempo (missed)
         if self.wrong > 0
             || self.shown * 10 < flying * 9
-            || self.shown * 2 < self.frames
+            || (!ntsc() && self.shown * 2 < self.frames)
             || self.tailed * 2 < flying
             || self.missed * 10 > self.frames
         {
