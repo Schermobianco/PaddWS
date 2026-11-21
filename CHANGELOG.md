@@ -14,6 +14,8 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+## [4.6.1] - 2026-11-21
+
 ### Modificato
 - MiSTer: i ritratti grandi e medi e le illustrazioni delle astronavi stanno nella DDR3 invece che
   nella memoria interna dell'FPGA, che era piena al 99%. La grafica è nel file `paddws.zip`, da
@@ -1371,7 +1373,8 @@ Ricostruite dalle cartelle di backup in `archive/` (date indicative).
 - **1.5** (2020-08) – versione per Raspberry Pi con encoder rotativi.
 - **1.1 – 1.4** (2020-08) – prime versioni pygame: menu, modalità CLASSIC ed EVO, suoni, splash.
 
-[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.6.0...HEAD
+[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.6.1...HEAD
+[4.6.1]: https://github.com/Schermobianco/PaddWS/compare/v4.6.0...v4.6.1
 [4.6.0]: https://github.com/Schermobianco/PaddWS/compare/v4.6.0-dev...v4.6.0
 [4.5.0]: https://github.com/Schermobianco/PaddWS/compare/v4.4.1...v4.5.0
 [4.4.1]: https://github.com/Schermobianco/PaddWS/compare/v4.4.0...v4.4.1
