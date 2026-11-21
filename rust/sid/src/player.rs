@@ -56,10 +56,11 @@ struct Chan {
 }
 
 /// Effetto da suonare per gli eventi del frame (bit 0 muro, 1 colpo, 2 boost, 3 punto, 4 gettone,
-/// 5 mossa, 6 colpo della mossa): stesse priorità di `fx_of` in pong_sid.v. 0 = nessuno.
-pub fn effect_of(events: u8) -> u8 {
-    let e = events & 0x7F;
-    let bit = |i: u8| e >> i & 1 != 0;
+/// 5 mossa, 6 colpo della mossa, 7 sparo del BLASTER, 8 rimbalzo della pallina del continue):
+/// stesse priorità di `fx_of` in pong_sid.v. 0 = nessuno.
+pub fn effect_of(events: u16) -> u8 {
+    let e = events & 0x1FF;
+    let bit = |i: u16| e >> i & 1 != 0;
     if bit(4) {
         5 // gettone
     } else if bit(3) {
@@ -74,6 +75,10 @@ pub fn effect_of(events: u8) -> u8 {
         2 // colpo
     } else if bit(0) {
         1 // muro
+    } else if bit(7) {
+        8 // sparo del BLASTER (laser)
+    } else if bit(8) {
+        9 // rimbalzo della pallina del continue
     } else {
         0
     }
@@ -222,7 +227,7 @@ impl Player {
 
     /// Effetto per gli eventi del frame (`effect_of`), subito, sul canale 3; con `slow` a metà
     /// velocità (bullet time).
-    pub fn effect(&mut self, events: u8, slow: bool, w: &mut impl Writes) {
+    pub fn effect(&mut self, events: u16, slow: bool, w: &mut impl Writes) {
         let fx = effect_of(events);
         if fx == 0 {
             return;

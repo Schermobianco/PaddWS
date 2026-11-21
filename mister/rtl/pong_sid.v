@@ -68,7 +68,8 @@ module pong_sid #(
     input  wire        mode_8580,     // 0 = 6581, 1 = 8580
     input  wire [4:0]  song,          // canzone (0 = silenzio): quando cambia riparte da capo
     input  wire        trigger,       // impulso: eventi del frame in `events`
-    input  wire [7:0]  events,        // bit 0 muro, 1 colpo, 2 boost, 3 punto, 4 gettone, 5 mossa, 6 colpo della mossa
+    input  wire [8:0]  events,        // bit 0 muro, 1 colpo, 2 boost, 3 punto, 4 gettone, 5 mossa, 6 colpo della mossa,
+                                      // 7 sparo del BLASTER (laser), 8 rimbalzo della pallina del continue
     input  wire        slow,          // con `trigger`: l'effetto suona a metà velocità
     input  wire        music_fast,    // match point: la canzone a 62,5 Hz
     input  wire        music_slow,    // bullet time: la canzone a metà velocità, un'ottava sotto
@@ -137,18 +138,18 @@ reg [7:0]  wave  [0:3];      // forma d'onda dello strumento (senza gate)
 reg [7:0]  rel   [0:3];      // frame di rilascio prima della fine della nota
 reg [3:0]  active = 4'd0;
 
-// effetto da suonare, per priorità
-function [2:0] fx_of(input [6:0] e);
-    casez (e)
-        7'b??1????: fx_of = SID_FX_COIN;
-        7'b??01???: fx_of = SID_FX_SCORE;
-        7'b1?00???: fx_of = SID_FX_SPECIAL;     // colpo con una mossa speciale
-        7'b0?001??: fx_of = SID_FX_BOOST;
-        7'b01000??: fx_of = SID_FX_MOVE;        // mossa speciale attivata
-        7'b000001?: fx_of = SID_FX_HIT;
-        7'b0000001: fx_of = SID_FX_WALL;
-        default:    fx_of = 3'd0;
-    endcase
+// effetto da suonare, per priorità (come `effect_of` di rust/sid/src/player.rs)
+function [3:0] fx_of(input [8:0] e);
+    if (e[4])      fx_of = SID_FX_COIN;
+    else if (e[3]) fx_of = SID_FX_SCORE;
+    else if (e[6]) fx_of = SID_FX_SPECIAL;     // colpo con una mossa speciale
+    else if (e[2]) fx_of = SID_FX_BOOST;
+    else if (e[5]) fx_of = SID_FX_MOVE;        // mossa speciale attivata
+    else if (e[1]) fx_of = SID_FX_HIT;
+    else if (e[0]) fx_of = SID_FX_WALL;
+    else if (e[7]) fx_of = SID_FX_LASER;       // sparo del BLASTER
+    else if (e[8]) fx_of = SID_FX_BOUNCE;      // rimbalzo della pallina del continue
+    else           fx_of = 4'd0;
 endfunction
 
 // arpeggi: semitoni da aggiungere alla nota nel passo 0-2
@@ -184,7 +185,7 @@ reg [7:0]  pw_lo = 8'd0;
 reg        freq_write = 1'b0;     // dopo la frequenza: gate (nota nuova) o fine
 reg [4:0]  song_q = 5'd0;
 reg        song_new = 1'b0;
-reg [2:0]  fx_req = 3'd0;
+reg [3:0]  fx_req = 4'd0;
 reg        tick_pending = 1'b0;      // passo degli effetti da fare
 reg        song_pending = 1'b0;      // passo della canzone da fare
 // effetto rallentato: richiesto, in corso, e frame saltato (il canale 3 avanza un frame su due)
@@ -276,8 +277,8 @@ always @(posedge clk) begin
     we <= 1'b0;
     song_q <= song;
     if (song != song_q) song_new <= 1'b1;
-    if (trigger && fx_of(events[6:0]) != 3'd0) begin
-        fx_req <= fx_of(events[6:0]);
+    if (trigger && fx_of(events) != 4'd0) begin
+        fx_req <= fx_of(events);
         slow_req <= slow;
     end
     if (frame_tick) tick_pending <= 1'b1;
@@ -287,7 +288,7 @@ always @(posedge clk) begin
         state <= S_IDLE;
         active <= 4'd0;
         song_new <= 1'b1;
-        fx_req <= 3'd0;
+        fx_req <= 4'd0;
         tick_pending <= 1'b0;
         song_pending <= 1'b0;
         for (c = 0; c < 4; c = c + 1) begin
@@ -296,7 +297,7 @@ always @(posedge clk) begin
         end
     end else case (state)
         S_IDLE: begin
-            if (fx_req != 3'd0 && !voice_on) begin
+            if (fx_req != 4'd0 && !voice_on) begin
                 // effetto nuovo: subito, solo sul canale 3; prima si chiude il gate della voce 3
                 ptr[3] <= sid_fx_start(fx_req);
                 start[3] <= sid_fx_start(fx_req);
@@ -305,7 +306,7 @@ always @(posedge clk) begin
                 arp[3] <= 2'd0;
                 slide[3] <= 8'd0;
                 active[3] <= 1'b1;
-                fx_req <= 3'd0;
+                fx_req <= 4'd0;
                 fx_slow <= slow_req;
                 fx_skip <= 1'b0;
                 ch <= 2'd3;

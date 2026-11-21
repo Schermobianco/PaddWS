@@ -8,7 +8,7 @@ use paddws_sid::Rom;
 use paddws_sid::player::Player;
 
 /// Comandi di un frame (S canzone, X eventi, L bullet time) e scritture attese.
-type Frame = (Vec<(char, u8)>, Vec<(u8, u8)>);
+type Frame = (Vec<(char, u16)>, Vec<(u8, u8)>);
 
 fn frames(path: &str) -> Vec<Frame> {
     let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
@@ -60,8 +60,8 @@ fn check(rom: Rom, path: &str) -> Stats {
         for &(kind, v) in commands {
             match kind {
                 'S' => {
-                    p.set_song(v);
-                    st.songs.insert(v);
+                    p.set_song(v as u8);
+                    st.songs.insert(v as u8);
                 }
                 'L' => p.set_slow(v != 0),
                 _ => {

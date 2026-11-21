@@ -627,11 +627,17 @@ fn supers_ui(m: &mut Machine) -> Result<String, String> {
     let starts: Vec<usize> = vh.lines().filter_map(addr).collect();
     let fx_start = |fx: usize| -> Option<usize> {
         vh.lines()
-            .find(|l| l.contains("sid_fx_start =") && l.contains(&format!("3'd{fx}:")))
+            .find(|l| l.contains("sid_fx_start =") && l.contains(&format!("4'd{fx}:")))
             .and_then(addr)
     };
     let table = m.addr("fx_start");
-    for (fx, name) in [(6usize, "MOVE"), (7, "SPECIAL")] {
+    // BOUNCE sta nel codice del continue (CLCODE, a $C400-$C6FF solo in quella schermata): qui solo
+    // il posto; la traccia la carica e la suona il banco sid
+    let bounce = m.cpu.read16(table + 2 * 9);
+    if !(0xC400..0xC700).contains(&bounce) {
+        return Err(format!("effetto 9 (BOUNCE) a ${bounce:04X}, fuori da CLCODE"));
+    }
+    for (fx, name) in [(6usize, "MOVE"), (7, "SPECIAL"), (8, "LASER")] {
         let id = vh_param(&vh, &format!("SID_FX_{name}")).ok_or(format!("SID_FX_{name} non c'è"))?;
         let start = fx_start(id).ok_or(format!("inizio di SID_FX_{name} non trovato"))?;
         let end = starts.iter().copied().filter(|&a| a > start).min().unwrap_or(rom.len()).min(rom.len());
@@ -642,7 +648,7 @@ fn supers_ui(m: &mut Machine) -> Result<String, String> {
         }
     }
     Ok(format!(
-        "mosse speciali: codice dalla cartuccia ({pages} pagine), voce del menu, {n} gesti del joystick dai due lati, scritta, barra, effetti MOVE e SPECIAL"
+        "mosse speciali: codice dalla cartuccia ({pages} pagine), voce del menu, {n} gesti del joystick dai due lati, scritta, barra, effetti MOVE, SPECIAL e LASER"
     ))
 }
 
@@ -3906,7 +3912,7 @@ fn profile(m: &mut Machine) -> bool {
 }
 
 /// Un frame del riferimento del SID: comandi (S canzone, X eventi) e scritture (registro, valore).
-type SidFrame = (Vec<(char, u8)>, Vec<(u16, u8)>);
+type SidFrame = (Vec<(char, u16)>, Vec<(u16, u8)>);
 
 /// Valore di `localparam NOME = n;` in un file .vh generato.
 fn vh_param(vh: &str, name: &str) -> Option<usize> {
@@ -4030,6 +4036,22 @@ fn sid(m: &mut Machine) -> bool {
         }
     };
     m.call("sid_init");
+    // il rimbalzo del continue (effetto 9): la sua traccia sta in CLCODE, che il C64 copia a $C400
+    // solo nella schermata del continue; qui la si mette al suo posto, presa dalla ROM della musica
+    if let Some(id) = vh_param(&vh, "SID_FX_BOUNCE") {
+        let start = vh
+            .lines()
+            .find(|l| l.contains("sid_fx_start =") && l.contains(&format!("4'd{id}:")))
+            .and_then(|l| l.split_once("'d").and_then(|(_, r)| r.split_once("'d")).map(|(_, a)| a))
+            .and_then(|a| a.trim_end_matches(';').trim().parse::<usize>().ok());
+        let Some(start) = start else {
+            println!("FAIL: inizio di SID_FX_BOUNCE non trovato in sid_music.vh");
+            return false;
+        };
+        let end = rom[start..].iter().position(|&b| b == 0xFF).map_or(rom.len(), |i| start + i + 1);
+        let at = m.cpu.read16(m.addr("fx_start") + 2 * id as u16);
+        m.cpu.load(at, &rom[start..end]);
+    }
     m.cpu.watch = Some((0xD400, 0xD418));
     // frame: comandi (S canzone, X eventi) e scritture attese
     let mut frames: Vec<SidFrame> = Vec::new();
@@ -4088,7 +4110,7 @@ fn sid(m: &mut Machine) -> bool {
                     cycles += m.call("sid_song");
                 }
                 omegas.insert(v);
-                v = SID_SONG_OMEGA;
+                v = SID_SONG_OMEGA as u16;
             } else if kind == 'S' && v as usize >= theme_song {
                 // tema: le tracce a THEME_BASE; da un tema all'altro la canzone del C64 resta la
                 // stessa, quindi prima il silenzio (nello stesso frame: riparte da capo come sul
@@ -4105,9 +4127,16 @@ fn sid(m: &mut Machine) -> bool {
                     cycles += m.call("sid_song");
                 }
                 themes.insert(v);
-                v = theme_song as u8;
+                v = theme_song as u16;
             }
-            m.cpu.a = v;
+            if kind == 'X' && v & 0xFF == 0 && v & 0x100 != 0 {
+                // rimbalzo del continue (bit 8): non ha un bit negli eventi di sid_fx, il C64 lo fa
+                // partire per numero
+                m.cpu.x = vh_param(&vh, "SID_FX_BOUNCE").unwrap_or(9) as u8;
+                cycles += m.call("sid_fx_start");
+                continue;
+            }
+            m.cpu.a = v as u8;
             cycles += m.call(if kind == 'S' { "sid_song" } else { "sid_fx" });
         }
         cycles += m.call("sid_tick");

@@ -273,7 +273,7 @@ fn voice_scene(name: &str, rate: u32, len: usize) -> Result<Vec<f32>, String> {
 
 /// Un effetto da solo, come in render.cpp: dal reset, gli eventi al primo ciclo.
 fn fx_scene(name: &str, rate: u32, len: usize) -> Result<Vec<f32>, String> {
-    const FX: [&str; 7] = ["wall", "hit", "boost", "score", "coin", "move", "special"];
+    const FX: [&str; 9] = ["wall", "hit", "boost", "score", "coin", "move", "special", "laser", "bounce"];
     let (fx, slow) = match name.strip_suffix("_slow") {
         Some(fx) => (fx, true),
         None => (name, false),

@@ -14,6 +14,15 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+### Modificato
+- Lo sparo del BLASTER ha il suo suono, un laser, al posto di quello del colpo della racchetta
+  (PC, web, Deck, MiSTer e C64).
+- Continue: il rimbalzo della pallina non è più nella canzone ma è un effetto che parte quando la
+  pallina tocca terra, al cambio del numero, così suono e pallina vanno insieme (PC, web, Deck,
+  MiSTer e C64).
+- La scia dello scatto in avanti è più leggera: le fiamme restano della loro lunghezza e dietro
+  resta solo una linea tratteggiata scura che si accorcia (PC e MiSTer).
+
 ## [4.6.0] - 2026-11-21
 
 ### Aggiunto

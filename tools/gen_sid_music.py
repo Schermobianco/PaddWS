@@ -260,11 +260,12 @@ CLEAR = {
     "arp": "i1 a2 C4/96",
 }
 
-# continue: due battute tese, in ripetizione
+# continue: due battute tese, in ripetizione. Il rimbalzo della pallina non è nella canzone: è
+# l'effetto BOUNCE, che parte quando la pallina tocca terra (al cambio del numero)
 CONTINUE = {
     "bass": "i0 " + " ".join(["E2/12", "F2/12"] * 8) + " loop",
     "lead": "i7 B4/24 C5/24 B4/24 A#4/24 B4/24 C5/24 D5/24 C5/24 loop",
-    "arp": "i3 E6/6 r/42 E6/6 r/42 E6/6 r/42 E6/6 r/42 loop",
+    "arp": "r/192 loop",
 }
 
 # game over: discesa in minore
@@ -725,6 +726,15 @@ MOVE_EFFECTS = [
     ("SPECIAL", "i5 C7/3 i6 C7/2 G6/2 E6/2 C6/2 G5/2 E5/2 C5/3 G4/3 C4/8"),
 ]
 
+# Effetti dopo le mosse (numeri 8 e 9; nel C64 le tracce stanno nel codice che li usa, come quelle
+# delle mosse). LASER: lo sparo del BLASTER, una discesa velocissima di note da un frame a impulso;
+# BOUNCE: il rimbalzo della pallina del continue quando tocca terra (la campanella che prima era
+# nella canzone CONTINUE).
+LATE_EFFECTS = [
+    ("LASER", "i4 E7/1 B6/1 F#6/1 C#6/1 G#5/1 E5/2"),
+    ("BOUNCE", "i3 E6/6"),
+]
+
 
 def write_if_changed(path: Path, data: bytes) -> None:
     """Scrive il file solo se cambia."""
@@ -808,7 +818,7 @@ def build() -> dict:
     instr_base = len(rom)
     songs, themes = SONGS, THEMES
     voice_bit = check_filter_use(songs + [("THEME_" + n, s) for n, s in themes] + LATE_SONGS,
-                                 EFFECTS + MOVE_EFFECTS)
+                                 EFFECTS + MOVE_EFFECTS + LATE_EFFECTS)
     for i, ins in enumerate(INSTRUMENTS):
         ctrl, ad, sr, pw, release = ins[:5]
         # $D417 (risonanza e la voce) e $D418 dello strumento nel filtro; 0 senza filtro
@@ -819,7 +829,7 @@ def build() -> dict:
         f"localparam SID_FREQ_BASE = {freq_base};",
         f"localparam SID_INSTR_BASE = {instr_base};",
         f"localparam SID_SONGS = {len(songs) + len(themes) + len(LATE_SONGS)};",
-        f"localparam SID_EFFECTS = {len(EFFECTS) + len(MOVE_EFFECTS)};",
+        f"localparam SID_EFFECTS = {len(EFFECTS) + len(MOVE_EFFECTS) + len(LATE_EFFECTS)};",
     ]
     starts: list[tuple[int, int, int]] = []
     theme_tracks: list[list[list[int]]] = []
@@ -861,12 +871,12 @@ def build() -> dict:
         theme_tracks.append(tracks)
     for name, song in LATE_SONGS:
         add_song(name, song)
-    for name, track in MOVE_EFFECTS:
+    for name, track in MOVE_EFFECTS + LATE_EFFECTS:
         data, _ = assemble(track)
         fx_starts.append(len(rom))
         rom += data
         lines.append(f"localparam SID_FX_{name} = {len(fx_starts)};")
-    assert len(fx_starts) <= 7, "effetti oltre i 3 bit di pong_sid"
+    assert len(fx_starts) <= 15, "effetti oltre i 4 bit di pong_sid"
     assert len(starts) <= 31, "canzoni oltre i 5 bit di pong_sid"
     assert len(rom) <= 8192, len(rom)
     lines.append(f"localparam SID_ROM_SIZE = {len(rom)};")
@@ -880,10 +890,10 @@ def build() -> dict:
     lines.append("        default: sid_song_start = 13'd0;")
     lines.append("    endcase")
     lines.append("endfunction")
-    lines.append("function [12:0] sid_fx_start(input [2:0] fx);")
+    lines.append("function [12:0] sid_fx_start(input [3:0] fx);")
     lines.append("    case (fx)")
     for i, a in enumerate(fx_starts, start=1):
-        lines.append(f"        3'd{i}: sid_fx_start = 13'd{a};")
+        lines.append(f"        4'd{i}: sid_fx_start = 13'd{a};")
     lines.append("        default: sid_fx_start = 13'd0;")
     lines.append("    endcase")
     lines.append("endfunction")
@@ -948,7 +958,7 @@ def main() -> None:
     write_if_changed(C64_OUT / "sid_music.inc", ("\n".join(inc) + "\n").encode())
     sizes = ", ".join(f"{n.lower()} {sum(len(t) for t in tr)}" for (n, _), tr in zip(THEMES, c64["theme_tracks"]))
     print(f"{len(c64['rom'])} byte ({base_size} nel C64), {len(SONGS)} canzoni, {len(THEMES)} temi ({sizes}), "
-          f"{len(EFFECTS) + len(MOVE_EFFECTS)} effetti")
+          f"{len(EFFECTS) + len(MOVE_EFFECTS) + len(LATE_EFFECTS)} effetti")
 
 
 if __name__ == "__main__":

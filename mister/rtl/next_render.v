@@ -429,7 +429,7 @@ reg        kmv_up [0:1];
 reg        kmv_dn [0:1];
 reg        kdash [0:1];
 // booster accesi dallo scatto in avanti (tutte le racchette, `Boost` di paddle_ui.rs): fase (3 lampo,
-// 2, 1, 0 spenti) e allungamento delle fiamme (distanza da casa, poi metà e un quarto)
+// 2, 1, 0 spenti) e lunghezza della scia tratteggiata dietro le fiamme (distanza da casa, poi metà e un quarto)
 reg [1:0]  kbs [0:1];
 reg signed [11:0] kbx [0:1];
 reg [3:0]  kbf;
@@ -825,6 +825,9 @@ localparam integer BMID = HT_B / 2, BGUN_DY = HT_B / 2 - 9, BSTRAP = HT_B / 2 - 
 `define KD(X0, Y0, WW, HH) `KT(X0, Y0, WW, HH, KR_DARK, KR_GRAY, KR_DARK_DEEP)
 // lampo dell'accensione dei booster dietro un ugello che finisce alla colonna XE (`ignite` di
 // paddle_ui.rs): alone largo 3, più chiaro sulle righe del getto (Y, ROWS) e bianco al centro
+// scia dello scatto (`trail` di paddle_ui.rs): un pixel sì e uno no, nel colore scurito, per LEN
+// pixel a sinistra della colonna XF sulla riga Y (sopra le fiamme, sotto il lampo)
+`define KTR(XF, Y, LEN) if ((v) == (Y) && (u) < (XF) && (u) >= (XF) - (LEN) && (((XF) - 12'sd1 - (u)) & 12'sd1) == 12'sd0) late = KR_MARK_DARK;
 `define KIGN(XE, Y, ROWS) begin `KL((XE) - 3, (Y) - 2, 3, (ROWS) + 4, KR_MARK) \
     `KL((XE) - 3, (Y) - 1, 3, (ROWS) + 2, KR_MARK_LIGHT) `KL((XE) - 2, Y, 2, ROWS, KR_BODY) end
 
@@ -900,11 +903,13 @@ function [3:0] kind_px(input p, input [2:0] kind, input signed [11:0] u0, input 
                     `KM(-3, HT_A / 2 - 3, 3, 6)
                 end
                 `KL(-2, HT_A / 2 - 2, 1, 4, KR_BLACK)
-                fl = (kmv ? 12'sd3 : 12'sd2) + kbx[p];
+                fl = kmv ? 12'sd3 : 12'sd2;
                 `KF(-6 - fl - (kpose[0] ? 12'sd1 : 12'sd0), 8, fl, 1, KR_MARK_LIGHT)
-                `KF(-8 - $signed({9'd0, kpose[1:0], 1'b0}) - kbx[p], kpose[0] ? 9 : 7, 1, 1, KR_MARK)
+                `KF(-8 - $signed({9'd0, kpose[1:0], 1'b0}), kpose[0] ? 9 : 7, 1, 1, KR_MARK)
                 `KF(-6 - fl - (kpose[0] ? 12'sd1 : 12'sd0), HT_A - 9, fl, 1, KR_MARK_LIGHT)
-                `KF(-8 - $signed({9'd0, kpose[1:0], 1'b0}) - kbx[p], kpose[0] ? HT_A - 8 : HT_A - 10, 1, 1, KR_MARK)
+                `KF(-8 - $signed({9'd0, kpose[1:0], 1'b0}), kpose[0] ? HT_A - 8 : HT_A - 10, 1, 1, KR_MARK)
+                `KTR(-7 - fl, 8, kbx[p])
+                `KTR(-7 - fl, HT_A - 9, kbx[p])
                 if (kbs[p] == 2'd3) begin
                     `KIGN(-6, 8, 1)
                     `KIGN(-6, HT_A - 9, 1)
@@ -957,7 +962,7 @@ function [3:0] kind_px(input p, input [2:0] kind, input signed [11:0] u0, input 
                     `KF(-12, my + 1, 1, 8, KR_DARK_DEEP)
                     ph2 = (c == 0) ? kpose[1:0] : (kpose[1:0] + 2'd2);
                     fl = (kmv ? ((ph2 == 2'd0) ? 12'sd6 : (ph2 == 2'd2) ? 12'sd7 : 12'sd8)
-                              : ((ph2 == 2'd0) ? 12'sd4 : (ph2 == 2'd2) ? 12'sd6 : 12'sd5)) + kbx[p];
+                              : ((ph2 == 2'd0) ? 12'sd4 : (ph2 == 2'd2) ? 12'sd6 : 12'sd5));
                     mlen = (fl + 12'sd1) >>> 1;
                     jlen = fl - 12'sd1;
                     clen = ((fl >>> 1) < 12'sd2) ? 12'sd2 : (fl >>> 1);
@@ -972,6 +977,7 @@ function [3:0] kind_px(input p, input [2:0] kind, input signed [11:0] u0, input 
                         `KF(-14 - fl - s3, my + 3 + ((c == 0) ? s3 : ((s3 == 12'sd2) ? 12'sd0 : s3 + 12'sd1)), 1, 1,
                             (s3 == 12'sd0) ? KR_MARK_LIGHT : KR_MARK)
                     end
+                    `KTR(-13 - fl, my + 4, kbx[p])
                     if (kbs[p] == 2'd3) `KIGN(-13, my + 4, 2)
                 end
                 // fiancate 3D verticali dello scafo (posteriore e inferiore/superiore da parallasse)
@@ -1023,7 +1029,6 @@ function [3:0] kind_px(input p, input [2:0] kind, input signed [11:0] u0, input 
                 mlen = (fl == 12'sd11) ? 12'sd7 : (fl == 12'sd9) ? 12'sd6 : (fl == 12'sd7) ? 12'sd4 :
                        (fl == 12'sd5) ? 12'sd3 : 12'sd2;
                 hlen = (mlen >>> 1) < 12'sd1 ? 12'sd1 : (mlen >>> 1);
-                fl = fl + kbx[p];                          // i booster allungano getto e punta, non il cono
                 jlen = fl - 12'sd1;
                 clen = ((fl >>> 1) < 12'sd2) ? 12'sd2 : (fl >>> 1);
                 if (surge == 2'd3) begin
@@ -1040,6 +1045,7 @@ function [3:0] kind_px(input p, input [2:0] kind, input signed [11:0] u0, input 
                 if (surge >= 2'd2) begin
                     `KF(-11 - fl, HEYE - 1 + (kpose[0] ? 12'sd1 : 12'sd0), 1, 1, KR_MARK_LIGHT)
                 end
+                `KTR(-12 - fl, HEYE - 1, kbx[p])
                 if (kbs[p] == 2'd3) `KIGN(-11, HEYE - 1, 2)
                 if (hit && pd_spark(pd_spark_pose(f), u, v - row))
                     fill = (pd_spark_pose(f) >= 2'd2) ? KR_MARK_DARK : KR_MARK;
@@ -1066,13 +1072,14 @@ function [3:0] kind_px(input p, input [2:0] kind, input signed [11:0] u0, input 
                 `KL(-2, HT_W / 2 - 2, 2, 1, KR_BODY)
                 `KL(-2, HT_W / 2 + 1, 2, 1, KR_BODY)
                 dy = (kpose[1:0] == 2'd1) ? -12'sd1 : (kpose[1:0] == 2'd3) ? 12'sd1 : 12'sd0;
-                fl = (kmv ? (kpose[0] ? 12'sd3 : 12'sd2) : (kpose[0] ? 12'sd1 : 12'sd0)) + kbx[p];
+                fl = kmv ? (kpose[0] ? 12'sd3 : 12'sd2) : (kpose[0] ? 12'sd1 : 12'sd0);
                 clen = 12'sd2 + (fl >>> 1);
                 `KD(-7, HT_W / 2 - 2, 2, 4)
                 `KF(-9, HT_W / 2 - 2, 2, 4, KR_MARK)
                 `KF(-10 - fl, HT_W / 2 - 1 + dy, 3 + fl, 2, KR_MARK_LIGHT)
                 `KF(-7 - clen, HT_W / 2 - 1 + dy, clen, 2, KR_BODY)
                 `KF(-12 - fl, HT_W / 2 - 1 + dy + (kpose[0] ? 12'sd1 : 12'sd0), 2, 1, KR_MARK)
+                `KTR(-12 - fl, HT_W / 2 - 1, kbx[p])
                 if (kbs[p] == 2'd3) `KIGN(-9, HT_W / 2 - 1, 2)
                 s3 = kpose[0] ? 12'sd1 : 12'sd0;
                 if (kmv_up[p]) begin
@@ -1115,7 +1122,7 @@ function [3:0] kind_px(input p, input [2:0] kind, input signed [11:0] u0, input 
                     `KF(-7, my - 1, 1, 3, KR_DARK_DEEP)
                     ph2 = (c == 0) ? kpose[1:0] : (kpose[1:0] + 2'd2);
                     fl = (kmv ? ((ph2 == 2'd0) ? 12'sd6 : (ph2 == 2'd2) ? 12'sd7 : 12'sd8)
-                              : ((ph2 == 2'd0) ? 12'sd4 : (ph2 == 2'd2) ? 12'sd6 : 12'sd5)) + kbx[p];
+                              : ((ph2 == 2'd0) ? 12'sd4 : (ph2 == 2'd2) ? 12'sd6 : 12'sd5));
                     mlen = (fl + 12'sd1) >>> 1;
                     jlen = fl - 12'sd1;
                     clen = ((fl >>> 1) < 12'sd2) ? 12'sd2 : (fl >>> 1);
@@ -1129,6 +1136,7 @@ function [3:0] kind_px(input p, input [2:0] kind, input signed [11:0] u0, input 
                         `KF(-9 - fl - s3, my - 1 + ((c == 0) ? s3 : ((s3 == 12'sd2) ? 12'sd0 : s3 + 12'sd1)), 1, 1,
                             (s3 == 12'sd0) ? KR_MARK_LIGHT : KR_MARK)
                     end
+                    `KTR(-8 - fl, my, kbx[p])
                     if (kbs[p] == 2'd3) `KIGN(-8, my, 1)
                 end
                 `KL(-3, BMID - 4, 1, 2, KR_MARK)
@@ -1191,7 +1199,7 @@ function [3:0] kind_px(input p, input [2:0] kind, input signed [11:0] u0, input 
                 fl = (kdash[p] ? ((kpose[1:0] == 2'd0) ? 12'sd11 : (kpose[1:0] == 2'd1) ? 12'sd13 :
                                   (kpose[1:0] == 2'd2) ? 12'sd12 : 12'sd14)
                                : ((kpose[1:0] == 2'd0) ? 12'sd5 : (kpose[1:0] == 2'd1) ? 12'sd7 :
-                                  (kpose[1:0] == 2'd2) ? 12'sd6 : 12'sd8) + (kmv ? 12'sd2 : 12'sd0)) + kbx[p];
+                                  (kpose[1:0] == 2'd2) ? 12'sd6 : 12'sd8) + (kmv ? 12'sd2 : 12'sd0));
                 lean = kdash[p] ? 12'sd0 : (kmv_dn[p] ? -12'sd1 : kmv_up[p] ? 12'sd1 : 12'sd0);
                 olen = ((fl + 12'sd1) >>> 1) + fz;
                 jlen = fl - 12'sd1;
@@ -1211,6 +1219,7 @@ function [3:0] kind_px(input p, input [2:0] kind, input signed [11:0] u0, input 
                     `KF(-7 - fl - $signed({10'd0, kpose3}), HT_R / 2 - 2 + $signed({10'd0, kpose[1:0] + kpose3}), 1, 1,
                         (kpose3 == 2'd0) ? KR_MARK_LIGHT : KR_MARK)
                 end
+                `KTR(-6 - fl, HT_R / 2 - 1, kbx[p])
                 if (kbs[p] == 2'd3) `KIGN(-5, HT_R / 2 - 1, 2)
                 wlen = kdash[p] ? 12'sd4 : 12'sd2;
                 w1 = $signed({10'd0, kpose3});
@@ -1231,7 +1240,7 @@ function [3:0] kind_px(input p, input [2:0] kind, input signed [11:0] u0, input 
                     `KF(-8, my - 1, 1, 4, KR_DARK_DEEP)
                     ph2 = (c == 0) ? kpose[1:0] : (kpose[1:0] + 2'd2);
                     fl = (kmv ? ((ph2 == 2'd0) ? 12'sd6 : (ph2 == 2'd2) ? 12'sd8 : 12'sd7)
-                              : ((ph2 == 2'd0) ? 12'sd4 : (ph2 == 2'd2) ? 12'sd6 : 12'sd5)) + kbx[p];
+                              : ((ph2 == 2'd0) ? 12'sd4 : (ph2 == 2'd2) ? 12'sd6 : 12'sd5));
                     jlen = fl - 12'sd1;
                     clen = ((fl >>> 1) < 12'sd2) ? 12'sd2 : (fl >>> 1);
                     `KF(-9, my - 1, 1, 4, KR_MARK)
@@ -1242,6 +1251,7 @@ function [3:0] kind_px(input p, input [2:0] kind, input signed [11:0] u0, input 
                         s3 = (c == 0) ? (kpose[0] ? 12'sd1 : 12'sd0) : (kpose[0] ? 12'sd0 : 12'sd1);
                         `KF(-10 - fl - s3, my + s3, 1, 1, KR_MARK_LIGHT)
                     end
+                    `KTR(-9 - fl, my, kbx[p])
                     if (kbs[p] == 2'd3) `KIGN(-9, my, 2)
                 end
                 alive = {2'd0, kwall[p][0]} + kwall[p][1] + kwall[p][2] + kwall[p][3] + kwall[p][4];

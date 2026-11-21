@@ -78,10 +78,11 @@ static int song_at(int f) {
     }
 }
 
-// eventi del frame: effetti sparsi, anche più eventi insieme (vale il più importante)
+// eventi del frame: effetti sparsi, anche più eventi insieme (vale il più importante); 128 lo sparo
+// del BLASTER (laser), 256 il rimbalzo della pallina del continue, i più deboli
 static int fx_at(int f) {
-    static const int ev[] = {1, 2, 4, 8, 16, 3, 12, 6, 2, 1, 24, 5};
-    if (f % 37 == 11) return ev[(f / 37) % 12];
+    static const int ev[] = {1, 2, 4, 8, 16, 3, 12, 6, 2, 1, 24, 5, 128, 129, 256, 384};
+    if (f % 37 == 11) return ev[(f / 37) % 16];
     if (f >= 2400 && f < 2440 && f % 4 == 0) return 2;     // effetti fitti
     if (f >= 3300 && f < 3360 && f % 3 == 0) return 6;     // anche sopra un tema
     return 0;

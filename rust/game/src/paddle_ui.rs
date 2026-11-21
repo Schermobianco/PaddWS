@@ -214,9 +214,9 @@ impl Ops {
 }
 
 /// Accensione dei booster allo scatto in avanti, per tutte le racchette: fase (3 nei primi 3
-/// frame, con il lampo agli ugelli, 2 fino al nono, 1 fino al quindicesimo, 0 spenti) e
-/// allungamento delle fiamme in pixel arcade, che parte dalla distanza da casa e si dimezza a ogni
-/// fase (il getto lasciato lungo lo scatto).
+/// frame, con il lampo agli ugelli, 2 fino al nono, 1 fino al quindicesimo, 0 spenti) e lunghezza
+/// in pixel arcade della scia tratteggiata dietro le fiamme (`trail`), che parte dalla distanza da
+/// casa e si dimezza a ogni fase.
 #[derive(Clone, Copy, Default)]
 struct Boost {
     stage: u8,
@@ -248,6 +248,17 @@ fn ignite(r: &mut Ops, x_end: f32, y: f32, rows: f32) {
     r.late_rect(x_end - 3.0, y - 2.0, 3.0, rows + 4.0, Role::Mark);
     r.late_rect(x_end - 3.0, y - 1.0, 3.0, rows + 2.0, Role::MarkLight);
     r.late_rect(x_end - 2.0, y, 2.0, rows, Role::Body);
+}
+
+/// Scia dello scatto in avanti: una linea tratteggiata (un pixel sì e uno no) nel colore del
+/// personaggio scurito, lunga `len` pixel oltre la punta della fiamma, che finisce alla colonna
+/// `x_from`. Leggera di proposito: le fiamme restano della loro lunghezza.
+fn trail(r: &mut Ops, x_from: f32, y: f32, len: f32) {
+    let mut i = 0.0;
+    while i < len {
+        r.late_rect(x_from - 1.0 - i, y, 1.0, 1.0, Role::MarkDark);
+        i += 2.0;
+    }
 }
 
 /// Sfarfallio delle fiamme a 16 al secondo (0 o 1), il doppio delle pose.
@@ -328,7 +339,7 @@ fn wall(r: &mut Ops, h: f32, a: &Anim, boost: Boost) {
     for (idx, ey) in [7.0, h - 9.0].into_iter().enumerate() {
         r.rect(-8.0, ey - 1.0, 1.0, 4.0, Role::DarkDeep);
         let p = (tq + idx * 2) % 4;
-        let fl = if moving { [6, 7, 8, 7][p] } else { [4, 5, 6, 5][p] } + boost.extra as usize;
+        let fl = if moving { [6, 7, 8, 7][p] } else { [4, 5, 6, 5][p] };
         let jlen = fl - 1;
         let clen = (fl / 2).max(2);
         r.late_rect(-9.0, ey - 1.0, 1.0, 4.0, Role::Mark);
@@ -339,6 +350,7 @@ fn wall(r: &mut Ops, h: f32, a: &Anim, boost: Boost) {
             let s = (tq + idx) % 2;
             r.late_rect(-10.0 - fl as f32 - s as f32, ey + s as f32, 1.0, 1.0, Role::MarkLight);
         }
+        trail(r, -9.0 - fl as f32, ey, boost.extra);
         if boost.stage == 3 {
             ignite(r, -9.0, ey, 2.0);
         }
@@ -437,10 +449,11 @@ fn kind_ops(kind: PaddleKind, h: f32, a: &Anim, par: f32, boost: Boost) -> Ops {
             r.rect(-3.0, mid - 3.0, 3.0, 6.0, cabin_role);
             r.late_rect(-2.0, mid - 2.0, 1.0, 4.0, Role::Black);
             let f = tq % 4;
-            let fl = if moving { 3.0 } else { 2.0 } + extra;
+            let fl = if moving { 3.0 } else { 2.0 };
             for ey in [8.0, h - 9.0] {
                 r.rect(-6.0 - fl - (f % 2) as f32, ey, fl, 1.0, Role::MarkLight);
-                r.rect(-8.0 - (f * 2) as f32 - extra, ey + if f % 2 == 1 { 1.0 } else { -1.0 }, 1.0, 1.0, Role::Mark);
+                r.rect(-8.0 - (f * 2) as f32, ey + if f % 2 == 1 { 1.0 } else { -1.0 }, 1.0, 1.0, Role::Mark);
+                trail(&mut r, -7.0 - fl, ey, extra);
                 if ignited {
                     ignite(&mut r, -6.0, ey, 1.0);
                 }
@@ -497,7 +510,7 @@ fn kind_ops(kind: PaddleKind, h: f32, a: &Anim, par: f32, boost: Boost) -> Ops {
                 r.rect(-10.0, my + 2.0, 2.0, 6.0, Role::Dark);
                 r.rect(-12.0, my + 1.0, 1.0, 8.0, Role::DarkDeep);
                 let p = (tq + idx * 2) % 4;
-                let fl = if moving { [6, 8, 7, 8][p] } else { [4, 5, 6, 5][p] } + extra as usize;
+                let fl: usize = if moving { [6, 8, 7, 8][p] } else { [4, 5, 6, 5][p] };
                 let mlen = fl.div_ceil(2);
                 let jlen = fl - 1;
                 let clen = (fl / 2).max(2);
@@ -512,6 +525,7 @@ fn kind_ops(kind: PaddleKind, h: f32, a: &Anim, par: f32, boost: Boost) -> Ops {
                     let srole = if s == 0 { Role::MarkLight } else { Role::Mark };
                     r.late_rect(-14.0 - fl as f32 - s as f32, my + 3.0 + ((s + idx) % 3) as f32, 1.0, 1.0, srole);
                 }
+                trail(&mut r, -13.0 - fl as f32, my + 4.0, extra);
                 if ignited {
                     ignite(&mut r, -13.0, my + 4.0, 2.0);
                 }
@@ -577,8 +591,6 @@ fn kind_ops(kind: PaddleKind, h: f32, a: &Anim, par: f32, boost: Boost) -> Ops {
             };
             let tlen = if fl >= 9 { 3 } else if fl >= 6 { 2 } else { 1 };
             let mlen = (fl * 2) / 3;
-            // i booster allungano il getto e la punta, non il cono (che segue il colpo)
-            let fl = fl + extra as usize;
             let jlen = fl - 1;
             let clen = (fl / 2).max(2);
             if surge == 3 {
@@ -596,6 +608,7 @@ fn kind_ops(kind: PaddleKind, h: f32, a: &Anim, par: f32, boost: Boost) -> Ops {
             if surge >= 2 {
                 r.late_rect(-11.0 - fl as f32, yc - 1.0 + (tq % 2) as f32, 1.0, 1.0, Role::MarkLight);
             }
+            trail(&mut r, -12.0 - fl as f32, yc - 1.0, extra);
             if ignited {
                 ignite(&mut r, -11.0, yc - 1.0, 2.0);
             }
@@ -641,13 +654,14 @@ fn kind_ops(kind: PaddleKind, h: f32, a: &Anim, par: f32, boost: Boost) -> Ops {
                 3 => 1.0,
                 _ => 0.0,
             };
-            let fl = if moving { [2, 3, 2, 3][ph] } else { [0, 1, 0, 1][ph] } as f32 + extra;
+            let fl = if moving { [2, 3, 2, 3][ph] } else { [0, 1, 0, 1][ph] } as f32;
             let clen = 2.0 + (fl / 2.0).floor();
             r.rect(-7.0, mid - 2.0, 2.0, 4.0, Role::Dark);
             r.late_rect(-9.0, mid - 2.0, 2.0, 4.0, Role::Mark);
             r.late_rect(-10.0 - fl, mid - 1.0 + dy, 3.0 + fl, 2.0, Role::MarkLight);
             r.late_rect(-7.0 - clen, mid - 1.0 + dy, clen, 2.0, Role::Body);
             r.late_rect(-12.0 - fl, mid - 1.0 + dy + (ph % 2) as f32, 2.0, 1.0, Role::Mark);
+            trail(&mut r, -12.0 - fl, mid - 1.0, extra);
             if ignited {
                 ignite(&mut r, -9.0, mid - 1.0, 2.0);
             }
@@ -698,7 +712,7 @@ fn kind_ops(kind: PaddleKind, h: f32, a: &Anim, par: f32, boost: Boost) -> Ops {
             for (idx, ey) in [5.0, h - 6.0].into_iter().enumerate() {
                 r.rect(-7.0, ey - 1.0, 1.0, 3.0, Role::DarkDeep);
                 let p = (tq + idx * 2) % 4;
-                let fl = if moving { [6, 8, 7, 8][p] } else { [4, 5, 6, 5][p] } as f32 + extra;
+                let fl = if moving { [6, 8, 7, 8][p] } else { [4, 5, 6, 5][p] } as f32;
                 let mlen = ((fl as i32 + 1) / 2) as f32;
                 let jlen = fl - 1.0;
                 let clen = (fl as i32 / 2).max(2) as f32;
@@ -712,6 +726,7 @@ fn kind_ops(kind: PaddleKind, h: f32, a: &Anim, par: f32, boost: Boost) -> Ops {
                     let spark_col = if s == 0 { Role::MarkLight } else { Role::Mark };
                     r.late_rect(-9.0 - fl - s as f32, ey - 1.0 + ((s + idx) % 3) as f32, 1.0, 1.0, spark_col);
                 }
+                trail(&mut r, -8.0 - fl, ey, extra);
                 if ignited {
                     ignite(&mut r, -8.0, ey, 1.0);
                 }
@@ -779,11 +794,11 @@ fn kind_ops(kind: PaddleKind, h: f32, a: &Anim, par: f32, boost: Boost) -> Ops {
             // scintille che si staccano; il getto piega contro `vy` (dritto nello scatto)
             let p = tq % 4;
             let fz = flicker(a.t);
-            let fl = if a.dashing {
+            let fl: usize = if a.dashing {
                 [11, 13, 12, 14][p]
             } else {
                 [5, 7, 6, 8][p] + if moving { 2 } else { 0 }
-            } + extra as usize;
+            };
             let lean = if a.dashing {
                 0.0
             } else if a.vy > 0.5 {
@@ -811,6 +826,7 @@ fn kind_ops(kind: PaddleKind, h: f32, a: &Anim, par: f32, boost: Boost) -> Ops {
                 let srole = if s == 0 { Role::MarkLight } else { Role::Mark };
                 r.late_rect(-7.0 - fl as f32 - s as f32, mid - 2.0 + ((p + s) % 4) as f32, 1.0, 1.0, srole);
             }
+            trail(&mut r, -6.0 - fl as f32, mid - 1.0, extra);
             if ignited {
                 ignite(&mut r, -5.0, mid - 1.0, 2.0);
             }

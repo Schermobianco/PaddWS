@@ -525,13 +525,16 @@ def supers_assets(lines: list[str], bar: list[int]) -> None:
     assert param("SID_ROM_SIZE") == len(rom), "sid_music.hex e sid_music.vh non vanno insieme"
     fx = {}
     for line in vh.splitlines():
-        if "sid_fx_start =" in line and line.strip().startswith("3'd"):
-            fx[int(line.split("3'd")[1].split(":")[0])] = addr(line)
-    for name in ("MOVE", "SPECIAL"):
+        if "sid_fx_start =" in line and line.strip().startswith("4'd"):
+            fx[int(line.split("4'd")[1].split(":")[0])] = addr(line)
+    # tracce degli effetti fuori da sid_music.bin, nel codice che li usa: mosse speciali (supers.s),
+    # sparo del BLASTER (LASER) e rimbalzo della pallina del continue (BOUNCE, challenge.s)
+    for name in ("MOVE", "SPECIAL", "LASER", "BOUNCE"):
         start = fx[param(f"SID_FX_{name}")]
         end = min([s for s in starts if s > start] + [len(rom)])
         track = rom[start:end]
         assert track and start >= param("SID_ROM_BASE_SIZE"), name
+        lines.append(f"SID_FX_{name} = {param(f'SID_FX_{name}')}")
         lines.append(f".define SID_TRACK_{name} " + ", ".join(f"${b:02X}" for b in track))
 
 

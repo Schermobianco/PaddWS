@@ -25,6 +25,7 @@ module sid_top #(
     input  wire [7:0]  pot_y_r,
     input  wire [17:0] ext_in_r,
     output wire [17:0] audio_r,
+    output wire [47:0] scope,
     input  wire        filter_en,
     input  wire        mode,
     input  wire [1:0]  cfg,
@@ -40,6 +41,7 @@ module sid_top #(
 assign data_out = 8'd0;
 assign audio_l = 18'd0;
 assign audio_r = 18'd0;
+assign scope = 48'd0;
 
 always @(posedge clk)
     if (we && cs) $display("W %02x %02x", addr, data_in);

@@ -1372,12 +1372,7 @@ s_volume:   .byte "VOLUME", 0
 s_border:   .byte "BORDER", 0
 s_play:     .byte "PLAY", 0
 s_jukebox:  .byte "JUKEBOX", 0
-; (dal menu, che è quasi pieno)
-level_names:   .word s_easy, s_normal, s_hard, s_expert
-s_easy:     .byte "EASY    ", 0
-s_normal:   .byte "NORMAL  ", 0
-s_hard:     .byte "HARD    ", 0
-s_expert:   .byte "EXPERT  ", 0
+; (dal menu, che è quasi pieno; i nomi delle difficoltà invece stanno in MENUCODE)
 player_names:  .word s_one, s_two, s_cpu
 s_one:      .byte "ONE     ", 0
 s_two:      .byte "TWO     ", 0
@@ -1388,6 +1383,12 @@ s_ladder:   .byte "LADDER  ", 0
 s_blank:    .byte "        ", 0
 
 .segment "MENUCODE"
+; nomi delle difficoltà (li usa solo il menu)
+level_names:   .word s_easy, s_normal, s_hard, s_expert
+s_easy:     .byte "EASY    ", 0
+s_normal:   .byte "NORMAL  ", 0
+s_hard:     .byte "HARD    ", 0
+s_expert:   .byte "EXPERT  ", 0
 ; giocatori validi per gioco, indice opt_mode * 5 + opt_players (1 ONE, 2 TWO, 3 VS CPU, 4 CHALLENGE)
 players_ok:
     .byte 0, 1, 1, 1, 0                 ; CLASSIC
@@ -1837,7 +1838,8 @@ done:
     jsr ch_hud
     ; effetto sonoro, con il frame già avanti al prossimo (avviarlo costa). NEXT e tipi di
     ; racchetta come nel MiSTer: capsula e barriera del GUARDIAN = muro, sparo del BLASTER =
-    ; colpo, bonus attivato e TELEPORT = boost, SUPER = punto (senza questi eventi, la via corta)
+    ; laser (bit 7), bonus attivato e TELEPORT = boost, SUPER = punto (senza questi eventi, la
+    ; via corta)
     lda events
     and #EV_COLLECT | EV_ACTIVATE | EV_SUPER | EV_TELEPORT
     bne :+
@@ -1852,7 +1854,7 @@ done:
     lsr a                       ; C = sparo; bit 0 = barriera
     and #EV_WALL
     bcc :+
-    ora #EV_HIT
+    ora #$80                    ; laser (sid_fx)
 :   bit m_t
     bpl :+
     ora #EV_BOOST

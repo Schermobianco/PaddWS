@@ -1321,8 +1321,9 @@ impl Continue {
             self.over = Some(app.attract.game_over_seconds());
             return None;
         }
+        // la pallina tocca terra quando il numero cambia: il rimbalzo
         if self.left.ceil() < before {
-            app.play(Event::Wall);
+            app.play_bounce();
         }
         None
     }

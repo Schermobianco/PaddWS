@@ -119,6 +119,12 @@ def boost_of(fade: float, dist: float) -> tuple[int, int]:
     return 0, 0
 
 
+def trail(r: "Ops", x_from: int, y: int, length: int) -> None:
+    """Scia dello scatto: linea tratteggiata scura lunga `length` oltre la punta della fiamma."""
+    for i in range(0, length, 2):
+        r.late_rect(x_from - 1 - i, y, 1, 1, MARK_DARK)
+
+
 def ignite(r: "Ops", x_end: int, y: int, rows: int) -> None:
     """Lampo dell'accensione dietro un ugello che finisce alla colonna `x_end`."""
     r.late_rect(x_end - 3, y - 2, 3, rows + 4, MARK)
@@ -173,7 +179,7 @@ def wall(r: Ops, h: int, a: Anim) -> None:
     for idx, ey in enumerate((7, h - 9)):
         r.rect(-8, ey - 1, 1, 4, DARK_DEEP)
         p = (tq + idx * 2) % 4
-        fl = ((6, 7, 8, 7)[p] if moving else (4, 5, 6, 5)[p]) + a.boost_extra
+        fl = (6, 7, 8, 7)[p] if moving else (4, 5, 6, 5)[p]
         jlen = fl - 1
         clen = max(2, fl // 2)
         r.late_rect(-9, ey - 1, 1, 4, MARK)
@@ -183,6 +189,7 @@ def wall(r: Ops, h: int, a: Anim) -> None:
         if moving:
             s = (tq + idx) % 2
             r.late_rect(-10 - fl - s, ey + s, 1, 1, MARK_LIGHT)
+        trail(r, -9 - fl, ey, a.boost_extra)
         if a.boost_stage == 3:
             ignite(r, -9, ey, 2)
 
@@ -252,10 +259,11 @@ def kind_ops(kind: int, h: int, a: Anim, pw: int = 5) -> Ops:
         r.rect(-3, mid - 3, 3, 6, cabin)
         r.late_rect(-2, mid - 2, 1, 4, BLACK)
         f = tq % 4
-        fl = (3 if moving else 2) + extra
+        fl = 3 if moving else 2
         for ey in (8, h - 9):
             r.rect(-6 - fl - (f % 2), ey, fl, 1, MARK_LIGHT)
-            r.rect(-8 - f * 2 - extra, ey + (1 if f % 2 else -1), 1, 1, MARK)
+            r.rect(-8 - f * 2, ey + (1 if f % 2 else -1), 1, 1, MARK)
+            trail(r, -7 - fl, ey, extra)
             if ignited:
                 ignite(r, -6, ey, 1)
         if coin_f is not None:
@@ -291,7 +299,7 @@ def kind_ops(kind: int, h: int, a: Anim, pw: int = 5) -> Ops:
             r.rect(-10, my + 2, 2, 6, DARK)
             r.rect(-12, my + 1, 1, 8, DARK_DEEP)
             p = (tq + idx * 2) % 4
-            fl = ((6, 8, 7, 8)[p] if moving else (4, 5, 6, 5)[p]) + extra
+            fl = (6, 8, 7, 8)[p] if moving else (4, 5, 6, 5)[p]
             mlen = (fl + 1) // 2
             jlen = fl - 1
             clen = max(2, fl // 2)
@@ -304,6 +312,7 @@ def kind_ops(kind: int, h: int, a: Anim, pw: int = 5) -> Ops:
             if moving:
                 s = (tq + idx) % 3
                 r.late_rect(-14 - fl - s, my + 3 + ((s + idx) % 3), 1, 1, MARK_LIGHT if s == 0 else MARK)
+            trail(r, -13 - fl, my + 4, extra)
             if ignited:
                 ignite(r, -13, my + 4, 2)
         r.rect(-8, 1, 2, h - 2, DARK_DEEP)
@@ -342,7 +351,6 @@ def kind_ops(kind: int, h: int, a: Anim, pw: int = 5) -> Ops:
         fl = (11 if surge == 3 else (9 if surge == 2 else (7 if surge == 1 else (4, 5, 4, 3)[tq % 4])))
         tlen = 3 if fl >= 9 else (2 if fl >= 6 else 1)
         mlen = (fl * 2) // 3
-        fl += extra  # i booster allungano il getto e la punta, non il cono
         jlen = fl - 1
         clen = max(2, fl // 2)
         if surge == 3:
@@ -356,6 +364,7 @@ def kind_ops(kind: int, h: int, a: Anim, pw: int = 5) -> Ops:
         r.late_rect(-12 - fl, yc - 1 + (tq % 2), 2, 1, MARK)
         if surge >= 2:
             r.late_rect(-11 - fl, yc - 1 + (tq % 2), 1, 1, MARK_LIGHT)
+        trail(r, -12 - fl, yc - 1, extra)
         if ignited:
             ignite(r, -11, yc - 1, 2)
         if surge >= 2 or piston_beat:
@@ -387,13 +396,14 @@ def kind_ops(kind: int, h: int, a: Anim, pw: int = 5) -> Ops:
         r.late_rect(-2, mid + 1, 2, 1, BODY)
         ph = tq % 4
         dy = -1 if ph == 1 else (1 if ph == 3 else 0)
-        fl = ((2, 3, 2, 3)[ph] if moving else (0, 1, 0, 1)[ph]) + extra
+        fl = (2, 3, 2, 3)[ph] if moving else (0, 1, 0, 1)[ph]
         clen = 2 + fl // 2
         r.rect(-7, mid - 2, 2, 4, DARK)
         r.late_rect(-9, mid - 2, 2, 4, MARK)
         r.late_rect(-10 - fl, mid - 1 + dy, 3 + fl, 2, MARK_LIGHT)
         r.late_rect(-7 - clen, mid - 1 + dy, clen, 2, BODY)
         r.late_rect(-12 - fl, mid - 1 + dy + (ph % 2), 2, 1, MARK)
+        trail(r, -12 - fl, mid - 1, extra)
         if ignited:
             ignite(r, -9, mid - 1, 2)
         p = tq % 2
@@ -428,7 +438,7 @@ def kind_ops(kind: int, h: int, a: Anim, pw: int = 5) -> Ops:
         for idx, ey in enumerate((5, h - 6)):
             r.rect(-7, ey - 1, 1, 3, DARK_DEEP)
             p = (tq + idx * 2) % 4
-            fl = ((6, 8, 7, 8)[p] if moving else (4, 5, 6, 5)[p]) + extra
+            fl = (6, 8, 7, 8)[p] if moving else (4, 5, 6, 5)[p]
             mlen = (fl + 1) // 2
             jlen = fl - 1
             clen = max(2, fl // 2)
@@ -440,6 +450,7 @@ def kind_ops(kind: int, h: int, a: Anim, pw: int = 5) -> Ops:
             if moving:
                 s = (tq + idx) % 3
                 r.late_rect(-9 - fl - s, ey - 1 + ((s + idx) % 3), 1, 1, MARK_LIGHT if s == 0 else MARK)
+            trail(r, -8 - fl, ey, extra)
             if ignited:
                 ignite(r, -8, ey, 1)
         r.late_rect(-3, mid - 4, 1, 2, MARK)
@@ -486,7 +497,7 @@ def kind_ops(kind: int, h: int, a: Anim, pw: int = 5) -> Ops:
         # diamanti d'urto che scorrono e scintille
         p = tq % 4
         fz = flicker(a.t)
-        fl = ((11, 13, 12, 14)[p] if a.dashing else (5, 7, 6, 8)[p] + (2 if moving else 0)) + extra
+        fl = (11, 13, 12, 14)[p] if a.dashing else (5, 7, 6, 8)[p] + (2 if moving else 0)
         lean = 0 if a.dashing else (-1 if a.vy > 0.5 else (1 if a.vy < -0.5 else 0))
         olen = (fl + 1) // 2 + fz
         jlen = fl - 1
@@ -502,6 +513,7 @@ def kind_ops(kind: int, h: int, a: Anim, pw: int = 5) -> Ops:
         if moving:
             sp = tq % 3
             r.late_rect(-7 - fl - sp, mid - 2 + (p + sp) % 4, 1, 1, MARK_LIGHT if sp == 0 else MARK)
+        trail(r, -6 - fl, mid - 1, extra)
         if ignited:
             ignite(r, -5, mid - 1, 2)
         wlen = 4 if a.dashing else 2

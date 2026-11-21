@@ -62,19 +62,22 @@ pub struct Assets {
 
 /// Effetti del SID: i bit degli eventi di `paddws_sid::player::effect_of` (come `sid_events` di
 /// pong_top.v).
-const SFX_WALL: u8 = 1 << 0;
-const SFX_HIT: u8 = 1 << 1;
-const SFX_BOOST: u8 = 1 << 2;
-const SFX_SCORE: u8 = 1 << 3;
-const SFX_COIN: u8 = 1 << 4;
-const SFX_MOVE: u8 = 1 << 5;
-const SFX_SPECIAL_HIT: u8 = 1 << 6;
+const SFX_WALL: u16 = 1 << 0;
+const SFX_HIT: u16 = 1 << 1;
+const SFX_BOOST: u16 = 1 << 2;
+const SFX_SCORE: u16 = 1 << 3;
+const SFX_COIN: u16 = 1 << 4;
+const SFX_MOVE: u16 = 1 << 5;
+const SFX_SPECIAL_HIT: u16 = 1 << 6;
+const SFX_LASER: u16 = 1 << 7;
+/// rimbalzo della pallina del continue quando tocca terra
+const SFX_BOUNCE: u16 = 1 << 8;
 
 /// I suoni degli eventi di un frame (anche di più tick), da suonare con `App::play_frame`.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct FrameSound {
     /// effetti del SID (`SFX_*`)
-    sid: u8,
+    sid: u16,
     /// voce di partita: l'urlo della mossa speciale al colpo, insieme alla scritta (`special_hit`),
     /// o YOU WIN / PERFECT a fine partita, che vincono sugli urli
     shout: Option<Call>,
@@ -91,8 +94,8 @@ impl FrameSound {
             Event::Collect => SFX_WALL,
             Event::Activate | Event::Teleport => SFX_BOOST,
             Event::Super => SFX_SCORE,
-            // tipi di racchetta: colpo del BLASTER, rimbalzo sulla barriera del GUARDIAN
-            Event::Fire => SFX_HIT,
+            // tipi di racchetta: sparo del BLASTER (laser), rimbalzo sulla barriera del GUARDIAN
+            Event::Fire => SFX_LASER,
             Event::Barrier => SFX_WALL,
             // mosse speciali: i loro effetti, e l'urlo con il nome della mossa
             Event::Straight | Event::Rise => SFX_MOVE,
@@ -376,6 +379,11 @@ impl App {
     /// Gettone inserito: l'effetto più importante, non rallenta mai.
     pub fn play_coin(&self) {
         self.sid_music.effect(SFX_COIN, false);
+    }
+
+    /// Continue: la pallina tocca terra (il rimbalzo, non più nella canzone).
+    pub fn play_bounce(&self) {
+        self.sid_music.effect(SFX_BOUNCE, false);
     }
 
     /// CHALLENGE: il nome dell'avversario, detto dal SID con il trucco di $D418 (intanto la musica

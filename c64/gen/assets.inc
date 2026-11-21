@@ -72,8 +72,14 @@ BAR_CHARS = 5
 .define BAR_GLYPHS $FF, $00, $00, $00, $FF, $00, $00, $00, $FF, $C0, $C0, $C0, $FF, $00, $00, $00, $FF, $F0, $F0, $F0, $FF, $00, $00, $00, $FF, $FC, $FC, $FC, $FF, $00, $00, $00, $FF, $FF, $FF, $FF, $FF, $00, $00, $00
 ; icone della mossa armata: STRAIGHT SHOT sinistro e destro, RISING STRIKE sinistro e destro
 .define SUPER_ICONS $00, $00, $04, $06, $FF, $06, $04, $00, $00, $00, $20, $60, $FF, $60, $20, $00, $00, $07, $03, $05, $08, $F0, $00, $00, $00, $E0, $C0, $A0, $10, $0F, $00, $00
+SID_FX_MOVE = 6
 .define SID_TRACK_MOVE $71, $93, $80, $28, $2B, $08, $80, $3C, $32, $0A, $FF
+SID_FX_SPECIAL = 7
 .define SID_TRACK_SPECIAL $75, $54, $03, $76, $54, $02, $4F, $02, $4C, $02, $48, $02, $43, $02, $40, $02, $3C, $03, $37, $03, $30, $08, $FF
+SID_FX_LASER = 8
+.define SID_TRACK_LASER $74, $58, $01, $53, $01, $4E, $01, $49, $01, $44, $01, $40, $02, $FF
+SID_FX_BOUNCE = 9
+.define SID_TRACK_BOUNCE $73, $4C, $06, $FF
 
 ; attract (attract.json riportato a 320x200 e 50 Hz)
 AT_BOOT_FRAMES = 240

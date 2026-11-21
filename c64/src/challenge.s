@@ -2918,8 +2918,8 @@ got:
     ldx #18
     ldy #9
     jsr draw_digit
-    lda #EV_WALL
-    jsr sid_fx
+    ldx #SID_FX_BOUNCE          ; la pallina tocca terra: il rimbalzo (non più nella canzone)
+    jsr ::sid_fx_start
 prompt:
     ; crediti rimasti, come nel titolo (non in Free Play): un gettone può arrivare ora
     lda opt_free
@@ -2955,6 +2955,8 @@ done:
 .endproc
 
 .endscope
+; traccia dell'effetto 9 del player (sid.s, fx_start): il rimbalzo della pallina del continue
+sid_track_bounce: .byte SID_TRACK_BOUNCE
 
 .segment "CHCODE"
 .scope chc

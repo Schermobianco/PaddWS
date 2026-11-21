@@ -47,7 +47,7 @@ enum Cmd {
     /// nome della racchetta (`PaddleKind`) come voce di partita, sopra la musica
     CallName(u8),
     /// effetto per i bit degli eventi del frame, rallentato o no
-    Effect(u8, bool),
+    Effect(u16, bool),
 }
 
 /// Ritardo stimato fra il campione appena prodotto e quello che si sente (il buffer del mixer,
@@ -183,7 +183,7 @@ impl SidMusic {
 
     /// Effetto del SID sulla voce 3 per i bit degli eventi (`paddws_sid::player::effect_of`): ne
     /// suona uno per priorità e interrompe quello in corso; `slow` nel bullet time.
-    pub fn effect(&self, events: u8, slow: bool) {
+    pub fn effect(&self, events: u16, slow: bool) {
         self.send(Cmd::Effect(events, slow));
     }
 

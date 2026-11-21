@@ -81,8 +81,12 @@ fx_start:   .word 0
             .word sid_rom + .mid(i * 2, 1, {SID_FX_STARTS})
             .endrepeat
             ; effetti 6 e 7 (MOVE e SPECIAL, come SID_FX_MOVE e SID_FX_SPECIAL del MiSTer): mosse
-            ; speciali di NEXT, con le tracce in supers.s; li fa partire sm_hud (sid_fx::start)
-            .word sid_track_move, sid_track_special
+            ; speciali di NEXT, con le tracce in supers.s; li fa partire sm_hud (sid_fx_start).
+            ; 8 LASER, lo sparo del BLASTER (bit 7 degli eventi), e 9 BOUNCE, il rimbalzo della
+            ; pallina del continue (cont_scene, con la traccia in CLCODE)
+            .word sid_track_move, sid_track_special, sid_track_laser, sid_track_bounce
+.assert SID_FX_MOVE = 6 .and SID_FX_SPECIAL = 7 .and SID_FX_LASER = 8 .and SID_FX_BOUNCE = 9, error, "fx_start: effetti fuori ordine"
+sid_track_laser: .byte SID_TRACK_LASER
 vbase:      .byte 0, 7, 14, 14              ; primo registro della voce di ogni canale
 ; arpeggi: semitoni per i passi 0-2 (modo 0 spento, 1 minore, 2 maggiore, 3 ottava)
 arp_table:  .byte 0, 0, 0,  0, 3, 7,  0, 4, 7,  0, 12, 12
@@ -177,29 +181,38 @@ sid_wc:      .res 1
 :   rts
 .endproc
 
-; Effetto degli eventi A (bit 0 muro, 1 colpo, 2 boost, 3 punto, 4 gettone): parte subito sul
-; canale 3, con la priorità gettone > punto > boost > colpo > muro.
+; Effetto degli eventi A (bit 0 muro, 1 colpo, 2 boost, 3 punto, 4 gettone, 7 sparo del BLASTER):
+; parte subito sul canale 3, con la priorità gettone > punto > boost > colpo > muro > laser.
 .proc sid_fx
     bit $fffb                   ; la voce di CHALLENGE ha il SID (voice.s): niente effetti
     bmi done
+    tax
     and #$1f
     bne :+
+    txa
+    bpl done                    ; niente sparo
+    ldx #SID_FX_LASER
+    bne sid_fx_start
 done:
     rts
 :   ldx #SID_FX_COIN
     cmp #$10
-    bcs start
+    bcs sid_fx_start
     dex                         ; SCORE
     cmp #$08
-    bcs start
+    bcs sid_fx_start
     dex                         ; BOOST
     cmp #$04
-    bcs start
+    bcs sid_fx_start
     dex                         ; HIT
     cmp #$02
-    bcs start
+    bcs sid_fx_start
     dex                         ; WALL
-start:
+.endproc
+
+; Effetto numero X (da 1, l'indice di fx_start), subito sul canale 3: da sid_fx, dalle mosse
+; speciali (sm_hud, MOVE e SPECIAL) e dal continue (cont_scene, BOUNCE).
+.proc sid_fx_start
     txa
     asl a
     tax

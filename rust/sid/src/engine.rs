@@ -113,7 +113,7 @@ pub struct Music {
     name: NameVoice,
     call: CallVoice,
     /// effetto chiesto mentre il nome dell'avversario ha il SID: parte alla fine
-    pending_fx: Option<(u8, bool)>,
+    pending_fx: Option<(u16, bool)>,
     /// passi fatti (per le prove)
     steps: u64,
     /// oscilloscopi delle voci, se richiesti
@@ -202,7 +202,7 @@ impl Music {
     /// Effetto del SID sulla voce 3 per gli eventi del frame (bit come in `player::effect_of`: ne
     /// suona uno, per priorità, e interrompe quello in corso); con `slow` a metà velocità (bullet
     /// time). Mentre il nome dell'avversario ha il SID aspetta la fine.
-    pub fn effect(&mut self, events: u8, slow: bool) {
+    pub fn effect(&mut self, events: u16, slow: bool) {
         if self.name.on() {
             self.pending_fx = Some((events, slow));
             return;

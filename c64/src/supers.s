@@ -1107,7 +1107,7 @@ sound:
     bit $fffb                   ; la voce di CHALLENGE ha il SID
     bmi drop
     ldx sm_fxp
-    jsr sid_fx::start
+    jsr sid_fx_start
     lda #0
     sta fx_pend                 ; l'effetto rimandato del tick (colpo o muro) non lo copre
 drop:
