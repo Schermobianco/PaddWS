@@ -27,7 +27,11 @@ boot_lines: .word boot_0, 0, boot_2, boot_3, boot_4, boot_5
 boot_0: .byte "PADD WS  V4.6", 0
 boot_2: .byte "RAM ........ OK", 0
 boot_3: .byte "ROM ........ OK", 0
+.ifdef NTSC
+boot_4: .byte "VIDEO NTSC .. OK", 0
+.else
 boot_4: .byte "VIDEO PAL ... OK", 0
+.endif
 boot_5: .byte "AUDIO ...... OK", 0
 .segment "RODATA"
 BOOT_LINES = 6
