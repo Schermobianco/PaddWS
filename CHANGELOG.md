@@ -14,6 +14,8 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+## [4.6.3] - 2026-11-22
+
 ### Modificato
 - Le racchette di NEXT sono gli sprite delle astronavi viste dall'alto, disegnati a mano
   (`assets/ships/sprites`), con più dettagli delle forme di prima e le stesse animazioni attaccate
@@ -1408,7 +1410,8 @@ Ricostruite dalle cartelle di backup in `archive/` (date indicative).
 - **1.5** (2020-08) – versione per Raspberry Pi con encoder rotativi.
 - **1.1 – 1.4** (2020-08) – prime versioni pygame: menu, modalità CLASSIC ed EVO, suoni, splash.
 
-[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.6.2...HEAD
+[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.6.3...HEAD
+[4.6.3]: https://github.com/Schermobianco/PaddWS/compare/v4.6.2...v4.6.3
 [4.6.2]: https://github.com/Schermobianco/PaddWS/compare/v4.6.1...v4.6.2
 [4.6.1]: https://github.com/Schermobianco/PaddWS/compare/v4.6.0...v4.6.1
 [4.6.0]: https://github.com/Schermobianco/PaddWS/compare/v4.6.0-dev...v4.6.0
