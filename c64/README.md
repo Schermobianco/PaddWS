@@ -63,6 +63,18 @@ Servono al banco di prova: il `.prg` da solo non parte, gira solo dalla cartucci
 I file di `c64/gen/` sono generati e stanno nel repository: `tools/gen_c64_assets.py` per grafica,
 musica e voci, `paddws-c64 params` per `params.inc`. Non si modificano a mano.
 
+Le immagini del C64 si ritoccano a mano con `tools/c64_editor.html`, che si apre in Edge o Chrome
+senza installare nulla: bitmap hires e multicolor, caratteri, sprite, griglia delle celle con
+l'origine a scelta, celle non valide in rosso; *File → Importa e converti* trasforma un'immagine
+qualsiasi (anche quella di riferimento) in uno di questi modi, con retino e colori a scelta.
+Legge e scrive i PNG a palette dei generatori
+(indice = colore del C64), per esempio i ritratti di `assets/characters/portraits/c64`, e ci lascia
+un segno: `tools/gen_portraits.py` non sovrascrive più quei file (per rifarne uno dalla sorgente lo
+si cancella). Dopo il ritocco: `tools/gen_c64_portraits.py`, poi la build. Dentro VS Code (browser
+integrato o Simple Browser) la pagina non può aprire né salvare file: si avvia
+`.venv\Scripts\python tools\c64_editor.py` e si apre `http://127.0.0.1:8064/`, che lavora sui PNG
+del repository.
+
 Per le schermate ci sono build che partono subito con una partita:
 
 ```powershell

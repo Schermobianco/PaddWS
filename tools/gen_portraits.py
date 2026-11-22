@@ -17,7 +17,9 @@ cella: il C64 li riconverte con i suoi (2 colori ogni 8x8).
 Gli stessi ritratti per il C64 (sottocartella c64/): bitmap hires, in ogni cella 8x8 al massimo
 2 colori tra nero, bianco, i tre grigi e il colore del personaggio (C64_ACCENT), scelti per
 cella; l'indice della palette è il numero del colore del C64 (tavolozza Colodore, solo per vederli).
-Le misure sono multipli di 8 (11x13 e 4x4 caratteri).
+Le misure sono multipli di 8 (11x13 e 4x4 caratteri). Un ritratto del C64 ritoccato a mano con
+tools/c64_editor.html (blocco tEXt "c64edit" nel PNG) non viene sovrascritto: per rifarlo dalla
+sorgente si cancella il file.
 
 L'inquadratura del ritratto grande è larga BIG_SRC_W pixel della sorgente intorno al volto (FACE),
 spostata di SHIFT (positivo: il personaggio va a sinistra, per far entrare fucile e laser di
@@ -490,11 +492,24 @@ def portrait(name: str, w: int, h: int, src_w: int, up: float, shift: int,
     return out
 
 
+def hand_edited(path: Path) -> bool:
+    """Vero se il PNG è stato salvato da tools/c64_editor.html (blocco tEXt "c64edit")."""
+    if not path.exists():
+        return False
+    with Image.open(path) as im:
+        return "c64edit" in im.info
+
+
 def main() -> None:
     (OUT / "c64").mkdir(parents=True, exist_ok=True)
+    kept = []
     for make, folder in ((portrait, OUT), (c64, OUT / "c64")):
         def save(image: Image.Image, stem: str) -> None:
-            image.save(folder / f"{stem}.png", optimize=True)
+            path = folder / f"{stem}.png"
+            if folder != OUT and hand_edited(path):
+                kept.append(stem)       # ritoccato a mano: resta com'è
+                return
+            image.save(path, optimize=True)
 
         for name in NAMES:
             save(make(name, BIG_W, BIG_H, BIG_SRC_W, 0.0, 0), name)
@@ -518,6 +533,8 @@ def main() -> None:
     }
     (OUT / "portraits.json").write_text(json.dumps(spec, indent=2) + "\n", encoding="utf-8")
     print(f"{OUT.relative_to(ROOT)}: {len(NAMES)} ritratti grandi, {len(NAMES) + 1} caselle")
+    if kept:
+        print(f"  C64 ritoccati a mano, non sovrascritti: {', '.join(kept)}")
 
 
 if __name__ == "__main__":

@@ -63,6 +63,18 @@ The test bench needs them: the `.prg` does not start on its own, it only runs fr
 The files in `c64/gen/` are generated and committed: `tools/gen_c64_assets.py` makes the graphics,
 music and voices, `paddws-c64 params` makes `params.inc`. Do not edit them by hand.
 
+C64 images can be retouched by hand with `tools/c64_editor.html`, which opens in Edge or Chrome
+with nothing to install: hires and multicolour bitmaps, characters, sprites, a cell grid with a
+movable origin, invalid cells shown in red; *File → Importa e converti* turns any image (including
+the reference image) into one of these modes, with a choice of dithering and colours.
+It reads and writes the generators' palette PNGs
+(index = C64 colour), such as the portraits in `assets/characters/portraits/c64`, and marks them:
+`tools/gen_portraits.py` no longer overwrites those files (delete one to remake it from the
+source). After retouching: `tools/gen_c64_portraits.py`, then the build. Inside VS Code (integrated
+browser or Simple Browser) the page cannot open or save files: run
+`.venv\Scripts\python tools\c64_editor.py` and open `http://127.0.0.1:8064/`, which works on the
+repository's PNGs.
+
 For screenshots there are builds that go straight into a match:
 
 ```powershell

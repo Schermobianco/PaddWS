@@ -1,0 +1,2677 @@
+<!doctype html>
+<!--
+  Editor di immagini con i vincoli del C64 (PADD WS).
+
+  Si apre in Edge o Chrome (doppio clic sul file, nessuna installazione). Legge e scrive PNG a
+  palette in cui l'indice è il numero del colore del C64 (tavolozza Colodore, la stessa di
+  tools/gen_portraits.py), come quelli di assets/characters/portraits/c64 che leggono i
+  generatori. Nel PNG salvato c'è un blocco tEXt "c64edit" con modo, origine della griglia e
+  registri: i generatori lo usano per non sovrascrivere le immagini ritoccate a mano.
+
+  Modi: bitmap hires (2 colori per cella 8x8), bitmap multicolor (sfondo + 3 per cella, pixel
+  doppi), caratteri hires e multicolor, sprite hires e multicolor (24x21), libero.
+-->
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Editor C64</title>
+<style>
+:root {
+  --bg: #15171c; --panel: #1d2027; --panel2: #262a33; --line: #343945; --text: #e5e7ee;
+  --muted: #959cad; --accent: #7aa2ff; --accent2: #3d5fb8; --danger: #ff5a5f; --ok: #4fd08a;
+  --work: #0e1014; --warn: #ffc34d;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--text); font: 13px/1.35 system-ui, "Segoe UI", sans-serif;
+  display: grid; grid-template-rows: auto auto 1fr auto; overflow: hidden;
+}
+button, select, input { font: inherit; color: inherit; }
+button {
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 5px; padding: 3px 8px;
+  cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+button.on { background: var(--accent2); border-color: var(--accent); }
+select, input[type=number], input[type=text], input:not([type]) {
+  background: var(--work); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px;
+}
+input[type=number] { width: 58px; }
+kbd { font: 11px ui-monospace, Consolas, monospace; color: var(--muted); }
+hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+
+/* barra dei menu */
+#bar { display: flex; align-items: center; gap: 4px; padding: 4px 8px; background: var(--panel);
+  border-bottom: 1px solid var(--line); }
+#bar .brand { font-weight: 600; margin-right: 10px; letter-spacing: .02em; }
+.menu { position: relative; }
+.menu > .mbtn { background: transparent; border-color: transparent; }
+.menu.open > .mbtn { background: var(--panel2); border-color: var(--line); }
+.drop { display: none; position: absolute; top: 100%; left: 0; z-index: 20; min-width: 270px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px;
+  box-shadow: 0 8px 24px #0008; }
+.menu.open .drop { display: block; }
+.drop button { display: flex; width: 100%; justify-content: space-between; gap: 18px;
+  background: transparent; border-color: transparent; text-align: left; }
+.drop button:hover { background: var(--panel2); }
+#docname { margin-left: auto; color: var(--muted); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; max-width: 45vw; }
+
+/* opzioni dello strumento */
+#opts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 4px 10px;
+  background: var(--panel); border-bottom: 1px solid var(--line); min-height: 34px; }
+#opts .grp { display: flex; align-items: center; gap: 4px; }
+#opts .grp button { min-width: 26px; padding: 2px 6px; }
+#hint { color: var(--muted); }
+
+main { display: grid; grid-template-columns: 46px 1fr 310px; min-height: 0; }
+#tools { background: var(--panel); border-right: 1px solid var(--line); display: flex;
+  flex-direction: column; gap: 4px; padding: 6px 5px; }
+#tools button { width: 34px; height: 34px; padding: 0; display: grid; place-items: center; }
+#tools svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round; }
+#stage { position: relative; background: var(--work); min-width: 0; min-height: 0; overflow: hidden; }
+#cv { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+#stage.drop::after { content: "Lascia qui l'immagine per aprirla"; position: absolute; inset: 12px;
+  display: grid; place-items: center; border: 2px dashed var(--accent); border-radius: 10px;
+  background: #7aa2ff22; font-size: 18px; pointer-events: none; }
+#cv.pan { cursor: grab; }
+#cv.cross { cursor: crosshair; }
+
+#side { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto;
+  padding: 0 10px 12px; }
+#side section { border-bottom: 1px solid var(--line); padding: 8px 0; }
+#side h3 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); font-weight: 600; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0; }
+label { display: inline-flex; align-items: center; gap: 4px; }
+.small { color: var(--muted); font-size: 12px; }
+
+.cur { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.sw { width: 22px; height: 22px; border-radius: 4px; border: 1px solid #0009;
+  box-shadow: inset 0 0 0 1px #fff2; }
+.sw.big { width: 34px; height: 34px; }
+.sw.t, .chip .sw.t { background: repeating-conic-gradient(#888 0 25%, #555 0 50%) 0 0 / 10px 10px; }
+#curNames { color: var(--muted); font-size: 12px; }
+#palette { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
+#palette button { height: 30px; padding: 0; border-radius: 4px; position: relative;
+  border: 1px solid #0009; font: 10px ui-monospace, monospace; }
+#palette button span { position: absolute; left: 2px; bottom: 1px; mix-blend-mode: difference;
+  color: #fff; }
+#palette button.dim { opacity: .35; }
+#palette button.p { outline: 2px solid #fff; outline-offset: 1px; }
+#palette button.s { outline: 2px dashed #fff; outline-offset: 1px; }
+
+#cellInfo .chip { display: flex; align-items: center; gap: 6px; padding: 2px 4px;
+  border-radius: 4px; cursor: pointer; }
+#cellInfo .chip:hover { background: var(--panel2); }
+#cellInfo .chip .sw { width: 16px; height: 16px; }
+.bad { color: var(--danger); }
+.good { color: var(--ok); }
+.pvwrap { background: var(--work); border-radius: 4px; padding: 6px; overflow: auto; max-height: 260px; }
+#pv { image-rendering: pixelated; display: block; }
+.flist { list-style: none; margin: 6px 0 0; padding: 0; max-height: 260px; overflow-y: auto; }
+.flist li { padding: 2px 4px; border-radius: 3px; cursor: pointer; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+.flist li:hover { background: var(--panel2); }
+.flist li.cur { background: var(--accent2); }
+#fileFilter { width: 100%; margin-top: 4px; }
+
+#status { display: flex; gap: 16px; padding: 3px 10px; background: var(--panel);
+  border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; white-space: nowrap;
+  overflow: hidden; }
+#status .msg { margin-left: auto; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+#status .msg.err { color: var(--warn); }
+
+dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line);
+  border-radius: 8px; padding: 16px 18px; min-width: 380px; }
+dialog::backdrop { background: #0009; }
+dialog h2 { margin: 0 0 10px; font-size: 16px; }
+dialog .f { display: grid; grid-template-columns: 130px 1fr; gap: 8px 10px; align-items: center; }
+dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; margin: 14px 0 0; }
+dialog button.primary { background: var(--accent2); border-color: var(--accent); }
+#dlgConv { max-width: 97vw; }
+#dlgConv .conv { display: grid; grid-template-columns: minmax(320px, 600px) 390px; gap: 16px; }
+#dlgConv .kprev { background: var(--work); border-radius: 6px; display: grid; place-items: center;
+  min-height: 320px; max-height: 72vh; overflow: auto; padding: 8px; }
+#kCanvas { image-rendering: pixelated; max-width: 100%; }
+#dlgConv .f { grid-template-columns: 112px 1fr; gap: 6px 10px; }
+#dlgConv input[type=range] { width: 100%; }
+#kPal { display: grid; grid-template-columns: repeat(8, 1fr); gap: 3px; }
+#kPal button { height: 22px; padding: 0; border: 1px solid #0009; font: 10px ui-monospace, monospace; }
+#kPal button.off { opacity: .15; }
+@media (max-width: 1050px) { #dlgConv .conv { grid-template-columns: 1fr; } }
+#dlgHelp table { border-collapse: collapse; }
+#dlgHelp td { padding: 2px 10px 2px 0; vertical-align: top; }
+#dlgHelp td:first-child { white-space: nowrap; color: var(--accent); font-family: ui-monospace, Consolas, monospace; }
+#dlgHelp { max-width: 720px; }
+#dlgHelp .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; }
+</style>
+</head>
+<body>
+
+<header id="bar">
+  <span class="brand">Editor C64</span>
+  <div class="menu"><button class="mbtn">File</button><div class="drop">
+    <button data-cmd="new">Nuova immagine…<kbd>Ctrl+N</kbd></button>
+    <button data-cmd="open">Apri…<kbd>Ctrl+O</kbd></button>
+    <button data-cmd="openDir">Apri cartella…</button>
+    <button data-cmd="import">Importa e converti…<kbd>Ctrl+I</kbd></button>
+    <hr>
+    <button data-cmd="save">Salva<kbd>Ctrl+S</kbd></button>
+    <button data-cmd="saveAs">Salva come…<kbd>Ctrl+Maiusc+S</kbd></button>
+  </div></div>
+  <div class="menu"><button class="mbtn">Modifica</button><div class="drop">
+    <button data-cmd="undo">Annulla<kbd>Ctrl+Z</kbd></button>
+    <button data-cmd="redo">Ripeti<kbd>Ctrl+Y</kbd></button>
+    <hr>
+    <button data-cmd="cut">Taglia<kbd>Ctrl+X</kbd></button>
+    <button data-cmd="copy">Copia<kbd>Ctrl+C</kbd></button>
+    <button data-cmd="paste">Incolla<kbd>Ctrl+V</kbd></button>
+    <button data-cmd="pasteSys">Incolla un'immagine dagli appunti<kbd>Ctrl+Maiusc+V</kbd></button>
+    <button data-cmd="del">Cancella la selezione<kbd>Canc</kbd></button>
+    <hr>
+    <button data-cmd="selectAll">Seleziona tutto<kbd>Ctrl+A</kbd></button>
+    <button data-cmd="deselect">Togli la selezione<kbd>Ctrl+D</kbd></button>
+    <hr>
+    <button data-cmd="swap">Scambia i colori<kbd>X</kbd></button>
+  </div></div>
+  <div class="menu"><button class="mbtn">Immagine</button><div class="drop">
+    <button data-cmd="resize">Dimensioni della tela…</button>
+    <button data-cmd="crop">Ritaglia alla selezione</button>
+    <hr>
+    <button data-cmd="flipH">Specchia in orizzontale<kbd>Maiusc+H</kbd></button>
+    <button data-cmd="flipV">Specchia in verticale<kbd>Maiusc+V</kbd></button>
+    <hr>
+    <button data-cmd="fix">Correggi le celle non valide</button>
+    <button data-cmd="convertCur">Converti in un altro modo…</button>
+    <button data-cmd="convertRef">Converti il riferimento…</button>
+    <button data-cmd="doubleW">Raddoppia la larghezza (pixel doppi)</button>
+    <button data-cmd="halveW">Dimezza la larghezza</button>
+  </div></div>
+  <div class="menu"><button class="mbtn">Vista</button><div class="drop">
+    <button data-cmd="zoomIn">Ingrandisci<kbd>+</kbd></button>
+    <button data-cmd="zoomOut">Rimpicciolisci<kbd>−</kbd></button>
+    <button data-cmd="fit">Adatta alla finestra<kbd>Ctrl+0</kbd></button>
+    <hr>
+    <button data-cmd="toggleCell">Griglia delle celle<kbd>G</kbd></button>
+    <button data-cmd="togglePix">Griglia dei pixel<kbd>Maiusc+G</kbd></button>
+    <button data-cmd="toggleErr">Celle non valide<kbd>Maiusc+E</kbd></button>
+    <button data-cmd="nextBad">Vai alla cella non valida successiva<kbd>N</kbd></button>
+  </div></div>
+  <div class="menu"><button class="mbtn">Aiuto</button><div class="drop">
+    <button data-cmd="help">Comandi e scorciatoie<kbd>F1</kbd></button>
+  </div></div>
+  <span id="docname"></span>
+</header>
+
+<div id="opts">
+  <div class="grp" id="brushGrp">Pennello
+    <button data-brush="1">1</button><button data-brush="2">2</button>
+    <button data-brush="3">3</button><button data-brush="4">4</button>
+  </div>
+  <label><input type="checkbox" id="optFill"> Forme piene</label>
+  <label><input type="checkbox" id="optSym"> Simmetria orizzontale</label>
+  <label><input type="checkbox" id="optTransp" checked> Incolla senza lo sfondo</label>
+  <label>Vincoli
+    <select id="policy">
+      <option value="clash">Sostituisci il colore nella cella</option>
+      <option value="block">Blocca il pixel</option>
+      <option value="free">Solo segnala</option>
+    </select>
+  </label>
+  <span id="hint"></span>
+</div>
+
+<main>
+  <aside id="tools">
+    <button data-tool="pencil" title="Matita (B)"><svg viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3L8 19z"/><path d="M14 7l3 3"/></svg></button>
+    <button data-tool="eraser" title="Gomma (E)"><svg viewBox="0 0 24 24"><path d="M9 19h11"/><path d="M4.5 14.5l9-9 6 6-7.5 7.5H9z"/><path d="M9 10l6 6"/></svg></button>
+    <button data-tool="line" title="Linea (L)"><svg viewBox="0 0 24 24"><path d="M5 19L19 5"/></svg></button>
+    <button data-tool="rect" title="Rettangolo (R)"><svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12"/></svg></button>
+    <button data-tool="ellipse" title="Ellisse (O)"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8.5" ry="6.5"/></svg></button>
+    <button data-tool="fill" title="Riempimento (F)"><svg viewBox="0 0 24 24"><path d="M4 11l7-7 7 7-7 7z"/><path d="M4 11h14"/><path d="M20 15c0 2 1.2 3 1.2 4a1.2 1.2 0 0 1-2.4 0c0-1 1.2-2 1.2-4z"/></svg></button>
+    <button data-tool="picker" title="Contagocce (I, o Alt+clic)"><svg viewBox="0 0 24 24"><path d="M14 4l6 6-2 2-6-6z"/><path d="M13 9l-8 8v3h3l8-8"/></svg></button>
+    <button data-tool="cell" title="Colore della cella (K): cambia un colore in tutta la cella"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16"/><path d="M12 4v16M4 12h16"/><rect x="4" y="4" width="8" height="8" fill="currentColor"/></svg></button>
+    <button data-tool="select" title="Selezione (S)"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" stroke-dasharray="3 2.5"/></svg></button>
+  </aside>
+  <div id="stage"><canvas id="cv"></canvas></div>
+  <aside id="side">
+    <section>
+      <h3>Colori</h3>
+      <div class="cur">
+        <div id="swPrim" class="sw big" title="Primario: tasto sinistro"></div>
+        <div id="swSec" class="sw big" title="Secondario: tasto destro"></div>
+        <button data-cmd="swap" title="Scambia (X)">⇄</button>
+        <span id="curNames"></span>
+      </div>
+      <div id="palette"></div>
+      <div class="small" style="margin-top:4px">Clic sinistro: primario · destro: secondario</div>
+    </section>
+    <section>
+      <h3>Modo e griglia</h3>
+      <div class="row"><select id="mode" style="width:100%"></select></div>
+      <div class="small" id="modeHint"></div>
+      <div class="row">
+        <label>Cella <input id="cw" type="number" min="1" max="64"></label>
+        <label>× <input id="ch" type="number" min="1" max="64"></label>
+      </div>
+      <div class="row">
+        <label>Origine X <input id="gx" type="number" min="0"></label>
+        <label>Y <input id="gy" type="number" min="0"></label>
+        <button data-cmd="pickOrigin" id="btnOrigin" title="Clic su un pixel: lì comincia una cella">Scegli col mouse</button>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="showCell" checked> Celle</label>
+        <label><input type="checkbox" id="showPix" checked> Pixel</label>
+        <label><input type="checkbox" id="showErr" checked> Errori</label>
+      </div>
+    </section>
+    <section>
+      <h3>Registri</h3>
+      <div id="regs"></div>
+      <label class="small"><input type="checkbox" id="recolor" checked> Cambiando un registro, ricolora i suoi pixel</label>
+    </section>
+    <section>
+      <h3>Cella sotto il cursore</h3>
+      <div id="cellInfo" class="small">—</div>
+    </section>
+    <section>
+      <h3>Anteprima</h3>
+      <div class="row">
+        <select id="pvScale"><option value="1">1×</option><option value="2" selected>2×</option><option value="3">3×</option></select>
+        <label><input type="checkbox" id="pvMirror"> Specchiata</label>
+      </div>
+      <div class="pvwrap"><canvas id="pv"></canvas></div>
+    </section>
+    <section>
+      <h3>Riferimento</h3>
+      <div class="row">
+        <button data-cmd="loadRef">Carica un'immagine…</button>
+        <label><input type="checkbox" id="refShow" checked> Mostra</label>
+      </div>
+      <div class="row"><button data-cmd="convertRef" title="Il riferimento diventa l'immagine, nel modo e nella misura di adesso">Converti in C64…</button></div>
+      <div class="row"><label>Opacità <input type="range" id="refAlpha" min="5" max="100" value="40"></label></div>
+      <div class="small" id="refName">Nessuna: un disegno da ricalcare, stirato sull'immagine.</div>
+    </section>
+    <section>
+      <h3>Cartella <span id="dirName" class="small"></span></h3>
+      <button data-cmd="openDir">Apri cartella…</button>
+      <input id="fileFilter" placeholder="Filtra, per esempio portraits/c64">
+      <ul id="files" class="flist"></ul>
+    </section>
+  </aside>
+</main>
+
+<footer id="status"><span id="stPos"></span><span id="stDoc"></span><span id="stBad"></span><span class="msg" id="stMsg"></span></footer>
+
+<input type="file" id="fileInput" accept="image/*" hidden>
+<input type="file" id="refInput" accept="image/*" hidden>
+<input type="file" id="convInput" accept="image/*" hidden>
+
+<dialog id="dlgConv"><form method="dialog">
+  <h2>Importa e converti <span id="kName" class="small"></span></h2>
+  <div class="conv">
+    <div class="kprev"><canvas id="kCanvas"></canvas></div>
+    <div>
+      <div class="f">
+        <span>Modo</span><select id="kMode"></select>
+        <span>Misura</span><select id="kPreset"></select>
+        <span>Pixel</span><span><input id="kW" type="number" min="1" max="1024"> × <input id="kH" type="number" min="1" max="1024">
+          <label><input type="checkbox" id="kKeep" checked> proporzioni</label></span>
+        <span>Adattamento</span><select id="kFit">
+          <option value="contain">Contieni (bande di sfondo)</option>
+          <option value="cover">Riempi (ritaglia)</option>
+          <option value="stretch">Stira</option></select>
+        <span>Ricampionamento</span><select id="kSmooth">
+          <option value="1">Morbido</option><option value="0">Pixel più vicini</option></select>
+        <span>Retino</span><select id="kDither">
+          <option value="none">Nessuno</option><option value="b2">Bayer 2×2</option>
+          <option value="b4" selected>Bayer 4×4</option><option value="b8">Bayer 8×8</option>
+          <option value="fs">Floyd-Steinberg</option><option value="atk">Atkinson</option></select>
+        <span>Forza del retino</span><input type="range" id="kAmount" min="0" max="100" value="50">
+        <span>Luminosità</span><input type="range" id="kBright" min="-100" max="100" value="0">
+        <span>Contrasto</span><input type="range" id="kContrast" min="-100" max="100" value="0">
+        <span>Saturazione</span><input type="range" id="kSat" min="-100" max="100" value="0">
+        <span>Gamma</span><input type="range" id="kGamma" min="40" max="250" value="100">
+        <span>Origine griglia</span><span><input id="kGx" type="number" min="0" value="0"> <input id="kGy" type="number" min="0" value="0"></span>
+        <span id="kBgL">Sfondo</span><select id="kBg"></select>
+        <span id="kMc1L">Multicolore 1</span><select id="kMc1"></select>
+        <span id="kMc2L">Multicolore 2</span><select id="kMc2"></select>
+      </div>
+      <div class="row small" style="margin-top:8px">Colori ammessi
+        <button type="button" id="kAll">Tutti</button><button type="button" id="kGreys">Grigi</button></div>
+      <div id="kPal"></div>
+      <div class="row" style="margin-top:6px">
+        <label><input type="checkbox" id="kOrig"> Mostra l'originale</label>
+        <button type="button" id="kReset">Azzera le regolazioni</button>
+      </div>
+      <p class="small" id="kInfo"></p>
+    </div>
+  </div>
+  <menu><button value="cancel">Annulla</button><button value="ok" class="primary">Converti</button></menu>
+</form></dialog>
+
+<dialog id="dlgNew"><form method="dialog">
+  <h2>Nuova immagine</h2>
+  <div class="f">
+    <span>Modo</span><select id="nMode"></select>
+    <span>Formato</span><select id="nPreset"></select>
+    <span>Celle in X × Y</span><span><input id="nCx" type="number" min="1" max="400"> × <input id="nCy" type="number" min="1" max="400"></span>
+    <span>Pixel</span><span><input id="nW" type="number" min="1" max="4096"> × <input id="nH" type="number" min="1" max="4096"></span>
+    <span>Origine griglia X, Y</span><span><input id="nGx" type="number" min="0" value="0"> <input id="nGy" type="number" min="0" value="0"></span>
+    <span>Sfondo</span><select id="nBg"></select>
+  </div>
+  <p class="small" id="nInfo"></p>
+  <menu><button value="cancel">Annulla</button><button value="ok" class="primary">Crea</button></menu>
+</form></dialog>
+
+<dialog id="dlgResize"><form method="dialog">
+  <h2>Dimensioni della tela</h2>
+  <div class="f">
+    <span>Pixel</span><span><input id="rW" type="number" min="1" max="4096"> × <input id="rH" type="number" min="1" max="4096"></span>
+    <span>Il disegno resta</span><select id="rAnchor">
+      <option value="0,0">in alto a sinistra</option><option value=".5,0">in alto al centro</option><option value="1,0">in alto a destra</option>
+      <option value="0,.5">a sinistra</option><option value=".5,.5">al centro</option><option value="1,.5">a destra</option>
+      <option value="0,1">in basso a sinistra</option><option value=".5,1">in basso al centro</option><option value="1,1">in basso a destra</option>
+    </select>
+    <span></span><label><input type="checkbox" id="rFollow" checked> La griglia segue il disegno</label>
+  </div>
+  <p class="small">Lo spazio nuovo prende il colore della gomma.</p>
+  <menu><button value="cancel">Annulla</button><button value="ok" class="primary">Applica</button></menu>
+</form></dialog>
+
+<dialog id="dlgAsk"><form method="dialog">
+  <p id="askText" style="max-width:520px"></p>
+  <input id="askInput" type="text" style="width:100%" hidden>
+  <menu><button value="cancel">Annulla</button><button value="ok" class="primary" id="askOk">OK</button></menu>
+</form></dialog>
+
+<dialog id="dlgOpen"><form method="dialog">
+  <h2 id="openTitle">Apri un'immagine del repository</h2>
+  <input id="openFilter" type="text" placeholder="Filtra, per esempio portraits/c64" style="width:100%">
+  <ul id="openList" class="flist" style="height:360px; max-height:none; width:560px"></ul>
+  <menu><button value="cancel">Annulla</button></menu>
+</form></dialog>
+
+<dialog id="dlgHelp"><form method="dialog">
+  <h2>Comandi</h2>
+  <div class="cols">
+    <table>
+      <tr><td>B E L R O</td><td>matita, gomma, linea, rettangolo, ellisse</td></tr>
+      <tr><td>F</td><td>riempimento (Maiusc+clic: quel colore in tutta l'immagine)</td></tr>
+      <tr><td>I / Alt+clic</td><td>contagocce</td></tr>
+      <tr><td>K</td><td>colore della cella: cambia un colore in tutta la cella</td></tr>
+      <tr><td>S</td><td>selezione (Maiusc: sulle celle); trascina dentro per spostare, Ctrl per copiare</td></tr>
+      <tr><td>Frecce</td><td>spostano la selezione (Maiusc: di una cella)</td></tr>
+      <tr><td>Invio / Esc</td><td>fissa / annulla la selezione mobile</td></tr>
+      <tr><td>Maiusc</td><td>linee a 45°, quadrati e cerchi</td></tr>
+      <tr><td>[ ]</td><td>pennello più piccolo / più grande</td></tr>
+      <tr><td>X</td><td>scambia primario e secondario</td></tr>
+    </table>
+    <table>
+      <tr><td>Rotella</td><td>zoom sul cursore</td></tr>
+      <tr><td>Spazio+trascina</td><td>sposta la vista (anche tasto centrale)</td></tr>
+      <tr><td>+ − Ctrl+0</td><td>zoom, adatta</td></tr>
+      <tr><td>G, Maiusc+G</td><td>griglia delle celle, dei pixel</td></tr>
+      <tr><td>N</td><td>prossima cella non valida</td></tr>
+      <tr><td>Ctrl+Z / Ctrl+Y</td><td>annulla / ripeti</td></tr>
+      <tr><td>Ctrl+C X V</td><td>copia, taglia, incolla</td></tr>
+      <tr><td>Ctrl+S</td><td>salva sullo stesso file</td></tr>
+      <tr><td>Maiusc+H / V</td><td>specchia</td></tr>
+    </table>
+  </div>
+  <p class="small">Vincoli. <b>Sostituisci</b>: se il colore nuovo non ci sta nella cella, prende il posto
+  del colore che copri (o del meno usato), come sul C64 quando si cambia l'attributo. <b>Blocca</b>: il
+  pixel non si mette e la cella lampeggia. <b>Solo segnala</b>: si disegna liberamente e le celle non
+  valide restano in rosso; <i>Immagine → Correggi le celle non valide</i> le riduce ai colori ammessi
+  scegliendo quelli più vicini. Una cella già non valida si può sempre ritoccare.</p>
+  <p class="small">L'origine della griglia dice dove comincia la prima cella: serve quando
+  l'immagine non parte da un bordo di cella dello schermo. Nei modi multicolor i pixel sono doppi e
+  le coppie partono dall'origine.</p>
+  <menu><button value="ok" class="primary">Chiudi</button></menu>
+</form></dialog>
+
+<script>
+'use strict';
+
+// ---------------------------------------------------------------- costanti
+
+// tavolozza Colodore, la stessa di tools/gen_portraits.py (C64_PALETTE)
+const PAL = [
+  [0x00, 0x00, 0x00], [0xFF, 0xFF, 0xFF], [0x96, 0x28, 0x2E], [0x5B, 0xD6, 0xCE],
+  [0x9F, 0x2D, 0xAD], [0x41, 0xB9, 0x36], [0x27, 0x24, 0xC4], [0xEF, 0xF3, 0x47],
+  [0x9F, 0x48, 0x15], [0x5E, 0x35, 0x00], [0xDA, 0x5F, 0x66], [0x47, 0x47, 0x47],
+  [0x78, 0x78, 0x78], [0x91, 0xFF, 0x84], [0x68, 0x64, 0xFF], [0xAE, 0xAE, 0xAE],
+];
+const NAMES = ['nero', 'bianco', 'rosso', 'ciano', 'viola', 'verde', 'blu', 'giallo', 'arancione',
+  'marrone', 'rosa', 'grigio scuro', 'grigio', 'verde chiaro', 'azzurro', 'grigio chiaro'];
+const T = 16;                       // trasparente: solo negli sprite
+const cname = c => c === T ? 'trasparente' : `${c} ${NAMES[c]}`;
+const css = c => c === T ? 'transparent' : `rgb(${PAL[c].join(',')})`;
+
+// modi: cella in pixel, pixel doppi, colori propri per cella (own, tra 0 e ownMax-1), registri
+// comuni a tutta l'immagine
+const MODES = {
+  hb: { label: 'Bitmap hires', cw: 8, ch: 8, fat: false, own: 2, ownMax: 16, regs: [],
+        hint: 'Celle 8×8, 2 colori qualsiasi per cella (schermo $0400 nel VIC: nibble alto e basso).' },
+  mb: { label: 'Bitmap multicolor', cw: 8, ch: 8, fat: true, own: 3, ownMax: 16, regs: ['bg'],
+        hint: 'Pixel doppi, celle 4×8: lo sfondo comune più 3 colori per cella (2 dallo schermo, 1 dalla Color RAM).' },
+  hc: { label: 'Caratteri hires', cw: 8, ch: 8, fat: false, own: 1, ownMax: 16, regs: ['bg'],
+        hint: 'Caratteri 8×8: lo sfondo comune più 1 colore per carattere.' },
+  mc: { label: 'Caratteri multicolor', cw: 8, ch: 8, fat: true, own: 1, ownMax: 8, regs: ['bg', 'mc1', 'mc2'],
+        hint: 'Sfondo, MC1 e MC2 comuni più 1 colore 0-7 per carattere, a pixel doppi. Una cella con solo sfondo e un colore 0-7 a pixel singoli vale come carattere hires.' },
+  hs: { label: 'Sprite hires', cw: 24, ch: 21, fat: false, own: 1, ownMax: 16, regs: [], sprite: true,
+        hint: 'Sprite 24×21 (uno per cella): trasparente più 1 colore per sprite.' },
+  ms: { label: 'Sprite multicolor', cw: 24, ch: 21, fat: true, own: 1, ownMax: 16, regs: ['mc1', 'mc2'], sprite: true,
+        hint: 'Sprite 12×21 a pixel doppi: trasparente, MC1 e MC2 comuni più 1 colore per sprite.' },
+  free: { label: 'Libero (nessun vincolo)', cw: 8, ch: 8, fat: false, own: Infinity, ownMax: 16, regs: [],
+        hint: 'Nessun vincolo: solo la tavolozza. La griglia è solo un riferimento.' },
+};
+const REG_LABEL = {
+  mb: { bg: 'Sfondo ($D021)' },
+  hc: { bg: 'Sfondo ($D021)' },
+  mc: { bg: 'Sfondo ($D021)', mc1: 'Multicolore 1 ($D022)', mc2: 'Multicolore 2 ($D023)' },
+  ms: { mc1: 'Multicolore 1 ($D025)', mc2: 'Multicolore 2 ($D026)' },
+};
+const ZOOMS = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32, 40, 48, 64];
+const TOOL_HINT = {
+  pencil: 'Matita: sinistro primario, destro secondario.',
+  eraser: 'Gomma: dipinge lo sfondo (negli sprite il trasparente).',
+  line: 'Linea: Maiusc per 0°, 45° e 90°.',
+  rect: 'Rettangolo: Maiusc per un quadrato.',
+  ellipse: 'Ellisse: Maiusc per un cerchio.',
+  fill: 'Riempimento: Maiusc+clic cambia quel colore in tutta l\'immagine.',
+  picker: 'Contagocce: sinistro primario, destro secondario.',
+  cell: 'Colore della cella: il colore cliccato diventa il primario in tutta la cella.',
+  select: 'Selezione: Maiusc per seguire le celle; trascina dentro per spostare (Ctrl copia).',
+};
+
+const fdiv = (a, b) => Math.floor(a / b);
+const mod = (a, b) => ((a % b) + b) % b;
+const $ = s => document.querySelector(s);
+
+// distanza fra colori (pesata sulla luminanza), per le conversioni
+const DIST = PAL.map(a => PAL.map(b => {
+  const r = a[0] - b[0], g = a[1] - b[1], bl = a[2] - b[2];
+  return 0.3 * r * r + 0.59 * g * g + 0.11 * bl * bl;
+}));
+const dist = (a, b) => a === b ? 0 : (a === T || b === T) ? 1e12 : DIST[a][b];
+const nearCache = new Map();
+function nearest(r, g, b) {
+  const k = (r << 16) | (g << 8) | b;
+  let c = nearCache.get(k);
+  if (c === undefined) {
+    let best = Infinity;
+    for (let i = 0; i < 16; i++) {
+      const dr = r - PAL[i][0], dg = g - PAL[i][1], db = b - PAL[i][2];
+      const e = 0.3 * dr * dr + 0.59 * dg * dg + 0.11 * db * db;
+      if (e < best) { best = e; c = i; }
+    }
+    nearCache.set(k, c);
+  }
+  return c;
+}
+
+// ---------------------------------------------------------------- stato
+
+function blankDoc(w, h, mode, bg) {
+  const fill = MODES[mode].sprite ? T : bg;
+  return { w, h, px: new Uint8Array(w * h).fill(fill), mode, gx: 0, gy: 0, cw: 8, ch: 8,
+           bg, mc1: 11, mc2: 12, name: 'senza_nome.png', path: '', handle: null, dirty: false };
+}
+let doc = blankDoc(88, 104, 'hb', 0);
+const view = { z: 6, x: 20, y: 20 };
+let tool = 'pencil', prim = 1, sec = 0, brush = 1;
+let undoStack = [], redoStack = [];
+let sel = null;          // selezione {x, y, w, h} in pixel
+let floating = null;     // selezione mobile {x, y, w, h, data, cv}
+let clip = null;         // appunti interni {w, h, data}
+let drag = null;         // operazione del mouse in corso
+let hover = null;        // pixel sotto il cursore
+let flashes = [];        // celle che lampeggiano {cx, cy, t}
+let pickingOrigin = false;
+let refImg = null;
+let spaceDown = false, wantSysPaste = false;
+let dirHandle = null, fileEntries = [];
+let badList = [], badIdx = -1;
+
+const opt = {
+  get policy() { return $('#policy').value; },
+  get fill() { return $('#optFill').checked; },
+  get sym() { return $('#optSym').checked; },
+  get transp() { return $('#optTransp').checked; },
+  get showCell() { return $('#showCell').checked; },
+  get showPix() { return $('#showPix').checked; },
+  get showErr() { return $('#showErr').checked; },
+};
+
+// ---------------------------------------------------------------- geometria delle celle
+
+const MO = () => MODES[doc.mode];
+const cellW = () => doc.mode === 'free' ? doc.cw : MO().cw;
+const cellH = () => doc.mode === 'free' ? doc.ch : MO().ch;
+const pw = () => MO().fat ? 2 : 1;
+// coordinate logiche: nei modi multicolor un pixel logico è una coppia, che parte dall'origine
+const toL = x => MO().fat ? fdiv(x - doc.gx, 2) : x;
+const toX = l => MO().fat ? doc.gx + 2 * l : l;
+const pairStart = x => doc.gx + 2 * fdiv(x - doc.gx, 2);
+const cellOf = (x, y) => [fdiv(x - doc.gx, cellW()), fdiv(y - doc.gy, cellH())];
+function cellBox(cx, cy) {
+  const x0 = doc.gx + cx * cellW(), y0 = doc.gy + cy * cellH();
+  return { x0: Math.max(0, x0), y0: Math.max(0, y0),
+           x1: Math.min(doc.w, x0 + cellW()), y1: Math.min(doc.h, y0 + cellH()) };
+}
+function cellRange() {
+  const [c0, r0] = cellOf(0, 0), [c1, r1] = cellOf(doc.w - 1, doc.h - 1);
+  return { c0, r0, c1, r1 };
+}
+// colori comuni (registri) del modo; il trasparente negli sprite
+function regColors() {
+  const m = MO(), out = m.sprite ? [T] : [];
+  for (const r of m.regs) out.push(doc[r]);
+  return out;
+}
+const eraseColor = () => MO().sprite ? T : doc.bg;
+
+function cellStats(cx, cy) {
+  const b = cellBox(cx, cy), W = doc.w, p = doc.px, fat = MO().fat, cnt = new Map();
+  let fatOk = true;
+  for (let y = b.y0; y < b.y1; y++) {
+    for (let x = b.x0; x < b.x1; x++) {
+      const c = p[y * W + x];
+      cnt.set(c, (cnt.get(c) || 0) + 1);
+      if (fat && ((x - doc.gx) & 1) === 0 && x + 1 < b.x1 && p[y * W + x + 1] !== c) fatOk = false;
+    }
+  }
+  return { cnt, fatOk, b };
+}
+
+// null se la cella rispetta il modo, se no il motivo
+function cellProblem(st) {
+  const m = MO(), keys = [...st.cnt.keys()];
+  if (doc.mode === 'free') return null;
+  if (!m.sprite && st.cnt.has(T)) return 'trasparente fuori da uno sprite';
+  const regs = new Set(regColors());
+  const own = keys.filter(c => !regs.has(c));
+  if (doc.mode === 'mc') {
+    const hi = keys.filter(c => c !== doc.bg);
+    if (hi.length <= 1 && hi.every(c => c < 8)) return null;      // carattere hires
+  }
+  if (m.fat && !st.fatOk) return 'pixel non doppi (le due metà di una coppia sono diverse)';
+  if (own.length > m.own) return `${own.length} colori propri, al massimo ${m.own}`;
+  const hi = own.find(c => c >= m.ownMax);
+  if (hi !== undefined) return `${cname(hi)}: il colore proprio va da 0 a 7 (Color RAM)`;
+  return null;
+}
+
+function badCells() {
+  const out = [];
+  if (doc.mode === 'free') return out;
+  const { c0, r0, c1, r1 } = cellRange();
+  for (let cy = r0; cy <= r1; cy++) {
+    for (let cx = c0; cx <= c1; cx++) {
+      const st = cellStats(cx, cy), why = cellProblem(st);
+      if (why) out.push({ cx, cy, b: st.b, why });
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- scrittura dei pixel
+
+function saveCell(b) {
+  const a = [];
+  for (let y = b.y0; y < b.y1; y++) a.push(doc.px.slice(y * doc.w + b.x0, y * doc.w + b.x1));
+  return a;
+}
+function restoreCell(b, s) {
+  for (let y = b.y0; y < b.y1; y++) doc.px.set(s[y - b.y0], y * doc.w + b.x0);
+}
+function replaceIn(b, from, to) {
+  const W = doc.w, p = doc.px;
+  for (let y = b.y0; y < b.y1; y++)
+    for (let x = b.x0; x < b.x1; x++) if (p[y * W + x] === from) p[y * W + x] = to;
+}
+
+function flash(cx, cy, why) {
+  flashes.push({ cx, cy, t: performance.now() });
+  msg(`Cella ${cx},${cy}: ${why}`, true);
+}
+
+// mette il colore c nel pixel (x, y) (nei modi multicolor nella coppia) rispettando i vincoli
+function put(x, y, c) {
+  if (y < 0 || y >= doc.h) return;
+  const m = MO();
+  let xa = x, xb = x;
+  if (m.fat) { xa = pairStart(x); xb = xa + 1; }
+  xa = Math.max(xa, 0); xb = Math.min(xb, doc.w - 1);
+  if (xa > xb) return;
+  const p = doc.px, i0 = y * doc.w;
+  let same = true;
+  for (let xx = xa; xx <= xb; xx++) if (p[i0 + xx] !== c) same = false;
+  if (same) return;
+  if (opt.policy === 'free' || doc.mode === 'free') {
+    for (let xx = xa; xx <= xb; xx++) p[i0 + xx] = c;
+    return;
+  }
+  const [cx, cy] = cellOf(xa, y);
+  const b = cellBox(cx, cy);
+  const before = cellProblem(cellStats(cx, cy));
+  const snap = before ? null : saveCell(b);
+  const old = p[i0 + xa];
+  for (let xx = xa; xx <= xb; xx++) p[i0 + xx] = c;
+  if (before) return;                       // cella già non valida: la si sta correggendo
+  const why = cellProblem(cellStats(cx, cy));
+  if (!why) return;
+  if (opt.policy === 'clash') {
+    const regs = new Set(regColors());
+    // il colore coperto diventa quello nuovo in tutta la cella, come cambiando l'attributo
+    if (!regs.has(old) && old !== c) {
+      replaceIn(b, old, c);
+      if (!cellProblem(cellStats(cx, cy))) return;
+    }
+    // se no il colore proprio meno usato
+    for (let k = 0; k < 4; k++) {
+      const st = cellStats(cx, cy);
+      const own = [...st.cnt.entries()].filter(([q]) => !regs.has(q) && q !== c)
+        .sort((a, b2) => a[1] - b2[1]);
+      if (!own.length) break;
+      replaceIn(b, own[0][0], c);
+      if (!cellProblem(cellStats(cx, cy))) return;
+    }
+  }
+  restoreCell(b, snap);
+  flash(cx, cy, why);
+}
+
+// pixel logici, simmetria e pennello
+const putL = (l, y, c) => put(toX(l), y, c);
+function getL(l, y) {
+  if (y < 0 || y >= doc.h) return -1;
+  let x = toX(l);
+  if (MO().fat && x === -1) x = 0;
+  if (x < 0 || x >= doc.w) return -1;
+  return doc.px[y * doc.w + x];
+}
+function mirrorL(l) {
+  if (!MO().fat) return doc.w - 1 - l;
+  return toL(doc.w - 2 - toX(l));
+}
+function symL(l, y, fn) {
+  fn(l, y);
+  if (opt.sym) { const m = mirrorL(l); if (m !== l) fn(m, y); }
+}
+function brushL(l, y, fn) {
+  const o = (brush - 1) >> 1;
+  for (let dy = 0; dy < brush; dy++)
+    for (let dx = 0; dx < brush; dx++) symL(l - o + dx, y - o + dy, fn);
+}
+function lineL(l0, y0, l1, y1, fn) {
+  const dx = Math.abs(l1 - l0), dy = -Math.abs(y1 - y0);
+  const sx = l0 < l1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  let e = dx + dy;
+  for (;;) {
+    fn(l0, y0);
+    if (l0 === l1 && y0 === y1) break;
+    const e2 = 2 * e;
+    if (e2 >= dy) { e += dy; l0 += sx; }
+    if (e2 <= dx) { e += dx; y0 += sy; }
+  }
+}
+
+// forme: le celle logiche che toccano, con pennello e simmetria
+function shapeEnd(d) {
+  let { l0, y0, l1, y1 } = d;
+  if (!d.shift) return { l0, y0, l1, y1 };
+  const p = pw();
+  let dl = l1 - l0, dy = y1 - y0;
+  if (d.tool === 'line') {
+    const ax = Math.abs(dl) * p, ay = Math.abs(dy);
+    if (ax > 2 * ay) dy = 0;
+    else if (ay > 2 * ax) dl = 0;
+    else { const s = Math.max(ax, ay); dl = Math.sign(dl) * Math.round(s / p); dy = Math.sign(dy) * s; }
+  } else {
+    const s = Math.max(Math.abs(dl) * p, Math.abs(dy));
+    dl = (Math.sign(dl) || 1) * Math.round(s / p); dy = (Math.sign(dy) || 1) * s;
+  }
+  return { l0, y0, l1: l0 + dl, y1: y0 + dy };
+}
+function shapeCells(d) {
+  const out = new Map(), add = (l, y) => out.set(l + ',' + y, [l, y]);
+  const { l0, y0, l1, y1 } = shapeEnd(d);
+  if (d.tool === 'line') {
+    lineL(l0, y0, l1, y1, (l, y) => brushL(l, y, add));
+  } else {
+    const la = Math.min(l0, l1), lb = Math.max(l0, l1), ya = Math.min(y0, y1), yb = Math.max(y0, y1);
+    let inside;
+    if (d.tool === 'rect') {
+      inside = (l, y) => l >= la && l <= lb && y >= ya && y <= yb;
+    } else {
+      const cx = (la + lb) / 2, cy = (ya + yb) / 2, rx = (lb - la) / 2 + 0.5, ry = (yb - ya) / 2 + 0.5;
+      inside = (l, y) => ((l - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1;
+    }
+    for (let y = ya; y <= yb; y++) {
+      for (let l = la; l <= lb; l++) {
+        if (!inside(l, y)) continue;
+        if (opt.fill) symL(l, y, add);
+        else if (!inside(l - 1, y) || !inside(l + 1, y) || !inside(l, y - 1) || !inside(l, y + 1)) brushL(l, y, add);
+      }
+    }
+  }
+  return [...out.values()];
+}
+
+function fillAt(l, y, c, global) {
+  const t = getL(l, y);
+  if (t < 0 || t === c) return;
+  const lMin = toL(0), lMax = toL(doc.w - 1), pts = [];
+  if (global) {
+    for (let yy = 0; yy < doc.h; yy++)
+      for (let ll = lMin; ll <= lMax; ll++) if (getL(ll, yy) === t) pts.push([ll, yy]);
+  } else {
+    const LW = lMax - lMin + 1, seen = new Uint8Array(LW * doc.h), stack = [[l, y]];
+    while (stack.length) {
+      const [a, b] = stack.pop();
+      if (a < lMin || a > lMax || b < 0 || b >= doc.h) continue;
+      const k = b * LW + (a - lMin);
+      if (seen[k] || getL(a, b) !== t) continue;
+      seen[k] = 1;
+      pts.push([a, b]);
+      stack.push([a + 1, b], [a - 1, b], [a, b + 1], [a, b - 1]);
+    }
+  }
+  for (const [a, b] of pts) putL(a, b, c);
+}
+
+function recolorCell(x, y, c) {
+  if (x < 0 || y < 0 || x >= doc.w || y >= doc.h) return;
+  const o = doc.px[y * doc.w + x];
+  const [cx, cy] = cellOf(x, y);
+  recolorCellColor(cx, cy, o, c);
+}
+function recolorCellColor(cx, cy, o, c) {
+  if (o === c) return;
+  const b = cellBox(cx, cy);
+  const before = cellProblem(cellStats(cx, cy)), snap = saveCell(b);
+  replaceIn(b, o, c);
+  const why = cellProblem(cellStats(cx, cy));
+  if (why && !before && opt.policy !== 'free') { restoreCell(b, snap); flash(cx, cy, why); }
+}
+
+// riduce una cella non valida ai colori ammessi che rendono meglio i suoi pixel
+function* combos(arr, k) {
+  if (k === 0) { yield []; return; }
+  for (let i = 0; i <= arr.length - k; i++)
+    for (const rest of combos(arr.slice(i + 1), k - 1)) yield [arr[i], ...rest];
+}
+function fixCell(b) {
+  const m = MO(), W = doc.w, p = doc.px, regs = regColors(), er = eraseColor(), pts = [];
+  for (let y = b.y0; y < b.y1; y++) {
+    for (let x = b.x0; x < b.x1;) {
+      let xs = [x];
+      if (m.fat) { const s = pairStart(x); xs = [s, s + 1].filter(v => v >= b.x0 && v < b.x1); }
+      let c = p[y * W + xs[0]];
+      if (!m.sprite && c === T) c = er;
+      pts.push({ y, xs, c });
+      x = xs[xs.length - 1] + 1;
+    }
+  }
+  const used = [...new Set(pts.map(q => q.c))].filter(c => c !== T && !regs.includes(c));
+  const cand = m.ownMax < 16 ? [...Array(m.ownMax).keys()].filter(c => !regs.includes(c)) : used;
+  const k = Math.min(m.own, cand.length);
+  let best = null, bestE = Infinity;
+  for (const combo of combos(cand, k)) {
+    const allow = regs.concat(combo);
+    let e = 0;
+    for (const q of pts) {
+      let mn = Infinity;
+      for (const a of allow) { const v = dist(q.c, a); if (v < mn) mn = v; }
+      e += mn * q.xs.length;
+      if (e >= bestE) break;
+    }
+    if (e < bestE) { bestE = e; best = allow; }
+  }
+  if (!best || !best.length) best = [er];
+  for (const q of pts) {
+    let mn = Infinity, bc = best[0];
+    for (const a of best) { const v = dist(q.c, a); if (v < mn) { mn = v; bc = a; } }
+    for (const x of q.xs) p[q.y * W + x] = bc;
+  }
+}
+
+// ---------------------------------------------------------------- annulla / ripeti
+
+function snapshot() {
+  return { w: doc.w, h: doc.h, px: doc.px.slice(), mode: doc.mode, gx: doc.gx, gy: doc.gy,
+           cw: doc.cw, ch: doc.ch, bg: doc.bg, mc1: doc.mc1, mc2: doc.mc2 };
+}
+function sameAs(s) {
+  if (!s || s.w !== doc.w || s.h !== doc.h || s.mode !== doc.mode || s.gx !== doc.gx || s.gy !== doc.gy
+      || s.cw !== doc.cw || s.ch !== doc.ch || s.bg !== doc.bg || s.mc1 !== doc.mc1 || s.mc2 !== doc.mc2) return false;
+  const a = s.px, b = doc.px;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+function restore(s) {
+  Object.assign(doc, s, { px: s.px.slice() });
+  sel = null;
+  syncUI();
+  changed();
+}
+function pushUndo() {
+  undoStack.push(snapshot());
+  if (undoStack.length > 300) undoStack.shift();
+  redoStack.length = 0;
+}
+// fine di un'operazione: se non ha cambiato nulla, niente passo da annullare
+function endChange() {
+  if (sameAs(undoStack[undoStack.length - 1])) { undoStack.pop(); requestRender(); return; }
+  changed();
+}
+function changed() {
+  doc.dirty = true;
+  updateTitle();
+  requestRender();
+}
+function undo() {
+  if (floating) { cancelFloating(); return; }
+  if (!undoStack.length) return;
+  redoStack.push(snapshot());
+  restore(undoStack.pop());
+}
+function redo() {
+  if (!redoStack.length) return;
+  undoStack.push(snapshot());
+  restore(redoStack.pop());
+}
+
+// ---------------------------------------------------------------- selezione
+
+const inRect = (x, y, r) => r && x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;
+function copyRegion(r) {
+  const d = new Uint8Array(r.w * r.h);
+  for (let y = 0; y < r.h; y++) d.set(doc.px.subarray((r.y + y) * doc.w + r.x, (r.y + y) * doc.w + r.x + r.w), y * r.w);
+  return d;
+}
+function eraseRegion(r) {
+  const e = eraseColor();
+  for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) put(x, y, e);
+}
+function selFromDrag(d) {
+  let la = Math.min(d.l0, d.l1), lb = Math.max(d.l0, d.l1);
+  let ya = Math.min(d.y0, d.y1), yb = Math.max(d.y0, d.y1);
+  let x0 = toX(la), x1 = toX(lb) + pw() - 1;
+  if (d.shift) {
+    const cw = cellW(), ch = cellH();
+    x0 = doc.gx + cw * fdiv(x0 - doc.gx, cw); x1 = doc.gx + cw * (fdiv(x1 - doc.gx, cw) + 1) - 1;
+    ya = doc.gy + ch * fdiv(ya - doc.gy, ch); yb = doc.gy + ch * (fdiv(yb - doc.gy, ch) + 1) - 1;
+  }
+  x0 = Math.max(0, x0); ya = Math.max(0, ya);
+  x1 = Math.min(doc.w - 1, x1); yb = Math.min(doc.h - 1, yb);
+  if (x1 < x0 || yb < ya) return null;
+  return { x: x0, y: ya, w: x1 - x0 + 1, h: yb - ya + 1 };
+}
+function lift(copy) {
+  pushUndo();
+  floating = { x: sel.x, y: sel.y, w: sel.w, h: sel.h, data: copyRegion(sel), cv: null };
+  if (!copy) eraseRegion(sel);
+  sel = null;
+}
+function commitFloating() {
+  if (!floating) return;
+  const f = floating, e = eraseColor();
+  floating = null;
+  for (let y = 0; y < f.h; y++) {
+    for (let x = 0; x < f.w; x++) {
+      const v = f.data[y * f.w + x];
+      if (opt.transp && v === e) continue;
+      const X = f.x + x, Y = f.y + y;
+      if (X >= 0 && Y >= 0 && X < doc.w && Y < doc.h) put(X, Y, v);
+    }
+  }
+  const x0 = Math.max(0, f.x), y0 = Math.max(0, f.y);
+  const x1 = Math.min(doc.w, f.x + f.w), y1 = Math.min(doc.h, f.y + f.h);
+  sel = x1 > x0 && y1 > y0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
+  endChange();
+}
+function cancelFloating() {
+  if (!floating) return;
+  floating = null;
+  if (undoStack.length) {
+    const s = undoStack.pop();
+    Object.assign(doc, s, { px: s.px.slice() });
+  }
+  syncUI();
+  requestRender();
+}
+function moveFloating(dx, dy) {
+  floating.x += dx; floating.y += dy;
+  requestRender();
+}
+function nudge(dx, dy, cell) {
+  if (!floating && sel) lift(false);
+  if (!floating) return;
+  const sx = cell ? cellW() : pw(), sy = cell ? cellH() : 1;
+  moveFloating(dx * sx, dy * sy);
+}
+function selectAll() {
+  commitFloating();
+  sel = { x: 0, y: 0, w: doc.w, h: doc.h };
+  setTool('select');
+  requestRender();
+}
+function deselect() { commitFloating(); sel = null; requestRender(); }
+function copySel() {
+  const src = floating ? floating : sel ? { ...sel, data: copyRegion(sel) } : null;
+  if (!src) { msg('Niente di selezionato', true); return false; }
+  clip = { w: src.w, h: src.h, data: src.data.slice() };
+  copyToSystem(clip);
+  msg(`Copiati ${clip.w}×${clip.h} pixel`);
+  return true;
+}
+function cutSel() {
+  if (!copySel()) return;
+  if (floating) { floating = null; endChange(); return; }
+  pushUndo();
+  eraseRegion(sel);
+  endChange();
+}
+function deleteSel() {
+  if (floating) { floating = null; endChange(); return; }
+  if (!sel) return;
+  pushUndo();
+  eraseRegion(sel);
+  endChange();
+}
+function pasteClip() {
+  if (!clip) { msg('Gli appunti sono vuoti', true); return; }
+  commitFloating();
+  pushUndo();
+  let x, y;
+  if (sel) { x = sel.x; y = sel.y; }
+  else { x = Math.max(0, Math.ceil(-view.x / view.z)); y = Math.max(0, Math.ceil(-view.y / view.z)); }
+  if (MO().fat) x = pairStart(x);
+  floating = { x, y, w: clip.w, h: clip.h, data: clip.data.slice(), cv: null };
+  sel = null;
+  setTool('select');
+  msg('Incollato: trascina per spostare, Invio per fissare, Esc per annullare');
+  requestRender();
+}
+function flipData(d, w, h, horiz) {
+  const o = new Uint8Array(d.length);
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++)
+      o[y * w + x] = horiz ? d[y * w + (w - 1 - x)] : d[(h - 1 - y) * w + x];
+  return o;
+}
+function flip(horiz) {
+  if (!floating && sel) lift(false);
+  if (floating) {
+    floating.data = flipData(floating.data, floating.w, floating.h, horiz);
+    floating.cv = null;
+    requestRender();
+    return;
+  }
+  pushUndo();
+  doc.px = flipData(doc.px, doc.w, doc.h, horiz);
+  // la griglia si specchia col disegno
+  if (horiz) doc.gx = mod(doc.w - doc.gx, cellW()); else doc.gy = mod(doc.h - doc.gy, cellH());
+  syncUI();
+  endChange();
+}
+
+// ---------------------------------------------------------------- operazioni sull'immagine
+
+function setSize(nw, nh, ox, oy, follow) {
+  const np = new Uint8Array(nw * nh).fill(eraseColor());
+  for (let y = 0; y < doc.h; y++) {
+    const Y = y + oy;
+    if (Y < 0 || Y >= nh) continue;
+    for (let x = 0; x < doc.w; x++) {
+      const X = x + ox;
+      if (X >= 0 && X < nw) np[Y * nw + X] = doc.px[y * doc.w + x];
+    }
+  }
+  doc.px = np; doc.w = nw; doc.h = nh;
+  if (follow) { doc.gx = mod(doc.gx + ox, cellW()); doc.gy = mod(doc.gy + oy, cellH()); }
+  sel = null;
+}
+function crop() {
+  commitFloating();
+  if (!sel) { msg('Prima seleziona la parte da tenere', true); return; }
+  pushUndo();
+  setSize(sel.w, sel.h, -sel.x, -sel.y, true);
+  syncUI(); fit(); endChange();
+}
+function fixAll() {
+  commitFloating();
+  if (doc.mode === 'free') { msg('Nel modo libero non ci sono vincoli', true); return; }
+  pushUndo();
+  const bad = badCells();
+  for (const c of bad) fixCell(c.b);
+  msg(bad.length ? `${bad.length} celle corrette` : 'Tutte le celle sono già valide');
+  endChange();
+}
+function doubleW() {
+  commitFloating(); pushUndo();
+  const nw = doc.w * 2, np = new Uint8Array(nw * doc.h);
+  for (let y = 0; y < doc.h; y++)
+    for (let x = 0; x < doc.w; x++) np[y * nw + 2 * x] = np[y * nw + 2 * x + 1] = doc.px[y * doc.w + x];
+  doc.px = np; doc.w = nw; doc.gx = mod(doc.gx * 2, cellW());
+  sel = null; syncUI(); fit(); endChange();
+}
+function halveW() {
+  commitFloating(); pushUndo();
+  const nw = Math.max(1, doc.w >> 1), np = new Uint8Array(nw * doc.h);
+  for (let y = 0; y < doc.h; y++)
+    for (let x = 0; x < nw; x++) np[y * nw + x] = doc.px[y * doc.w + 2 * x];
+  doc.px = np; doc.w = nw; doc.gx = mod(doc.gx >> 1, cellW());
+  sel = null; syncUI(); fit(); endChange();
+}
+function setMode(m) {
+  if (m === doc.mode) return;
+  commitFloating(); pushUndo();
+  const wasSprite = MO().sprite, isSprite = MODES[m].sprite;
+  // negli sprite lo sfondo è trasparente; fuori dagli sprite il trasparente torna sfondo
+  if (isSprite && !wasSprite) doc.px = doc.px.map(c => c === doc.bg ? T : c);
+  if (!isSprite && wasSprite) doc.px = doc.px.map(c => c === T ? doc.bg : c);
+  doc.mode = m;
+  doc.gx = mod(doc.gx, cellW()); doc.gy = mod(doc.gy, cellH());
+  if (!isSprite) { if (prim === T) prim = doc.bg; if (sec === T) sec = doc.bg; }
+  else if (sec === doc.bg) sec = T;
+  syncUI(); endChange();
+  const n = badCells().length;
+  msg(n ? `${n} celle non rispettano il modo ${MODES[m].label}: Immagine → Correggi le celle non valide` : `Modo ${MODES[m].label}`, n > 0);
+}
+function setReg(name, val) {
+  const old = doc[name];
+  if (old === val) return;
+  commitFloating(); pushUndo();
+  doc[name] = val;
+  const isReg = MO().regs.includes(name);
+  if (isReg && $('#recolor').checked) doc.px = doc.px.map(c => c === old ? val : c);
+  syncUI(); endChange();
+}
+function setOrigin(x, y) {
+  pushUndo();
+  doc.gx = mod(x, cellW()); doc.gy = mod(y, cellH());
+  syncUI(); endChange();
+  msg(`Origine della griglia: ${doc.gx}, ${doc.gy}`);
+}
+
+// ---------------------------------------------------------------- PNG
+
+const SIG = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+const CRC = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(b) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 255] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+async function streamThrough(bytes, ts) {
+  const s = new Blob([bytes]).stream().pipeThrough(ts);
+  return new Uint8Array(await new Response(s).arrayBuffer());
+}
+const zlib = b => streamThrough(b, new CompressionStream('deflate'));
+const unzlib = b => streamThrough(b, new DecompressionStream('deflate'));
+const latin1 = s => Uint8Array.from(s, ch => ch.charCodeAt(0) & 255);
+
+function pngChunk(type, data) {
+  const out = new Uint8Array(12 + data.length), dv = new DataView(out.buffer);
+  dv.setUint32(0, data.length);
+  for (let i = 0; i < 4; i++) out[4 + i] = type.charCodeAt(i);
+  out.set(data, 8);
+  dv.setUint32(8 + data.length, crc32(out.subarray(4, 8 + data.length)));
+  return out;
+}
+// PNG a palette, 8 bit, indice = colore del C64 (16 = trasparente, solo se usato), più il
+// blocco tEXt "c64edit"
+async function encodePng() {
+  const { w, h, px } = doc, hasT = px.includes(T), n = hasT ? 17 : 16;
+  const ihdr = new Uint8Array(13), dv = new DataView(ihdr.buffer);
+  dv.setUint32(0, w); dv.setUint32(4, h); ihdr[8] = 8; ihdr[9] = 3;
+  const plte = new Uint8Array(n * 3);
+  PAL.forEach((c, i) => plte.set(c, i * 3));
+  if (hasT) plte.set([255, 0, 255], 48);
+  const meta = JSON.stringify({ v: 1, mode: doc.mode, gx: doc.gx, gy: doc.gy, cw: cellW(), ch: cellH(),
+                                bg: doc.bg, mc1: doc.mc1, mc2: doc.mc2 });
+  const raw = new Uint8Array((w + 1) * h);
+  for (let y = 0; y < h; y++) raw.set(px.subarray(y * w, (y + 1) * w), y * (w + 1) + 1);
+  const parts = [SIG, pngChunk('IHDR', ihdr), pngChunk('PLTE', plte)];
+  if (hasT) { const t = new Uint8Array(17).fill(255); t[16] = 0; parts.push(pngChunk('tRNS', t)); }
+  parts.push(pngChunk('tEXt', latin1('c64edit\0' + meta)));
+  parts.push(pngChunk('IDAT', await zlib(raw)));
+  parts.push(pngChunk('IEND', new Uint8Array(0)));
+  return new Blob(parts, { type: 'image/png' });
+}
+
+function parsePng(buf) {
+  for (let i = 0; i < 8; i++) if (buf[i] !== SIG[i]) return null;
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const png = { idat: [], text: {}, trns: null, plte: null };
+  let o = 8;
+  while (o + 8 <= buf.length) {
+    const len = dv.getUint32(o), type = String.fromCharCode(...buf.subarray(o + 4, o + 8));
+    const data = buf.subarray(o + 8, o + 8 + len);
+    if (type === 'IHDR') {
+      const d = new DataView(data.buffer, data.byteOffset, 13);
+      Object.assign(png, { w: d.getUint32(0), h: d.getUint32(4), depth: data[8], ctype: data[9], interlace: data[12] });
+    } else if (type === 'PLTE') png.plte = data;
+    else if (type === 'tRNS') png.trns = data;
+    else if (type === 'IDAT') png.idat.push(data);
+    else if (type === 'tEXt') {
+      const z = data.indexOf(0);
+      if (z > 0) png.text[String.fromCharCode(...data.subarray(0, z))] = String.fromCharCode(...data.subarray(z + 1));
+    } else if (type === 'IEND') break;
+    o += 12 + len;
+  }
+  return png;
+}
+function unfilter(data, h, stride, bpp) {
+  const out = new Uint8Array(stride * h);
+  let i = 0;
+  for (let y = 0; y < h; y++) {
+    const f = data[i++], ro = y * stride, pr = ro - stride;
+    for (let x = 0; x < stride; x++) {
+      const raw = data[i++];
+      const a = x >= bpp ? out[ro + x - bpp] : 0, b = y > 0 ? out[pr + x] : 0;
+      const c = x >= bpp && y > 0 ? out[pr + x - bpp] : 0;
+      let v;
+      switch (f) {
+        case 0: v = raw; break;
+        case 1: v = raw + a; break;
+        case 2: v = raw + b; break;
+        case 3: v = raw + ((a + b) >> 1); break;
+        case 4: { const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
+                  v = raw + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c); break; }
+        default: throw new Error('PNG: filtro sconosciuto ' + f);
+      }
+      out[ro + x] = v & 255;
+    }
+  }
+  return out;
+}
+// PNG a palette letto direttamente: ogni voce della palette va al colore del C64 più vicino
+// (per i PNG del progetto è esatto: la palette è Colodore)
+async function decodePalettePng(png) {
+  const all = new Uint8Array(png.idat.reduce((n, d) => n + d.length, 0));
+  let o = 0;
+  for (const d of png.idat) { all.set(d, o); o += d.length; }
+  const { w, h, depth } = png, stride = Math.ceil(w * depth / 8);
+  const rows = unfilter(await unzlib(all), h, stride, 1);
+  const map = [];
+  let c64pal = true;            // indice = colore del C64 (i PNG dei generatori del C64)
+  for (let i = 0; i < png.plte.length / 3; i++) {
+    const a = png.trns && i < png.trns.length ? png.trns[i] : 255;
+    const c = a < 128 ? T : nearest(png.plte[i * 3], png.plte[i * 3 + 1], png.plte[i * 3 + 2]);
+    if (c !== (i < 16 ? i : T)) c64pal = false;
+    map.push(c);
+  }
+  const px = new Uint8Array(w * h), mask = (1 << depth) - 1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let idx;
+      if (depth === 8) idx = rows[y * stride + x];
+      else { const bit = x * depth; idx = (rows[y * stride + (bit >> 3)] >> (8 - depth - (bit & 7))) & mask; }
+      px[y * w + x] = map[idx] ?? 0;
+    }
+  }
+  return { w, h, px, c64pal };
+}
+async function decodeViaCanvas(blob) {
+  const bm = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+  const c = document.createElement('canvas');
+  c.width = bm.width; c.height = bm.height;
+  const g = c.getContext('2d');
+  g.drawImage(bm, 0, 0);
+  const d = g.getImageData(0, 0, bm.width, bm.height).data, px = new Uint8Array(bm.width * bm.height);
+  for (let i = 0; i < px.length; i++)
+    px[i] = d[i * 4 + 3] < 128 ? T : nearest(d[i * 4], d[i * 4 + 1], d[i * 4 + 2]);
+  return { w: bm.width, h: bm.height, px };
+}
+async function decodeAny(buf, blob) {
+  let meta = null, img = null;
+  const png = parsePng(buf);
+  if (png) {
+    if (png.text.c64edit) { try { meta = JSON.parse(png.text.c64edit); } catch (_) { meta = null; } }
+    if (png.ctype === 3 && png.interlace === 0 && png.plte) img = await decodePalettePng(png);
+  }
+  if (!img) img = await decodeViaCanvas(blob);
+  img.meta = meta;
+  return img;
+}
+
+// ---------------------------------------------------------------- file
+
+function msg(text, warn) {
+  const el = $('#stMsg');
+  el.textContent = text;
+  el.classList.toggle('err', !!warn);
+}
+function updateTitle() {
+  const n = (doc.path || doc.name) + (doc.dirty ? ' •' : '');
+  $('#docname').textContent = n;
+  document.title = (doc.dirty ? '• ' : '') + doc.name + ' — Editor C64';
+}
+// domande nella pagina: nelle anteprime incorporate (VS Code) confirm() e prompt() non funzionano.
+// Risponde true (o il testo scritto) con OK, null con Annulla
+function ask(text, { input = null, ok = 'OK' } = {}) {
+  return new Promise(res => {
+    const d = $('#dlgAsk'), i = $('#askInput');
+    $('#askText').textContent = text;
+    $('#askOk').textContent = ok;
+    i.hidden = input === null;
+    if (input !== null) i.value = input;
+    i.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); d.close('ok'); } };
+    d.returnValue = '';
+    d.onclose = () => res(d.returnValue === 'ok' ? (input === null ? true : i.value.trim()) : null);
+    d.showModal();
+    if (input !== null) { i.focus(); i.select(); } else $('#askOk').focus();
+  });
+}
+const confirmDiscard = async () => !doc.dirty || !!(await ask('Ci sono modifiche non salvate. Continuare e perderle?', { ok: 'Continua' }));
+
+// server locale (tools/c64_editor.py): apre e salva i PNG del repository anche dove il browser
+// non lo permette
+let server = null;
+async function serverInit() {
+  if (!location.protocol.startsWith('http')) return;
+  try {
+    const r = await fetch('/api/ping');
+    if (!r.ok) return;
+    server = await r.json();
+    await serverList();
+    msg(`Collegato al repository ${server.name}: File → Apri, o l'elenco a destra`);
+  } catch (_) { server = null; }
+}
+async function serverList() {
+  const r = await fetch('/api/files');
+  fileEntries = (await r.json()).files.map(path => ({ path, server: true }));
+  $('#dirName').textContent = server.name;
+  renderFiles();
+}
+async function serverLoad(path) {
+  const r = await fetch('/api/file?path=' + encodeURIComponent(path));
+  if (!r.ok) { msg(`Non riesco ad aprire ${path}: ${(await r.json()).error}`, true); return; }
+  const blob = await r.blob();
+  const img = await decodeAny(new Uint8Array(await blob.arrayBuffer()), blob);
+  loadImage(img, path.split('/').pop(), null, path);
+  doc.onServer = true;
+}
+async function serverSave(path, blob) {
+  const r = await fetch('/api/file?path=' + encodeURIComponent(path),
+                        { method: 'PUT', headers: { 'X-C64Edit': '1', 'Content-Type': 'image/png' }, body: blob });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j.path;
+}
+async function openEntry(e) {
+  if (!(await confirmDiscard())) return;
+  if (e.server) await serverLoad(e.path);
+  else await loadFile(await e.h.getFile(), e.h, e.path);
+}
+
+function loadImage(img, name, handle, path) {
+  floating = null; sel = null;
+  const meta = img.meta || {};
+  const mode = MODES[meta.mode] ? meta.mode : 'hb';
+  doc = { w: img.w, h: img.h, px: img.px, mode, gx: 0, gy: 0, cw: 8, ch: 8,
+          bg: meta.bg ?? 0, mc1: meta.mc1 ?? 11, mc2: meta.mc2 ?? 12,
+          name, path: path || name, handle, dirty: false, foreign: !img.c64pal };
+  if (mode === 'free') { doc.cw = meta.cw || 8; doc.ch = meta.ch || 8; }
+  doc.gx = mod(meta.gx || 0, cellW()); doc.gy = mod(meta.gy || 0, cellH());
+  if (!MO().sprite) doc.px = doc.px.map(c => c === T ? doc.bg : c);
+  undoStack = []; redoStack = [];
+  if (!MO().sprite) { if (prim === T) prim = 1; if (sec === T) sec = doc.bg; }
+  syncUI(); fit(); updateTitle(); renderFiles();
+  const n = badCells().length;
+  msg(`Aperto ${doc.path}: ${img.w}×${img.h}, ${MODES[mode].label}${img.meta ? '' : ' (nessun dato dell\'editor: modo da scegliere)'}`
+      + (n ? `, ${n} celle non valide` : ''), n > 0);
+}
+async function loadFile(file, handle, path) {
+  try {
+    const buf = new Uint8Array(await file.arrayBuffer());
+    const img = await decodeAny(buf, file);
+    const png = /\.png$/i.test(file.name);
+    loadImage(img, png ? file.name : file.name.replace(/\.[^.]*$/, '') + '.png', png ? handle : null, path);
+  } catch (e) {
+    msg('Non riesco ad aprire ' + file.name + ': ' + e.message, true);
+  }
+}
+function showPick(title, entries, pick) {
+  const d = $('#dlgOpen'), f = $('#openFilter');
+  $('#openTitle').textContent = title;
+  const fill = () => renderFileList($('#openList'), f.value, async e => { d.close(); await pick(e); }, entries);
+  f.oninput = fill;
+  fill();
+  d.showModal();
+  f.focus();
+}
+async function cmdOpen() {
+  if (server) { showPick('Apri un\'immagine del repository', fileEntries, openEntry); return; }
+  if (!(await confirmDiscard())) return;
+  if (!window.showOpenFilePicker) { $('#fileInput').click(); return; }
+  try {
+    const [h] = await showOpenFilePicker({ id: 'c64edit',
+      types: [{ description: 'Immagini', accept: { 'image/png': ['.png'], 'image/gif': ['.gif'], 'image/bmp': ['.bmp'], 'image/jpeg': ['.jpg', '.jpeg'] } }] });
+    await loadFile(await h.getFile(), h);
+  } catch (e) {
+    if (e.name === 'AbortError') return;
+    // finestra del sistema non disponibile: si ripiega sul selettore classico (si salva scaricando)
+    msg('Apertura con la finestra del sistema non riuscita (' + e.message + '): uso il selettore classico', true);
+    $('#fileInput').click();
+  }
+}
+async function cmdOpenDir() {
+  if (server) { await serverList(); msg(`${fileEntries.length} PNG nel repository`); return; }
+  if (!window.showDirectoryPicker) { msg('Questo browser non apre le cartelle: avvia tools/c64_editor.py o usa Edge', true); return; }
+  try {
+    dirHandle = await showDirectoryPicker({ id: 'c64dir', mode: 'readwrite' });
+    fileEntries = [];
+    await walk(dirHandle, '', 0);
+    fileEntries.sort((a, b) => a.path.localeCompare(b.path));
+    $('#dirName').textContent = dirHandle.name;
+    renderFiles();
+    msg(`${fileEntries.length} PNG in ${dirHandle.name}`);
+  } catch (e) {
+    if (e.name !== 'AbortError') msg('Cartella non apribile qui (' + e.message + '): avvia tools/c64_editor.py', true);
+  }
+}
+async function walk(dir, prefix, depth) {
+  for await (const [name, h] of dir.entries()) {
+    if (fileEntries.length > 3000) return;
+    if (h.kind === 'file' && /\.png$/i.test(name)) fileEntries.push({ path: prefix + name, h });
+    else if (h.kind === 'directory' && depth < 4 && !name.startsWith('.') && name !== 'node_modules' && name !== 'target')
+      await walk(h, prefix + name + '/', depth + 1);
+  }
+}
+function renderFileList(ul, filter, pick, entries = fileEntries) {
+  const f = filter.toLowerCase();
+  ul.textContent = '';
+  for (const e of entries) {
+    if (f && !e.path.toLowerCase().includes(f)) continue;
+    const li = document.createElement('li');
+    li.textContent = e.path;
+    li.title = e.path;
+    if (doc.path === e.path) li.className = 'cur';
+    li.onclick = () => pick(e);
+    ul.appendChild(li);
+  }
+}
+function renderFiles() { renderFileList($('#files'), $('#fileFilter').value, openEntry); }
+async function writeHandle(h, blob) {
+  if (h.queryPermission && (await h.queryPermission({ mode: 'readwrite' })) !== 'granted') {
+    if ((await h.requestPermission({ mode: 'readwrite' })) !== 'granted') throw new Error('permesso di scrittura negato');
+  }
+  const w = await h.createWritable();
+  await w.write(blob);
+  await w.close();
+}
+async function cmdSave(as) {
+  commitFloating();
+  const bad = badCells().length;
+  if (bad && !(await ask(`${bad} celle non rispettano il modo ${MO().label}: i generatori le rifiuteranno. Salvare lo stesso?`, { ok: 'Salva' }))) return;
+  // un PNG che non usa i colori del C64 (per esempio i ritratti e i titoli comuni a PC e MiSTer,
+  // dove l'indice è un ruolo) si rovinerebbe riscrivendolo
+  const overwrite = !as && (doc.handle || doc.onServer);
+  if (overwrite && doc.foreign && !(await ask(`${doc.path} non usa i colori del C64 (forse è un file comune a PC e MiSTer, con i ruoli dei colori). Riscriverlo lo converte nei colori del C64. Sovrascriverlo lo stesso? Per tenerlo, usa Salva come.`, { ok: 'Sovrascrivi' }))) return;
+  try {
+    const blob = await encodePng();
+    if (server && (as || !doc.onServer)) {
+      const def = doc.onServer ? doc.path : 'assets/characters/portraits/c64/' + doc.name;
+      const path = await ask('Percorso nel repository (solo .png, in una cartella che esiste):', { input: def, ok: 'Salva' });
+      if (!path) return;
+      const rel = path.replace(/\\/g, '/').replace(/^\/+/, '');
+      if (rel !== doc.path && fileEntries.some(e => e.path === rel)
+          && !(await ask(`${rel} esiste già. Sovrascriverlo?`, { ok: 'Sovrascrivi' }))) return;
+      doc.path = await serverSave(rel, blob);
+      doc.name = doc.path.split('/').pop(); doc.onServer = true; doc.handle = null;
+      if (!fileEntries.some(e => e.path === doc.path)) await serverList();
+    } else if (server && doc.onServer) {
+      await serverSave(doc.path, blob);
+    } else if (!as && doc.handle) {
+      await writeHandle(doc.handle, blob);
+    } else if (window.showSaveFilePicker && window.top === window) {
+      const o = { suggestedName: doc.name, id: 'c64edit', types: [{ description: 'PNG', accept: { 'image/png': ['.png'] } }] };
+      if (dirHandle) o.startIn = dirHandle;
+      const h = await showSaveFilePicker(o);
+      await writeHandle(h, blob);
+      doc.handle = h; doc.name = h.name;
+      doc.path = (dirHandle && await dirHandle.resolve(h))?.join('/') || h.name;
+      const known = fileEntries.find(e => e.path === doc.path);
+      if (dirHandle && !known && doc.path !== h.name) { fileEntries.push({ path: doc.path, h }); fileEntries.sort((a, b) => a.path.localeCompare(b.path)); }
+    } else {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = doc.name; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    }
+    doc.dirty = false; doc.foreign = false;
+    updateTitle(); renderFiles();
+    msg('Salvato ' + (doc.path || doc.name));
+  } catch (e) { if (e.name !== 'AbortError') msg('Salvataggio non riuscito: ' + e.message, true); }
+}
+function dataCanvas(c) {
+  const cv2 = document.createElement('canvas');
+  cv2.width = c.w; cv2.height = c.h;
+  const g = cv2.getContext('2d'), id = g.createImageData(c.w, c.h);
+  for (let i = 0; i < c.data.length; i++) {
+    const v = c.data[i];
+    if (v === T) continue;
+    id.data.set(PAL[v], i * 4); id.data[i * 4 + 3] = 255;
+  }
+  g.putImageData(id, 0, 0);
+  return cv2;
+}
+async function copyToSystem(c) {
+  try {
+    if (!navigator.clipboard || !window.ClipboardItem) return;
+    const blob = await new Promise(r => dataCanvas(c).toBlob(r, 'image/png'));
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+  } catch (_) { /* gli appunti di sistema non sono indispensabili */ }
+}
+async function clipFromBlob(blob) {
+  const img = await decodeAny(new Uint8Array(await blob.arrayBuffer()), blob);
+  const data = MO().sprite ? img.px : img.px.map(c => c === T ? eraseColor() : c);
+  clip = { w: img.w, h: img.h, data };
+}
+async function pasteSys() {
+  try {
+    const items = await navigator.clipboard.read();
+    for (const it of items) {
+      const type = it.types.find(t => t.startsWith('image/'));
+      if (type) { await clipFromBlob(await it.getType(type)); pasteClip(); return; }
+    }
+    msg('Negli appunti non c\'è un\'immagine', true);
+  } catch (e) { msg('Appunti non leggibili: ' + e.message, true); }
+}
+
+// ---------------------------------------------------------------- dialoghi
+
+function colorOptions(sel, withT) {
+  sel.textContent = '';
+  for (let c = 0; c < 16; c++) sel.add(new Option(cname(c), c));
+  if (withT) sel.add(new Option('trasparente', T));
+}
+function presetsFor(mode) {
+  if (MODES[mode].sprite) return [['1x1', '1 sprite (24×21)'], ['2x1', '2 sprite affiancati'], ['2x2', '4 sprite, 2×2'],
+                                  ['4x2', '8 sprite, 4×2'], ['8x1', '8 sprite in fila'], ['custom', 'Personalizzato']];
+  return [['40x25', 'Schermo intero, 40×25 celle (320×200)'], ['11x13', 'Ritratto grande, 11×13 celle (88×104)'],
+          ['8x9', 'Ritratto medio, 8×9 celle (64×72)'], ['4x4', 'Casella, 4×4 celle (32×32)'], ['custom', 'Personalizzato']];
+}
+async function cmdNew() {
+  if (!(await confirmDiscard())) return;
+  const d = $('#dlgNew'), nm = $('#nMode'), np = $('#nPreset');
+  nm.textContent = '';
+  for (const [k, m] of Object.entries(MODES)) nm.add(new Option(m.label, k));
+  nm.value = doc.mode;
+  colorOptions($('#nBg'));
+  $('#nBg').value = 0;
+  const cw = () => MODES[nm.value].cw, ch = () => MODES[nm.value].ch;
+  const info = () => {
+    $('#nInfo').textContent = `${$('#nW').value}×${$('#nH').value} pixel, celle ${cw()}×${ch()}. ${MODES[nm.value].hint}`;
+  };
+  const fromCells = () => { $('#nW').value = +$('#nCx').value * cw(); $('#nH').value = +$('#nCy').value * ch(); info(); };
+  const fromPixels = () => { $('#nCx').value = Math.ceil($('#nW').value / cw()); $('#nCy').value = Math.ceil($('#nH').value / ch()); np.value = 'custom'; info(); };
+  const fillPresets = () => {
+    np.textContent = '';
+    for (const [v, t] of presetsFor(nm.value)) np.add(new Option(t, v));
+    np.selectedIndex = 0;
+    applyPreset();
+  };
+  const applyPreset = () => {
+    if (np.value === 'custom') return;
+    const [a, b] = np.value.split('x');
+    $('#nCx').value = a; $('#nCy').value = b; fromCells();
+  };
+  nm.onchange = fillPresets; np.onchange = applyPreset;
+  $('#nCx').oninput = $('#nCy').oninput = () => { np.value = 'custom'; fromCells(); };
+  $('#nW').oninput = $('#nH').oninput = fromPixels;
+  fillPresets();
+  if (nm.value === 'hb' && doc.w === 88 && doc.h === 104) np.value = '11x13';
+  applyPreset();
+  d.returnValue = '';
+  d.onclose = () => {
+    if (d.returnValue !== 'ok') return;
+    const w = Math.max(1, Math.min(4096, +$('#nW').value | 0)), h = Math.max(1, Math.min(4096, +$('#nH').value | 0));
+    const mode = nm.value, bg = +$('#nBg').value;
+    doc = blankDoc(w, h, mode, bg);
+    doc.gx = mod(+$('#nGx').value | 0, cellW()); doc.gy = mod(+$('#nGy').value | 0, cellH());
+    undoStack = []; redoStack = []; sel = null; floating = null;
+    if (MO().sprite) sec = T; else { if (prim === T) prim = 1; sec = bg; }
+    syncUI(); fit(); updateTitle(); renderFiles();
+    msg(`Nuova immagine ${w}×${h}, ${MO().label}`);
+  };
+  d.showModal();
+}
+function cmdResize() {
+  commitFloating();
+  const d = $('#dlgResize');
+  $('#rW').value = doc.w; $('#rH').value = doc.h;
+  d.returnValue = '';
+  d.onclose = () => {
+    if (d.returnValue !== 'ok') return;
+    const nw = Math.max(1, Math.min(4096, +$('#rW').value | 0)), nh = Math.max(1, Math.min(4096, +$('#rH').value | 0));
+    const [ax, ay] = $('#rAnchor').value.split(',').map(Number);
+    pushUndo();
+    setSize(nw, nh, Math.round((nw - doc.w) * ax), Math.round((nh - doc.h) * ay), $('#rFollow').checked);
+    syncUI(); fit(); endChange();
+  };
+  d.showModal();
+}
+
+// ---------------------------------------------------------------- importa e converti
+//
+// Un'immagine qualsiasi diventa un'immagine del modo scelto: ricampionamento alla misura (nei modi
+// multicolor le coppie di pixel si mediano), regolazioni, registri comuni (automatici: i colori
+// più frequenti, e per lo sfondo il migliore fra i quattro più frequenti), per ogni cella i
+// colori propri che rendono meglio i suoi pixel, poi il retino fatto solo con i colori ammessi in
+// quella cella: il risultato rispetta sempre i vincoli.
+
+const CONV_MODES = ['hb', 'mb', 'hc', 'mc', 'hs', 'ms'];
+function bayer(n) {
+  let m = [[0]];
+  while (m.length < n) {
+    const s = m.length, o = [];
+    for (let y = 0; y < 2 * s; y++) {
+      o.push([]);
+      for (let x = 0; x < 2 * s; x++) o[y].push(4 * m[y % s][x % s] + [[0, 2], [3, 1]][y >= s ? 1 : 0][x >= s ? 1 : 0]);
+    }
+    m = o;
+  }
+  return m.map(r => r.map(v => (v + 0.5) / (n * n) - 0.5));
+}
+const BAYERS = { b2: bayer(2), b4: bayer(4), b8: bayer(8) };
+let conv = null;            // {src, name, replace, allowed, last, timer}
+
+function convRun(p) {
+  const M = MODES[p.mode], W = p.w, H = p.h, fat = M.fat, cw = M.cw, ch = M.ch, sprite = !!M.sprite;
+  // ricampionamento
+  const cnv = document.createElement('canvas');
+  cnv.width = W; cnv.height = H;
+  const g = cnv.getContext('2d', { willReadFrequently: true });
+  g.imageSmoothingEnabled = p.smooth; g.imageSmoothingQuality = 'high';
+  const S = conv.src, sw = S.width, sh = S.height;
+  if (p.fit === 'stretch') g.drawImage(S, 0, 0, W, H);
+  else if (p.fit === 'contain') {
+    const s = Math.min(W / sw, H / sh), dw = sw * s, dh = sh * s;
+    g.drawImage(S, (W - dw) / 2, (H - dh) / 2, dw, dh);
+  } else {
+    const s = Math.max(W / sw, H / sh), vw = W / s, vh = H / s;
+    g.drawImage(S, (sw - vw) / 2, (sh - vh) / 2, vw, vh, 0, 0, W, H);
+  }
+  const img = g.getImageData(0, 0, W, H), d = img.data;
+  // regolazioni
+  const cc = p.contrast * 2.55, cf = 259 * (cc + 255) / (255 * (259 - cc)), br = p.bright * 1.28;
+  const sat = 1 + p.sat / 100, ig = 1 / p.gamma;
+  for (let i = 0; i < W * H; i++) {
+    let r = d[i * 4], gg = d[i * 4 + 1], b = d[i * 4 + 2];
+    if (ig !== 1) { r = 255 * (r / 255) ** ig; gg = 255 * (gg / 255) ** ig; b = 255 * (b / 255) ** ig; }
+    r = cf * (r - 128) + 128 + br; gg = cf * (gg - 128) + 128 + br; b = cf * (b - 128) + 128 + br;
+    const l = 0.299 * r + 0.587 * gg + 0.114 * b;
+    d[i * 4] = l + (r - l) * sat; d[i * 4 + 1] = l + (gg - l) * sat; d[i * 4 + 2] = l + (b - l) * sat;
+  }
+  g.putImageData(img, 0, 0);
+
+  // pixel logici (nei modi multicolor una coppia che parte dall'origine)
+  const gx = mod(p.gx, cw), gy = mod(p.gy, ch);
+  const lMin = fat ? fdiv(-gx, 2) : 0, lMax = fat ? fdiv(W - 1 - gx, 2) : W - 1, LW = lMax - lMin + 1, N = LW * H;
+  const R = new Float32Array(N), Gc = new Float32Array(N), Bc = new Float32Array(N), tr = new Uint8Array(N);
+  const xa = new Int32Array(N), xb = new Int32Array(N), cell = new Int32Array(N);
+  const cx0 = fdiv(-gx, cw), cy0 = fdiv(-gy, ch);
+  const NCX = fdiv(W - 1 - gx, cw) - cx0 + 1, NCY = fdiv(H - 1 - gy, ch) - cy0 + 1, NC = NCX * NCY;
+  for (let y = 0; y < H; y++) {
+    for (let li = 0; li < LW; li++) {
+      const k = y * LW + li, l = lMin + li;
+      let a = fat ? gx + 2 * l : l, b2 = fat ? a + 1 : a;
+      a = Math.max(0, a); b2 = Math.min(W - 1, b2);
+      let r = 0, gg = 0, bb = 0, al = 0, n = 0;
+      for (let x = a; x <= b2; x++) {
+        const i = (y * W + x) * 4;
+        r += d[i]; gg += d[i + 1]; bb += d[i + 2]; al += d[i + 3]; n++;
+      }
+      R[k] = r / n; Gc[k] = gg / n; Bc[k] = bb / n; tr[k] = al / n < 128 ? 1 : 0;
+      xa[k] = a; xb[k] = b2;
+      cell[k] = (fdiv(y - gy, ch) - cy0) * NCX + (fdiv(a - gx, cw) - cx0);
+    }
+  }
+  const cellPix = Array.from({ length: NC }, () => []);
+  for (let k = 0; k < N; k++) if (!(sprite && tr[k])) cellPix[cell[k]].push(k);
+
+  const allowed = p.allowed.length ? p.allowed : [...Array(16).keys()];
+  const D = new Float32Array(N * 16);
+  const fillD = k => {
+    for (let c = 0; c < 16; c++) {
+      const q = PAL[c], dr = R[k] - q[0], dg = Gc[k] - q[1], db = Bc[k] - q[2];
+      D[k * 16 + c] = 0.3 * dr * dr + 0.59 * dg * dg + 0.11 * db * db;
+    }
+  };
+  for (let k = 0; k < N; k++) fillD(k);
+  // fuori dagli sprite i pixel trasparenti prendono il colore dello sfondo
+  const setTransparent = c => {
+    if (sprite) return;
+    for (let k = 0; k < N; k++) if (tr[k]) { R[k] = PAL[c][0]; Gc[k] = PAL[c][1]; Bc[k] = PAL[c][2]; fillD(k); }
+  };
+  // colori più frequenti fra quelli ammessi
+  const hist = new Array(16).fill(0);
+  for (let k = 0; k < N; k++) {
+    if (tr[k]) continue;
+    let best = Infinity, bc = allowed[0];
+    for (const c of allowed) if (D[k * 16 + c] < best) { best = D[k * 16 + c]; bc = c; }
+    hist[bc]++;
+  }
+  const order = allowed.slice().sort((a, b) => hist[b] - hist[a]);
+  const autoPick = (v, taken) => v !== 'auto' ? v : (order.find(c => !taken.includes(c)) ?? 0);
+
+  // per ogni cella i colori propri migliori, dati i registri
+  const setsFor = regs => {
+    const cand0 = allowed.filter(c => c < M.ownMax && !regs.includes(c));
+    const sets = new Array(NC), votes = new Array(16);
+    let total = 0;
+    for (let ci = 0; ci < NC; ci++) {
+      const pix = cellPix[ci];
+      votes.fill(0);
+      for (const k of pix) {
+        let best = Infinity, bc = -1;
+        for (const c of cand0) if (D[k * 16 + c] < best) { best = D[k * 16 + c]; bc = c; }
+        if (bc >= 0) votes[bc]++;
+      }
+      const cand = cand0.slice().sort((a, b) => votes[b] - votes[a]).slice(0, Math.max(M.own + 3, 5));
+      const kk = Math.min(M.own, cand.length);
+      let bestSet = regs, bestE = Infinity;
+      for (const combo of combos(cand, kk)) {
+        const s = regs.concat(combo);
+        let e = 0;
+        for (const k of pix) {
+          let m = Infinity;
+          for (const c of s) { const v = D[k * 16 + c]; if (v < m) m = v; }
+          e += m;
+          if (e >= bestE) break;
+        }
+        if (e < bestE) { bestE = e; bestSet = s; }
+      }
+      sets[ci] = bestSet.length ? bestSet : [allowed[0]];
+      total += pix.length ? bestE : 0;
+    }
+    return { sets, total };
+  };
+
+  let bg = p.bg, mc1 = p.mc1, mc2 = p.mc2, res;
+  if (p.mode === 'mb' || p.mode === 'hc') {
+    let best = null;
+    for (const b of (bg !== 'auto' ? [bg] : order.slice(0, 4))) {
+      setTransparent(b);
+      const r = setsFor([b]);
+      if (!best || r.total < best.r.total) best = { b, r };
+    }
+    bg = best.b; setTransparent(bg); res = best.r;
+  } else if (p.mode === 'mc') {
+    const fixed = [mc1, mc2].filter(v => v !== 'auto');
+    bg = autoPick(bg, fixed);
+    mc1 = autoPick(mc1, [bg, ...fixed]);
+    mc2 = autoPick(mc2, [bg, mc1]);
+    setTransparent(bg);
+    res = setsFor([bg, mc1, mc2]);
+  } else if (p.mode === 'ms') {
+    mc1 = autoPick(mc1, mc2 !== 'auto' ? [mc2] : []);
+    mc2 = autoPick(mc2, [mc1]);
+    bg = bg === 'auto' ? 0 : bg;
+    res = setsFor([mc1, mc2]);
+  } else {
+    bg = bg === 'auto' ? (p.mode === 'hs' ? 0 : order[0]) : bg;
+    setTransparent(bg);
+    res = setsFor([]);
+  }
+
+  // retino con i soli colori della cella
+  const out = new Uint8Array(N);
+  const nearIn = (s, r, g2, b) => {
+    let best = Infinity, bc = s[0];
+    for (const c of s) {
+      const q = PAL[c], dr = r - q[0], dg = g2 - q[1], db = b - q[2];
+      const e = 0.3 * dr * dr + 0.59 * dg * dg + 0.11 * db * db;
+      if (e < best) { best = e; bc = c; }
+    }
+    return bc;
+  };
+  const amt = p.amount;
+  if (BAYERS[p.dither]) {
+    const m = BAYERS[p.dither], n = m.length, A = amt * 110;
+    for (let y = 0; y < H; y++) {
+      for (let li = 0; li < LW; li++) {
+        const k = y * LW + li;
+        if (sprite && tr[k]) { out[k] = T; continue; }
+        const t = m[y % n][li % n] * A;
+        out[k] = nearIn(res.sets[cell[k]], R[k] + t, Gc[k] + t, Bc[k] + t);
+      }
+    }
+  } else if (p.dither === 'fs' || p.dither === 'atk') {
+    const er = Float32Array.from(R), eg = Float32Array.from(Gc), eb = Float32Array.from(Bc);
+    const taps = p.dither === 'fs'
+      ? [[1, 0, 7 / 16], [-1, 1, 3 / 16], [0, 1, 5 / 16], [1, 1, 1 / 16]]
+      : [[1, 0, 1 / 8], [2, 0, 1 / 8], [-1, 1, 1 / 8], [0, 1, 1 / 8], [1, 1, 1 / 8], [0, 2, 1 / 8]];
+    const cl = v => Math.max(-40, Math.min(295, v));
+    for (let y = 0; y < H; y++) {
+      for (let li = 0; li < LW; li++) {
+        const k = y * LW + li;
+        if (sprite && tr[k]) { out[k] = T; continue; }
+        const r = cl(er[k]), g2 = cl(eg[k]), b = cl(eb[k]);
+        const c = nearIn(res.sets[cell[k]], r, g2, b);
+        out[k] = c;
+        const q = PAL[c], dr = (r - q[0]) * amt, dg = (g2 - q[1]) * amt, db = (b - q[2]) * amt;
+        for (const [dx, dy, w] of taps) {
+          const x2 = li + dx, y2 = y + dy;
+          if (x2 < 0 || x2 >= LW || y2 >= H) continue;
+          const k2 = y2 * LW + x2;
+          er[k2] += dr * w; eg[k2] += dg * w; eb[k2] += db * w;
+        }
+      }
+    }
+  } else {
+    for (let k = 0; k < N; k++) out[k] = sprite && tr[k] ? T : nearIn(res.sets[cell[k]], R[k], Gc[k], Bc[k]);
+  }
+
+  const px = new Uint8Array(W * H);
+  for (let k = 0; k < N; k++) {
+    const y = (k / LW) | 0;
+    for (let x = xa[k]; x <= xb[k]; x++) px[y * W + x] = out[k];
+  }
+  return { w: W, h: H, px, mode: p.mode, gx, gy, bg,
+           mc1: mc1 === 'auto' ? 11 : mc1, mc2: mc2 === 'auto' ? 12 : mc2,
+           adj: cnv, err: Math.sqrt(res.total / Math.max(1, N)) };
+}
+
+function convParams() {
+  const num = id => +$('#' + id).value;
+  const reg = id => $('#' + id).value === 'auto' ? 'auto' : +$('#' + id).value;
+  return {
+    mode: $('#kMode').value,
+    w: Math.max(1, Math.min(1024, num('kW') | 0)), h: Math.max(1, Math.min(1024, num('kH') | 0)),
+    fit: $('#kFit').value, smooth: $('#kSmooth').value === '1',
+    dither: $('#kDither').value, amount: num('kAmount') / 100,
+    bright: num('kBright'), contrast: num('kContrast'), sat: num('kSat'), gamma: num('kGamma') / 100,
+    gx: num('kGx') | 0, gy: num('kGy') | 0,
+    bg: reg('kBg'), mc1: reg('kMc1'), mc2: reg('kMc2'),
+    allowed: [...conv.allowed].sort((a, b) => a - b),
+  };
+}
+function convSchedule() {
+  clearTimeout(conv.timer);
+  conv.timer = setTimeout(convPreview, 60);
+}
+function convPreview() {
+  const p = convParams(), t0 = performance.now();
+  const r = convRun(p);
+  conv.last = r;
+  const kc = $('#kCanvas'), s = Math.max(1, Math.floor(Math.min(580 / r.w, 460 / r.h)));
+  kc.width = r.w * s; kc.height = r.h * s;
+  const g = kc.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  g.drawImage($('#kOrig').checked ? r.adj : dataCanvas({ w: r.w, h: r.h, data: r.px }), 0, 0, kc.width, kc.height);
+  const used = new Set(r.px);
+  used.delete(T);
+  const regs = { hb: '', mb: `sfondo ${cname(r.bg)}`, hc: `sfondo ${cname(r.bg)}`,
+                 mc: `sfondo ${cname(r.bg)}, MC1 ${cname(r.mc1)}, MC2 ${cname(r.mc2)}`, hs: '',
+                 ms: `MC1 ${cname(r.mc1)}, MC2 ${cname(r.mc2)}` }[r.mode];
+  $('#kInfo').textContent = `${r.w}×${r.h}, ${MODES[r.mode].label}${regs ? '; ' + regs : ''}; ${used.size} colori; `
+    + `scarto medio ${r.err.toFixed(0)}; ${Math.round(performance.now() - t0)} ms`;
+}
+function convModeUI() {
+  const m = $('#kMode').value, regs = MODES[m].regs;
+  const show = (id, on) => { $('#' + id).hidden = !on; $('#' + id + 'L').hidden = !on; };
+  show('kBg', !MODES[m].sprite);
+  $('#kBgL').textContent = regs.includes('bg') ? 'Sfondo ($D021)' : 'Sfondo (gomma)';
+  show('kMc1', regs.includes('mc1')); show('kMc2', regs.includes('mc2'));
+  const cw = MODES[m].cw, ch = MODES[m].ch;
+  $('#kGx').max = cw - 1; $('#kGy').max = ch - 1;
+}
+function convPal() {
+  const box = $('#kPal');
+  box.textContent = '';
+  for (let c = 0; c < 16; c++) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.style.background = css(c);
+    b.title = cname(c);
+    b.textContent = c;
+    b.style.color = c === 0 || c === 6 || c === 9 || c === 11 || c === 2 ? '#fff' : '#000';
+    b.classList.toggle('off', !conv.allowed.has(c));
+    b.onclick = () => {
+      if (conv.allowed.has(c)) { if (conv.allowed.size > 1) conv.allowed.delete(c); } else conv.allowed.add(c);
+      convPal(); convSchedule();
+    };
+    box.appendChild(b);
+  }
+}
+// src: ImageBitmap o canvas; opts: misura, adattamento, origine e modo di partenza
+function convOpen(src, name, replace, opts = {}) {
+  conv = { src, name: name.replace(/\.[^./]*$/, '') + '.png', replace,
+           allowed: new Set([...Array(16).keys()]), last: null, timer: 0 };
+  const km = $('#kMode');
+  km.textContent = '';
+  for (const m of CONV_MODES) km.add(new Option(MODES[m].label, m));
+  km.value = opts.mode || (CONV_MODES.includes(doc.mode) ? doc.mode : 'hb');
+  for (const id of ['kBg', 'kMc1', 'kMc2']) {
+    const s = $('#' + id);
+    s.textContent = '';
+    s.add(new Option('automatico', 'auto'));
+    for (let c = 0; c < 16; c++) s.add(new Option(cname(c), c));
+    s.value = 'auto';
+  }
+  const sw = src.width, sh = src.height, fits = sw <= 320 && sh <= 200;
+  const fs = Math.min(320 / sw, 200 / sh);
+  const presets = [['src', `Originale (${sw}×${sh})`], ['fit', `Dentro lo schermo (${Math.round(sw * Math.min(1, fs))}×${Math.round(sh * Math.min(1, fs))})`],
+                   ['320x200', 'Schermo 320×200'], ['88x104', 'Ritratto grande 88×104'], ['64x72', 'Ritratto medio 64×72'],
+                   ['32x32', 'Casella 32×32'], ['24x21', 'Sprite 24×21'], ['custom', 'Personalizzata']];
+  if (opts.w) presets.unshift(['doc', `Come l'immagine aperta (${opts.w}×${opts.h})`]);
+  const kp = $('#kPreset');
+  kp.textContent = '';
+  for (const [v, t] of presets) kp.add(new Option(t, v));
+  const applyPreset = () => {
+    const v = kp.value;
+    if (v === 'custom') return;
+    let w, h;
+    if (v === 'src') { w = sw; h = sh; }
+    else if (v === 'fit') { const s = Math.min(1, fs); w = Math.round(sw * s); h = Math.round(sh * s); }
+    else if (v === 'doc') { w = opts.w; h = opts.h; }
+    else [w, h] = v.split('x').map(Number);
+    $('#kW').value = w; $('#kH').value = h;
+    convSchedule();
+  };
+  kp.onchange = applyPreset;
+  kp.value = opts.w ? 'doc' : fits ? 'src' : 'fit';
+  $('#kFit').value = opts.fit || 'contain';
+  $('#kGx').value = opts.gx || 0; $('#kGy').value = opts.gy || 0;
+  $('#kW').oninput = () => { kp.value = 'custom'; if ($('#kKeep').checked) $('#kH').value = Math.max(1, Math.round($('#kW').value * sh / sw)); convSchedule(); };
+  $('#kH').oninput = () => { kp.value = 'custom'; if ($('#kKeep').checked) $('#kW').value = Math.max(1, Math.round($('#kH').value * sw / sh)); convSchedule(); };
+  $('#kName').textContent = `${name} (${sw}×${sh})`;
+  convPal(); convModeUI(); applyPreset();
+  const d = $('#dlgConv');
+  d.returnValue = '';
+  d.onclose = () => { clearTimeout(conv.timer); if (d.returnValue === 'ok') convApply(); };
+  d.showModal();
+}
+function convApply() {
+  if (!conv.last || conv.timer) convPreview();
+  const r = conv.last;
+  const fields = { w: r.w, h: r.h, px: r.px, mode: r.mode, gx: r.gx, gy: r.gy, cw: 8, ch: 8, bg: r.bg, mc1: r.mc1, mc2: r.mc2 };
+  floating = null; sel = null;
+  if (conv.replace) {
+    pushUndo();
+    Object.assign(doc, fields);
+  } else {
+    doc = { ...fields, name: conv.name, path: '', handle: null, dirty: true, onServer: false, foreign: false };
+    undoStack = []; redoStack = [];
+  }
+  if (MODES[r.mode].sprite) sec = T;
+  else { if (prim === T) prim = 1; if (sec === T) sec = r.bg; }
+  syncUI(); fit(); changed(); renderFiles();
+  const n = badCells().length;
+  msg(`Convertito: ${r.w}×${r.h}, ${MODES[r.mode].label}` + (n ? `, ${n} celle non valide` : '')
+      + (conv.replace ? '' : ' — Salva come per metterlo nel repository'), n > 0);
+}
+async function convFromBlob(blob, name, replace) {
+  try { convOpen(await createImageBitmap(blob), name, replace); }
+  catch (e) { msg(`Non riesco a leggere ${name}: ${e.message}`, true); }
+}
+async function cmdImport() {
+  if (!(await confirmDiscard())) return;
+  if (server) {
+    const files = (await (await fetch('/api/files?all=1')).json()).files.map(path => ({ path }));
+    showPick('Importa e converti un\'immagine', files, async e => {
+      const r = await fetch('/api/file?path=' + encodeURIComponent(e.path));
+      if (r.ok) await convFromBlob(await r.blob(), e.path.split('/').pop(), false);
+    });
+    return;
+  }
+  if (window.showOpenFilePicker && window.top === window) {
+    try {
+      const [h] = await showOpenFilePicker({ id: 'c64conv',
+        types: [{ description: 'Immagini', accept: { 'image/*': ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'] } }] });
+      const f = await h.getFile();
+      await convFromBlob(f, f.name, false);
+    } catch (e) { if (e.name !== 'AbortError') $('#convInput').click(); }
+    return;
+  }
+  $('#convInput').click();
+}
+function cmdConvertCur() {
+  commitFloating();
+  convOpen(dataCanvas({ w: doc.w, h: doc.h, data: doc.px }), doc.name, true,
+           { w: doc.w, h: doc.h, gx: doc.gx, gy: doc.gy, fit: 'stretch' });
+}
+function cmdConvertRef() {
+  if (!refImg) { msg('Prima carica un\'immagine di riferimento (pannello Riferimento)', true); $('#refInput').click(); return; }
+  commitFloating();
+  // il riferimento è stirato sull'immagine: stessa misura, stessa griglia
+  convOpen(refImg, refName || 'riferimento', true,
+           { w: doc.w, h: doc.h, gx: doc.gx, gy: doc.gy, fit: 'stretch', mode: CONV_MODES.includes(doc.mode) ? doc.mode : 'hb' });
+}
+let refName = '';
+
+// ---------------------------------------------------------------- interfaccia
+
+function setTool(t) {
+  if (t !== 'select' && floating) commitFloating();
+  tool = t;
+  document.querySelectorAll('#tools button').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
+  $('#hint').textContent = TOOL_HINT[t] || '';
+  updateCursor();
+}
+function setBrush(n) {
+  brush = Math.max(1, Math.min(4, n));
+  document.querySelectorAll('#brushGrp button').forEach(b => b.classList.toggle('on', +b.dataset.brush === brush));
+}
+function updateCursor() {
+  cv.classList.toggle('pan', spaceDown);
+  cv.classList.toggle('cross', !spaceDown);
+}
+function buildPalette() {
+  const pal = $('#palette');
+  pal.textContent = '';
+  const list = [...Array(16).keys()];
+  if (MO().sprite) list.push(T);
+  for (const c of list) {
+    const b = document.createElement('button');
+    b.style.background = c === T ? '' : css(c);
+    if (c === T) b.className = 'sw t';
+    b.title = cname(c);
+    b.innerHTML = `<span>${c === T ? 'T' : c}</span>`;
+    b.dataset.c = c;
+    b.addEventListener('pointerdown', e => {
+      if (e.button === 2) sec = c; else prim = c;
+      updateColors();
+    });
+    b.addEventListener('contextmenu', e => e.preventDefault());
+    pal.appendChild(b);
+  }
+  updateColors();
+}
+function updateColors() {
+  const sp = $('#swPrim'), ss = $('#swSec');
+  for (const [el, c] of [[sp, prim], [ss, sec]]) {
+    el.style.background = c === T ? '' : css(c);
+    el.classList.toggle('t', c === T);
+  }
+  $('#curNames').innerHTML = `${cname(prim)}<br>${cname(sec)}`;
+  const regs = new Set(regColors()), m = MO();
+  document.querySelectorAll('#palette button').forEach(b => {
+    const c = +b.dataset.c;
+    b.classList.toggle('p', c === prim);
+    b.classList.toggle('s', c === sec && c !== prim);
+    b.classList.toggle('dim', m.ownMax < 16 && c >= m.ownMax && c !== T && !regs.has(c));
+  });
+}
+function buildRegs() {
+  const box = $('#regs'), m = MO(), lab = REG_LABEL[doc.mode] || {};
+  box.textContent = '';
+  const rows = m.regs.map(r => [r, lab[r]]);
+  if (!m.sprite && !m.regs.includes('bg')) rows.unshift(['bg', 'Colore della gomma (non è un registro)']);
+  if (m.sprite) {
+    const p = document.createElement('div');
+    p.className = 'small';
+    p.textContent = 'Lo sfondo degli sprite è trasparente; il colore proprio è $D027+n.';
+    box.appendChild(p);
+  }
+  for (const [r, text] of rows) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const sw = document.createElement('div');
+    sw.className = 'sw';
+    sw.style.background = css(doc[r]);
+    const s = document.createElement('select');
+    colorOptions(s);
+    s.value = doc[r];
+    s.onchange = () => setReg(r, +s.value);
+    const t = document.createElement('span');
+    t.textContent = text;
+    t.style.flex = '1';
+    const use = document.createElement('button');
+    use.textContent = '← primario';
+    use.title = 'Usa il colore primario';
+    use.onclick = () => { if (prim !== T) setReg(r, prim); };
+    row.append(sw, t);
+    const row2 = document.createElement('div');
+    row2.className = 'row';
+    row2.append(s, use);
+    box.append(row, row2);
+  }
+  if (!rows.length && !m.sprite) {
+    box.innerHTML = '<div class="small">Questo modo non ha registri di colore comuni.</div>';
+  }
+}
+function syncUI() {
+  const ms = $('#mode');
+  if (!ms.options.length) for (const [k, m] of Object.entries(MODES)) ms.add(new Option(m.label, k));
+  ms.value = doc.mode;
+  $('#modeHint').textContent = MO().hint;
+  const free = doc.mode === 'free';
+  $('#cw').value = cellW(); $('#ch').value = cellH();
+  $('#cw').disabled = $('#ch').disabled = !free;
+  $('#gx').value = doc.gx; $('#gy').value = doc.gy;
+  $('#gx').max = cellW() - 1; $('#gy').max = cellH() - 1;
+  buildPalette(); buildRegs(); updateTitle();
+  lastCellKey = '';
+}
+
+// ---------------------------------------------------------------- disegno
+
+const cv = $('#cv'), ctx = cv.getContext('2d');
+const off = document.createElement('canvas'), octx = off.getContext('2d');
+let dpr = 1, pending = false, lastCellKey = '';
+let checker = null;
+function requestRender() {
+  if (!pending) { pending = true; requestAnimationFrame(render); }
+}
+function paintOff() {
+  if (off.width !== doc.w || off.height !== doc.h) { off.width = doc.w; off.height = doc.h; }
+  const id = octx.createImageData(doc.w, doc.h), d = id.data, p = doc.px;
+  for (let i = 0; i < p.length; i++) {
+    const c = p[i];
+    if (c === T) continue;
+    const q = PAL[c];
+    d[i * 4] = q[0]; d[i * 4 + 1] = q[1]; d[i * 4 + 2] = q[2]; d[i * 4 + 3] = 255;
+  }
+  octx.putImageData(id, 0, 0);
+}
+function floatingCanvas() {
+  if (!floating.cv) {
+    const e = eraseColor();
+    floating.cv = dataCanvas({ w: floating.w, h: floating.h,
+      data: opt.transp ? floating.data.map(v => v === e ? T : v) : floating.data });
+  }
+  return floating.cv;
+}
+function render() {
+  pending = false;
+  const r = cv.getBoundingClientRect();
+  dpr = window.devicePixelRatio || 1;
+  const W = Math.round(r.width * dpr), H = Math.round(r.height * dpr);
+  if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = '#0e1014';
+  ctx.fillRect(0, 0, r.width, r.height);
+  const z = view.z, ox = view.x, oy = view.y, iw = doc.w * z, ih = doc.h * z;
+  const sx = x => Math.round((ox + x * z) * dpr) / dpr, sy = y => Math.round((oy + y * z) * dpr) / dpr;
+  const hair = 1 / dpr;
+
+  if (!checker) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 16;
+    const g = c.getContext('2d');
+    g.fillStyle = '#5a5a5a'; g.fillRect(0, 0, 16, 16);
+    g.fillStyle = '#8a8a8a'; g.fillRect(0, 0, 8, 8); g.fillRect(8, 8, 8, 8);
+    checker = ctx.createPattern(c, 'repeat');
+  }
+  ctx.fillStyle = checker;
+  ctx.fillRect(ox, oy, iw, ih);
+  paintOff();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(off, ox, oy, iw, ih);
+
+  if (refImg && $('#refShow').checked) {
+    ctx.globalAlpha = $('#refAlpha').value / 100;
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(refImg, ox, oy, iw, ih);
+    ctx.imageSmoothingEnabled = false;
+    ctx.globalAlpha = 1;
+  }
+  if (floating) ctx.drawImage(floatingCanvas(), ox + floating.x * z, oy + floating.y * z, floating.w * z, floating.h * z);
+  if (drag && drag.kind === 'shape') {
+    ctx.fillStyle = css(drag.c === T ? eraseColor() : drag.c);
+    if (drag.c === T) ctx.fillStyle = 'rgba(255,0,255,.6)';
+    for (const [l, y] of shapeCells(drag)) {
+      let x = toX(l), w = pw();
+      if (x < 0) { w += x; x = 0; }
+      if (x + w > doc.w) w = doc.w - x;
+      if (w <= 0 || y < 0 || y >= doc.h) continue;
+      ctx.fillRect(ox + x * z, oy + y * z, w * z, z);
+    }
+  }
+
+  // area visibile in pixel dell'immagine
+  const vx0 = Math.max(0, Math.floor(-ox / z)), vx1 = Math.min(doc.w, Math.ceil((r.width - ox) / z));
+  const vy0 = Math.max(0, Math.floor(-oy / z)), vy1 = Math.min(doc.h, Math.ceil((r.height - oy) / z));
+  const top = sy(vy0), bot = sy(vy1), lef = sx(vx0), rig = sx(vx1);
+  if (opt.showPix && z >= 6) {
+    ctx.fillStyle = 'rgba(255,255,255,.10)';
+    const fat = MO().fat;
+    for (let x = vx0; x <= vx1; x++) if (!fat || mod(x - doc.gx, 2) === 0) ctx.fillRect(sx(x), top, hair, bot - top);
+    for (let y = vy0; y <= vy1; y++) ctx.fillRect(lef, sy(y), rig - lef, hair);
+  }
+  if (opt.showCell && z >= 2) {
+    ctx.fillStyle = 'rgba(122,162,255,.65)';
+    const cw = cellW(), ch = cellH();
+    for (let x = doc.gx + cw * Math.ceil((vx0 - doc.gx) / cw); x <= vx1; x += cw) ctx.fillRect(sx(x), top, hair, bot - top);
+    for (let y = doc.gy + ch * Math.ceil((vy0 - doc.gy) / ch); y <= vy1; y += ch) ctx.fillRect(lef, sy(y), rig - lef, hair);
+  }
+  badList = badCells();
+  if (opt.showErr) {
+    ctx.strokeStyle = '#ff4a50'; ctx.lineWidth = 1.5;
+    ctx.fillStyle = 'rgba(255,60,70,.22)';
+    for (const c of badList) {
+      const b = c.b;
+      ctx.fillRect(sx(b.x0), sy(b.y0), sx(b.x1) - sx(b.x0), sy(b.y1) - sy(b.y0));
+      ctx.strokeRect(sx(b.x0) + .75, sy(b.y0) + .75, sx(b.x1) - sx(b.x0) - 1.5, sy(b.y1) - sy(b.y0) - 1.5);
+    }
+  }
+  const now = performance.now();
+  flashes = flashes.filter(f => now - f.t < 450);
+  for (const f of flashes) {
+    const b = cellBox(f.cx, f.cy), a = 1 - (now - f.t) / 450;
+    ctx.fillStyle = `rgba(255,200,40,${0.55 * a})`;
+    ctx.fillRect(sx(b.x0), sy(b.y0), sx(b.x1) - sx(b.x0), sy(b.y1) - sy(b.y0));
+  }
+  // selezione
+  const dash = (x, y, w, h) => {
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]); ctx.strokeStyle = '#000';
+    ctx.strokeRect(sx(x) + .5, sy(y) + .5, w * z - 1, h * z - 1);
+    ctx.lineDashOffset = 3.5; ctx.strokeStyle = '#fff';
+    ctx.strokeRect(sx(x) + .5, sy(y) + .5, w * z - 1, h * z - 1);
+    ctx.setLineDash([]); ctx.lineDashOffset = 0;
+  };
+  if (sel) dash(sel.x, sel.y, sel.w, sel.h);
+  if (floating) dash(floating.x, floating.y, floating.w, floating.h);
+  if (drag && drag.kind === 'selnew') { const s = selFromDrag(drag); if (s) dash(s.x, s.y, s.w, s.h); }
+  // cursore: pixel (o pennello) e cella
+  if (hover && !spaceDown) {
+    const [hx, hy] = hover;
+    if (pickingOrigin) {
+      ctx.strokeStyle = '#ffc34d'; ctx.lineWidth = 2;
+      ctx.strokeRect(sx(hx), sy(hy), cellW() * z, cellH() * z);
+    } else if (hx >= 0 && hy >= 0 && hx < doc.w && hy < doc.h) {
+      const [cx, cy] = cellOf(hx, hy), b = cellBox(cx, cy);
+      ctx.strokeStyle = 'rgba(255,195,77,.8)'; ctx.lineWidth = 1;
+      ctx.strokeRect(sx(b.x0) + .5, sy(b.y0) + .5, sx(b.x1) - sx(b.x0) - 1, sy(b.y1) - sy(b.y0) - 1);
+      const n = ['pencil', 'eraser', 'line', 'rect', 'ellipse'].includes(tool) ? brush : 1, o = (n - 1) >> 1;
+      const l = toL(hx) - o, x = toX(l);
+      ctx.strokeStyle = '#fff';
+      ctx.strokeRect(sx(x) + .5, sy(hy - o) + .5, n * pw() * z - 1, n * z - 1);
+    }
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.lineWidth = 1;
+  ctx.strokeRect(ox - .5, oy - .5, iw + 1, ih + 1);
+  if (flashes.length) requestRender();
+
+  renderPreview();
+  updateStatus();
+  updateCellInfo();
+}
+function renderPreview() {
+  const pv = $('#pv'), s = +$('#pvScale').value, g = pv.getContext('2d');
+  if (pv.width !== doc.w * s || pv.height !== doc.h * s) { pv.width = doc.w * s; pv.height = doc.h * s; }
+  g.imageSmoothingEnabled = false;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.fillStyle = '#000';
+  g.clearRect(0, 0, pv.width, pv.height);
+  if ($('#pvMirror').checked) g.setTransform(-1, 0, 0, 1, pv.width, 0);
+  g.drawImage(off, 0, 0, pv.width, pv.height);
+  if (floating) g.drawImage(floatingCanvas(), floating.x * s, floating.y * s, floating.w * s, floating.h * s);
+  g.setTransform(1, 0, 0, 1, 0, 0);
+}
+function updateStatus() {
+  let pos = '';
+  if (hover) {
+    const [x, y] = hover, [cx, cy] = cellOf(x, y);
+    pos = `x ${x}  y ${y}` + (MO().fat ? `  (coppia ${toL(x)})` : '') + `  · cella ${cx},${cy}`;
+  }
+  $('#stPos').textContent = pos;
+  $('#stDoc').textContent = `${doc.w}×${doc.h} · ${MO().label} · celle ${cellW()}×${cellH()} da ${doc.gx},${doc.gy} · zoom ${view.z}×`;
+  const n = badList.length, el = $('#stBad');
+  el.textContent = doc.mode === 'free' ? '' : n ? `${n} celle non valide` : 'tutte le celle valide';
+  el.className = n ? 'bad' : 'good';
+}
+function updateCellInfo() {
+  const box = $('#cellInfo');
+  if (!hover || hover[0] < 0 || hover[1] < 0 || hover[0] >= doc.w || hover[1] >= doc.h) {
+    if (lastCellKey !== '-') { box.textContent = 'Fuori dall\'immagine'; lastCellKey = '-'; }
+    return;
+  }
+  const [cx, cy] = cellOf(hover[0], hover[1]), st = cellStats(cx, cy), why = cellProblem(st);
+  const regs = new Set(regColors());
+  const entries = [...st.cnt.entries()].sort((a, b) => b[1] - a[1]);
+  const key = `${cx},${cy}|${entries.join(';')}|${why}|${prim}|${doc.mode}`;
+  if (key === lastCellKey) return;
+  lastCellKey = key;
+  const b = st.b;
+  box.innerHTML = '';
+  const head = document.createElement('div');
+  head.textContent = `Cella ${cx},${cy} · pixel ${b.x0}-${b.x1 - 1}, ${b.y0}-${b.y1 - 1}`;
+  box.appendChild(head);
+  for (const [c, n] of entries) {
+    const row = document.createElement('div');
+    row.className = 'chip';
+    row.title = `Clic: ${cname(c)} diventa ${cname(prim)} in tutta la cella`;
+    row.innerHTML = `<div class="sw${c === T ? ' t' : ''}" style="background:${c === T ? '' : css(c)}"></div>
+      <span style="flex:1">${cname(c)}</span><span>${n}</span><span class="small">${regs.has(c) ? 'registro' : 'proprio'}</span>`;
+    row.onclick = () => {
+      commitFloating(); pushUndo(); recolorCellColor(cx, cy, c, prim); endChange();
+    };
+    box.appendChild(row);
+  }
+  const res = document.createElement('div');
+  res.className = why ? 'bad' : 'good';
+  res.textContent = why ? '✗ ' + why : '✓ valida';
+  box.appendChild(res);
+}
+
+// ---------------------------------------------------------------- vista
+
+function zoomAt(nz, mx, my) {
+  nz = Math.max(ZOOMS[0], Math.min(ZOOMS[ZOOMS.length - 1], nz));
+  const ix = (mx - view.x) / view.z, iy = (my - view.y) / view.z;
+  view.z = nz;
+  view.x = Math.round(mx - ix * nz); view.y = Math.round(my - iy * nz);
+  requestRender();
+}
+function zoomStep(dir, mx, my) {
+  const r = cv.getBoundingClientRect();
+  if (mx === undefined) { mx = r.width / 2; my = r.height / 2; }
+  let i = ZOOMS.findIndex(z => z >= view.z);
+  if (i < 0) i = ZOOMS.length - 1;
+  if (dir > 0) i = ZOOMS[i] > view.z ? i : i + 1; else i = i - 1;
+  zoomAt(ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, i))], mx, my);
+}
+function fit() {
+  const r = cv.getBoundingClientRect();
+  const aw = Math.max(50, r.width - 40), ah = Math.max(50, r.height - 40);
+  let z = 1;
+  for (const q of ZOOMS) if (doc.w * q <= aw && doc.h * q <= ah) z = q;
+  view.z = z;
+  view.x = Math.round((r.width - doc.w * z) / 2); view.y = Math.round((r.height - doc.h * z) / 2);
+  requestRender();
+}
+function nextBad() {
+  const list = badCells();
+  if (!list.length) { msg('Nessuna cella non valida'); return; }
+  badIdx = (badIdx + 1) % list.length;
+  const c = list[badIdx], r = cv.getBoundingClientRect();
+  view.x = Math.round(r.width / 2 - (c.b.x0 + c.b.x1) / 2 * view.z);
+  view.y = Math.round(r.height / 2 - (c.b.y0 + c.b.y1) / 2 * view.z);
+  hover = [c.b.x0, c.b.y0];
+  msg(`Cella ${c.cx},${c.cy} (${badIdx + 1} di ${list.length}): ${c.why}`, true);
+  requestRender();
+}
+
+// ---------------------------------------------------------------- mouse
+
+function toImg(e) {
+  const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+  return [Math.floor((mx - view.x) / view.z), Math.floor((my - view.y) / view.z), mx, my];
+}
+const clampX = x => Math.max(0, Math.min(doc.w - 1, x));
+const clampY = y => Math.max(0, Math.min(doc.h - 1, y));
+function pickColor(x, y, right) {
+  if (x < 0 || y < 0 || x >= doc.w || y >= doc.h) return;
+  const v = doc.px[y * doc.w + x];
+  if (right) sec = v; else prim = v;
+  updateColors();
+}
+cv.addEventListener('contextmenu', e => e.preventDefault());
+// un pulsante o una tendina col focus si prenderebbero Spazio, Invio e le scorciatoie
+document.addEventListener('pointerup', () => {
+  const a = document.activeElement;
+  if (a && a.tagName === 'BUTTON' && !a.closest('dialog')) a.blur();
+});
+cv.addEventListener('pointerdown', e => {
+  if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+  cv.setPointerCapture(e.pointerId);
+  const [x, y, mx, my] = toImg(e);
+  hover = [x, y];
+  if (e.button === 1 || spaceDown) { drag = { kind: 'pan', mx, my, vx: view.x, vy: view.y }; e.preventDefault(); return; }
+  if (e.button !== 0 && e.button !== 2) return;
+  const right = e.button === 2, col = right ? sec : prim;
+  if (pickingOrigin) {
+    pickingOrigin = false; $('#btnOrigin').classList.remove('on');
+    setOrigin(x, y);
+    return;
+  }
+  if (e.altKey || tool === 'picker') { pickColor(x, y, right); drag = { kind: 'picker', right }; return; }
+  const l = toL(x);
+  switch (tool) {
+    case 'pencil': case 'eraser': {
+      commitFloating(); pushUndo();
+      const c = tool === 'eraser' ? eraseColor() : col;
+      drag = { kind: 'stroke', c, l, y };
+      brushL(l, y, (a, b) => putL(a, b, c));
+      requestRender();
+      break;
+    }
+    case 'line': case 'rect': case 'ellipse':
+      commitFloating();
+      drag = { kind: 'shape', tool, c: col, l0: l, y0: y, l1: l, y1: y, shift: e.shiftKey };
+      break;
+    case 'fill':
+      commitFloating(); pushUndo();
+      fillAt(l, y, col, e.shiftKey);
+      endChange();
+      break;
+    case 'cell':
+      commitFloating(); pushUndo();
+      recolorCell(x, y, col);
+      endChange();
+      break;
+    case 'select':
+      if (floating && inRect(x, y, floating)) {
+        drag = { kind: 'move', sx: x, sy: y, fx: floating.x, fy: floating.y };
+      } else if (!floating && sel && inRect(x, y, sel)) {
+        lift(e.ctrlKey);
+        drag = { kind: 'move', sx: x, sy: y, fx: floating.x, fy: floating.y };
+      } else {
+        commitFloating(); sel = null;
+        const lc = toL(clampX(x));
+        drag = { kind: 'selnew', l0: lc, y0: clampY(y), l1: lc, y1: clampY(y), shift: e.shiftKey };
+      }
+      break;
+  }
+  requestRender();
+});
+cv.addEventListener('pointermove', e => {
+  const [x, y, mx, my] = toImg(e);
+  hover = [x, y];
+  if (drag) {
+    switch (drag.kind) {
+      case 'pan': view.x = drag.vx + mx - drag.mx; view.y = drag.vy + my - drag.my; break;
+      case 'picker': pickColor(x, y, drag.right); break;
+      case 'stroke': {
+        const l = toL(x), c = drag.c;
+        if (l !== drag.l || y !== drag.y) {
+          lineL(drag.l, drag.y, l, y, (a, b) => brushL(a, b, (p, q) => putL(p, q, c)));
+          drag.l = l; drag.y = y;
+        }
+        break;
+      }
+      case 'shape': drag.l1 = toL(x); drag.y1 = y; drag.shift = e.shiftKey; break;
+      case 'selnew': drag.l1 = toL(clampX(x)); drag.y1 = clampY(y); drag.shift = e.shiftKey; break;
+      case 'move': {
+        let dx = x - drag.sx, dy = y - drag.sy;
+        if (MO().fat) dx = 2 * Math.round(dx / 2);
+        let nx = drag.fx + dx, ny = drag.fy + dy;
+        if (e.shiftKey) {
+          nx = doc.gx + cellW() * Math.round((nx - doc.gx) / cellW());
+          ny = doc.gy + cellH() * Math.round((ny - doc.gy) / cellH());
+        }
+        floating.x = nx; floating.y = ny;
+        break;
+      }
+    }
+  }
+  requestRender();
+});
+function endDrag() {
+  if (!drag) return;
+  const d = drag;
+  drag = null;
+  if (d.kind === 'stroke') endChange();
+  else if (d.kind === 'shape') {
+    pushUndo();
+    for (const [l, y] of shapeCells(d)) putL(l, y, d.c);
+    endChange();
+  } else if (d.kind === 'selnew') {
+    sel = (d.l0 === d.l1 && d.y0 === d.y1 && !d.shift) ? null : selFromDrag(d);
+  }
+  requestRender();
+}
+cv.addEventListener('pointerup', endDrag);
+cv.addEventListener('pointercancel', endDrag);
+cv.addEventListener('pointerleave', () => { if (!drag) { hover = null; requestRender(); } });
+cv.addEventListener('wheel', e => {
+  e.preventDefault();
+  const r = cv.getBoundingClientRect();
+  zoomStep(e.deltaY < 0 ? 1 : -1, e.clientX - r.left, e.clientY - r.top);
+}, { passive: false });
+
+// ---------------------------------------------------------------- tastiera e comandi
+
+const CMD = {
+  new: cmdNew, open: cmdOpen, openDir: cmdOpenDir, save: () => cmdSave(false), saveAs: () => cmdSave(true),
+  undo, redo, cut: cutSel, copy: copySel, paste: pasteClip, pasteSys, del: deleteSel,
+  selectAll, deselect,
+  swap: () => { [prim, sec] = [sec, prim]; updateColors(); },
+  resize: cmdResize, crop, flipH: () => flip(true), flipV: () => flip(false), fix: fixAll, doubleW, halveW,
+  zoomIn: () => zoomStep(1), zoomOut: () => zoomStep(-1), fit,
+  toggleCell: () => { $('#showCell').click(); }, togglePix: () => { $('#showPix').click(); },
+  toggleErr: () => { $('#showErr').click(); }, nextBad,
+  help: () => $('#dlgHelp').showModal(),
+  pickOrigin: () => { pickingOrigin = !pickingOrigin; $('#btnOrigin').classList.toggle('on', pickingOrigin);
+                      if (pickingOrigin) msg('Clic sul pixel dove comincia una cella'); requestRender(); },
+  loadRef: () => $('#refInput').click(),
+  import: cmdImport, convertCur: cmdConvertCur, convertRef: cmdConvertRef,
+};
+function run(name) { const f = CMD[name]; if (f) f(); }
+
+const TOOL_KEYS = { b: 'pencil', p: 'pencil', e: 'eraser', l: 'line', r: 'rect', o: 'ellipse', f: 'fill',
+                    i: 'picker', k: 'cell', s: 'select', m: 'select' };
+document.addEventListener('keydown', e => {
+  if (document.querySelector('dialog[open]')) return;
+  const k = e.key.toLowerCase(), ctrl = e.ctrlKey || e.metaKey;
+  const inField = e.target.matches && e.target.matches('input, select, textarea');
+  if (inField && !(ctrl && k === 's')) return;
+  if (ctrl) {
+    const map = { z: e.shiftKey ? 'redo' : 'undo', y: 'redo', s: e.shiftKey ? 'saveAs' : 'save', o: 'open', n: 'new',
+                  c: 'copy', x: 'cut', a: 'selectAll', d: 'deselect', 0: 'fit', i: 'import' };
+    if (k === 'v') { wantSysPaste = e.shiftKey; return; }          // lo gestisce l'evento paste
+    if (map[k]) { e.preventDefault(); run(map[k]); }
+    return;
+  }
+  if (e.altKey) return;
+  if (k === ' ') { if (!spaceDown) { spaceDown = true; updateCursor(); requestRender(); } e.preventDefault(); return; }
+  if (e.shiftKey && k === 'h') { run('flipH'); return; }
+  if (e.shiftKey && k === 'v') { run('flipV'); return; }
+  if (e.shiftKey && k === 'g') { run('togglePix'); return; }
+  if (e.shiftKey && k === 'e') { run('toggleErr'); return; }
+  if (TOOL_KEYS[k] && !e.shiftKey) { setTool(TOOL_KEYS[k]); return; }
+  switch (e.key) {
+    case 'x': case 'X': run('swap'); break;
+    case 'g': run('toggleCell'); break;
+    case 'n': run('nextBad'); break;
+    case '[': setBrush(brush - 1); break;
+    case ']': setBrush(brush + 1); break;
+    case '+': case '=': zoomStep(1); break;
+    case '-': case '_': zoomStep(-1); break;
+    case 'F1': case '?': e.preventDefault(); run('help'); break;
+    case 'Escape':
+      if (pickingOrigin) { pickingOrigin = false; $('#btnOrigin').classList.remove('on'); }
+      else if (drag) { drag = null; }
+      else if (floating) cancelFloating();
+      else sel = null;
+      requestRender();
+      break;
+    case 'Enter': commitFloating(); requestRender(); break;
+    case 'Delete': case 'Backspace': e.preventDefault(); deleteSel(); break;
+    case 'ArrowLeft': e.preventDefault(); nudge(-1, 0, e.shiftKey); break;
+    case 'ArrowRight': e.preventDefault(); nudge(1, 0, e.shiftKey); break;
+    case 'ArrowUp': e.preventDefault(); nudge(0, -1, e.shiftKey); break;
+    case 'ArrowDown': e.preventDefault(); nudge(0, 1, e.shiftKey); break;
+  }
+});
+document.addEventListener('keyup', e => {
+  if (e.key === ' ') { spaceDown = false; updateCursor(); requestRender(); }
+});
+document.addEventListener('paste', async e => {
+  if (e.target.matches && e.target.matches('input, textarea')) return;
+  e.preventDefault();
+  const sys = wantSysPaste || !clip;
+  wantSysPaste = false;
+  if (sys) {
+    const it = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+    if (it) { await clipFromBlob(it.getAsFile()); pasteClip(); return; }
+  }
+  pasteClip();
+});
+window.addEventListener('beforeunload', e => { if (doc.dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+// file trascinati sulla finestra: si aprono nell'editor (senza, il browser aprirebbe l'immagine
+// al posto dell'editor)
+const URI_TYPES = ['application/vnd.code.uri-list', 'text/uri-list'];
+const hasFiles = e => {
+  const t = [...(e.dataTransfer?.types || [])];
+  return t.includes('Files') || (server && URI_TYPES.some(u => t.includes(u)));
+};
+// file trascinato dall'elenco di VS Code (con Maiusc): un URI file:/// dentro il repository
+function droppedRepoPath(dt) {
+  if (!server) return null;
+  for (const u of URI_TYPES) {
+    const line = (dt.getData(u) || '').split(/\r?\n/).find(s => s.startsWith('file:'));
+    if (!line) continue;
+    let p = decodeURIComponent(line.replace(/^file:\/+/, '')).replace(/\\/g, '/');
+    const root = server.root.replace(/\\/g, '/').replace(/\/$/, '') + '/';
+    if (p.toLowerCase().startsWith(root.toLowerCase())) return p.slice(root.length);
+  }
+  return null;
+}
+window.addEventListener('dragover', e => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+  $('#stage').classList.add('drop');
+});
+window.addEventListener('dragleave', e => { if (!e.relatedTarget) $('#stage').classList.remove('drop'); });
+window.addEventListener('drop', async e => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  $('#stage').classList.remove('drop');
+  // file, handle e URI vanno presi subito: dopo il primo await l'elenco non è più leggibile
+  const repo = droppedRepoPath(e.dataTransfer);
+  const item = [...e.dataTransfer.items].find(i => i.kind === 'file');
+  const file = item ? item.getAsFile() : null;
+  const handleP = item && item.getAsFileSystemHandle ? item.getAsFileSystemHandle().catch(() => null) : null;
+  if (repo && /\.png$/i.test(repo)) {
+    if (await confirmDiscard()) await serverLoad(repo);
+    return;
+  }
+  let handle = handleP ? await handleP : null;
+  if (handle && handle.kind !== 'file') handle = null;
+  if (!file || !(await confirmDiscard())) return;
+  await loadFile(file, handle);
+});
+
+// menu
+const closeMenus = () => document.querySelectorAll('.menu.open').forEach(m => m.classList.remove('open'));
+document.querySelectorAll('.menu > .mbtn').forEach(b => {
+  b.addEventListener('click', e => {
+    const m = b.parentElement, open = m.classList.contains('open');
+    closeMenus();
+    if (!open) m.classList.add('open');
+    e.stopPropagation();
+  });
+  b.parentElement.addEventListener('mouseenter', () => {
+    if (document.querySelector('.menu.open') && !b.parentElement.classList.contains('open')) {
+      closeMenus(); b.parentElement.classList.add('open');
+    }
+  });
+});
+document.addEventListener('click', closeMenus);
+document.querySelectorAll('[data-cmd]').forEach(el => el.addEventListener('click', e => {
+  e.stopPropagation(); closeMenus(); run(el.dataset.cmd);
+}));
+document.querySelectorAll('#tools button').forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool)));
+document.querySelectorAll('#brushGrp button').forEach(b => b.addEventListener('click', () => setBrush(+b.dataset.brush)));
+
+// pannello
+$('#mode').addEventListener('change', e => setMode(e.target.value));
+$('#cw').addEventListener('change', e => { pushUndo(); doc.cw = Math.max(1, Math.min(64, +e.target.value | 0)); doc.gx = mod(doc.gx, doc.cw); syncUI(); endChange(); });
+$('#ch').addEventListener('change', e => { pushUndo(); doc.ch = Math.max(1, Math.min(64, +e.target.value | 0)); doc.gy = mod(doc.gy, doc.ch); syncUI(); endChange(); });
+$('#gx').addEventListener('change', e => { pushUndo(); doc.gx = mod(+e.target.value | 0, cellW()); syncUI(); endChange(); });
+$('#gy').addEventListener('change', e => { pushUndo(); doc.gy = mod(+e.target.value | 0, cellH()); syncUI(); endChange(); });
+for (const id of ['showCell', 'showPix', 'showErr', 'pvMirror', 'refShow']) $('#' + id).addEventListener('change', () => { savePrefs(); requestRender(); });
+$('#refAlpha').addEventListener('input', requestRender);
+$('#pvScale').addEventListener('change', requestRender);
+$('#optTransp').addEventListener('change', () => { if (floating) floating.cv = null; savePrefs(); requestRender(); });
+for (const id of ['policy', 'optFill', 'optSym']) $('#' + id).addEventListener('change', savePrefs);
+$('#fileFilter').addEventListener('input', renderFiles);
+$('#fileInput').addEventListener('change', async e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (f) await loadFile(f, null);
+});
+$('#refInput').addEventListener('change', async e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  try {
+    refImg = await createImageBitmap(f);
+    refName = f.name;
+    $('#refName').textContent = `${f.name} (${refImg.width}×${refImg.height}), stirata su ${doc.w}×${doc.h}`;
+    $('#refShow').checked = true;
+    requestRender();
+  } catch (err) { msg('Riferimento non leggibile: ' + err.message, true); }
+});
+new ResizeObserver(requestRender).observe($('#stage'));
+
+// finestra della conversione
+$('#convInput').addEventListener('change', async e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (f) await convFromBlob(f, f.name, false);
+});
+for (const id of ['kFit', 'kSmooth', 'kDither', 'kAmount', 'kBright', 'kContrast', 'kSat', 'kGamma', 'kGx', 'kGy', 'kBg', 'kMc1', 'kMc2'])
+  $('#' + id).addEventListener('input', () => conv && convSchedule());
+$('#kMode').addEventListener('change', () => { convModeUI(); convSchedule(); });
+$('#kOrig').addEventListener('change', () => conv && convPreview());
+$('#kAll').addEventListener('click', () => { conv.allowed = new Set([...Array(16).keys()]); convPal(); convSchedule(); });
+$('#kGreys').addEventListener('click', () => { conv.allowed = new Set([0, 1, 11, 12, 15]); convPal(); convSchedule(); });
+$('#kReset').addEventListener('click', () => {
+  $('#kBright').value = 0; $('#kContrast').value = 0; $('#kSat').value = 0; $('#kGamma').value = 100;
+  convSchedule();
+});
+// Invio in un campo: nella conversione aggiorna l'anteprima, nelle altre finestre conferma (se no
+// il primo pulsante, Annulla, chiuderebbe la finestra)
+$('#dlgConv').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); convSchedule(); }
+});
+for (const id of ['dlgNew', 'dlgResize']) {
+  $('#' + id).addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); $('#' + id).close('ok'); }
+  });
+}
+
+// preferenze di chi usa l'editor (solo comodità: se lo spazio locale non c'è, valgono i default)
+function savePrefs() {
+  try {
+    localStorage.setItem('c64edit.prefs', JSON.stringify({
+      policy: opt.policy, fill: opt.fill, sym: opt.sym, transp: opt.transp, showCell: opt.showCell,
+      showPix: opt.showPix, showErr: opt.showErr }));
+  } catch (_) { /* niente */ }
+}
+function loadPrefs() {
+  try {
+    const p = JSON.parse(localStorage.getItem('c64edit.prefs') || 'null');
+    if (!p) return;
+    if (p.policy) $('#policy').value = p.policy;
+    $('#optFill').checked = !!p.fill; $('#optSym').checked = !!p.sym; $('#optTransp').checked = p.transp !== false;
+    $('#showCell').checked = p.showCell !== false; $('#showPix').checked = p.showPix !== false;
+    $('#showErr').checked = p.showErr !== false;
+  } catch (_) { /* niente */ }
+}
+
+// avvio
+loadPrefs();
+syncUI();
+setTool('pencil');
+setBrush(1);
+updateTitle();
+requestAnimationFrame(fit);
+msg('File → Apri, Apri cartella (per esempio assets/characters/portraits/c64) o trascina qui un PNG');
+serverInit().then(() => {
+  // senza server, nelle anteprime incorporate (browser integrato di VS Code) aprire e salvare
+  // file non funziona
+  const embedded = window.top !== window || /Code|Electron/.test(navigator.userAgent);
+  if (!server && embedded) {
+    msg('Qui il browser non apre né salva file: avvia ".venv\\Scripts\\python tools\\c64_editor.py" e apri http://127.0.0.1:8064/', true);
+  }
+});
+</script>
+</body>
+</html>
