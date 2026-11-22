@@ -1,5 +1,11 @@
-"""Genera mister/rtl/gen/pong_paddles.vh: colori e tabelle delle racchette dei personaggi del core
-MiSTer (kind_px e muro del GUARDIAN in mister/rtl/next_render.v).
+"""Genera mister/rtl/gen/pong_paddles.vh: sprite, colori e tabelle delle racchette dei personaggi
+del core MiSTer (kind_px e muro del GUARDIAN in mister/rtl/next_render.v).
+
+Gli sprite sono quelli di assets/ships/sprites (letti da tools/paddle_shapes.py con le regole di
+rust/game/src/ships.rs) sulle colonne del MiSTer: si toglie la colonna subito dietro la faccia del
+PC. Ne escono le righe di ruoli (`sp_px`) e le costanti delle animazioni: agganci dei motori, delle
+armi e speciali, settori del GUARDIAN, cabina di ARCADE, canne e indicatore dei colpi del BLASTER.
+Da rilanciare dopo ogni ritocco agli sprite.
 
 Le animazioni sono quelle di rust/game/src/paddle_ui.rs e next_ui.rs, con il tempo in frame a 60 Hz
 (i contatori di pong_top) e le colonne del corpo largo 4 del MiSTer (tools/paddle_shapes.py: si toglie
@@ -182,13 +188,106 @@ def colors() -> list[str]:
     return out
 
 
+def sprites() -> list[str]:
+    """Sprite delle astronavi sulle colonne del MiSTer e costanti delle animazioni."""
+    import re
+    vh = (OUT.parent / "pong_params.vh").read_text(encoding="utf-8")
+    heights = [int(re.search(rf"3'd{k}: kind_px_h = (\d+);", vh).group(1)) for k in range(7)]
+    ships = [ps.ship(k) for k in range(7)]
+    for k, s in enumerate(ships):
+        assert s.h == heights[k], f"{ps.KINDS[k]}: sprite alto {s.h}, la racchetta {heights[k]}"
+    out = ["// ------------------------------------------------- sprite delle astronavi",
+           "// Righe dello sprite del tipo k (assets/ships/sprites) sulle colonne del MiSTer (u con la faccia a 0;",
+           "// la colonna del PC subito dietro la faccia e' tolta): 4 bit per pixel, il ruolo KR_*, la colonna",
+           "// SP_U0_k nei bit 3:0. Gli agganci sono gia' tolti (sono le costanti piu' sotto)."]
+    widths = []
+    for k, s in enumerate(ships):
+        u0, u1 = s.u_range()
+        cols = [u for u in range(u0, u1 + 1) if ps.col(u, 4) is not None]
+        mu = [ps.col(u, 4) for u in cols]
+        assert mu == list(range(mu[0], mu[0] + len(mu))), "colonne contigue"
+        w = len(cols)
+        widths.append(w)
+        out.append(f"localparam integer SP_U0_{k} = {mu[0]}, SP_W_{k} = {w}, SP_H_{k} = {s.h};")
+        out.append(f"function [{4 * w - 1}:0] sp_row{k}(input [5:0] v);")
+        out.append("    case (v)")
+        for v in range(s.h):
+            val = sum(s.at(u, v) << (4 * i) for i, u in enumerate(cols))
+            if val:
+                out.append(f"        6'd{v}: sp_row{k} = {4 * w}'h{val:0{w}X};")
+        out += [f"        default: sp_row{k} = {4 * w}'d0;", "    endcase", "endfunction"]
+    out += [f"localparam integer SP_WMAX = {max(widths)};",
+            "// ruolo dello sprite del tipo `kind` al pixel (u, v), KR_NONE fuori",
+            "function [3:0] sp_px(input [2:0] kind, input signed [11:0] u, input signed [11:0] v);",
+            "    reg [4*SP_WMAX-1:0] row;",
+            "    reg signed [11:0] c;",
+            "    reg in;",
+            "    begin",
+            "        row = {4*SP_WMAX{1'b0}};",
+            "        c = 12'sd0;",
+            "        in = 1'b0;",
+            "        case (kind)"]
+    for k in range(7):
+        out.append(f"            3'd{k}: begin c = u - SP_U0_{k}; in = c >= 0 && c < SP_W_{k} && v >= 0 && v < SP_H_{k}; "
+                   f"row = sp_row{k}(v[5:0]); end")
+    out += ["            default: in = 1'b0;", "        endcase",
+            "        sp_px = in ? row[{c[5:0], 2'b00} +: 4] : 4'd0;", "    end", "endfunction"]
+
+    def table(name: str, rows: list[tuple[int, int, int]]) -> list[str]:
+        t = [f"function signed [11:0] {name}(input [2:0] kind, input [1:0] i);", "    case ({kind, i})"]
+        t += [f"        {{3'd{k}, 2'd{i}}}: {name} = {v};" for k, i, v in rows]
+        t += [f"        default: {name} = 12'sd0;", "    endcase", "endfunction"]
+        return t
+    out.append("// agganci dei motori e speciali (TWIST: getti di manovra, RUSH: scie alari), dall'alto: numero,")
+    out.append("// colonna dell'ugello (quella subito davanti all'aggancio), prima riga e righe del getto")
+    for name, attr in (("eng", "engines"), ("spc", "specials")):
+        lists = [getattr(s, attr) for s in ships]
+        out.append(f"function [1:0] sp_{name}_n(input [2:0] kind);")
+        out.append("    case (kind)")
+        out += [f"        3'd{k}: sp_{name}_n = 2'd{len(a)};" for k, a in enumerate(lists) if a]
+        out += [f"        default: sp_{name}_n = 2'd0;", "    endcase", "endfunction"]
+        for fld, fn in (("x", lambda a: ps.col(a.u, 4) + 1), ("y", lambda a: a.v), ("r", lambda a: a.rows)):
+            out += table(f"sp_{name}_{fld}", [(k, i, fn(a)) for k, al in enumerate(lists) for i, a in enumerate(al)])
+    b = ships[ps.BLASTER]
+    assert len(b.weapons) == 2, "BLASTER: due agganci delle armi"
+    barrel = b.front() - 1
+    g0, g1 = b.mark_rows
+    lit = [g1 + 1 - ps.jround(f / 19 * (g1 - g0 + 1)) for f in (0, 3, 6, 9, 13, 16, 19)]
+    w0 = b.weapons[0]
+    gun = ps.jround(abs(b.h / 2 - (w0.v + w0.rows / 2)))
+    out.append("// BLASTER: agganci delle armi (colonna e righe, davanti alle bocche), colonne delle canne, prima")
+    out.append("// riga accesa dell'indicatore dei colpi (il verde fino alla faccia) per i colpi nel caricatore e")
+    out.append("// distanza dei due fasci dal centro della racchetta")
+    out.append(f"localparam integer SP_GUN_X0 = {ps.col(b.weapons[0].u, 4)}, SP_GUN_Y0 = {b.weapons[0].v}, "
+               f"SP_GUN_R0 = {b.weapons[0].rows},")
+    out.append(f"                   SP_GUN_X1 = {ps.col(b.weapons[1].u, 4)}, SP_GUN_Y1 = {b.weapons[1].v}, "
+               f"SP_GUN_R1 = {b.weapons[1].rows}, SP_BARREL = {barrel}, BGUN_DY = {gun};")
+    out.append("function signed [11:0] bl_lit(input [2:0] ammo);")
+    out.append("    case (ammo)")
+    out += [f"        3'd{a}: bl_lit = {v};" for a, v in enumerate(lit)]
+    out += [f"        default: bl_lit = {lit[6]};", "    endcase", "endfunction"]
+    out.append("// ARCADE: prima colonna della cabina (i pixel nel colore del personaggio)")
+    out.append(f"localparam integer SP_CAB_U0 = {ps.col(ships[ps.ARCADE].mark_u0, 4)};")
+    sec = ships[ps.GUARDIAN].sectors
+    out.append("// GUARDIAN: righe [y0, y1) delle cinque piastre (i pezzi tra le giunture dello sprite); le giunture")
+    out.append("// tra una piastra e l'altra vanno con quella sotto")
+    out.append("function signed [11:0] gs_y0(input [2:0] c);")
+    out.append("    case (c)")
+    out += [f"        3'd{c}: gs_y0 = {y0};" for c, (y0, _) in enumerate(sec)]
+    out += ["        default: gs_y0 = 12'sd0;", "    endcase", "endfunction",
+            "function signed [11:0] gs_y1(input [2:0] c);", "    case (c)"]
+    out += [f"        3'd{c}: gs_y1 = {y1};" for c, (_, y1) in enumerate(sec)]
+    out += ["        default: gs_y1 = 12'sd0;", "    endcase", "endfunction"]
+    return out
+
+
 def main() -> None:
     lines = ["// Generato da tools/gen_mister_paddles.py: non modificare a mano.",
              "// Colori e tabelle delle racchette dei personaggi (next_render.v).",
              f"localparam integer PD_HIT_FRAMES = {HIT_FRAMES}, PD_FIRE_FRAMES = {FIRE_FRAMES}, "
              f"PD_CRACK_FRAMES = {CRACK_FRAMES}, PD_BREAK_FRAMES = {BREAK_FRAMES},",
              f"                   PD_BLINK_FRAMES = {BLINK_FRAMES}, PD_BARRIER_FRAMES = {BARRIER_FRAMES};"]
-    for part in (colors(), sparks(), ring(), casing(), build(), chips(), crumble()):
+    for part in (colors(), sprites(), sparks(), ring(), casing(), build(), chips(), crumble()):
         lines += [""] + part
     # file generati del MiSTer in ASCII: le lettere accentate dei commenti con l'apostrofo
     text = "\n".join(lines) + "\n"

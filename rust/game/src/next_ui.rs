@@ -19,6 +19,7 @@ use crate::input::{self, PadKeys};
 use crate::paddle_ui::{self, Anim, Shape};
 use crate::render::Renderer;
 use crate::scenes::{App, Menu, Scene};
+use crate::ships;
 use crate::touch;
 
 /// Icone 9x9 a 1 bit, come le bitmap del core MiSTer, nell'ordine di `Bonus`.
@@ -1356,8 +1357,9 @@ impl NextFx {
             }
             active.sort_by(|a, b| a.0.total_cmp(&b.0));
             let dir = if side == 0 { 1.0 } else { -1.0 };
-            // distanza verticale tra il centro della racchetta e i due cannoni alari (y = 9 e h - 9)
-            let gun_dy = (to_f32(game.paddles[side].height) / 2.0 - 9.0 * u).max(2.0 * u);
+            // distanza verticale tra il centro della racchetta e i due cannoni (gli agganci delle
+            // armi dello sprite del BLASTER)
+            let gun_dy = ships::gun_dy(to_f32(game.paddles[side].height)).max(2.0 * u);
             let draw_beam = |x0: f32, x1: f32, sy: f32| {
                 let cx = (x0 + x1) * 0.5;
                 let w = (x1 - x0).abs().max(9.0 * u);
@@ -1385,7 +1387,7 @@ impl NextFx {
             // se il raggio è attivo dalla navicella, collega la bocca dei cannoni al primo colpo
             if pl.kind == Some(PaddleKind::Blaster) && self.fire[side].is_some_and(|t| t < 0.25) {
                 let pad = &game.paddles[side];
-                let muzzle_x = to_f32(if side == 0 { pad.right() } else { pad.left() }) + shake + dir * 3.0 * u;
+                let muzzle_x = to_f32(if side == 0 { pad.right() } else { pad.left() }) + shake + dir * ships::barrel() * u;
                 let pad_y = to_f32(pad.y);
                 let near = if side == 0 { 0 } else { active.len() - 1 };
                 let (nx, ny) = active[near];

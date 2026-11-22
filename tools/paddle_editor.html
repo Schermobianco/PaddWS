@@ -1,0 +1,1598 @@
+<!doctype html>
+<!--
+  Editor degli sprite delle racchette di NEXT (PADD WS).
+
+  Lo sprite è l'astronave vista dall'alto con la faccia che colpisce a destra (la racchetta destra
+  è speculare). L'altezza è quella della racchetta in pixel arcade (schermo a 240 righe): base 40
+  per il moltiplicatore del tipo (next.paddles); la profondità è libera. La hitbox sono le ultime
+  5 colonne a destra (4 sul MiSTer); davanti alla faccia può sporgere solo qualche colonna (le canne
+  del BLASTER), indicata da "front" nel blocco "paddedit".
+
+  I colori sono ruoli, come in tools/paddle_shapes.py e in kind_px di mister/rtl/next_render.v:
+  l'indice del PNG è il codice del ruolo (0 trasparente, 1 corpo, 2 corpo in ombra, 3-5 colore del
+  personaggio pieno, scuro e chiaro, 6-10 grigi e nero, 11 giallo dei segnali). Corpo e corpo in
+  ombra seguono lo stato della racchetta (bianco, bonus armato, OMEGA), i segni il personaggio.
+  Nel PNG salvato c'è un blocco tEXt "paddedit" con tipo, altezza base e sporgenza davanti.
+
+  Agganci (indici 16-18, mai disegnati in gioco: il generatore li legge e li toglie): un pixel nel
+  vuoto dove comincia un effetto animato, in colonna per dare lo spessore. 16 motore (fiamme,
+  accensione, scia: verso il retro), 17 arma (colpi del BLASTER: verso la faccia), 18 speciale del
+  tipo (getti RCS di TWIST, scie alari di RUSH).
+
+  GUARDIAN: le piastre sono i cinque settori del muro, animati uno per uno. Si leggono dal disegno:
+  le piastre sono le 4 colonne fino alla faccia (dietro c'è il binario, poi il carrier fisso), e le
+  quattro righe di piastre tutte blu (o nere) sono le giunture; i settori sono i pezzi tra una
+  giuntura e l'altra. Il generatore del gioco le legge allo stesso modo.
+
+  Si apre in Edge o Chrome, o con il server di tools/c64_editor.py (--paddle), che legge e scrive i
+  PNG del repository e mostra accanto la racchetta disegnata oggi dal gioco.
+-->
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Editor racchette</title>
+<link rel="icon" href="data:,">
+<style>
+:root {
+  --bg: #15171c; --panel: #1d2027; --panel2: #262a33; --line: #343945; --text: #e5e7ee;
+  --muted: #959cad; --accent: #7aa2ff; --accent2: #3d5fb8; --danger: #ff5a5f; --ok: #4fd08a;
+  --work: #0e1014; --warn: #ffc34d;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--text); font: 13px/1.35 system-ui, "Segoe UI", sans-serif;
+  display: grid; grid-template-rows: auto auto 1fr auto; overflow: hidden;
+}
+button, select, input { font: inherit; color: inherit; }
+button {
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 5px; padding: 3px 8px;
+  cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+button.on { background: var(--accent2); border-color: var(--accent); }
+select, input[type=number], input:not([type]) {
+  background: var(--work); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px;
+}
+input[type=number] { width: 58px; }
+kbd { font: 11px ui-monospace, Consolas, monospace; color: var(--muted); }
+hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+
+#bar { display: flex; align-items: center; gap: 4px; padding: 4px 8px; background: var(--panel);
+  border-bottom: 1px solid var(--line); }
+#bar .brand { font-weight: 600; margin-right: 10px; letter-spacing: .02em; }
+.menu { position: relative; }
+.menu > .mbtn { background: transparent; border-color: transparent; }
+.menu.open > .mbtn { background: var(--panel2); border-color: var(--line); }
+.drop { display: none; position: absolute; top: 100%; left: 0; z-index: 20; min-width: 270px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px;
+  box-shadow: 0 8px 24px #0008; }
+.menu.open .drop { display: block; }
+.drop button { display: flex; width: 100%; justify-content: space-between; gap: 18px;
+  background: transparent; border-color: transparent; text-align: left; }
+.drop button:hover { background: var(--panel2); }
+#docname { margin-left: auto; color: var(--muted); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; max-width: 45vw; }
+
+#opts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 4px 10px;
+  background: var(--panel); border-bottom: 1px solid var(--line); min-height: 34px; }
+#hint { color: var(--muted); }
+
+main { display: grid; grid-template-columns: 46px 1fr 330px; min-height: 0; }
+#tools { background: var(--panel); border-right: 1px solid var(--line); display: flex;
+  flex-direction: column; gap: 4px; padding: 6px 5px; }
+#tools button { width: 34px; height: 34px; padding: 0; display: grid; place-items: center; }
+#tools svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round; }
+#stage { position: relative; background: var(--work); min-width: 0; min-height: 0; overflow: auto; }
+#stage.drop::after { content: "Lascia qui l'immagine: diventa il riferimento"; position: absolute;
+  inset: 12px; display: grid; place-items: center; border: 2px dashed var(--accent);
+  border-radius: 10px; background: #7aa2ff22; font-size: 18px; pointer-events: none; }
+#cv { display: block; margin: auto; touch-action: none; cursor: crosshair; }
+
+#side { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto;
+  padding: 0 10px 12px; }
+#side section { border-bottom: 1px solid var(--line); padding: 8px 0; }
+#side h3 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); font-weight: 600; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0; }
+label { display: inline-flex; align-items: center; gap: 4px; }
+.small { color: var(--muted); font-size: 12px; }
+
+.cur { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.sw { width: 22px; height: 22px; border-radius: 4px; border: 1px solid #0009;
+  box-shadow: inset 0 0 0 1px #fff2; flex: none; }
+.sw.big { width: 34px; height: 34px; }
+.sw.t { background: repeating-conic-gradient(#888 0 25%, #555 0 50%) 0 0 / 10px 10px; }
+#curNames { color: var(--muted); font-size: 12px; }
+#palette { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; }
+#palette button { display: flex; align-items: center; gap: 6px; padding: 2px 4px; text-align: left;
+  background: transparent; border-color: transparent; font-size: 12px; }
+#palette button:hover { background: var(--panel2); }
+#palette button.p .sw { outline: 2px solid #fff; outline-offset: 1px; }
+#palette button.s .sw { outline: 2px dashed #fff; outline-offset: 1px; }
+#palette kbd { margin-left: auto; }
+#checks { margin: 0; padding-left: 16px; }
+#checks li { margin: 2px 0; }
+.bad { color: var(--danger); }
+.good { color: var(--ok); }
+.pvwrap { background: #000; border-radius: 4px; padding: 8px; overflow: auto; max-height: 340px; }
+#pv { image-rendering: pixelated; display: block; }
+#convRoles { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; }
+#convRoles button { height: 22px; padding: 0; border: 1px solid #0009; }
+#convRoles button.off { opacity: .15; }
+.flist { list-style: none; margin: 6px 0 0; padding: 0; max-height: 200px; overflow-y: auto; }
+.flist li { padding: 2px 4px; border-radius: 3px; cursor: pointer; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+.flist li:hover { background: var(--panel2); }
+.flist li.cur { background: var(--accent2); }
+#fileFilter { width: 100%; margin-top: 4px; }
+
+#status { display: flex; gap: 16px; padding: 3px 10px; background: var(--panel);
+  border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; white-space: nowrap;
+  overflow: hidden; }
+#status .msg { margin-left: auto; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+#status .msg.err { color: var(--warn); }
+
+dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line);
+  border-radius: 8px; padding: 16px 18px; min-width: 380px; max-width: 720px; }
+dialog::backdrop { background: #0009; }
+dialog h2 { margin: 0 0 10px; font-size: 16px; }
+dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; margin: 14px 0 0; }
+dialog button.primary { background: var(--accent2); border-color: var(--accent); }
+#dlgHelp table { border-collapse: collapse; }
+#dlgHelp td { padding: 2px 10px 2px 0; vertical-align: top; }
+#dlgHelp td:first-child { white-space: nowrap; color: var(--accent); font-family: ui-monospace, Consolas, monospace; }
+</style>
+</head>
+<body>
+
+<header id="bar">
+  <span class="brand">Editor racchette</span>
+  <div class="menu"><button class="mbtn">File</button><div class="drop">
+    <button data-cmd="new">Nuovo sprite del tipo scelto<kbd>Ctrl+N</kbd></button>
+    <button data-cmd="open">Apri…<kbd>Ctrl+O</kbd></button>
+    <hr>
+    <button data-cmd="save">Salva<kbd>Ctrl+S</kbd></button>
+    <button data-cmd="saveAs">Salva come…<kbd>Ctrl+Maiusc+S</kbd></button>
+  </div></div>
+  <div class="menu"><button class="mbtn">Modifica</button><div class="drop">
+    <button data-cmd="undo">Annulla<kbd>Ctrl+Z</kbd></button>
+    <button data-cmd="redo">Ripeti<kbd>Ctrl+Y</kbd></button>
+    <hr>
+    <button data-cmd="cut">Taglia<kbd>Ctrl+X</kbd></button>
+    <button data-cmd="copy">Copia<kbd>Ctrl+C</kbd></button>
+    <button data-cmd="paste">Incolla<kbd>Ctrl+V</kbd></button>
+    <button data-cmd="del">Cancella la selezione<kbd>Canc</kbd></button>
+    <button data-cmd="selectAll">Seleziona tutto<kbd>Ctrl+A</kbd></button>
+    <button data-cmd="deselect">Togli la selezione<kbd>Esc</kbd></button>
+    <hr>
+    <button data-cmd="swap">Scambia i colori<kbd>X</kbd></button>
+    <button data-cmd="clear">Svuota lo sprite</button>
+  </div></div>
+  <div class="menu"><button class="mbtn">Immagine</button><div class="drop">
+    <button data-cmd="flipV">Capovolgi (la selezione, o tutto)<kbd>Maiusc+V</kbd></button>
+    <button data-cmd="flipH">Specchia la selezione (sinistra e destra)<kbd>Maiusc+H</kbd></button>
+    <button data-cmd="mirrorDown">Copia la metà alta nella bassa</button>
+    <button data-cmd="mirrorUp">Copia la metà bassa nell'alta</button>
+    <hr>
+    <button data-cmd="shiftU">Sposta il disegno in su<kbd>Ctrl+↑</kbd></button>
+    <button data-cmd="shiftD">Sposta il disegno in giù<kbd>Ctrl+↓</kbd></button>
+    <button data-cmd="shiftL">Sposta il disegno a sinistra<kbd>Ctrl+←</kbd></button>
+    <button data-cmd="shiftR">Sposta il disegno a destra<kbd>Ctrl+→</kbd></button>
+    <hr>
+    <button data-cmd="convert">Converti il riferimento nello sprite</button>
+  </div></div>
+  <div class="menu"><button class="mbtn">Vista</button><div class="drop">
+    <button data-cmd="zoomIn">Ingrandisci<kbd>+</kbd></button>
+    <button data-cmd="zoomOut">Rimpicciolisci<kbd>−</kbd></button>
+    <button data-cmd="fit">Adatta alla finestra<kbd>Ctrl+0</kbd></button>
+    <hr>
+    <button data-cmd="toggleGrid">Griglia dei pixel<kbd>G</kbd></button>
+    <button data-cmd="toggleRef">Riferimento<kbd>Maiusc+R</kbd></button>
+  </div></div>
+  <div class="menu"><button class="mbtn">Aiuto</button><div class="drop">
+    <button data-cmd="help">Comandi e scorciatoie<kbd>F1</kbd></button>
+  </div></div>
+  <span id="docname"></span>
+</header>
+
+<div id="opts">
+  <label><input type="checkbox" id="optFill"> Forme piene</label>
+  <label><input type="checkbox" id="optSym" checked> Simmetria alto/basso <kbd>M</kbd></label>
+  <span id="hint"></span>
+</div>
+
+<main>
+  <aside id="tools">
+    <button data-tool="pencil" title="Matita (B)"><svg viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3L8 19z"/><path d="M14 7l3 3"/></svg></button>
+    <button data-tool="eraser" title="Gomma (E)"><svg viewBox="0 0 24 24"><path d="M9 19h11"/><path d="M4.5 14.5l9-9 6 6-7.5 7.5H9z"/><path d="M9 10l6 6"/></svg></button>
+    <button data-tool="line" title="Linea (L)"><svg viewBox="0 0 24 24"><path d="M5 19L19 5"/></svg></button>
+    <button data-tool="rect" title="Rettangolo (R)"><svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12"/></svg></button>
+    <button data-tool="fill" title="Riempimento (F)"><svg viewBox="0 0 24 24"><path d="M4 11l7-7 7 7-7 7z"/><path d="M4 11h14"/><path d="M20 15c0 2 1.2 3 1.2 4a1.2 1.2 0 0 1-2.4 0c0-1 1.2-2 1.2-4z"/></svg></button>
+    <button data-tool="mirror" title="Specchio (S): copia la grafica oltre la linea del mouse"><svg viewBox="0 0 24 24"><path d="M3 12h18" stroke-dasharray="2.5 2"/><path d="M7 4h10l-5 5z"/><path d="M7 20h10l-5-5z"/></svg></button>
+    <button data-tool="select" title="Selezione (A): trascina per selezionare, dentro per spostare (Ctrl copia)"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" stroke-dasharray="3 2.5"/></svg></button>
+    <button data-tool="picker" title="Contagocce (I, o Alt+clic)"><svg viewBox="0 0 24 24"><path d="M14 4l6 6-2 2-6-6z"/><path d="M13 9l-8 8v3h3l8-8"/></svg></button>
+  </aside>
+  <div id="stage"><canvas id="cv"></canvas></div>
+  <aside id="side">
+    <section>
+      <h3>Racchetta</h3>
+      <div class="row"><select id="kind" style="flex:1"></select></div>
+      <div class="row">
+        <label>Altezza base <input id="base" type="number" min="8" max="160" value="40"></label>
+        <span class="small">righe con moltiplicatore 1</span>
+      </div>
+      <div class="row">
+        <label>Larghezza <input id="width" type="number" min="5" max="64"></label>
+        <span class="small" id="sizeInfo"></span>
+      </div>
+      <div class="row">
+        <label title="Colonne disegnate oltre la faccia, come le canne del BLASTER: la hitbox finisce prima">Sporgenza davanti <input id="front" type="number" min="0" max="8" value="0"></label>
+      </div>
+      <div class="row"><button data-cmd="applySize" id="btnSize">Adatta la tela alla racchetta</button></div>
+      <div class="small" id="kindInfo"></div>
+    </section>
+    <section>
+      <h3>Colori</h3>
+      <div class="cur">
+        <div id="swPrim" class="sw big" title="Primario: tasto sinistro"></div>
+        <div id="swSec" class="sw big" title="Secondario: tasto destro"></div>
+        <button data-cmd="swap" title="Scambia (X)">⇄</button>
+        <span id="curNames"></span>
+      </div>
+      <div id="palette"></div>
+    </section>
+    <section>
+      <h3>Guide</h3>
+      <div class="row">
+        <label><input type="checkbox" id="showGrid" checked> Pixel</label>
+        <label><input type="checkbox" id="showHit" checked> Hitbox PC (5)</label>
+        <label><input type="checkbox" id="showMister"> MiSTer (4)</label>
+        <label><input type="checkbox" id="showErr" checked> Errori</label>
+        <label title="Solo per GUARDIAN: i cinque settori del muro sulle piastre"><input type="checkbox" id="showSect" checked> Settori</label>
+      </div>
+      <ul id="checks" class="small"></ul>
+    </section>
+    <section>
+      <h3>Anteprima</h3>
+      <div class="row">
+        <select id="pvScale"><option value="1">1×</option><option value="2">2×</option><option value="3" selected>3×</option><option value="4">4×</option><option value="6">6×</option></select>
+        <select id="pvBody">
+          <option value="ffffff">corpo bianco</option>
+          <option value="ffd225">bonus armato</option>
+          <option value="e62828">OMEGA</option>
+          <option value="a040e0">OMEGA (easter egg)</option>
+        </select>
+        <label title="La racchetta che il gioco disegna oggi (serve il server)"><input type="checkbox" id="pvCur" checked> Attuale</label>
+        <select id="pvWall" title="GUARDIAN: piastre colpite e rotte">
+          <option value="">settori intatti</option>
+          <option value="h2">settore 3 appena colpito</option>
+          <option value="b1">settore 2 rotto</option>
+          <option value="b0,b1,b3">tre settori rotti</option>
+          <option value="b0,b1,b3,b4">ne resta uno</option>
+        </select>
+      </div>
+      <div class="pvwrap"><canvas id="pv"></canvas></div>
+      <div class="small">Su nero con l'ombra portata del gioco: attuale, sinistra, destra.</div>
+    </section>
+    <section>
+      <h3>Riferimento</h3>
+      <div class="row">
+        <button data-cmd="loadRef">Carica un'immagine…</button>
+        <label><input type="checkbox" id="refShow" checked> Mostra</label>
+      </div>
+      <div class="row"><label>Opacità <input type="range" id="refAlpha" min="5" max="100" value="45"></label></div>
+      <div class="small" id="refName">Nessuno. Il disegno (senza lo sfondo) va a tutta altezza, allineato a destra.</div>
+      <div class="small" style="margin-top:6px">Colori della conversione (clic per escluderne uno):</div>
+      <div id="convRoles" style="margin-top:4px"></div>
+      <div class="row">
+        <label title="Tolleranza sul colore dello sfondo del riferimento (preso dall'angolo)">Sfondo ± <input id="bgTol" type="number" min="0" max="200" value="60"></label>
+        <button data-cmd="convert">Converti nello sprite</button>
+      </div>
+    </section>
+    <section>
+      <h3>File <span id="dirName" class="small"></span></h3>
+      <input id="fileFilter" placeholder="Filtra, per esempio ships/">
+      <ul id="files" class="flist"></ul>
+    </section>
+  </aside>
+</main>
+
+<footer id="status"><span id="stPos"></span><span id="stDoc"></span><span class="msg" id="stMsg"></span></footer>
+
+<input type="file" id="fileInput" accept="image/*" hidden>
+<input type="file" id="refInput" accept="image/*" hidden>
+
+<dialog id="dlgAsk"><form method="dialog">
+  <p id="askText"></p>
+  <input id="askInput" style="width:100%">
+  <menu><button value="cancel">Annulla</button><button value="ok" id="askOk" class="primary">OK</button></menu>
+</form></dialog>
+
+<dialog id="dlgHelp"><form method="dialog">
+  <h2>Comandi e scorciatoie</h2>
+  <table>
+    <tr><td>B E L R F S A I</td><td>Matita, gomma, linea, rettangolo, riempimento, specchio, selezione, contagocce</td></tr>
+    <tr><td>Ctrl+X Ctrl+C Ctrl+V</td><td>Taglia, copia, incolla (il pezzo incollato si sposta con il mouse o le frecce;
+      i pixel trasparenti non coprono il disegno sotto). Canc cancella la selezione, Ctrl+A seleziona tutto</td></tr>
+    <tr><td>Maiusc+V, Maiusc+H</td><td>Capovolge la selezione (o tutto lo sprite), specchia la selezione</td></tr>
+    <tr><td>Specchio</td><td>La linea segue il mouse (su una riga o tra due righe); il clic copia
+      la grafica dal bordo alla linea, ribaltata, dall'altra parte della linea. Senza tasti dall'alto,
+      con Maiusc dal basso; con Ctrl la linea è verticale (da sinistra, con Maiusc dalla faccia)</td></tr>
+    <tr><td>clic sinistro / destro</td><td>Colore primario / secondario (Alt+clic: contagocce)</td></tr>
+    <tr><td>X</td><td>Scambia primario e secondario</td></tr>
+    <tr><td>M</td><td>Simmetria alto/basso: ogni pixel si ripete nella riga speculare</td></tr>
+    <tr><td>Maiusc</td><td>Linea a 0°, 45° e 90°; rettangolo quadrato</td></tr>
+    <tr><td>G, Maiusc+R</td><td>Griglia dei pixel, riferimento</td></tr>
+    <tr><td>Agganci</td><td>Motore, arma e speciale: un pixel nel vuoto dove comincia l'effetto,
+      in colonna per lo spessore (la fiamma è alta quanto la colonna). In gioco non si vedono</td></tr>
+    <tr><td>Ctrl+frecce</td><td>Sposta tutto il disegno di un pixel</td></tr>
+    <tr><td>+ − Ctrl+0, Ctrl+rotella</td><td>Zoom</td></tr>
+    <tr><td>Ctrl+Z, Ctrl+Y</td><td>Annulla, ripeti</td></tr>
+    <tr><td>Ctrl+S</td><td>Salva (con il server in assets/ships/sprites/&lt;tipo&gt;.png)</td></tr>
+  </table>
+  <p class="small">La faccia che colpisce è a destra (la hitbox vera è quella del core: gli spigoli
+  possono essere arrotondati). Il corpo (bianco) e il corpo in ombra cambiano colore con lo stato della racchetta; i tre colori del
+  personaggio sono quelli di portraits.json.</p>
+  <menu><button value="ok" class="primary">Chiudi</button></menu>
+</form></dialog>
+
+<script>
+'use strict';
+
+// ---------------------------------------------------------------- costanti
+
+// tipi nell'ordine di PaddleKind; moltiplicatori dell'altezza come i valori predefiniti di
+// next.paddles (rust/core/src/params.rs, PaddleTuning); larghezza massima: lo spazio dietro la
+// racchetta (il GUARDIAN ha il muro a 10 pixel dal bordo)
+const KINDS = [
+  { id: 'arcade', name: 'ARCADE', mult: 0.8, maxW: 22, accent: [255, 210, 30] },
+  { id: 'titan', name: 'TITAN', mult: 1.2, maxW: 22, accent: [230, 120, 40] },
+  { id: 'hammer', name: 'HAMMER', mult: 1.0, maxW: 22, accent: [230, 40, 40] },
+  { id: 'twist', name: 'TWIST', mult: 1.0, maxW: 22, accent: [150, 70, 200] },
+  { id: 'blaster', name: 'BLASTER', mult: 1.1, maxW: 22, accent: [70, 190, 70] },
+  { id: 'rush', name: 'RUSH', mult: 0.85, maxW: 22, accent: [60, 200, 220] },
+  { id: 'guardian', name: 'GUARDIAN', mult: 0.8, maxW: 12, accent: [90, 150, 255] },
+];
+const FACE = 5, FACE_MISTER = 4;
+
+// ruoli (codici di tools/paddle_shapes.py)
+const NONE = 0, BODY = 1, SHADE = 2, MARK = 3, MARK_DARK = 4, MARK_LIGHT = 5, GRAY = 6,
+      GRAY_LIGHT = 7, DARK = 8, DARK_DEEP = 9, BLACK = 10, SIGNAL = 11, SHADOW = 12;
+// agganci: dopo i ruoli (13-15 sono le immagini fantasma del RUSH in paddle_shapes.py)
+const ENGINE = 16, WEAPON = 17, SPECIAL = 18;
+const isAnchor = c => c >= ENGINE;
+const ROLES = [
+  [NONE, 'trasparente', '0'], [BODY, 'corpo', '1'], [SHADE, 'corpo in ombra', '2'],
+  [MARK, 'personaggio', '3'], [MARK_DARK, 'personaggio scuro', '4'], [MARK_LIGHT, 'personaggio chiaro', '5'],
+  [GRAY, 'grigio', '6'], [GRAY_LIGHT, 'grigio chiaro', '7'], [DARK, 'scuro', '8'],
+  [DARK_DEEP, 'scurissimo', '9'], [BLACK, 'nero', ''], [SIGNAL, 'giallo segnali', ''],
+  [ENGINE, 'aggancio motore', ''], [WEAPON, 'aggancio arma', ''], [SPECIAL, 'aggancio speciale', ''],
+];
+const ROLE_NAME = c => (ROLES.find(r => r[0] === c) || [0, '?'])[1];
+// agganci attesi per tipo: [motore, arma, speciale] (gruppi in colonna)
+const ANCHORS = [[2, 0, 0], [2, 0, 0], [1, 0, 0], [1, 0, 2], [2, 2, 0], [1, 0, 2], [2, 0, 0]];
+const FIXED = {
+  [GRAY]: [180, 180, 180], [GRAY_LIGHT]: [226, 226, 230], [DARK]: [92, 92, 98],
+  [DARK_DEEP]: [52, 52, 60], [BLACK]: [0, 0, 0], [SIGNAL]: [255, 210, 37],
+  [ENGINE]: [255, 128, 0], [WEAPON]: [0, 255, 128], [SPECIAL]: [0, 192, 255],
+};
+const SHADOW_RGB = [48, 48, 58], SHADOW_TITAN = [18, 18, 26];
+const ZOOMS = [2, 3, 4, 6, 8, 10, 12, 16, 20, 24, 32, 40, 48];
+const TOOL_HINT = {
+  pencil: 'Matita: sinistro primario, destro secondario.',
+  eraser: 'Gomma: rende trasparente.',
+  line: 'Linea: Maiusc per 0°, 45° e 90°.',
+  rect: 'Rettangolo: Maiusc per un quadrato.',
+  fill: 'Riempimento: i pixel vicini dello stesso colore.',
+  picker: 'Contagocce: sinistro primario, destro secondario.',
+  select: 'Selezione: trascina per selezionare; trascina dentro per spostare (Ctrl: una copia); frecce per un pixel; Invio o Esc per posare.',
+  mirror: 'Specchio: clic per copiare, ribaltata oltre la linea, la grafica dal bordo alla linea. Maiusc: dall\'altro bordo. Ctrl: linea verticale.',
+};
+
+const $ = s => document.querySelector(s);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// colore del personaggio scurito (x 0,6) e schiarito (45% verso il bianco), come mark_ramp
+function ramp(c) {
+  return { [MARK]: c, [MARK_DARK]: c.map(v => Math.round(v * 0.6)),
+           [MARK_LIGHT]: c.map(v => Math.round(v + (255 - v) * 0.45)) };
+}
+// il corpo in ombra: il colore del corpo per (212, 214, 224) / 255, come body_shade
+const bodyShade = c => [Math.round(c[0] * 212 / 255), Math.round(c[1] * 214 / 255), Math.round(c[2] * 224 / 255)];
+function colorsFor(kind, body = [255, 255, 255]) {
+  return { ...FIXED, ...ramp(KINDS[kind].accent), [BODY]: body, [SHADE]: bodyShade(body),
+           [SHADOW]: kind === 1 ? SHADOW_TITAN : SHADOW_RGB };
+}
+const css = c => `rgb(${c.join(',')})`;
+
+// ---------------------------------------------------------------- stato
+
+let doc = null;
+const view = { z: 16, pad: 24 };
+let tool = 'pencil', prim = BODY, sec = NONE;
+let undoStack = [], redoStack = [];
+let drag = null, hover = null;
+let sel = null;          // selezione {x, y, w, h}
+let floating = null;     // pezzo sollevato o incollato {x, y, w, h, data}, sopra il disegno
+let clip = null;         // appunti {x, y, w, h, data}
+const mods = { shift: false, ctrl: false };     // per lo specchio: verso e asse
+let ref = null;                         // { name, w, h, data (RGBA), box: {x0, y0, x1, y1} }
+let convOff = new Set();
+let server = null, fileEntries = [], current = null;   // current: racchetta di oggi dal server
+
+const opt = {
+  get fill() { return $('#optFill').checked; },
+  get sym() { return $('#optSym').checked; },
+  get grid() { return $('#showGrid').checked; },
+};
+const kindH = k => Math.round(+$('#base').value * KINDS[k].mult);
+// colonna della faccia (dopo, solo le canne che sporgono)
+const faceX = () => doc.w - 1 - (doc.front || 0);
+const COL = () => colorsFor(doc.kind);
+
+function blankDoc(kind, w, h) {
+  return { kind, w, h, front: 0, px: new Uint8Array(w * h), name: KINDS[kind].id + '.png',
+           path: `assets/ships/sprites/${KINDS[kind].id}.png`, dirty: false };
+}
+
+// ---------------------------------------------------------------- disegno
+
+const inside = (x, y) => x >= 0 && y >= 0 && x < doc.w && y < doc.h;
+const get = (x, y) => inside(x, y) ? doc.px[y * doc.w + x] : NONE;
+function put(x, y, c) {
+  if (!inside(x, y)) return;
+  doc.px[y * doc.w + x] = c;
+  if (opt.sym) doc.px[(doc.h - 1 - y) * doc.w + x] = c;
+}
+function line(x0, y0, x1, y1, fn) {
+  const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  let e = dx + dy;
+  for (;;) {
+    fn(x0, y0);
+    if (x0 === x1 && y0 === y1) break;
+    const e2 = 2 * e;
+    if (e2 >= dy) { e += dy; x0 += sx; }
+    if (e2 <= dx) { e += dx; y0 += sy; }
+  }
+}
+function rect(x0, y0, x1, y1, c, filled) {
+  const [ax, bx] = [Math.min(x0, x1), Math.max(x0, x1)], [ay, by] = [Math.min(y0, y1), Math.max(y0, y1)];
+  for (let y = ay; y <= by; y++)
+    for (let x = ax; x <= bx; x++)
+      if (filled || x === ax || x === bx || y === ay || y === by) put(x, y, c);
+}
+// riempimento a 4 vicini; con la simmetria si riempie anche dal punto speculare
+function fillAt(x, y, c, mirror = true) {
+  const from = get(x, y);
+  if (from === c || !inside(x, y)) return;
+  const stack = [[x, y]];
+  while (stack.length) {
+    const [px, py] = stack.pop();
+    if (!inside(px, py) || get(px, py) !== from) continue;
+    doc.px[py * doc.w + px] = c;
+    stack.push([px + 1, py], [px - 1, py], [px, py + 1], [px, py - 1]);
+  }
+  if (mirror && opt.sym) fillAt(x, doc.h - 1 - y, c, false);
+}
+
+// ---------------------------------------------------------------- annulla
+
+const snapshot = () => ({ w: doc.w, h: doc.h, px: doc.px.slice(), kind: doc.kind, front: doc.front });
+function restore(s) {
+  Object.assign(doc, { w: s.w, h: s.h, px: s.px.slice(), kind: s.kind, front: s.front });
+  syncKind(); layout();
+}
+function pushUndo() { undoStack.push(snapshot()); if (undoStack.length > 300) undoStack.shift(); redoStack = []; }
+function changed() { doc.dirty = true; updateTitle(); render(); }
+function undo() {
+  if (!undoStack.length) return;
+  floating = null;
+  sel = null;
+  redoStack.push(snapshot());
+  restore(undoStack.pop());
+  changed();
+}
+function redo() {
+  if (!redoStack.length) return;
+  commitFloating();
+  undoStack.push(snapshot());
+  restore(redoStack.pop());
+  changed();
+}
+
+// ---------------------------------------------------------------- operazioni sull'immagine
+
+function resizeTo(w, h) {
+  // la faccia resta a destra, il disegno resta centrato in altezza
+  const out = new Uint8Array(w * h), dx = w - doc.w, dy = Math.floor((h - doc.h) / 2);
+  for (let y = 0; y < doc.h; y++)
+    for (let x = 0; x < doc.w; x++) {
+      const nx = x + dx, ny = y + dy;
+      if (nx >= 0 && ny >= 0 && nx < w && ny < h) out[ny * w + nx] = doc.px[y * doc.w + x];
+    }
+  Object.assign(doc, { w, h, px: out });
+}
+function shift(dx, dy) {
+  pushUndo();
+  const out = new Uint8Array(doc.w * doc.h);
+  for (let y = 0; y < doc.h; y++)
+    for (let x = 0; x < doc.w; x++) {
+      const nx = x + dx, ny = y + dy;
+      if (inside(nx, ny)) out[ny * doc.w + nx] = doc.px[y * doc.w + x];
+    }
+  doc.px = out; changed();
+}
+function flipV() {
+  if (sel || floating) { flipSel(false); return; }
+  pushUndo();
+  const out = new Uint8Array(doc.w * doc.h);
+  for (let y = 0; y < doc.h; y++) out.set(doc.px.subarray(y * doc.w, (y + 1) * doc.w), (doc.h - 1 - y) * doc.w);
+  doc.px = out; changed();
+}
+function mirrorHalf(down) {
+  pushUndo();
+  for (let y = 0; y < Math.floor(doc.h / 2); y++) {
+    const a = down ? y : doc.h - 1 - y, b = doc.h - 1 - a;
+    doc.px.copyWithin(b * doc.w, a * doc.w, (a + 1) * doc.w);
+  }
+  changed();
+}
+
+// ---------------------------------------------------------------- specchio
+
+// linea dello specchio dalla posizione del mouse in pixel (frazionaria): al centro di un pixel
+// (quella riga resta e fa da asse) o sul bordo tra due (numero intero), tra 0 e n
+function mirrorAxis(f, n) {
+  const fl = Math.floor(f), fr = f - fl;
+  return clamp(fr >= .25 && fr < .75 ? fl + .5 : Math.round(f), 0, n);
+}
+// lo specchio dal mouse: { vertical, axis, fromStart } (fromStart: si copia dal bordo in alto o
+// a sinistra)
+function mirrorSpec() {
+  if (tool !== 'mirror' || !hover) return null;
+  const vertical = mods.ctrl;
+  return { vertical, fromStart: !mods.shift,
+           axis: vertical ? mirrorAxis(hover.fx, doc.w) : mirrorAxis(hover.fy, doc.h) };
+}
+// le righe (o colonne) tra il bordo e la linea, ribaltate dall'altra parte; il resto non cambia
+function mirrored(m) {
+  const out = doc.px.slice(), n = m.vertical ? doc.w : doc.h, A2 = 2 * m.axis;
+  for (let s = 0; s < n; s++) {
+    if (m.fromStart ? s + .5 >= m.axis : s + .5 <= m.axis) continue;
+    const t = A2 - s - 1;
+    if (t < 0 || t >= n || t === s) continue;
+    if (m.vertical) for (let y = 0; y < doc.h; y++) out[y * doc.w + t] = doc.px[y * doc.w + s];
+    else out.set(doc.px.subarray(s * doc.w, (s + 1) * doc.w), t * doc.w);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- selezione
+
+function rectOf(a, b) {
+  const x0 = clamp(Math.min(a.x, b.x), 0, doc.w - 1), x1 = clamp(Math.max(a.x, b.x), 0, doc.w - 1);
+  const y0 = clamp(Math.min(a.y, b.y), 0, doc.h - 1), y1 = clamp(Math.max(a.y, b.y), 0, doc.h - 1);
+  return { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+}
+const inRect = (r, p) => r && p.x >= r.x && p.y >= r.y && p.x < r.x + r.w && p.y < r.y + r.h;
+function grab(r) {
+  const data = new Uint8Array(r.w * r.h);
+  for (let y = 0; y < r.h; y++)
+    for (let x = 0; x < r.w; x++) data[y * r.w + x] = get(r.x + x, r.y + y);
+  return data;
+}
+function clearRect(r) {
+  for (let y = r.y; y < r.y + r.h; y++)
+    for (let x = r.x; x < r.x + r.w; x++) if (inside(x, y)) doc.px[y * doc.w + x] = NONE;
+}
+// solleva la selezione in un pezzo da spostare (con `copy` il disegno sotto resta)
+function lift(copy) {
+  if (!sel || floating) return;
+  pushUndo();
+  floating = { ...sel, data: grab(sel) };
+  if (!copy) clearRect(sel);
+  changed();
+}
+// posa il pezzo sollevato: i suoi pixel trasparenti non coprono il disegno sotto
+function commitFloating() {
+  if (!floating) return;
+  const f = floating;
+  for (let y = 0; y < f.h; y++)
+    for (let x = 0; x < f.w; x++) {
+      const c = f.data[y * f.w + x];
+      if (c && inside(f.x + x, f.y + y)) doc.px[(f.y + y) * doc.w + f.x + x] = c;
+    }
+  sel = { x: f.x, y: f.y, w: f.w, h: f.h };
+  floating = null;
+  changed();
+}
+function copySel() {
+  const r = floating || sel;
+  if (!r) { msg('Niente da copiare: prima seleziona (A)', true); return false; }
+  clip = { x: r.x, y: r.y, w: r.w, h: r.h, data: floating ? floating.data.slice() : grab(r) };
+  msg(`Copiato ${r.w}×${r.h}`);
+  return true;
+}
+function cutSel() {
+  if (!copySel()) return;
+  if (floating) floating = null;
+  else { pushUndo(); clearRect(sel); }
+  sel = null;
+  changed();
+}
+function pasteClip() {
+  if (!clip) { msg('Gli appunti sono vuoti', true); return; }
+  commitFloating();
+  pushUndo();
+  // dove c'è il mouse, se è sulla tela; se no dove era il pezzo copiato
+  const at = hover && inside(hover.x, hover.y) ? hover : clip;
+  floating = { x: at.x, y: at.y, w: clip.w, h: clip.h, data: clip.data.slice() };
+  sel = null;
+  setTool('select');
+  changed();
+  msg(`Incollato ${clip.w}×${clip.h}: trascinalo o spostalo con le frecce, Invio per posarlo`);
+}
+function deleteSel() {
+  if (floating) { floating = null; sel = null; changed(); return; }
+  if (!sel) return;
+  pushUndo();
+  clearRect(sel);
+  changed();
+}
+function deselect() { commitFloating(); sel = null; render(); }
+function selectAll() { commitFloating(); sel = { x: 0, y: 0, w: doc.w, h: doc.h }; setTool('select'); render(); }
+function nudgeSel(dx, dy) {
+  if (!floating) lift(false);
+  if (!floating) return;
+  floating.x += dx;
+  floating.y += dy;
+  render();
+}
+// capovolge (o specchia, `horiz`) il pezzo selezionato
+function flipSel(horiz) {
+  if (!floating) lift(false);
+  const f = floating;
+  if (!f) return;
+  const out = new Uint8Array(f.w * f.h);
+  for (let y = 0; y < f.h; y++)
+    for (let x = 0; x < f.w; x++)
+      out[y * f.w + x] = horiz ? f.data[y * f.w + (f.w - 1 - x)] : f.data[(f.h - 1 - y) * f.w + x];
+  f.data = out;
+  render();
+}
+
+// ---------------------------------------------------------------- controlli
+
+function checks() {
+  const out = [], bad = new Set(), k = KINDS[doc.kind], want = kindH(doc.kind);
+  if (doc.h !== want) out.push([`Alta ${doc.h} righe: la racchetta ${k.name} ne ha ${want}`, true]);
+  // profondità della nave: dalla prima colonna disegnata (gli agganci dietro non contano) alla faccia
+  let x0 = 0;
+  while (x0 < doc.w && ![...Array(doc.h).keys()].some(y => get(x0, y) && !isAnchor(get(x0, y)))) x0++;
+  if (faceX() + 1 - x0 > k.maxW) out.push([`Profonda ${faceX() + 1 - x0} fino alla faccia: dietro la racchetta ${k.name} c'è posto per ${k.maxW}`
+                                + (doc.kind === 6 ? ' (poi c\'è il muro)' : ''), true]);
+  if (doc.kind === GUARDIAN) sectorChecks(out, bad);
+  const need = ANCHORS[doc.kind], names = ['motore', 'arma', 'speciale'];
+  for (let i = 0; i < 3; i++) {
+    const n = anchorGroups(ENGINE + i).length;
+    if (n !== need[i]) out.push([`Agganci ${names[i]}: ${n}, per ${k.name} ne servono ${need[i]}`, true]);
+  }
+  const used = new Set(doc.px);
+  if (!used.has(BODY) && !used.has(SHADE)) out.push(['Niente corpo: lo sprite non cambierebbe colore con il bonus e con OMEGA', true]);
+  if (!out.length) out.push(['Tutto a posto', false]);
+  return { out, bad };
+}
+// GUARDIAN: colonne delle piastre, giunture (righe di piastre tutte blu o nere) e settori, i pezzi
+// tra le giunture: [{y0, y1}] con y1 escluso
+const GUARDIAN = 6, SECTORS = 5, PLATE = 4;
+const plateCols = () => [faceX() - PLATE + 1, faceX()];
+const seamColor = c => c === MARK || c === MARK_LIGHT || c === MARK_DARK || c === BLACK;
+function seamRows(px = doc.px) {
+  const [xa, xb] = plateCols(), out = [];
+  for (let y = 0; y < doc.h; y++) {
+    let n = 0;
+    for (let x = xa; x <= xb; x++) if (seamColor(px[y * doc.w + x])) n++;
+    if (n === PLATE) out.push(y);
+  }
+  return out;
+}
+function sectorBands(px = doc.px) {
+  const seams = seamRows(px), out = [];
+  let y0 = 0;
+  for (const y of [...seams, doc.h]) {
+    if (y > y0) out.push({ y0, y1: y });
+    y0 = y + 1;
+  }
+  return out;
+}
+function sectorChecks(out, bad) {
+  const seams = seamRows(), bands = sectorBands();
+  if (bands.length !== SECTORS)
+    out.push([`Settori: ${bands.length} pezzi tra ${seams.length} giunture, ne servono ${SECTORS}`
+              + ` (4 righe di piastre tutte blu)`, true]);
+  for (const b of bands)
+    if (b.y1 - b.y0 < 3) {
+      out.push([`Settori: il pezzo alle righe ${b.y0}-${b.y1 - 1} è troppo basso (almeno 3 righe)`, true]);
+      const [xa, xb] = plateCols();
+      for (let y = b.y0; y < b.y1; y++) for (let x = xa; x <= xb; x++) bad.add(y * doc.w + x);
+    }
+}
+// i pixel con le piastre nello stato `spec` ("h2": settore 2 appena colpito, "b1": settore 1
+// rotto, separati da virgole), come wall() di paddle_shapes.py
+function wallState(px, spec) {
+  if (doc.kind !== GUARDIAN || !spec) return px;
+  const out = px.slice(), [xa, xb] = plateCols(), state = {}, bands = sectorBands(px);
+  if (bands.length !== SECTORS) return px;
+  for (const t of spec.split(',')) state[+t.slice(1)] = t[0];
+  const dark = { [BODY]: DARK, [SHADE]: DARK, [GRAY]: DARK, [GRAY_LIGHT]: DARK, [MARK]: DARK_DEEP,
+                 [MARK_DARK]: DARK_DEEP, [MARK_LIGHT]: DARK_DEEP, [SIGNAL]: DARK_DEEP };
+  for (let i = 0; i < SECTORS; i++) {
+    const { y0, y1 } = bands[i], st = state[i];
+    if (!st) continue;
+    for (let y = y0; y < y1; y++)
+      for (let x = xa; x <= xb; x++) {
+        const c = px[y * doc.w + x];
+        if (st === 'b') out[y * doc.w + x] = dark[c] ?? c;
+        else if (c === BODY || c === SHADE) out[y * doc.w + x] = MARK_LIGHT;
+      }
+    if (st === 'h')                 // il pezzo colpito rientra di un pixel verso il retro
+      for (let y = y0; y < y1; y++) {
+        for (let x = xa - 1; x < xb; x++) out[y * doc.w + x] = out[y * doc.w + x + 1];
+        out[y * doc.w + xb] = NONE;
+      }
+  }
+  // giunture: nere tra due settori rotti
+  for (let i = 1; i < SECTORS; i++)
+    if (state[i] === 'b' && state[i - 1] === 'b')
+      for (let y = bands[i - 1].y1; y < bands[i].y0; y++)
+        for (let x = xa; x <= xb; x++) out[y * doc.w + x] = BLACK;
+  return out;
+}
+
+// gruppi di pixel di aggancio `c` in colonna: [{x, y, rows}]
+function anchorGroups(c) {
+  const out = [];
+  for (let x = 0; x < doc.w; x++)
+    for (let y = 0; y < doc.h; y++)
+      if (get(x, y) === c && get(x, y - 1) !== c) {
+        let n = 0;
+        while (get(x, y + n) === c) n++;
+        out.push({ x, y, rows: n });
+      }
+  return out;
+}
+function showChecks(list) {
+  const ul = $('#checks');
+  ul.textContent = '';
+  for (const [t, level] of list) {
+    const li = document.createElement('li');
+    li.textContent = t;
+    li.className = level ? 'bad' : 'good';
+    ul.appendChild(li);
+  }
+}
+
+// ---------------------------------------------------------------- rendering
+
+const cv = $('#cv'), g = cv.getContext('2d');
+let raf = 0;
+function render() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); drawPreview(); }); }
+function layout() {
+  const z = view.z, p = view.pad;
+  cv.width = doc.w * z + 2 * p; cv.height = doc.h * z + 2 * p;
+  cv.style.width = cv.width + 'px'; cv.style.height = cv.height + 'px';
+  render();
+}
+// rettangolo del riferimento sulla tela: il disegno a tutta altezza, allineato a destra
+function refPlace() {
+  const b = ref.box, bw = b.x1 - b.x0, bh = b.y1 - b.y0, cell = bh / doc.h;
+  const cols = Math.max(1, Math.round(bw / cell));
+  return { cell, cols, x: doc.w - cols };
+}
+function draw() {
+  const z = view.z, p = view.pad, W = doc.w * z, H = doc.h * z, col = COL();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, cv.width, cv.height);
+  g.translate(p, p);
+  // scacchiera del trasparente
+  for (let y = 0; y < doc.h; y++)
+    for (let x = 0; x < doc.w; x++) {
+      g.fillStyle = (x + y) & 1 ? '#1b1d23' : '#23262e';
+      g.fillRect(x * z, y * z, z, z);
+    }
+  if (ref && $('#refShow').checked) {
+    const { cols, x } = refPlace(), b = ref.box;
+    g.save();
+    g.globalAlpha = +$('#refAlpha').value / 100;
+    g.imageSmoothingEnabled = false;
+    g.drawImage(ref.canvas, b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0, x * z, 0, cols * z, H);
+    g.restore();
+  }
+  const refA = ref && $('#refShow').checked ? Math.min(1, 1.15 - +$('#refAlpha').value / 100) : 1;
+  const mir = mirrorSpec(), shown = mir ? mirrored(mir) : doc.px;
+  g.save();
+  g.globalAlpha = Math.max(.25, refA);
+  for (let y = 0; y < doc.h; y++)
+    for (let x = 0; x < doc.w; x++) {
+      const c = shown[y * doc.w + x];
+      if (c) { g.fillStyle = css(col[c]); g.fillRect(x * z, y * z, z, z); }
+      if (isAnchor(c)) { g.fillStyle = '#000'; g.fillRect(x * z + z / 3, y * z + z / 3, z / 3, z / 3); }
+    }
+  g.restore();
+  if (opt.grid && z >= 6) {
+    g.strokeStyle = '#ffffff14'; g.lineWidth = 1;
+    g.beginPath();
+    for (let x = 0; x <= doc.w; x++) { g.moveTo(x * z + .5, 0); g.lineTo(x * z + .5, H); }
+    for (let y = 0; y <= doc.h; y++) { g.moveTo(0, y * z + .5); g.lineTo(W, y * z + .5); }
+    g.stroke();
+    // righe di metà altezza
+    g.strokeStyle = '#ffffff30';
+    g.beginPath(); g.moveTo(0, Math.floor(doc.h / 2) * z + .5); g.lineTo(W, Math.floor(doc.h / 2) * z + .5); g.stroke();
+  }
+  const { out, bad } = checks();
+  showChecks(out);
+  if ($('#showErr').checked) {
+    g.fillStyle = '#ff5a5f66';
+    for (const i of bad) g.fillRect((i % doc.w) * z, Math.floor(i / doc.w) * z, z, z);
+  }
+  const fe = (faceX() + 1) * z;          // bordo della faccia
+  if ($('#showHit').checked) {
+    g.strokeStyle = '#4fd08a'; g.lineWidth = 2; g.setLineDash([]);
+    g.strokeRect(fe - FACE * z, -1, FACE * z, H + 2);
+  }
+  if ($('#showMister').checked) {
+    g.strokeStyle = '#ffc34d'; g.lineWidth = 2; g.setLineDash([6, 4]);
+    g.strokeRect(fe - FACE_MISTER * z, -4, FACE_MISTER * z, H + 8);
+    g.setLineDash([]);
+  }
+  if (doc.kind === GUARDIAN && $('#showSect').checked) {
+    // i cinque settori sulle piastre, numerati, e il binario
+    const [xa, xb] = plateCols();
+    g.lineWidth = 2;
+    g.font = `bold ${Math.max(10, Math.min(16, z * .6))}px system-ui, sans-serif`;
+    g.textBaseline = 'top';
+    const bands = sectorBands();
+    for (let i = 0; i < bands.length; i++) {
+      const { y0, y1 } = bands[i];
+      g.strokeStyle = i % 2 ? '#c792ff' : '#ff8ad8';
+      g.strokeRect(xa * z + 2, y0 * z + 2, (xb - xa + 1) * z - 4, (y1 - y0) * z - 4);
+      g.fillStyle = g.strokeStyle;
+      g.fillText(String(i + 1), xa * z + 5, y0 * z + 5);
+    }
+    g.strokeStyle = '#c792ff99'; g.setLineDash([3, 3]);
+    g.strokeRect((xa - 1) * z + 1, 1, z - 2, H - 2);
+    g.setLineDash([]);
+  }
+  // la faccia (con la sporgenza, una linea tratteggiata sul suo bordo)
+  g.fillStyle = '#4fd08a'; g.fillRect(W + 3, 0, 3, H);
+  if (doc.front) {
+    g.strokeStyle = '#4fd08a'; g.lineWidth = 2; g.setLineDash([4, 4]);
+    g.beginPath(); g.moveTo(fe, -8); g.lineTo(fe, H + 8); g.stroke();
+    g.setLineDash([]);
+  }
+  if (mir) {
+    // la parte che si copia velata d'azzurro, la linea dello specchio
+    const a = mir.axis * z;
+    g.fillStyle = '#7aa2ff22';
+    if (mir.vertical) g.fillRect(mir.fromStart ? 0 : a, 0, mir.fromStart ? a : W - a, H);
+    else g.fillRect(0, mir.fromStart ? 0 : a, W, mir.fromStart ? a : H - a);
+    g.strokeStyle = '#7aa2ff'; g.lineWidth = 2;
+    g.beginPath();
+    if (mir.vertical) { g.moveTo(a, -10); g.lineTo(a, H + 10); } else { g.moveTo(-10, a); g.lineTo(W + 10, a); }
+    g.stroke();
+  }
+  if (floating) {
+    const f = floating;
+    for (let y = 0; y < f.h; y++)
+      for (let x = 0; x < f.w; x++) {
+        const c = f.data[y * f.w + x];
+        if (!c) continue;
+        g.fillStyle = css(col[c]);
+        g.fillRect((f.x + x) * z, (f.y + y) * z, z, z);
+        if (isAnchor(c)) { g.fillStyle = '#000'; g.fillRect((f.x + x) * z + z / 3, (f.y + y) * z + z / 3, z / 3, z / 3); }
+      }
+  }
+  const box = floating || sel;
+  if (box) {
+    g.lineWidth = 1;
+    g.setLineDash([4, 3]);
+    g.strokeStyle = '#000';
+    g.strokeRect(box.x * z + .5, box.y * z + .5, box.w * z - 1, box.h * z - 1);
+    g.lineDashOffset = 3.5;
+    g.strokeStyle = '#fff';
+    g.strokeRect(box.x * z + .5, box.y * z + .5, box.w * z - 1, box.h * z - 1);
+    g.setLineDash([]);
+    g.lineDashOffset = 0;
+  }
+  if (hover && !mir && tool !== 'select' && inside(hover.x, hover.y)) {
+    g.strokeStyle = '#fff'; g.lineWidth = 1;
+    g.strokeRect(hover.x * z + .5, hover.y * z + .5, z - 1, z - 1);
+    if (opt.sym) {
+      g.strokeStyle = '#fff6';
+      g.strokeRect(hover.x * z + .5, (doc.h - 1 - hover.y) * z + .5, z - 1, z - 1);
+    }
+  }
+  $('#stDoc').textContent = `${doc.w}×${doc.h}, zoom ${z}×`;
+}
+
+// immagine di una racchetta {(u, v): ruolo} con l'ombra portata del gioco (un pixel verso il
+// retro e uno in basso), rivolta a destra o specchiata
+function spriteWithShadow(px, w, h, mirror) {
+  const out = new Map();
+  const at = (x, y) => x >= 0 && y >= 0 && x < w && y < h && !isAnchor(px[y * w + x]) ? px[y * w + x] : NONE;
+  for (let y = -1; y <= h; y++)
+    for (let x = -1; x <= w; x++) {
+      let c = at(x, y);
+      if (c === NONE && at(x + 1, y - 1) !== NONE) c = SHADOW;
+      if (c !== NONE) out.set(`${mirror ? w - 1 - x : x},${y}`, c);
+    }
+  return out;
+}
+function drawPixels(ctx, map, ox, oy, s, col) {
+  for (const [k, c] of map) {
+    const [x, y] = k.split(',').map(Number);
+    ctx.fillStyle = css(col[c] || [255, 0, 255]);
+    ctx.fillRect(ox + x * s, oy + y * s, s, s);
+  }
+}
+function drawPreview() {
+  const pv = $('#pv'), c = pv.getContext('2d'), s = +$('#pvScale').value;
+  const body = $('#pvBody').value.match(/../g).map(h => parseInt(h, 16));
+  const col = colorsFor(doc.kind, body);
+  const px = wallState(doc.px, $('#pvWall').value);
+  const left = spriteWithShadow(px, doc.w, doc.h, false), right = spriteWithShadow(px, doc.w, doc.h, true);
+  const cur = $('#pvCur').checked && current && current.kind === doc.kind && current.h === doc.h ? current : null;
+  const gap = 10;
+  const curW = cur ? cur.w + gap : 0;
+  pv.width = (curW + doc.w * 2 + gap * 2 + 8) * s;
+  pv.height = (Math.max(doc.h, cur ? cur.hh : 0) + 3) * s;
+  c.fillStyle = '#000'; c.fillRect(0, 0, pv.width, pv.height);
+  let x = 1;
+  if (cur) { drawPixels(c, cur.map, (x - cur.u0) * s, (1 - cur.v0) * s, s, col); x += curW; }
+  drawPixels(c, left, x * s, s, s, col);
+  x += doc.w + 1 + gap;
+  // la palla, quadrata di 4 pixel arcade, a metà altezza
+  c.fillStyle = '#fff';
+  c.fillRect(x * s, (1 + Math.floor(doc.h / 2) - 2) * s, 4 * s, 4 * s);
+  x += 4 + gap;
+  drawPixels(c, right, x * s, s, s, col);
+}
+
+// ---------------------------------------------------------------- mouse
+
+function cellAt(e) {
+  const r = cv.getBoundingClientRect();
+  const fx = (e.clientX - r.left - view.pad) / view.z, fy = (e.clientY - r.top - view.pad) / view.z;
+  return { x: Math.floor(fx), y: Math.floor(fy), fx, fy };
+}
+function pick(p, right) {
+  if (!inside(p.x, p.y)) return;
+  if (right) sec = get(p.x, p.y); else prim = get(p.x, p.y);
+  updateColors();
+}
+cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('pointerdown', e => {
+  if (e.button !== 0 && e.button !== 2) return;
+  const p = cellAt(e), right = e.button === 2, c = right ? sec : prim;
+  if (tool === 'picker' || e.altKey) { pick(p, right); return; }
+  if (tool === 'select') {
+    cv.setPointerCapture(e.pointerId);
+    if (floating && inRect(floating, p)) {
+      drag = { mode: 'move', start: p, ox: floating.x, oy: floating.y };
+    } else if (sel && inRect(sel, p)) {
+      lift(e.ctrlKey || e.metaKey);
+      drag = { mode: 'move', start: p, ox: floating.x, oy: floating.y };
+    } else {
+      commitFloating();
+      sel = rectOf(p, p);
+      drag = { mode: 'sel', start: p };
+    }
+    render();
+    return;
+  }
+  commitFloating();
+  if (tool === 'mirror') {
+    Object.assign(mods, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey });
+    hover = p;
+    const m = mirrorSpec();
+    pushUndo();
+    doc.px = mirrored(m);
+    changed();
+    const side = m.vertical ? (m.fromStart ? 'da sinistra' : 'dalla faccia') : (m.fromStart ? "dall'alto" : 'dal basso');
+    msg(`Specchiato ${side}, linea a ${m.axis} ${m.vertical ? 'colonne' : 'righe'} dal bordo`);
+    return;
+  }
+  cv.setPointerCapture(e.pointerId);
+  pushUndo();
+  const base = doc.px.slice();
+  drag = { start: p, last: p, c: tool === 'eraser' ? NONE : c, base };
+  if (tool === 'pencil' || tool === 'eraser') put(p.x, p.y, drag.c);
+  else if (tool === 'fill') { fillAt(p.x, p.y, c); drag = null; }
+  else if (tool === 'line') put(p.x, p.y, c);
+  else if (tool === 'rect') put(p.x, p.y, c);
+  changed();
+});
+cv.addEventListener('pointermove', e => {
+  const p = cellAt(e);
+  hover = p;
+  Object.assign(mods, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey });
+  $('#stPos').textContent = inside(p.x, p.y)
+    ? `x ${p.x} (dalla faccia ${faceX() - p.x}), y ${p.y}: ${ROLE_NAME(get(p.x, p.y))}` : '';
+  if (drag && drag.mode) {
+    if (drag.mode === 'sel') sel = rectOf(drag.start, p);
+    else if (floating) {
+      floating.x = drag.ox + p.x - drag.start.x;
+      floating.y = drag.oy + p.y - drag.start.y;
+    }
+    render();
+  } else if (drag) {
+    if (tool === 'pencil' || tool === 'eraser') {
+      line(drag.last.x, drag.last.y, p.x, p.y, (x, y) => put(x, y, drag.c));
+    } else if (tool === 'line' || tool === 'rect') {
+      doc.px.set(drag.base);
+      let { x, y } = p;
+      if (e.shiftKey) {
+        const dx = x - drag.start.x, dy = y - drag.start.y;
+        if (tool === 'rect') { const m = Math.max(Math.abs(dx), Math.abs(dy)); x = drag.start.x + Math.sign(dx) * m; y = drag.start.y + Math.sign(dy) * m; }
+        else if (Math.abs(dx) > 2 * Math.abs(dy)) y = drag.start.y;
+        else if (Math.abs(dy) > 2 * Math.abs(dx)) x = drag.start.x;
+        else { const m = Math.max(Math.abs(dx), Math.abs(dy)); x = drag.start.x + Math.sign(dx) * m; y = drag.start.y + Math.sign(dy) * m; }
+      }
+      if (tool === 'line') line(drag.start.x, drag.start.y, x, y, (a, b) => put(a, b, drag.c));
+      else rect(drag.start.x, drag.start.y, x, y, drag.c, opt.fill);
+    }
+    drag.last = p;
+    changed();
+  } else render();
+});
+const endDrag = () => {
+  if (!drag) return;
+  if (drag.mode) {
+    // un clic senza trascinare toglie la selezione
+    if (drag.mode === 'sel' && sel && sel.w === 1 && sel.h === 1) sel = null;
+    drag = null;
+    render();
+    return;
+  }
+  if (doc.px.every((v, i) => v === drag.base[i])) undoStack.pop();
+  drag = null;
+};
+cv.addEventListener('pointerup', endDrag);
+cv.addEventListener('pointercancel', endDrag);
+cv.addEventListener('pointerleave', () => { hover = null; $('#stPos').textContent = ''; render(); });
+$('#stage').addEventListener('wheel', e => {
+  if (!e.ctrlKey) return;
+  e.preventDefault();
+  zoom(e.deltaY < 0 ? 1 : -1);
+}, { passive: false });
+
+function zoom(dir) {
+  let i = ZOOMS.findIndex(z => z >= view.z);
+  if (i < 0) i = ZOOMS.length - 1;
+  view.z = ZOOMS[clamp(i + dir, 0, ZOOMS.length - 1)];
+  layout();
+}
+function fit() {
+  const st = $('#stage'), aw = st.clientWidth - 2 * view.pad - 40, ah = st.clientHeight - 2 * view.pad - 10;
+  const z = Math.floor(Math.min(aw / doc.w, ah / doc.h));
+  view.z = ZOOMS.filter(v => v <= Math.max(2, z)).pop() || 2;
+  layout();
+}
+
+// ---------------------------------------------------------------- colori e tipo
+
+function swatch(c) {
+  const d = document.createElement('span');
+  d.className = 'sw' + (c === NONE ? ' t' : '');
+  if (c !== NONE) d.style.background = css(COL()[c]);
+  return d;
+}
+function buildPalette() {
+  const pal = $('#palette');
+  pal.textContent = '';
+  for (const [c, name, key] of ROLES) {
+    const b = document.createElement('button');
+    b.dataset.c = c;
+    b.append(swatch(c), name);
+    if (key) { const k = document.createElement('kbd'); k.textContent = key; b.append(k); }
+    b.addEventListener('pointerdown', e => { if (e.button === 2) sec = c; else prim = c; updateColors(); });
+    b.addEventListener('contextmenu', e => e.preventDefault());
+    pal.appendChild(b);
+  }
+  const cr = $('#convRoles');
+  cr.textContent = '';
+  for (const [c, name] of ROLES.slice(1).filter(r => !isAnchor(r[0]))) {
+    const b = document.createElement('button');
+    b.style.background = css(COL()[c]);
+    b.title = name;
+    b.classList.toggle('off', convOff.has(c));
+    b.onclick = () => { convOff.has(c) ? convOff.delete(c) : convOff.add(c); b.classList.toggle('off', convOff.has(c)); };
+    cr.appendChild(b);
+  }
+  updateColors();
+}
+function updateColors() {
+  for (const [el, c] of [[$('#swPrim'), prim], [$('#swSec'), sec]]) {
+    el.className = 'sw big' + (c === NONE ? ' t' : '');
+    el.style.background = c === NONE ? '' : css(COL()[c]);
+  }
+  $('#curNames').innerHTML = `${ROLE_NAME(prim)}<br>${ROLE_NAME(sec)}`;
+  for (const b of $('#palette').children) {
+    b.classList.toggle('p', +b.dataset.c === prim);
+    b.classList.toggle('s', +b.dataset.c === sec);
+  }
+}
+// tipo e misura dal documento, poi le scritte
+function syncKind() {
+  $('#kind').value = doc.kind;
+  $('#width').value = doc.w;
+  $('#front').value = doc.front || 0;
+  sizeInfo();
+  buildPalette();
+  loadCurrent();
+}
+function sizeInfo() {
+  $('#pvWall').hidden = doc.kind !== GUARDIAN;
+  const k = KINDS[doc.kind], h = kindH(doc.kind);
+  $('#sizeInfo').textContent = `altezza ${h} (${k.mult}×), max ${k.maxW}`;
+  $('#btnSize').textContent = doc.h === h && doc.w === +$('#width').value ? 'La tela è già della misura giusta'
+    : `Adatta la tela a ${$('#width').value}×${h}`;
+  $('#kindInfo').textContent = `Hitbox: le ${FACE} colonne fino alla faccia (${FACE_MISTER} sul MiSTer)`
+    + (doc.front ? `, poi ${doc.front} di sporgenza` : ', l\'ultima a destra') + `. Dietro c'è posto per ${k.maxW - FACE} colonne.`;
+}
+function setKind(k) {
+  if (k === doc.kind) return;
+  pushUndo();
+  doc.kind = k;
+  doc.path = `assets/ships/sprites/${KINDS[k].id}.png`; doc.name = KINDS[k].id + '.png';
+  syncKind(); changed(); updateTitle();
+  if (doc.h !== kindH(k)) msg(`${KINDS[k].name} è alta ${kindH(k)}: "Adatta la tela" per cambiare la misura`, true);
+}
+function applySize() {
+  const w = clamp(+$('#width').value | 0, FACE, 64), h = kindH(doc.kind);
+  if (w === doc.w && h === doc.h) return;
+  pushUndo();
+  resizeTo(w, h);
+  syncKind(); fit(); changed();
+  msg(`Tela ${w}×${h}: la faccia resta a destra, il disegno al centro in altezza`);
+}
+
+// racchetta disegnata oggi dal gioco (tools/paddle_shapes.py, dal server)
+async function loadCurrent() {
+  if (!server) return;
+  const kind = doc.kind, h = doc.h;
+  if (current && current.kind === kind && current.h === h) return;
+  try {
+    const j = await (await fetch(`/api/paddle?kind=${kind}&h=${h}`)).json();
+    if (!j.shape) { current = null; return; }
+    const map = new Map();
+    let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+    for (const [u, v, r] of j.shape) {
+      map.set(`${u},${v}`, r);
+      u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v);
+    }
+    current = { kind, h, map, u0, v0, w: u1 - u0 + 1, hh: v1 - v0 + 1 };
+    render();
+  } catch (_) { current = null; }
+}
+
+// ---------------------------------------------------------------- riferimento e conversione
+
+function setRef(img, name) {
+  const c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  const cx = c.getContext('2d', { willReadFrequently: true });
+  cx.drawImage(img, 0, 0);
+  const data = cx.getImageData(0, 0, c.width, c.height).data;
+  ref = { name, canvas: document.createElement('canvas'), w: c.width, h: c.height, data };
+  findBox();
+  $('#refName').textContent = `${name}: ${ref.w}×${ref.h}, disegno ${ref.box.x1 - ref.box.x0}×${ref.box.y1 - ref.box.y0}`
+    + ` → ${refPlace().cols} colonne`;
+  $('#refShow').checked = true;
+  render();
+}
+// sfondo: il colore dell'angolo in alto a sinistra (o il trasparente)
+function isBg(i) {
+  const d = ref.data, t = +$('#bgTol').value;
+  if (d[i + 3] < 128) return true;
+  const dr = d[i] - d[0], dg = d[i + 1] - d[1], db = d[i + 2] - d[2];
+  return d[3] >= 128 && dr * dr + dg * dg + db * db <= t * t;
+}
+// il disegno del riferimento senza lo sfondo: il riquadro e l'immagine sovrapposta alla tela
+function findBox() {
+  const img = new ImageData(new Uint8ClampedArray(ref.data), ref.w, ref.h);
+  let x0 = ref.w, y0 = ref.h, x1 = 0, y1 = 0;
+  for (let y = 0; y < ref.h; y++)
+    for (let x = 0; x < ref.w; x++)
+      if (isBg((y * ref.w + x) * 4)) img.data[(y * ref.w + x) * 4 + 3] = 0;
+      else { x0 = Math.min(x0, x); x1 = Math.max(x1, x + 1); y0 = Math.min(y0, y); y1 = Math.max(y1, y + 1); }
+  ref.box = x1 > x0 ? { x0, y0, x1, y1 } : { x0: 0, y0: 0, x1: ref.w, y1: ref.h };
+  ref.canvas.width = ref.w; ref.canvas.height = ref.h;
+  ref.canvas.getContext('2d').putImageData(img, 0, 0);
+}
+// ogni cella dello sprite prende il ruolo più votato tra i pixel del riferimento che copre
+function convert() {
+  if (!ref) { msg('Prima carica un riferimento', true); return; }
+  findBox();
+  const col = COL(), allowed = ROLES.slice(1).map(r => r[0]).filter(c => !isAnchor(c) && !convOff.has(c));
+  if (!allowed.length) { msg('Nessun colore ammesso nella conversione', true); return; }
+  const near = new Map();
+  const nearest = (r, g2, b) => {
+    const k = (r << 16) | (g2 << 8) | b;
+    let best = near.get(k);
+    if (best === undefined) {
+      let e = Infinity;
+      for (const c of allowed) {
+        const [cr, cg, cb] = col[c], dr = r - cr, dg = g2 - cg, db = b - cb;
+        const v = 0.3 * dr * dr + 0.59 * dg * dg + 0.11 * db * db;
+        if (v < e) { e = v; best = c; }
+      }
+      near.set(k, best);
+    }
+    return best;
+  };
+  const { cell, cols, x: ox } = refPlace(), b = ref.box;
+  pushUndo();
+  doc.px.fill(NONE);
+  const step = Math.max(1, Math.floor(cell / 10));
+  for (let r = 0; r < doc.h; r++)
+    for (let c = 0; c < cols; c++) {
+      const x = ox + c;
+      if (x < 0) continue;
+      const votes = new Map();
+      const ya = Math.floor(b.y0 + r * cell), yb = Math.min(b.y1, Math.floor(b.y0 + (r + 1) * cell));
+      const xa = Math.floor(b.x0 + c * cell), xb = Math.min(b.x1, Math.floor(b.x0 + (c + 1) * cell));
+      for (let y = ya; y < yb; y += step)
+        for (let xx = xa; xx < xb; xx += step) {
+          const i = (y * ref.w + xx) * 4;
+          const v = isBg(i) ? NONE : nearest(ref.data[i], ref.data[i + 1], ref.data[i + 2]);
+          votes.set(v, (votes.get(v) || 0) + 1);
+        }
+      let best = NONE, n = -1;
+      for (const [v, k] of votes) if (k > n) { n = k; best = v; }
+      doc.px[r * doc.w + x] = best;
+    }
+  changed();
+  msg(`Convertito ${ref.name}: ${cols} colonne` + (ox < 0 ? `, ${-ox} tagliate a sinistra (allarga la tela)` : ''), ox < 0);
+}
+
+// ---------------------------------------------------------------- PNG
+
+const SIG = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+const CRC = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(b) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 255] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+async function streamThrough(bytes, ts) {
+  const s = new Blob([bytes]).stream().pipeThrough(ts);
+  return new Uint8Array(await new Response(s).arrayBuffer());
+}
+const zlib = b => streamThrough(b, new CompressionStream('deflate'));
+const latin1 = s => Uint8Array.from(s, ch => ch.charCodeAt(0) & 255);
+function pngChunk(type, data) {
+  const out = new Uint8Array(12 + data.length), dv = new DataView(out.buffer);
+  dv.setUint32(0, data.length);
+  for (let i = 0; i < 4; i++) out[4 + i] = type.charCodeAt(i);
+  out.set(data, 8);
+  dv.setUint32(8 + data.length, crc32(out.subarray(4, 8 + data.length)));
+  return out;
+}
+// PNG a palette, 8 bit, indice = ruolo (0 trasparente, magenta), colori del tipo, blocco "paddedit"
+async function encodePng() {
+  const { w, h, px } = doc, col = COL();
+  const ihdr = new Uint8Array(13), dv = new DataView(ihdr.buffer);
+  dv.setUint32(0, w); dv.setUint32(4, h); ihdr[8] = 8; ihdr[9] = 3;
+  const plte = new Uint8Array((SPECIAL + 1) * 3);
+  plte.set([255, 0, 255], 0);
+  for (let i = 1; i <= SPECIAL; i++) plte.set(col[i] || [0, 0, 0], i * 3);
+  const trns = new Uint8Array([0]);
+  const meta = JSON.stringify({ v: 1, kind: KINDS[doc.kind].id, base: +$('#base').value, front: doc.front || 0 });
+  const raw = new Uint8Array((w + 1) * h);
+  for (let y = 0; y < h; y++) raw.set(px.subarray(y * w, (y + 1) * w), y * (w + 1) + 1);
+  return new Blob([SIG, pngChunk('IHDR', ihdr), pngChunk('PLTE', plte), pngChunk('tRNS', trns),
+                   pngChunk('tEXt', latin1('paddedit\0' + meta)), pngChunk('IDAT', await zlib(raw)),
+                   pngChunk('IEND', new Uint8Array(0))], { type: 'image/png' });
+}
+function pngText(buf) {
+  const text = {};
+  for (let i = 0; i < 8; i++) if (buf[i] !== SIG[i]) return text;
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  let o = 8;
+  while (o + 8 <= buf.length) {
+    const len = dv.getUint32(o), type = String.fromCharCode(...buf.subarray(o + 4, o + 8));
+    if (type === 'tEXt') {
+      const d = buf.subarray(o + 8, o + 8 + len), z = d.indexOf(0);
+      if (z > 0) text[String.fromCharCode(...d.subarray(0, z))] = String.fromCharCode(...d.subarray(z + 1));
+    } else if (type === 'IEND') break;
+    o += 12 + len;
+  }
+  return text;
+}
+// i PNG si leggono attraverso il browser: ogni pixel va al ruolo del colore più vicino (esatto per
+// gli sprite salvati qui e da tools/paddle_shapes.py), il magenta e il trasparente a 0
+async function decodeSprite(blob, kind) {
+  const bm = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+  const c = document.createElement('canvas');
+  c.width = bm.width; c.height = bm.height;
+  const cx = c.getContext('2d');
+  cx.drawImage(bm, 0, 0);
+  const d = cx.getImageData(0, 0, c.width, c.height).data, px = new Uint8Array(c.width * c.height);
+  const col = colorsFor(kind);
+  let off = 0;
+  for (let i = 0; i < px.length; i++) {
+    const r = d[i * 4], gg = d[i * 4 + 1], b = d[i * 4 + 2];
+    if (d[i * 4 + 3] < 128 || (r > 240 && gg < 16 && b > 240)) continue;
+    let best = BODY, e = Infinity;
+    for (const k of [...ROLES.slice(1).map(r => r[0])]) {
+      const [cr, cg, cb] = col[k], v = (r - cr) ** 2 + (gg - cg) ** 2 + (b - cb) ** 2;
+      if (v < e) { e = v; best = k; }
+    }
+    if (e > 0) off++;
+    px[i] = best;
+  }
+  return { w: c.width, h: c.height, px, off };
+}
+
+// ---------------------------------------------------------------- file
+
+function msg(text, warn) {
+  const el = $('#stMsg');
+  el.textContent = text;
+  el.classList.toggle('err', !!warn);
+}
+function updateTitle() {
+  $('#docname').textContent = doc.path + (doc.dirty ? ' •' : '');
+  document.title = (doc.dirty ? '• ' : '') + doc.name + ' — Editor racchette';
+}
+function ask(text, { input = null, ok = 'OK' } = {}) {
+  return new Promise(res => {
+    const d = $('#dlgAsk'), i = $('#askInput');
+    $('#askText').textContent = text;
+    $('#askOk').textContent = ok;
+    i.hidden = input === null;
+    if (input !== null) i.value = input;
+    d.returnValue = '';
+    d.onclose = () => res(d.returnValue === 'ok' ? (input === null ? true : i.value.trim()) : null);
+    d.showModal();
+    if (input !== null) { i.focus(); i.select(); } else $('#askOk').focus();
+  });
+}
+const confirmDiscard = async () => !doc.dirty || !!(await ask('Ci sono modifiche non salvate. Continuare e perderle?', { ok: 'Continua' }));
+
+async function serverInit() {
+  if (!location.protocol.startsWith('http')) return;
+  try {
+    const r = await fetch('/api/ping');
+    if (!r.ok) return;
+    server = await r.json();
+    const p = await (await fetch('/api/paddle')).json();
+    KINDS.forEach(k => { if (p.accent[k.id]) k.accent = p.accent[k.id]; });
+    const all = await (await fetch('/api/files?all=1')).json();
+    fileEntries = all.files.filter(f => f.startsWith('assets/ships/') || f.startsWith('assets/characters/'));
+    $('#dirName').textContent = server.name;
+    $('#fileFilter').value = 'ships/';
+    renderFiles();
+    msg(`Collegato a ${server.name}: clic su un PNG di sprites/ per aprirlo, sugli altri per usarli come riferimento`);
+  } catch (_) { server = null; }
+}
+function renderFiles() {
+  const ul = $('#files'), f = $('#fileFilter').value.toLowerCase();
+  ul.textContent = '';
+  for (const path of fileEntries) {
+    if (f && !path.toLowerCase().includes(f)) continue;
+    const li = document.createElement('li');
+    li.textContent = path;
+    li.title = isSpritePath(path) ? 'Apri lo sprite' : 'Usa come riferimento';
+    li.classList.toggle('cur', path === doc.path);
+    li.onclick = () => isSpritePath(path) ? openPath(path) : refPath(path);
+    ul.appendChild(li);
+  }
+}
+const isSpritePath = p => /\/sprites\/[^/]+\.png$/i.test(p);
+const kindOfName = n => { const i = KINDS.findIndex(k => n.toLowerCase().includes(k.id)); return i < 0 ? doc.kind : i; };
+async function fetchBlob(path) {
+  const r = await fetch('/api/file?path=' + encodeURIComponent(path));
+  if (!r.ok) throw new Error((await r.json()).error);
+  return r.blob();
+}
+async function openBlob(blob, name, path) {
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  let meta = null;
+  try { meta = JSON.parse(pngText(buf).paddedit || 'null'); } catch (_) { meta = null; }
+  const mk = meta ? KINDS.findIndex(k => k.id === meta.kind) : -1;
+  const kind = mk >= 0 ? mk : kindOfName(name);
+  if (meta && meta.base) $('#base').value = meta.base;
+  const img = await decodeSprite(blob, kind);
+  if (img.w > 64 || img.h > 200) { msg(`${name} è ${img.w}×${img.h}: troppo grande per uno sprite, lo uso come riferimento`, true); setRef(await createImageBitmap(blob), name); return; }
+  doc = { kind, w: img.w, h: img.h, front: (meta && meta.front) || 0, px: img.px, name,
+          path: path || `assets/ships/sprites/${name}`, dirty: false };
+  undoStack = []; redoStack = [];
+  current = null;
+  syncKind(); fit(); updateTitle(); renderFiles();
+  msg(`Aperto ${doc.path}: ${img.w}×${img.h}, ${KINDS[kind].name}` + (img.off ? ` (${img.off} pixel con colori fuori palette, presi i più vicini)` : ''), img.off > 0);
+}
+async function openPath(path) {
+  if (!(await confirmDiscard())) return;
+  try { await openBlob(await fetchBlob(path), path.split('/').pop(), path); }
+  catch (e) { msg(`Non riesco ad aprire ${path}: ${e.message}`, true); }
+}
+async function refPath(path) {
+  try { setRef(await createImageBitmap(await fetchBlob(path)), path.split('/').pop()); }
+  catch (e) { msg(`Non riesco ad aprire ${path}: ${e.message}`, true); }
+}
+async function save(as) {
+  let path = doc.path;
+  if (as || !path) {
+    path = await ask('Percorso nel repository:', { input: path || `assets/ships/sprites/${KINDS[doc.kind].id}.png`, ok: 'Salva' });
+    if (!path) return;
+    if (!path.toLowerCase().endsWith('.png')) path += '.png';
+  }
+  const blob = await encodePng();
+  if (server) {
+    try {
+      const r = await fetch('/api/file?path=' + encodeURIComponent(path),
+                            { method: 'PUT', headers: { 'X-C64Edit': '1', 'Content-Type': 'image/png' }, body: blob });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || r.statusText);
+      doc.path = j.path; doc.name = j.path.split('/').pop(); doc.dirty = false;
+      if (!fileEntries.includes(j.path)) fileEntries.push(j.path);
+      updateTitle(); renderFiles();
+      msg(`Salvato ${j.path}`);
+      return;
+    } catch (e) { msg(`Salvataggio non riuscito: ${e.message}. Lo scarico.`, true); }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = path.split('/').pop();
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  doc.dirty = false; updateTitle();
+  msg(`Scaricato ${a.download}: va messo in assets/ships/sprites/`);
+}
+async function newSprite() {
+  if (!(await confirmDiscard())) return;
+  const k = +$('#kind').value;
+  doc = blankDoc(k, Math.min(KINDS[k].maxW, Math.max(FACE, +$('#width').value || 16)), kindH(k));
+  undoStack = []; redoStack = []; current = null;
+  syncKind(); fit(); updateTitle(); renderFiles();
+  msg(`Nuovo sprite ${KINDS[k].name} ${doc.w}×${doc.h}`);
+}
+
+// ---------------------------------------------------------------- comandi e tasti
+
+const CMDS = {
+  new: newSprite,
+  open: async () => { if (await confirmDiscard()) $('#fileInput').click(); },
+  save: () => { commitFloating(); save(false); }, saveAs: () => { commitFloating(); save(true); },
+  undo, redo,
+  cut: cutSel, copy: copySel, paste: pasteClip, del: deleteSel, selectAll, deselect,
+  flipH: () => flipSel(true),
+  swap: () => { [prim, sec] = [sec, prim]; updateColors(); },
+  clear: () => { pushUndo(); doc.px.fill(NONE); changed(); },
+  flipV, mirrorDown: () => mirrorHalf(true), mirrorUp: () => mirrorHalf(false),
+  shiftU: () => shift(0, -1), shiftD: () => shift(0, 1), shiftL: () => shift(-1, 0), shiftR: () => shift(1, 0),
+  convert,
+  zoomIn: () => zoom(1), zoomOut: () => zoom(-1), fit,
+  toggleGrid: () => { $('#showGrid').checked = !$('#showGrid').checked; render(); },
+  toggleRef: () => { $('#refShow').checked = !$('#refShow').checked; render(); },
+  help: () => $('#dlgHelp').showModal(),
+  applySize,
+  loadRef: () => $('#refInput').click(),
+};
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-cmd]');
+  document.querySelectorAll('.menu.open').forEach(m => { if (!m.contains(e.target) || b) m.classList.remove('open'); });
+  if (b) { CMDS[b.dataset.cmd](); return; }
+  const mb = e.target.closest('.mbtn');
+  if (mb) mb.parentElement.classList.toggle('open');
+});
+function setTool(t) {
+  if (t !== 'select') commitFloating();
+  tool = t;
+  document.querySelectorAll('#tools button').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
+  $('#hint').textContent = TOOL_HINT[t];
+}
+document.querySelectorAll('#tools button').forEach(b => b.onclick = () => setTool(b.dataset.tool));
+document.addEventListener('keydown', e => {
+  if (document.querySelector('dialog[open]') || e.target.matches('input[type=number], input:not([type])')) return;
+  const k = e.key, ctrl = e.ctrlKey || e.metaKey;
+  const arrows = { ArrowUp: 'shiftU', ArrowDown: 'shiftD', ArrowLeft: 'shiftL', ArrowRight: 'shiftR' };
+  let cmd = null;
+  if (ctrl) {
+    cmd = { z: e.shiftKey ? 'redo' : 'undo', y: 'redo', s: e.shiftKey ? 'saveAs' : 'save', o: 'open', n: 'new', 0: 'fit',
+            x: 'cut', c: 'copy', v: 'paste', a: 'selectAll', d: 'deselect' }[k.toLowerCase()]
+      || arrows[k];
+  } else if ((sel || floating) && arrows[k]) {
+    const d = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[k];
+    e.preventDefault();
+    nudgeSel(d[0], d[1]);
+    return;
+  } else if (k === 'Delete' || k === 'Backspace') cmd = 'del';
+  else if (k === 'Escape' || k === 'Enter') cmd = 'deselect';
+  else if (e.shiftKey && k.toLowerCase() === 'v') cmd = 'flipV';
+  else if (e.shiftKey && k.toLowerCase() === 'h') cmd = 'flipH';
+  else if (e.shiftKey && k.toLowerCase() === 'r') cmd = 'toggleRef';
+  else if (k === 'F1') cmd = 'help';
+  else if (k === '+' || k === '=') cmd = 'zoomIn';
+  else if (k === '-') cmd = 'zoomOut';
+  else if (!e.altKey) {
+    const t = { b: 'pencil', e: 'eraser', l: 'line', r: 'rect', f: 'fill', s: 'mirror', a: 'select', i: 'picker' }[k.toLowerCase()];
+    if (t) { setTool(t); e.preventDefault(); return; }
+    if (k.toLowerCase() === 'x') cmd = 'swap';
+    else if (k.toLowerCase() === 'g') cmd = 'toggleGrid';
+    else if (k.toLowerCase() === 'm') { $('#optSym').checked = !$('#optSym').checked; render(); e.preventDefault(); return; }
+    else if (/^[0-9]$/.test(k)) { prim = +k; updateColors(); return; }
+  }
+  if (cmd) { e.preventDefault(); CMDS[cmd](); }
+});
+
+// Maiusc e Ctrl cambiano lo specchio anche senza muovere il mouse
+for (const ev of ['keydown', 'keyup'])
+  document.addEventListener(ev, e => {
+    if (e.key !== 'Shift' && e.key !== 'Control' && e.key !== 'Meta') return;
+    Object.assign(mods, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey });
+    if (tool === 'mirror') render();
+  });
+
+// ---------------------------------------------------------------- avvio
+
+KINDS.forEach((k, i) => $('#kind').add(new Option(`${k.name} (altezza ${k.mult}×)`, i)));
+$('#kind').onchange = () => setKind(+$('#kind').value);
+$('#base').oninput = () => { sizeInfo(); render(); };
+$('#width').oninput = sizeInfo;
+$('#front').oninput = () => {
+  doc.front = clamp(+$('#front').value | 0, 0, Math.max(0, doc.w - FACE));
+  doc.dirty = true; updateTitle(); sizeInfo(); render();
+};
+for (const id of ['#showGrid', '#showHit', '#showMister', '#showErr', '#showSect', '#optSym', '#refShow', '#refAlpha', '#pvScale', '#pvBody', '#pvCur', '#pvWall'])
+  $(id).addEventListener('input', render);
+$('#bgTol').oninput = () => { if (ref) { findBox(); render(); } };
+$('#fileFilter').oninput = renderFiles;
+$('#fileInput').onchange = async e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (f) await openBlob(f, f.name, `assets/ships/sprites/${f.name}`);
+};
+$('#refInput').onchange = async e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (f) setRef(await createImageBitmap(f), f.name);
+};
+const stage = $('#stage');
+stage.addEventListener('dragover', e => { e.preventDefault(); stage.classList.add('drop'); });
+stage.addEventListener('dragleave', () => stage.classList.remove('drop'));
+stage.addEventListener('drop', async e => {
+  e.preventDefault(); stage.classList.remove('drop');
+  const f = e.dataTransfer.files[0];
+  if (f) setRef(await createImageBitmap(f), f.name);
+});
+window.addEventListener('beforeunload', e => { if (doc.dirty) { e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('resize', render);
+
+(async () => {
+  doc = blankDoc(0, 16, kindH(0));
+  setTool('pencil');
+  syncKind(); fit(); updateTitle();
+  await serverInit();
+  if (server) {
+    const first = fileEntries.find(isSpritePath);
+    if (first) await openPath(first);
+    else syncKind();
+  }
+})();
+</script>
+</body>
+</html>

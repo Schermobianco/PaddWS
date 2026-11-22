@@ -1,4 +1,5 @@
-"""Server locale per l'editor di immagini del C64 (tools/c64_editor.html).
+"""Server locale per l'editor di immagini del C64 (tools/c64_editor.html) e per quello degli sprite
+delle racchette (tools/paddle_editor.html).
 
 Serve la pagina e legge e scrive i PNG del repository, così l'editor funziona anche dove il
 browser non lascia aprire e salvare file: nel Simple Browser di VS Code e nelle altre anteprime
@@ -6,9 +7,10 @@ incorporate. Ascolta solo su 127.0.0.1; scrive solo file .png dentro il reposito
 l'intestazione X-C64Edit (una pagina di un altro sito non la può mandare senza un preflight, a cui
 il server non risponde).
 
-Uso:  .venv\\Scripts\\python tools\\c64_editor.py [--port 8064] [--no-browser]
+Uso:  .venv\\Scripts\\python tools\\c64_editor.py [--port 8064] [--no-browser] [--paddle]
 Poi in VS Code: Ctrl+Maiusc+P, "Simple Browser: Show", http://127.0.0.1:8064/ (oppure il browser
-che si apre da solo).
+che si apre da solo). L'editor delle racchette è http://127.0.0.1:8064/paddle_editor.html: con
+--paddle si apre quello.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -23,6 +26,8 @@ from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
 PAGE = ROOT / "tools" / "c64_editor.html"
+PADDLE_PAGE = ROOT / "tools" / "paddle_editor.html"
+PORTRAITS = ROOT / "assets" / "characters" / "portraits" / "portraits.json"
 SKIP = {".git", ".venv", "target", "node_modules", "dist", "build", "__pycache__", ".pytest_cache"}
 READABLE = {".png", ".gif", ".bmp", ".jpg", ".jpeg", ".webp"}
 MAX_BODY = 20 * 1024 * 1024
@@ -33,6 +38,20 @@ def repo_path(rel: str) -> Path | None:
     """Il percorso dentro il repository, o None se ne esce."""
     p = (ROOT / rel).resolve()
     return p if p.is_relative_to(ROOT) else None
+
+
+def paddle_info(q: dict) -> dict:
+    """Per l'editor delle racchette: i colori dei personaggi (portraits.json) e, con kind e h, la
+    racchetta disegnata oggi dal gioco (tools/paddle_shapes.py) come [u, v, ruolo]."""
+    sys.path.insert(0, str(ROOT / "tools"))
+    import paddle_shapes as ps
+    accent = json.loads(PORTRAITS.read_text(encoding="utf-8"))["accent"]
+    out = {"accent": {k: accent[k] for k in ps.KINDS}}
+    if "kind" in q and "h" in q:
+        kind, h = int(q["kind"][0]), int(q["h"][0])
+        if 0 <= kind < len(ps.KINDS) and 4 <= h <= 200:
+            out["shape"] = [[u, v, r] for (u, v), r in ps.render(kind, h).items()]
+    return out
 
 
 def list_images(every: bool) -> list[str]:
@@ -82,6 +101,10 @@ class Handler(BaseHTTPRequestHandler):
         q = parse_qs(url.query)
         if url.path in ("/", "/index.html", "/c64_editor.html"):
             self.send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
+        elif url.path == "/paddle_editor.html":
+            self.send(200, PADDLE_PAGE.read_bytes(), "text/html; charset=utf-8")
+        elif url.path == "/api/paddle":
+            self.json(paddle_info(q))
         elif url.path == "/api/ping":
             self.json({"root": str(ROOT), "name": ROOT.name})
         elif url.path == "/api/files":
@@ -130,10 +153,11 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--port", type=int, default=8064)
     ap.add_argument("--no-browser", action="store_true", help="non aprire il browser")
+    ap.add_argument("--paddle", action="store_true", help="apri l'editor delle racchette")
     args = ap.parse_args()
     srv = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    url = f"http://127.0.0.1:{args.port}/"
-    print(f"Editor C64: {url}  (in VS Code: Simple Browser: Show). Ctrl+C per fermarlo.")
+    url = f"http://127.0.0.1:{args.port}/" + ("paddle_editor.html" if args.paddle else "")
+    print(f"Editor: {url}  (in VS Code: Simple Browser: Show). Ctrl+C per fermarlo.")
     if not args.no_browser:
         webbrowser.open(url)
     try:

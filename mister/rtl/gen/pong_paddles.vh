@@ -28,6 +28,483 @@ localparam [23:0] PD_RUSH_GHOST2 = 24'h16484F;
 localparam [23:0] PD_RUSH_GHOST3 = 24'h206C77;
 localparam [23:0] PD_WALL = 24'h5A96FF, PD_WALL_LIGHT = 24'hBED6FF, PD_WALL1 = 24'h4878CC, PD_WALL2 = 24'h365A99;
 
+// ------------------------------------------------- sprite delle astronavi
+// Righe dello sprite del tipo k (assets/ships/sprites) sulle colonne del MiSTer (u con la faccia a 0;
+// la colonna del PC subito dietro la faccia e' tolta): 4 bit per pixel, il ruolo KR_*, la colonna
+// SP_U0_k nei bit 3:0. Gli agganci sono gia' tolti (sono le costanti piu' sotto).
+localparam integer SP_U0_0 = -15, SP_W_0 = 16, SP_H_0 = 32;
+function [63:0] sp_row0(input [5:0] v);
+    case (v)
+        6'd0: sp_row0 = 64'h0677776000000000;
+        6'd1: sp_row0 = 64'h0777777680000000;
+        6'd2: sp_row0 = 64'h6777777668000000;
+        6'd3: sp_row0 = 64'h6666666688000000;
+        6'd4: sp_row0 = 64'h9999999999000000;
+        6'd5: sp_row0 = 64'h1111111112000000;
+        6'd6: sp_row0 = 64'h1111111112000000;
+        6'd7: sp_row0 = 64'h1111111112000000;
+        6'd8: sp_row0 = 64'h2222222222776800;
+        6'd9: sp_row0 = 64'h1111111112777690;
+        6'd10: sp_row0 = 64'h1111111112666690;
+        6'd11: sp_row0 = 64'h1111111112888800;
+        6'd12: sp_row0 = 64'h8888888882000000;
+        6'd13: sp_row0 = 64'h5555555582000000;
+        6'd14: sp_row0 = 64'h43A5A33482000000;
+        6'd15: sp_row0 = 64'h43A5A33482000000;
+        6'd16: sp_row0 = 64'h43A5A33482000000;
+        6'd17: sp_row0 = 64'h43A5A33482000000;
+        6'd18: sp_row0 = 64'h5555555582000000;
+        6'd19: sp_row0 = 64'h8888888882000000;
+        6'd20: sp_row0 = 64'h1111111112888800;
+        6'd21: sp_row0 = 64'h1111111112666690;
+        6'd22: sp_row0 = 64'h1111111112777690;
+        6'd23: sp_row0 = 64'h2222222222776800;
+        6'd24: sp_row0 = 64'h1111111112000000;
+        6'd25: sp_row0 = 64'h1111111112000000;
+        6'd26: sp_row0 = 64'h1111111112000000;
+        6'd27: sp_row0 = 64'h9999999999000000;
+        6'd28: sp_row0 = 64'h6666666688000000;
+        6'd29: sp_row0 = 64'h6777777668000000;
+        6'd30: sp_row0 = 64'h0777777680000000;
+        6'd31: sp_row0 = 64'h0677776000000000;
+        default: sp_row0 = 64'd0;
+    endcase
+endfunction
+localparam integer SP_U0_1 = -15, SP_W_1 = 16, SP_H_1 = 48;
+function [63:0] sp_row1(input [5:0] v);
+    case (v)
+        6'd0: sp_row1 = 64'h0111116000000000;
+        6'd1: sp_row1 = 64'h6111111600000000;
+        6'd2: sp_row1 = 64'h7111111700000000;
+        6'd3: sp_row1 = 64'h7111111700000000;
+        6'd4: sp_row1 = 64'h7111111700000000;
+        6'd5: sp_row1 = 64'h9888888800000000;
+        6'd6: sp_row1 = 64'h7777777700000000;
+        6'd7: sp_row1 = 64'h71111117A6660000;
+        6'd8: sp_row1 = 64'h7111111766666000;
+        6'd9: sp_row1 = 64'h7111111766666000;
+        6'd10: sp_row1 = 64'h7111111766666A90;
+        6'd11: sp_row1 = 64'h7111111766996880;
+        6'd12: sp_row1 = 64'h7111111766696990;
+        6'd13: sp_row1 = 64'h7111111788666000;
+        6'd14: sp_row1 = 64'h7111111786666000;
+        6'd15: sp_row1 = 64'h71111117A6660000;
+        6'd16: sp_row1 = 64'h7111111700000000;
+        6'd17: sp_row1 = 64'h7111111700000000;
+        6'd18: sp_row1 = 64'h7111111700000000;
+        6'd19: sp_row1 = 64'h4333333300000000;
+        6'd20: sp_row1 = 64'h4333333430000000;
+        6'd21: sp_row1 = 64'h4555668893000000;
+        6'd22: sp_row1 = 64'h4555696663000000;
+        6'd23: sp_row1 = 64'h4555696663000000;
+        6'd24: sp_row1 = 64'h4555696663000000;
+        6'd25: sp_row1 = 64'h4555696663000000;
+        6'd26: sp_row1 = 64'h4555668893000000;
+        6'd27: sp_row1 = 64'h4333333430000000;
+        6'd28: sp_row1 = 64'h4333333300000000;
+        6'd29: sp_row1 = 64'h7111111700000000;
+        6'd30: sp_row1 = 64'h7111111700000000;
+        6'd31: sp_row1 = 64'h7111111700000000;
+        6'd32: sp_row1 = 64'h71111117A6660000;
+        6'd33: sp_row1 = 64'h7111111786666000;
+        6'd34: sp_row1 = 64'h7111111788666000;
+        6'd35: sp_row1 = 64'h7111111766696990;
+        6'd36: sp_row1 = 64'h7111111766996880;
+        6'd37: sp_row1 = 64'h7111111766666A90;
+        6'd38: sp_row1 = 64'h7111111766666000;
+        6'd39: sp_row1 = 64'h7111111766666000;
+        6'd40: sp_row1 = 64'h71111117A6660000;
+        6'd41: sp_row1 = 64'h7777777700000000;
+        6'd42: sp_row1 = 64'h9888888800000000;
+        6'd43: sp_row1 = 64'h7111111700000000;
+        6'd44: sp_row1 = 64'h7111111700000000;
+        6'd45: sp_row1 = 64'h7111111700000000;
+        6'd46: sp_row1 = 64'h6111111600000000;
+        6'd47: sp_row1 = 64'h0111116000000000;
+        default: sp_row1 = 64'd0;
+    endcase
+endfunction
+localparam integer SP_U0_2 = -13, SP_W_2 = 14, SP_H_2 = 40;
+function [55:0] sp_row2(input [5:0] v);
+    case (v)
+        6'd0: sp_row2 = 56'h03366000000000;
+        6'd1: sp_row2 = 56'h83366600000000;
+        6'd2: sp_row2 = 56'h83366600000000;
+        6'd3: sp_row2 = 56'h99999900000000;
+        6'd4: sp_row2 = 56'h63333300000000;
+        6'd5: sp_row2 = 56'h63333300000000;
+        6'd6: sp_row2 = 56'h63333300000000;
+        6'd7: sp_row2 = 56'h61113300000000;
+        6'd8: sp_row2 = 56'h62113300000000;
+        6'd9: sp_row2 = 56'h62113300000000;
+        6'd10: sp_row2 = 56'h62113300000000;
+        6'd11: sp_row2 = 56'h62113300000000;
+        6'd12: sp_row2 = 56'h62113300000000;
+        6'd13: sp_row2 = 56'h62113300000000;
+        6'd14: sp_row2 = 56'h62113300000000;
+        6'd15: sp_row2 = 56'h62113300000000;
+        6'd16: sp_row2 = 56'h62113300000000;
+        6'd17: sp_row2 = 56'h62116A00099800;
+        6'd18: sp_row2 = 56'h62126AA69889A0;
+        6'd19: sp_row2 = 56'h62166556889990;
+        6'd20: sp_row2 = 56'h62166556889990;
+        6'd21: sp_row2 = 56'h62128AA69889A0;
+        6'd22: sp_row2 = 56'h62118A00099800;
+        6'd23: sp_row2 = 56'h62113300000000;
+        6'd24: sp_row2 = 56'h62113300000000;
+        6'd25: sp_row2 = 56'h62113300000000;
+        6'd26: sp_row2 = 56'h62113300000000;
+        6'd27: sp_row2 = 56'h62113300000000;
+        6'd28: sp_row2 = 56'h62113300000000;
+        6'd29: sp_row2 = 56'h62113300000000;
+        6'd30: sp_row2 = 56'h62113300000000;
+        6'd31: sp_row2 = 56'h62113300000000;
+        6'd32: sp_row2 = 56'h62113300000000;
+        6'd33: sp_row2 = 56'h62113300000000;
+        6'd34: sp_row2 = 56'h62113300000000;
+        6'd35: sp_row2 = 56'h62113300000000;
+        6'd36: sp_row2 = 56'h99999900000000;
+        6'd37: sp_row2 = 56'h66666600000000;
+        6'd38: sp_row2 = 56'h66666600000000;
+        6'd39: sp_row2 = 56'h06666000000000;
+        default: sp_row2 = 56'd0;
+    endcase
+endfunction
+localparam integer SP_U0_3 = -9, SP_W_3 = 10, SP_H_3 = 40;
+function [39:0] sp_row3(input [5:0] v);
+    case (v)
+        6'd0: sp_row3 = 40'h0220000000;
+        6'd1: sp_row3 = 40'h0220000000;
+        6'd2: sp_row3 = 40'h8221000000;
+        6'd3: sp_row3 = 40'h8111000000;
+        6'd4: sp_row3 = 40'h2111000000;
+        6'd5: sp_row3 = 40'h2111000000;
+        6'd6: sp_row3 = 40'h2111100000;
+        6'd7: sp_row3 = 40'h6111100000;
+        6'd8: sp_row3 = 40'h8811133400;
+        6'd9: sp_row3 = 40'h8811135360;
+        6'd10: sp_row3 = 40'h8811133380;
+        6'd11: sp_row3 = 40'h8811133480;
+        6'd12: sp_row3 = 40'h8811144400;
+        6'd13: sp_row3 = 40'h8811100000;
+        6'd14: sp_row3 = 40'h8811100000;
+        6'd15: sp_row3 = 40'h8811100000;
+        6'd16: sp_row3 = 40'h8811100000;
+        6'd17: sp_row3 = 40'h8811440000;
+        6'd18: sp_row3 = 40'h8824444000;
+        6'd19: sp_row3 = 40'h8834433380;
+        6'd20: sp_row3 = 40'h8834433380;
+        6'd21: sp_row3 = 40'h8824444000;
+        6'd22: sp_row3 = 40'h8811440000;
+        6'd23: sp_row3 = 40'h8811100000;
+        6'd24: sp_row3 = 40'h8811100000;
+        6'd25: sp_row3 = 40'h8811100000;
+        6'd26: sp_row3 = 40'h8811100000;
+        6'd27: sp_row3 = 40'h8811144400;
+        6'd28: sp_row3 = 40'h8811133480;
+        6'd29: sp_row3 = 40'h8811133380;
+        6'd30: sp_row3 = 40'h8811135360;
+        6'd31: sp_row3 = 40'h8811133400;
+        6'd32: sp_row3 = 40'h6111100000;
+        6'd33: sp_row3 = 40'h2111100000;
+        6'd34: sp_row3 = 40'h2111000000;
+        6'd35: sp_row3 = 40'h2111000000;
+        6'd36: sp_row3 = 40'h8111000000;
+        6'd37: sp_row3 = 40'h8221000000;
+        6'd38: sp_row3 = 40'h0220000000;
+        6'd39: sp_row3 = 40'h0220000000;
+        default: sp_row3 = 40'd0;
+    endcase
+endfunction
+localparam integer SP_U0_4 = -21, SP_W_4 = 26, SP_H_4 = 44;
+function [103:0] sp_row4(input [5:0] v);
+    case (v)
+        6'd0: sp_row4 = 104'h00000062222200000000000000;
+        6'd1: sp_row4 = 104'h000A0666222220000000000000;
+        6'd2: sp_row4 = 104'h00000662111122000000000000;
+        6'd3: sp_row4 = 104'h00006621111112200000000000;
+        6'd4: sp_row4 = 104'h00006621111111220000000000;
+        6'd5: sp_row4 = 104'h00006221111111220000000000;
+        6'd6: sp_row4 = 104'h00006621111111220000000000;
+        6'd7: sp_row4 = 104'h00006621111111220000000000;
+        6'd8: sp_row4 = 104'h00006221111111220000000000;
+        6'd9: sp_row4 = 104'h00006621111111260000000000;
+        6'd10: sp_row4 = 104'h00006621122AAAA80000000000;
+        6'd11: sp_row4 = 104'h05888A99998888880000000000;
+        6'd12: sp_row4 = 104'h03999A999A9888980000000000;
+        6'd13: sp_row4 = 104'h00006222266A3AA90000000000;
+        6'd14: sp_row4 = 104'h00006211111226A9A880000000;
+        6'd15: sp_row4 = 104'h000062111111112A988A000000;
+        6'd16: sp_row4 = 104'h00006211111111AAA888000000;
+        6'd17: sp_row4 = 104'h00006211111111299888880000;
+        6'd18: sp_row4 = 104'h0000623411144129A44AA90000;
+        6'd19: sp_row4 = 104'h0000623331333128A334A00000;
+        6'd20: sp_row4 = 104'h00006213333311283333A00000;
+        6'd21: sp_row4 = 104'h00006211333111283333A00000;
+        6'd22: sp_row4 = 104'h00006211333111283333A00000;
+        6'd23: sp_row4 = 104'h00006213333311283333A00000;
+        6'd24: sp_row4 = 104'h0000623331333128A334A00000;
+        6'd25: sp_row4 = 104'h0000623411144129A44AA90000;
+        6'd26: sp_row4 = 104'h00006211111111299888880000;
+        6'd27: sp_row4 = 104'h00006211111111AAA888000000;
+        6'd28: sp_row4 = 104'h000062111111112A988A000000;
+        6'd29: sp_row4 = 104'h00006211111226A9A880000000;
+        6'd30: sp_row4 = 104'h00006222266A3AA90000000000;
+        6'd31: sp_row4 = 104'h03999A999A9888980000000000;
+        6'd32: sp_row4 = 104'h05888A99998888880000000000;
+        6'd33: sp_row4 = 104'h00006621122AAAA80000000000;
+        6'd34: sp_row4 = 104'h00006621111111260000000000;
+        6'd35: sp_row4 = 104'h00006221111111220000000000;
+        6'd36: sp_row4 = 104'h00006621111111220000000000;
+        6'd37: sp_row4 = 104'h00006621111111220000000000;
+        6'd38: sp_row4 = 104'h00006221111111220000000000;
+        6'd39: sp_row4 = 104'h00006621111111220000000000;
+        6'd40: sp_row4 = 104'h00006621111112200000000000;
+        6'd41: sp_row4 = 104'h00000662111122000000000000;
+        6'd42: sp_row4 = 104'h000A0666222220000000000000;
+        6'd43: sp_row4 = 104'h00000062222200000000000000;
+        default: sp_row4 = 104'd0;
+    endcase
+endfunction
+localparam integer SP_U0_5 = -10, SP_W_5 = 11, SP_H_5 = 34;
+function [43:0] sp_row5(input [5:0] v);
+    case (v)
+        6'd0: sp_row5 = 44'h03330000000;
+        6'd1: sp_row5 = 44'h01233330000;
+        6'd2: sp_row5 = 44'h21122223300;
+        6'd3: sp_row5 = 44'h21111633330;
+        6'd4: sp_row5 = 44'h21121120030;
+        6'd5: sp_row5 = 44'h21121120000;
+        6'd6: sp_row5 = 44'h21111120000;
+        6'd7: sp_row5 = 44'h21111120000;
+        6'd8: sp_row5 = 44'h21111120000;
+        6'd9: sp_row5 = 44'h21111120000;
+        6'd10: sp_row5 = 44'h21111120000;
+        6'd11: sp_row5 = 44'h21111120000;
+        6'd12: sp_row5 = 44'h21111120000;
+        6'd13: sp_row5 = 44'h21111120000;
+        6'd14: sp_row5 = 44'h21111120000;
+        6'd15: sp_row5 = 44'h211AA826600;
+        6'd16: sp_row5 = 44'h26333386660;
+        6'd17: sp_row5 = 44'h26333386660;
+        6'd18: sp_row5 = 44'h211AA826600;
+        6'd19: sp_row5 = 44'h21111120000;
+        6'd20: sp_row5 = 44'h21111120000;
+        6'd21: sp_row5 = 44'h21111120000;
+        6'd22: sp_row5 = 44'h21111120000;
+        6'd23: sp_row5 = 44'h21111120000;
+        6'd24: sp_row5 = 44'h21111120000;
+        6'd25: sp_row5 = 44'h21111120000;
+        6'd26: sp_row5 = 44'h21111120000;
+        6'd27: sp_row5 = 44'h21111120000;
+        6'd28: sp_row5 = 44'h21121120000;
+        6'd29: sp_row5 = 44'h21121120030;
+        6'd30: sp_row5 = 44'h21111633330;
+        6'd31: sp_row5 = 44'h21122223300;
+        6'd32: sp_row5 = 44'h01233330000;
+        6'd33: sp_row5 = 44'h03330000000;
+        default: sp_row5 = 44'd0;
+    endcase
+endfunction
+localparam integer SP_U0_6 = -9, SP_W_6 = 10, SP_H_6 = 32;
+function [39:0] sp_row6(input [5:0] v);
+    case (v)
+        6'd0: sp_row6 = 40'h2219000000;
+        6'd1: sp_row6 = 40'h1119000000;
+        6'd2: sp_row6 = 40'h1119000000;
+        6'd3: sp_row6 = 40'h1119000000;
+        6'd4: sp_row6 = 40'h1119000000;
+        6'd5: sp_row6 = 40'h1119000000;
+        6'd6: sp_row6 = 40'h3339000000;
+        6'd7: sp_row6 = 40'h1119000000;
+        6'd8: sp_row6 = 40'h1119000000;
+        6'd9: sp_row6 = 40'h111A044400;
+        6'd10: sp_row6 = 40'h111AA46A00;
+        6'd11: sp_row6 = 40'h1119666690;
+        6'd12: sp_row6 = 40'h3339666690;
+        6'd13: sp_row6 = 40'h1119666660;
+        6'd14: sp_row6 = 40'h1119668860;
+        6'd15: sp_row6 = 40'h1119688860;
+        6'd16: sp_row6 = 40'h1119688860;
+        6'd17: sp_row6 = 40'h1119668860;
+        6'd18: sp_row6 = 40'h1119666660;
+        6'd19: sp_row6 = 40'h3339666690;
+        6'd20: sp_row6 = 40'h1119666690;
+        6'd21: sp_row6 = 40'h111AA46A00;
+        6'd22: sp_row6 = 40'h111A044400;
+        6'd23: sp_row6 = 40'h1119000000;
+        6'd24: sp_row6 = 40'h1119000000;
+        6'd25: sp_row6 = 40'h3339000000;
+        6'd26: sp_row6 = 40'h1119000000;
+        6'd27: sp_row6 = 40'h1119000000;
+        6'd28: sp_row6 = 40'h1119000000;
+        6'd29: sp_row6 = 40'h1119000000;
+        6'd30: sp_row6 = 40'h1119000000;
+        6'd31: sp_row6 = 40'h2219000000;
+        default: sp_row6 = 40'd0;
+    endcase
+endfunction
+localparam integer SP_WMAX = 26;
+// ruolo dello sprite del tipo `kind` al pixel (u, v), KR_NONE fuori
+function [3:0] sp_px(input [2:0] kind, input signed [11:0] u, input signed [11:0] v);
+    reg [4*SP_WMAX-1:0] row;
+    reg signed [11:0] c;
+    reg in;
+    begin
+        row = {4*SP_WMAX{1'b0}};
+        c = 12'sd0;
+        in = 1'b0;
+        case (kind)
+            3'd0: begin c = u - SP_U0_0; in = c >= 0 && c < SP_W_0 && v >= 0 && v < SP_H_0; row = sp_row0(v[5:0]); end
+            3'd1: begin c = u - SP_U0_1; in = c >= 0 && c < SP_W_1 && v >= 0 && v < SP_H_1; row = sp_row1(v[5:0]); end
+            3'd2: begin c = u - SP_U0_2; in = c >= 0 && c < SP_W_2 && v >= 0 && v < SP_H_2; row = sp_row2(v[5:0]); end
+            3'd3: begin c = u - SP_U0_3; in = c >= 0 && c < SP_W_3 && v >= 0 && v < SP_H_3; row = sp_row3(v[5:0]); end
+            3'd4: begin c = u - SP_U0_4; in = c >= 0 && c < SP_W_4 && v >= 0 && v < SP_H_4; row = sp_row4(v[5:0]); end
+            3'd5: begin c = u - SP_U0_5; in = c >= 0 && c < SP_W_5 && v >= 0 && v < SP_H_5; row = sp_row5(v[5:0]); end
+            3'd6: begin c = u - SP_U0_6; in = c >= 0 && c < SP_W_6 && v >= 0 && v < SP_H_6; row = sp_row6(v[5:0]); end
+            default: in = 1'b0;
+        endcase
+        sp_px = in ? row[{c[5:0], 2'b00} +: 4] : 4'd0;
+    end
+endfunction
+// agganci dei motori e speciali (TWIST: getti di manovra, RUSH: scie alari), dall'alto: numero,
+// colonna dell'ugello (quella subito davanti all'aggancio), prima riga e righe del getto
+function [1:0] sp_eng_n(input [2:0] kind);
+    case (kind)
+        3'd0: sp_eng_n = 2'd2;
+        3'd1: sp_eng_n = 2'd2;
+        3'd2: sp_eng_n = 2'd1;
+        3'd3: sp_eng_n = 2'd1;
+        3'd4: sp_eng_n = 2'd2;
+        3'd5: sp_eng_n = 2'd1;
+        3'd6: sp_eng_n = 2'd2;
+        default: sp_eng_n = 2'd0;
+    endcase
+endfunction
+function signed [11:0] sp_eng_x(input [2:0] kind, input [1:0] i);
+    case ({kind, i})
+        {3'd0, 2'd0}: sp_eng_x = -14;
+        {3'd0, 2'd1}: sp_eng_x = -14;
+        {3'd1, 2'd0}: sp_eng_x = -14;
+        {3'd1, 2'd1}: sp_eng_x = -14;
+        {3'd2, 2'd0}: sp_eng_x = -12;
+        {3'd3, 2'd0}: sp_eng_x = -8;
+        {3'd4, 2'd0}: sp_eng_x = -17;
+        {3'd4, 2'd1}: sp_eng_x = -17;
+        {3'd5, 2'd0}: sp_eng_x = -9;
+        {3'd6, 2'd0}: sp_eng_x = -8;
+        {3'd6, 2'd1}: sp_eng_x = -8;
+        default: sp_eng_x = 12'sd0;
+    endcase
+endfunction
+function signed [11:0] sp_eng_y(input [2:0] kind, input [1:0] i);
+    case ({kind, i})
+        {3'd0, 2'd0}: sp_eng_y = 9;
+        {3'd0, 2'd1}: sp_eng_y = 21;
+        {3'd1, 2'd0}: sp_eng_y = 10;
+        {3'd1, 2'd1}: sp_eng_y = 35;
+        {3'd2, 2'd0}: sp_eng_y = 18;
+        {3'd3, 2'd0}: sp_eng_y = 19;
+        {3'd4, 2'd0}: sp_eng_y = 17;
+        {3'd4, 2'd1}: sp_eng_y = 25;
+        {3'd5, 2'd0}: sp_eng_y = 16;
+        {3'd6, 2'd0}: sp_eng_y = 11;
+        {3'd6, 2'd1}: sp_eng_y = 19;
+        default: sp_eng_y = 12'sd0;
+    endcase
+endfunction
+function signed [11:0] sp_eng_r(input [2:0] kind, input [1:0] i);
+    case ({kind, i})
+        {3'd0, 2'd0}: sp_eng_r = 2;
+        {3'd0, 2'd1}: sp_eng_r = 2;
+        {3'd1, 2'd0}: sp_eng_r = 3;
+        {3'd1, 2'd1}: sp_eng_r = 3;
+        {3'd2, 2'd0}: sp_eng_r = 4;
+        {3'd3, 2'd0}: sp_eng_r = 2;
+        {3'd4, 2'd0}: sp_eng_r = 2;
+        {3'd4, 2'd1}: sp_eng_r = 2;
+        {3'd5, 2'd0}: sp_eng_r = 2;
+        {3'd6, 2'd0}: sp_eng_r = 2;
+        {3'd6, 2'd1}: sp_eng_r = 2;
+        default: sp_eng_r = 12'sd0;
+    endcase
+endfunction
+function [1:0] sp_spc_n(input [2:0] kind);
+    case (kind)
+        3'd3: sp_spc_n = 2'd2;
+        3'd5: sp_spc_n = 2'd2;
+        default: sp_spc_n = 2'd0;
+    endcase
+endfunction
+function signed [11:0] sp_spc_x(input [2:0] kind, input [1:0] i);
+    case ({kind, i})
+        {3'd3, 2'd0}: sp_spc_x = -8;
+        {3'd3, 2'd1}: sp_spc_x = -8;
+        {3'd5, 2'd0}: sp_spc_x = -9;
+        {3'd5, 2'd1}: sp_spc_x = -9;
+        default: sp_spc_x = 12'sd0;
+    endcase
+endfunction
+function signed [11:0] sp_spc_y(input [2:0] kind, input [1:0] i);
+    case ({kind, i})
+        {3'd3, 2'd0}: sp_spc_y = 10;
+        {3'd3, 2'd1}: sp_spc_y = 28;
+        {3'd5, 2'd0}: sp_spc_y = 4;
+        {3'd5, 2'd1}: sp_spc_y = 29;
+        default: sp_spc_y = 12'sd0;
+    endcase
+endfunction
+function signed [11:0] sp_spc_r(input [2:0] kind, input [1:0] i);
+    case ({kind, i})
+        {3'd3, 2'd0}: sp_spc_r = 2;
+        {3'd3, 2'd1}: sp_spc_r = 2;
+        {3'd5, 2'd0}: sp_spc_r = 1;
+        {3'd5, 2'd1}: sp_spc_r = 1;
+        default: sp_spc_r = 12'sd0;
+    endcase
+endfunction
+// BLASTER: agganci delle armi (colonna e righe, davanti alle bocche), colonne delle canne, prima
+// riga accesa dell'indicatore dei colpi (il verde fino alla faccia) per i colpi nel caricatore e
+// distanza dei due fasci dal centro della racchetta
+localparam integer SP_GUN_X0 = 4, SP_GUN_Y0 = 11, SP_GUN_R0 = 2,
+                   SP_GUN_X1 = 4, SP_GUN_Y1 = 31, SP_GUN_R1 = 2, SP_BARREL = 3, BGUN_DY = 10;
+function signed [11:0] bl_lit(input [2:0] ammo);
+    case (ammo)
+        3'd0: bl_lit = 31;
+        3'd1: bl_lit = 28;
+        3'd2: bl_lit = 25;
+        3'd3: bl_lit = 22;
+        3'd4: bl_lit = 19;
+        3'd5: bl_lit = 16;
+        3'd6: bl_lit = 13;
+        default: bl_lit = 13;
+    endcase
+endfunction
+// ARCADE: prima colonna della cabina (i pixel nel colore del personaggio)
+localparam integer SP_CAB_U0 = -7;
+// GUARDIAN: righe [y0, y1) delle cinque piastre (i pezzi tra le giunture dello sprite); le giunture
+// tra una piastra e l'altra vanno con quella sotto
+function signed [11:0] gs_y0(input [2:0] c);
+    case (c)
+        3'd0: gs_y0 = 0;
+        3'd1: gs_y0 = 7;
+        3'd2: gs_y0 = 13;
+        3'd3: gs_y0 = 20;
+        3'd4: gs_y0 = 26;
+        default: gs_y0 = 12'sd0;
+    endcase
+endfunction
+function signed [11:0] gs_y1(input [2:0] c);
+    case (c)
+        3'd0: gs_y1 = 6;
+        3'd1: gs_y1 = 12;
+        3'd2: gs_y1 = 19;
+        3'd3: gs_y1 = 25;
+        3'd4: gs_y1 = 32;
+        default: gs_y1 = 12'sd0;
+    endcase
+endfunction
+
 // HAMMER: posa delle scintille (0-3, 8 al secondo) al frame `f` dal colpo potente
 function [1:0] pd_spark_pose(input [4:0] f);
     pd_spark_pose = (f < 5'd8) ? 2'd0 : (f < 5'd15) ? 2'd1 : (f < 5'd23) ? 2'd2 : 2'd3;

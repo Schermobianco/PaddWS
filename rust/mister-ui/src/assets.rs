@@ -68,37 +68,37 @@ pub const IMG_NAME_RUSH: Img = Img { base: 3292, w: 50, h: 14, bpp_sh: 2, stride
 pub const IMG_NAME_GUARDIAN: Img = Img { base: 3404, w: 77, h: 14, bpp_sh: 2, stride_sh: 4 };
 pub const IMG_WARNING: Img = Img { base: 3628, w: 192, h: 38, bpp_sh: 2, stride_sh: 5 };
 pub const IMG_NAME_OMEGA: Img = Img { base: 4844, w: 80, h: 33, bpp_sh: 2, stride_sh: 4 };
-pub const IMG_PAD_PREVIEW_0: Img = Img { base: 5372, w: 10, h: 33, bpp_sh: 3, stride_sh: 2 };
-pub const IMG_PAD_PREVIEW_1: Img = Img { base: 5504, w: 21, h: 51, bpp_sh: 3, stride_sh: 3 };
-pub const IMG_PAD_PREVIEW_2: Img = Img { base: 5912, w: 18, h: 41, bpp_sh: 3, stride_sh: 3 };
-pub const IMG_PAD_PREVIEW_3: Img = Img { base: 6240, w: 22, h: 41, bpp_sh: 3, stride_sh: 3 };
-pub const IMG_PAD_PREVIEW_4: Img = Img { base: 6568, w: 19, h: 45, bpp_sh: 3, stride_sh: 3 };
-pub const IMG_PAD_PREVIEW_5: Img = Img { base: 6928, w: 34, h: 35, bpp_sh: 3, stride_sh: 4 };
-pub const IMG_PAD_PREVIEW_6: Img = Img { base: 7488, w: 17, h: 33, bpp_sh: 3, stride_sh: 3 };
-pub const IMG_PAD_PLAIN_3: Img = Img { base: 7752, w: 14, h: 41, bpp_sh: 3, stride_sh: 2 };
-pub const IMG_PAD_PLAIN_5: Img = Img { base: 7916, w: 17, h: 35, bpp_sh: 3, stride_sh: 3 };
-pub const IMG_PICK_NET: Img = Img { base: 8196, w: 2, h: 160, bpp_sh: 0, stride_sh: 0 };
-pub const IMG_CAP_FRAME: Img = Img { base: 8356, w: 12, h: 12, bpp_sh: 0, stride_sh: 0 };
-pub const IMG_VS3: Img = Img { base: 8368, w: 48, h: 24, bpp_sh: 0, stride_sh: 1 };
-pub const IMG_HT_SPRITE_0: Img = Img { base: 10276, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_HT_SPRITE_1: Img = Img { base: 10404, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_HT_SPRITE_2: Img = Img { base: 10532, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_HT_SPRITE_3: Img = Img { base: 10660, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_HT_SPRITE_4: Img = Img { base: 10788, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_HT_SPRITE_5: Img = Img { base: 10916, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_HT_SPRITE_6: Img = Img { base: 11044, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_HT_SPRITE_7: Img = Img { base: 11172, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_HT_SPRITE_8: Img = Img { base: 11300, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_HT_SPRITE_9: Img = Img { base: 11428, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_HT_ARROW: Img = Img { base: 11556, w: 5, h: 7, bpp_sh: 0, stride_sh: 0 };
-pub const IMG_PT_SMALL_ARCADE: Img = Img { base: 14553, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_PT_SMALL_TITAN: Img = Img { base: 14681, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_PT_SMALL_HAMMER: Img = Img { base: 14809, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_PT_SMALL_TWIST: Img = Img { base: 14937, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_PT_SMALL_BLASTER: Img = Img { base: 15065, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_PT_SMALL_RUSH: Img = Img { base: 15193, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_PT_SMALL_GUARDIAN: Img = Img { base: 15321, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
-pub const IMG_PT_SMALL_OMEGA: Img = Img { base: 15449, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_PAD_PREVIEW_0: Img = Img { base: 5372, w: 18, h: 33, bpp_sh: 3, stride_sh: 3 };
+pub const IMG_PAD_PREVIEW_1: Img = Img { base: 5636, w: 23, h: 49, bpp_sh: 3, stride_sh: 3 };
+pub const IMG_PAD_PREVIEW_2: Img = Img { base: 6028, w: 19, h: 41, bpp_sh: 3, stride_sh: 3 };
+pub const IMG_PAD_PREVIEW_3: Img = Img { base: 6356, w: 22, h: 41, bpp_sh: 3, stride_sh: 3 };
+pub const IMG_PAD_PREVIEW_4: Img = Img { base: 6684, w: 29, h: 45, bpp_sh: 3, stride_sh: 3 };
+pub const IMG_PAD_PREVIEW_5: Img = Img { base: 7044, w: 34, h: 35, bpp_sh: 3, stride_sh: 4 };
+pub const IMG_PAD_PREVIEW_6: Img = Img { base: 7604, w: 17, h: 33, bpp_sh: 3, stride_sh: 3 };
+pub const IMG_PAD_PLAIN_3: Img = Img { base: 7868, w: 15, h: 41, bpp_sh: 3, stride_sh: 2 };
+pub const IMG_PAD_PLAIN_5: Img = Img { base: 8032, w: 17, h: 35, bpp_sh: 3, stride_sh: 3 };
+pub const IMG_PICK_NET: Img = Img { base: 8312, w: 2, h: 160, bpp_sh: 0, stride_sh: 0 };
+pub const IMG_CAP_FRAME: Img = Img { base: 8472, w: 12, h: 12, bpp_sh: 0, stride_sh: 0 };
+pub const IMG_VS3: Img = Img { base: 8484, w: 48, h: 24, bpp_sh: 0, stride_sh: 1 };
+pub const IMG_HT_SPRITE_0: Img = Img { base: 10392, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_HT_SPRITE_1: Img = Img { base: 10520, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_HT_SPRITE_2: Img = Img { base: 10648, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_HT_SPRITE_3: Img = Img { base: 10776, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_HT_SPRITE_4: Img = Img { base: 10904, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_HT_SPRITE_5: Img = Img { base: 11032, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_HT_SPRITE_6: Img = Img { base: 11160, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_HT_SPRITE_7: Img = Img { base: 11288, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_HT_SPRITE_8: Img = Img { base: 11416, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_HT_SPRITE_9: Img = Img { base: 11544, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_HT_ARROW: Img = Img { base: 11672, w: 5, h: 7, bpp_sh: 0, stride_sh: 0 };
+pub const IMG_PT_SMALL_ARCADE: Img = Img { base: 14669, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_PT_SMALL_TITAN: Img = Img { base: 14797, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_PT_SMALL_HAMMER: Img = Img { base: 14925, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_PT_SMALL_TWIST: Img = Img { base: 15053, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_PT_SMALL_BLASTER: Img = Img { base: 15181, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_PT_SMALL_RUSH: Img = Img { base: 15309, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_PT_SMALL_GUARDIAN: Img = Img { base: 15437, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
+pub const IMG_PT_SMALL_OMEGA: Img = Img { base: 15565, w: 32, h: 32, bpp_sh: 2, stride_sh: 2 };
 // immagini nella DDR3: `base` è la parola nel file paddws_gfx.rom; si disegnano dopo averle
 // copiate nella finestra (`Win`)
 pub const IMG_PT_BIG_ARCADE: Img = Img { base: 0, w: 88, h: 104, bpp_sh: 2, stride_sh: 0 };
@@ -223,7 +223,7 @@ pub mod howto {
     pub const LEG_X1: i32 = 88;
     pub const LEG_X2: i32 = 170;
     /// prima parola delle righe delle scritte (20 parole per riga; la riga 92 è vuota)
-    pub const TEXT_BASE: u32 = 8416;
+    pub const TEXT_BASE: u32 = 8532;
     /// riga delle scritte di ogni riga dello schermo, per controllo (joystick, paddle, spinner)
     pub const ROWS: [[u8; 240]; 3] = [
         [92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 0, 1, 2, 3, 4, 5, 6, 92, 92, 92, 92, 92, 92, 92, 7, 8, 9, 10, 11, 12, 13, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 14, 15, 16, 17, 18, 19, 20, 92, 92, 92, 92, 92, 92, 92, 21, 22, 23, 24, 25, 26, 27, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 28, 29, 30, 31, 32, 33, 34, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 35, 36, 37, 38, 39, 40, 41, 92, 92, 92, 92, 92, 92, 92, 42, 43, 44, 45, 46, 47, 48, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 28, 29, 30, 31, 32, 33, 34, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 49, 50, 51, 52, 53, 54, 55, 56, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 57, 58, 59, 60, 61, 62, 63, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 92, 64, 65, 66, 67, 68, 69, 70, 92, 92, 92, 92, 92],
@@ -236,22 +236,22 @@ pub mod howto {
 pub mod pads {
     use crate::Img;
     pub const PREVIEW: [(Img, i32, i32); 7] = [
-        (Img { base: 5372, w: 10, h: 33, bpp_sh: 3, stride_sh: 2 }, -6, 0),
-        (Img { base: 5504, w: 21, h: 51, bpp_sh: 3, stride_sh: 3 }, -17, 0),
-        (Img { base: 5912, w: 18, h: 41, bpp_sh: 3, stride_sh: 3 }, -14, 0),
-        (Img { base: 6240, w: 22, h: 41, bpp_sh: 3, stride_sh: 3 }, -11, 0),
-        (Img { base: 6568, w: 19, h: 45, bpp_sh: 3, stride_sh: 3 }, -12, 0),
-        (Img { base: 6928, w: 34, h: 35, bpp_sh: 3, stride_sh: 4 }, -30, 0),
-        (Img { base: 7488, w: 17, h: 33, bpp_sh: 3, stride_sh: 3 }, -13, 0),
+        (Img { base: 5372, w: 18, h: 33, bpp_sh: 3, stride_sh: 3 }, -14, 0),
+        (Img { base: 5636, w: 23, h: 49, bpp_sh: 3, stride_sh: 3 }, -19, 0),
+        (Img { base: 6028, w: 19, h: 41, bpp_sh: 3, stride_sh: 3 }, -15, 0),
+        (Img { base: 6356, w: 22, h: 41, bpp_sh: 3, stride_sh: 3 }, -12, 0),
+        (Img { base: 6684, w: 29, h: 45, bpp_sh: 3, stride_sh: 3 }, -22, 0),
+        (Img { base: 7044, w: 34, h: 35, bpp_sh: 3, stride_sh: 4 }, -30, 0),
+        (Img { base: 7604, w: 17, h: 33, bpp_sh: 3, stride_sh: 3 }, -13, 0),
     ];
     pub const PLAIN: [(Img, i32, i32); 7] = [
-        (Img { base: 5372, w: 10, h: 33, bpp_sh: 3, stride_sh: 2 }, -6, 0),
-        (Img { base: 5504, w: 21, h: 51, bpp_sh: 3, stride_sh: 3 }, -17, 0),
-        (Img { base: 5912, w: 18, h: 41, bpp_sh: 3, stride_sh: 3 }, -14, 0),
-        (Img { base: 7752, w: 14, h: 41, bpp_sh: 3, stride_sh: 2 }, -10, 0),
-        (Img { base: 6568, w: 19, h: 45, bpp_sh: 3, stride_sh: 3 }, -12, 0),
-        (Img { base: 7916, w: 17, h: 35, bpp_sh: 3, stride_sh: 3 }, -13, 0),
-        (Img { base: 7488, w: 17, h: 33, bpp_sh: 3, stride_sh: 3 }, -13, 0),
+        (Img { base: 5372, w: 18, h: 33, bpp_sh: 3, stride_sh: 3 }, -14, 0),
+        (Img { base: 5636, w: 23, h: 49, bpp_sh: 3, stride_sh: 3 }, -19, 0),
+        (Img { base: 6028, w: 19, h: 41, bpp_sh: 3, stride_sh: 3 }, -15, 0),
+        (Img { base: 7868, w: 15, h: 41, bpp_sh: 3, stride_sh: 2 }, -11, 0),
+        (Img { base: 6684, w: 29, h: 45, bpp_sh: 3, stride_sh: 3 }, -22, 0),
+        (Img { base: 8032, w: 17, h: 35, bpp_sh: 3, stride_sh: 3 }, -13, 0),
+        (Img { base: 7604, w: 17, h: 33, bpp_sh: 3, stride_sh: 3 }, -13, 0),
     ];
     /// Colori dei valori 1..=33 dei pixel (a partire da pal::PADS + 1).
     pub const PAL: [u32; 33] = [
@@ -327,7 +327,7 @@ pub mod ending {
     pub const FWS: i32 = 15;
     pub const FW_STRIDE: i32 = 80;
     /// prima parola delle righe di bitmap (10 parole per riga)
-    pub const TEXT_BASE: u32 = 11563;
+    pub const TEXT_BASE: u32 = 11679;
     /// mappa delle righe: [8:0] riga, [12:9] riga del glifo, [21:13] x, [23:22] scala, [25:24] colore,
     /// [27:26] gruppo, [29:28] riga del punteggio
     pub const MAP: [u32; 833] = [

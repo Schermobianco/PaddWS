@@ -14,6 +14,20 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+### Modificato
+- Le racchette di NEXT sono gli sprite delle astronavi viste dall'alto, disegnati a mano
+  (`assets/ships/sprites`), con più dettagli delle forme di prima e le stesse animazioni attaccate
+  ai motori e alle armi: fiamme e booster, getti di manovra di TWIST, rinculo e lampo dei cannoni
+  del BLASTER, piastre del GUARDIAN che si montano e si rompono (PC, web, Deck e MiSTer; il C64
+  resta com'era). Il BLASTER ha i cannoni che sporgono davanti, da cui partono i colpi, e mostra i
+  colpi nel caricatore con il verde dell'astronave al posto della barra dietro la racchetta.
+
+### Aggiunto
+- `tools/paddle_editor.html`: editor degli sprite delle racchette (si apre con
+  `tools/c64_editor.py --paddle`), con la griglia alla misura di ogni tipo, i pixel di aggancio per
+  fiamme, armi e getti, la guida dei settori del GUARDIAN, l'anteprima come in partita, la
+  selezione con taglia, copia e incolla e la conversione da un'immagine di riferimento.
+
 ## [4.6.2] - 2026-11-22
 
 ### Modificato

@@ -21,6 +21,7 @@ mod portraits;
 mod render;
 mod scenes;
 mod scope;
+mod ships;
 mod titles;
 mod touch;
 

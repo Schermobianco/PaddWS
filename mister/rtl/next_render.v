@@ -794,25 +794,21 @@ function signed [11:0] build_course_dy(input [7:0] f, input [7:0] land);
     end
 endfunction
 // ------------------------------------------------- racchette dei personaggi (astronavi)
-// Come draw_paddle e kind_ops di rust/game/src/paddle_ui.rs, sul corpo largo 4 (tools/paddle_shapes.py,
-// il modello in Python con le stesse regole). Coordinate del tipo: u la colonna, 0 la faccia, il corpo
-// da -3 a 0, negativa verso il retro (la racchetta destra è speculare); v la riga dall'alto. Un pixel
-// prende il ruolo dell'ultimo pezzo che lo copre; sopra vanno le luci e le ombre dei bordi dei pezzi
-// alti e larghi almeno 2 (l'ultimo vince): retro e fondo del corpo in ombra, bordo alto schiarito e
-// basso scurito sui segni e sui grigi; poi i pezzi tardi (`KL`). Fuori dalla forma, l'ombra portata
-// (la stessa forma 1 pixel verso il retro e 1 in basso: una seconda chiamata). Le animazioni usano i
-// contatori di pong_top e le tabelle di pong_paddles.vh (tools/gen_mister_paddles.py).
+// Come draw_paddle e kind_ops di rust/game/src/paddle_ui.rs, sulla hitbox larga 4 (tools/paddle_shapes.py,
+// il modello in Python con le stesse regole). Coordinate del tipo: u la colonna, 0 la faccia, la hitbox
+// da -3 a 0, negativa verso il retro (la racchetta destra è speculare); v la riga dall'alto. Sotto, lo
+// sprite dell'astronave (sp_px: assets/ships/sprites, con le sue luci); sopra, gli effetti attaccati agli
+// agganci dello sprite: un pixel prende il ruolo dell'ultimo pezzo che lo copre, sopra vanno le luci e
+// le ombre dei bordi dei pezzi alti e larghi almeno 2 (l'ultimo vince), poi i pezzi tardi (`KL`). Fuori
+// dalla forma, l'ombra portata (la stessa forma 1 pixel verso il retro e 1 in basso). Le animazioni
+// usano i contatori di pong_top e le tabelle di pong_paddles.vh (tools/gen_mister_paddles.py, che
+// scrive anche gli sprite e le costanti degli agganci).
 localparam [3:0] KR_NONE = 4'd0, KR_BODY = 4'd1, KR_SHADE = 4'd2, KR_MARK = 4'd3, KR_MARK_DARK = 4'd4,
                  KR_MARK_LIGHT = 4'd5, KR_GRAY = 4'd6, KR_GRAY_LIGHT = 4'd7, KR_DARK = 4'd8, KR_DARK_DEEP = 4'd9,
                  KR_BLACK = 4'd10, KR_SIGNAL = 4'd11, KR_SHADOW = 4'd12;
 // altezze dei tipi (pixel)
 localparam integer HT_A = kind_px_h(3'd0), HT_T = kind_px_h(3'd1), HT_H = kind_px_h(3'd2), HT_W = kind_px_h(3'd3),
                    HT_B = kind_px_h(3'd4), HT_R = kind_px_h(3'd5), HT_G = kind_px_h(3'd6);
-// GUARDIAN: righe dei 5 corsi (round(h * i / 5)), come paddle_ui.rs
-localparam integer GY1 = (HT_G * 2 + 5) / 10, GY2 = (HT_G * 4 + 5) / 10, GY3 = (HT_G * 6 + 5) / 10,
-                   GY4 = (HT_G * 8 + 5) / 10;
-// BLASTER: metà altezza, distanza verticale dei cannoni dal centro e prima riga della barra; TITAN/HAMMER
-localparam integer BMID = HT_B / 2, BGUN_DY = HT_B / 2 - 9, BSTRAP = HT_B / 2 - 9, TBELT = (HT_T + 1) / 2 - 3, HEYE = (HT_H + 1) / 2;
 
 // il pixel (u, v) è nel rettangolo [X0, X0 + WW) x [Y0, Y0 + HH)
 `define KIN(X0, Y0, WW, HH) ((u) >= (X0) && (u) < (X0) + (WW) && (v) >= (Y0) && (v) < (Y0) + (HH))
@@ -849,22 +845,25 @@ function ring_px(input signed [11:0] du, input signed [11:0] dv, input top, inpu
     end
 endfunction
 
-// Ruolo del pixel (u0, v0) dell'astronave del lato p, del tipo kind (KR_NONE fuori dalla forma).
+// Ruolo del pixel (u0, v0) dell'astronave del lato p, del tipo kind (KR_NONE fuori dalla forma):
+// lo sprite (sp_px, pong_paddles.vh) con le sue varianti (cabina accesa, piastre, canne, indicatore)
+// e sopra le animazioni attaccate agli agganci, come kind_ops di paddle_ui.rs.
 function [3:0] kind_px(input p, input [2:0] kind, input signed [11:0] u0, input signed [11:0] v0);
-    reg signed [11:0] u, v, d, sh, ff, row, slot, y0, y1, ys, hh, fl, fl1, fl2, lean, dy, fy, wlen, w1, w2, my, s3;
-    reg signed [11:0] cx, mlen, jlen, clen, tlen, hlen, olen, fz, d0;
-    reg [3:0] fill, rel, late, srole;
-    reg [2:0] m, alive, b_top, b_bot;
+    reg signed [11:0] u, v, d, sh, ff, row, fl, lean, dy, wlen, ww, s3, nx, ny, nr, bk, lf, y0, y1, yt;
+    reg signed [11:0] cx, mlen, jlen, clen, tlen, hlen, olen, fz, d0, c0, mid;
+    reg [3:0] fill, rel, late, srole, base;
+    reg [2:0] m, alive;
     reg [1:0] ph2, surge;
     reg [4:0] f;
     reg [5:0] ka, ca;
-    reg        hit, fire, recent, kmv, lit, thrust, top_gun, warn;
+    reg        hit, fire, recent, kmv, lit, warn, mk;
     integer    c, j;
     begin
         fill = KR_NONE;
         rel = KR_NONE;
         late = KR_NONE;
         srole = KR_NONE;
+        base = KR_NONE;
         cx = 12'sd0;
         mlen = 12'sd0;
         jlen = 12'sd0;
@@ -885,150 +884,103 @@ function [3:0] kind_px(input p, input [2:0] kind, input signed [11:0] u0, input 
         fz = tick[4] ? 12'sd1 : 12'sd0;             // sfarfallio a 15 al secondo
         olen = 12'sd0;
         d0 = 12'sd0;
+        mid = $signed({2'b0, kh[p]}) >>> 1;
         case (kind)
             K_ARCADE: begin
-                // VAUS-84: capsula coin-op con calotte metalliche, cabina gettoniera dorata e scintille
-                `KB(-3, 4, 4, HT_A - 8)
-                `KG(-3, 1, 4, 3)
-                `KF(-2, 0, 3, 1, KR_GRAY)
-                `KG(-3, HT_A - 4, 4, 3)
-                `KF(-2, HT_A - 1, 3, 1, KR_GRAY)
-                `KL(-3, 4, 3, 1, KR_DARK)
-                `KL(-3, HT_A - 5, 3, 1, KR_DARK)
-                `KG(-5, 6, 2, 5)
-                `KG(-5, HT_A - 11, 2, 5)
-                `KF(-6, 7, 1, 3, KR_DARK)
-                `KF(-6, HT_A - 10, 1, 3, KR_DARK)
+                // VAUS-84: capsula coin-op; la cabina (i pixel nel colore del personaggio) si accende a
+                // scatti e al gettone, scintille dai due ugelli, gettone che entra nella fessura
+                base = sp_px(K_ARCADE, u, v);
                 lit = kpose[2:0] < 3'd2;
-                `KD(-4, HT_A / 2 - 4, 4, 8)
-                if (hit && f >= 5'd18 && f < 5'd22) begin
-                    `KF(-3, HT_A / 2 - 3, 3, 6, KR_BODY)
-                end else if (lit || (hit && f >= 5'd18)) begin
-                    `KF(-3, HT_A / 2 - 3, 3, 6, KR_MARK_LIGHT)
-                end else begin
-                    `KM(-3, HT_A / 2 - 3, 3, 6)
-                end
-                `KL(-2, HT_A / 2 - 2, 1, 4, KR_BLACK)
+                mk = base == KR_MARK || base == KR_MARK_DARK || base == KR_MARK_LIGHT;
+                if (mk && hit && f >= 5'd18 && f < 5'd22)
+                    base = KR_BODY;
+                else if (mk && (lit || (hit && f >= 5'd18)))
+                    base = (base == KR_MARK) ? KR_MARK_LIGHT : (base == KR_MARK_DARK) ? KR_MARK : base;
+                fill = base;
                 fl = kmv ? 12'sd3 : 12'sd2;
-                `KF(-6 - fl - (kpose[0] ? 12'sd1 : 12'sd0), 8, fl, 1, KR_MARK_LIGHT)
-                `KF(-8 - $signed({9'd0, kpose[1:0], 1'b0}), kpose[0] ? 9 : 7, 1, 1, KR_MARK)
-                `KF(-6 - fl - (kpose[0] ? 12'sd1 : 12'sd0), HT_A - 9, fl, 1, KR_MARK_LIGHT)
-                `KF(-8 - $signed({9'd0, kpose[1:0], 1'b0}), kpose[0] ? HT_A - 8 : HT_A - 10, 1, 1, KR_MARK)
-                `KTR(-7 - fl, 8, kbx[p])
-                `KTR(-7 - fl, HT_A - 9, kbx[p])
-                if (kbs[p] == 2'd3) begin
-                    `KIGN(-6, 8, 1)
-                    `KIGN(-6, HT_A - 9, 1)
-                end
+                for (c = 0; c < 2; c = c + 1)
+                    if (c < sp_eng_n(K_ARCADE)) begin
+                        nx = sp_eng_x(K_ARCADE, c);
+                        ny = sp_eng_y(K_ARCADE, c);
+                        nr = sp_eng_r(K_ARCADE, c);
+                        `KF(nx - fl - (kpose[0] ? 12'sd1 : 12'sd0), ny, fl, nr, KR_MARK_LIGHT)
+                        `KF(nx - 2 - $signed({9'd0, kpose[1:0], 1'b0}), kpose[0] ? ny + nr : ny - 1, 1, 1, KR_MARK)
+                        `KTR(nx - 1 - fl, ny + ((nr - 1) >>> 1), kbx[p])
+                        if (kbs[p] == 2'd3) `KIGN(nx, ny, nr)
+                    end
                 // animazione del gettone che si infila nella fessura (doppio clic USE)
+                c0 = SP_CAB_U0;
                 if (hit) begin
                     if (f < 5'd12) begin
-                        cx = -12'sd17 + $signed({7'd0, f});
-                        `KL(cx, HT_A / 2 - 1, 4, 2, KR_MARK)
-                        `KL(cx + 1, HT_A / 2 - 2, 2, 4, KR_MARK)
-                        `KL(cx + 1, HT_A / 2 - 2, 2, 1, KR_MARK_LIGHT)
-                        `KL(cx + 1, HT_A / 2 + 1, 2, 1, KR_MARK_DARK)
+                        cx = c0 - 12'sd14 + $signed({7'd0, f});
+                        `KL(cx, mid - 1, 4, 2, KR_MARK)
+                        `KL(cx + 1, mid - 2, 2, 4, KR_MARK)
+                        `KL(cx + 1, mid - 2, 2, 1, KR_MARK_LIGHT)
+                        `KL(cx + 1, mid + 1, 2, 1, KR_MARK_DARK)
                         if (f < 5'd3 || (f >= 5'd6 && f < 5'd9)) begin
-                            `KL(cx + 1, HT_A / 2 - 1, 1, 2, KR_BODY)
+                            `KL(cx + 1, mid - 1, 1, 2, KR_BODY)
                         end else begin
-                            `KL(cx + 2, HT_A / 2 - 1, 1, 2, KR_MARK_LIGHT)
+                            `KL(cx + 2, mid - 1, 1, 2, KR_MARK_LIGHT)
                         end
                     end else if (f < 5'd14) begin
-                        `KL(-5, HT_A / 2 - 2, 3, 4, KR_MARK)
-                        `KL(-5, HT_A / 2 - 2, 2, 1, KR_MARK_LIGHT)
-                        `KL(-4, HT_A / 2 - 1, 1, 2, KR_BODY)
+                        `KL(c0 - 2, mid - 2, 3, 4, KR_MARK)
+                        `KL(c0 - 2, mid - 2, 2, 1, KR_MARK_LIGHT)
+                        `KL(c0 - 1, mid - 1, 1, 2, KR_BODY)
                     end else if (f < 5'd16) begin
-                        `KL(-4, HT_A / 2 - 2, 2, 4, KR_MARK_LIGHT)
-                        `KL(-3, HT_A / 2 - 1, 1, 2, KR_BODY)
+                        `KL(c0 - 1, mid - 2, 2, 4, KR_MARK_LIGHT)
+                        `KL(c0, mid - 1, 1, 2, KR_BODY)
                     end else if (f < 5'd18) begin
-                        `KL(-3, HT_A / 2 - 2, 1, 4, KR_BODY)
+                        `KL(c0, mid - 2, 1, 4, KR_BODY)
                     end else begin
                         d = (f < 5'd22) ? 12'sd0 : (f < 5'd26) ? 12'sd1 : 12'sd2;
                         srole = (f < 5'd22) ? KR_BODY : (f < 5'd26) ? KR_MARK_LIGHT : KR_MARK;
-                        `KL(-2 - (d <<< 1), HT_A / 2 - 5 - d, 1, 1, srole)
-                        `KL(-2 - (d <<< 1), HT_A / 2 + 4 + d, 1, 1, srole)
-                        `KL(-5 - (d <<< 1), HT_A / 2 - 2 - d, 1, 1, srole)
-                        `KL(-5 - (d <<< 1), HT_A / 2 + 1 + d, 1, 1, srole)
+                        `KL(c0 + 1 - (d <<< 1), mid - 5 - d, 1, 1, srole)
+                        `KL(c0 + 1 - (d <<< 1), mid + 4 + d, 1, 1, srole)
+                        `KL(c0 - 2 - (d <<< 1), mid - 2 - d, 1, 1, srole)
+                        `KL(c0 - 2 - (d <<< 1), mid + 1 + d, 1, 1, srole)
                     end
                 end
             end
             K_TITAN: begin
-                // COLOSSUS: corazzata pesante in prospettiva 2.5D — ombra staccata sul campo,
-                // fiancate verticali 3D, ponte rialzato e torre di comando con parallasse verticale
-                dy = (pcy[p] < 10'd80) ? -12'sd2 : (pcy[p] > 10'd160) ? 12'sd2 : 12'sd0;
-                // ombra portata profonda e staccata (non durante la rotazione del SUPER)
-                if (!spin[p]) begin
-                    `KF(-10, 3, 7, HT_T, KR_SHADOW)
-                end
-                // pod motori posteriori al livello inferiore con booster conici affusolati
-                for (c = 0; c < 2; c = c + 1) begin
-                    my = (c == 0) ? 12'sd2 : HT_T - 12;
-                    `KG(-11, my, 4, 10)
-                    `KD(-10, my + 2, 2, 6)
-                    `KF(-12, my + 1, 1, 8, KR_DARK_DEEP)
-                    ph2 = (c == 0) ? kpose[1:0] : (kpose[1:0] + 2'd2);
-                    fl = (kmv ? ((ph2 == 2'd0) ? 12'sd6 : (ph2 == 2'd2) ? 12'sd7 : 12'sd8)
-                              : ((ph2 == 2'd0) ? 12'sd4 : (ph2 == 2'd2) ? 12'sd6 : 12'sd5));
-                    mlen = (fl + 12'sd1) >>> 1;
-                    jlen = fl - 12'sd1;
-                    clen = ((fl >>> 1) < 12'sd2) ? 12'sd2 : (fl >>> 1);
-                    `KF(-13, my + 2, 1, 6, KR_MARK)
-                    `KF(-12 - mlen, my + 3, mlen, 4, KR_MARK)
-                    `KF(-13, my + 3, 1, 4, KR_MARK_LIGHT)
-                    `KF(-12 - jlen, my + 4, jlen, 2, KR_MARK_LIGHT)
-                    `KF(-12 - clen, my + 4, clen, 2, KR_BODY)
-                    `KF(-13 - fl, my + 4 + (ph2[0] ? 12'sd1 : 12'sd0), 2, 1, KR_MARK)
-                    if (kmv) begin
-                        s3 = (c == 0) ? $signed({10'd0, kpose3}) : ((kpose3 == 2'd2) ? 12'sd0 : $signed({10'd0, kpose3}) + 12'sd1);
-                        `KF(-14 - fl - s3, my + 3 + ((c == 0) ? s3 : ((s3 == 12'sd2) ? 12'sd0 : s3 + 12'sd1)), 1, 1,
-                            (s3 == 12'sd0) ? KR_MARK_LIGHT : KR_MARK)
+                // COLOSSUS: corazzata pesante con ombra staccata sul campo (lo sprite 4 pixel indietro e 3
+                // in basso, non durante la rotazione del SUPER) e due pod motori con booster conici
+                base = sp_px(K_TITAN, u, v);
+                fill = base;
+                if (base == KR_NONE && !spin[p] && sp_px(K_TITAN, u + 4, v - 3) != KR_NONE)
+                    fill = KR_SHADOW;
+                for (c = 0; c < 2; c = c + 1)
+                    if (c < sp_eng_n(K_TITAN)) begin
+                        nx = sp_eng_x(K_TITAN, c);
+                        ny = sp_eng_y(K_TITAN, c);
+                        nr = sp_eng_r(K_TITAN, c);
+                        ph2 = (c == 0) ? kpose[1:0] : (kpose[1:0] + 2'd2);
+                        fl = (kmv ? ((ph2 == 2'd0) ? 12'sd6 : (ph2 == 2'd2) ? 12'sd7 : 12'sd8)
+                                  : ((ph2 == 2'd0) ? 12'sd4 : (ph2 == 2'd2) ? 12'sd6 : 12'sd5));
+                        mlen = (fl + 12'sd1) >>> 1;
+                        jlen = fl - 12'sd1;
+                        clen = ((fl >>> 1) < 12'sd2) ? 12'sd2 : (fl >>> 1);
+                        `KL(nx - 1, ny - 2, 1, nr + 4, KR_MARK)
+                        `KL(nx - mlen, ny - 1, mlen, nr + 2, KR_MARK)
+                        `KL(nx - 1, ny - 1, 1, nr + 2, KR_MARK_LIGHT)
+                        `KL(nx - jlen, ny, jlen, nr, KR_MARK_LIGHT)
+                        `KL(nx - clen, ny, clen, nr, KR_BODY)
+                        `KL(nx - 1 - fl, ny + ((ph2[0] && nr > 1) ? 12'sd1 : 12'sd0), 2, 1, KR_MARK)
+                        if (kmv) begin
+                            s3 = (c == 0) ? $signed({10'd0, kpose3}) : ((kpose3 == 2'd2) ? 12'sd0 : $signed({10'd0, kpose3}) + 12'sd1);
+                            `KL(nx - 2 - fl - s3, ny - 1 + ((c == 0) ? s3 : ((s3 == 12'sd2) ? 12'sd0 : s3 + 12'sd1)), 1, 1,
+                                (s3 == 12'sd0) ? KR_MARK_LIGHT : KR_MARK)
+                        end
+                        `KTR(nx - 1 - fl, ny + ((nr - 1) >>> 1), kbx[p])
+                        if (kbs[p] == 2'd3) `KIGN(nx - 1, ny, nr)
                     end
-                    `KTR(-13 - fl, my + 4, kbx[p])
-                    if (kbs[p] == 2'd3) `KIGN(-13, my + 4, 2)
-                end
-                // fiancate 3D verticali dello scafo (posteriore e inferiore/superiore da parallasse)
-                `KF(-8, 1, 2, HT_T - 2, KR_DARK_DEEP)
-                `KF(-7, 1, 1, HT_T - 2, KR_DARK)
-                if (dy <= 12'sd0) begin
-                    `KF(-7, HT_T, 8, 2, KR_DARK_DEEP)
-                    `KF(-6, HT_T, 7, 1, KR_DARK)
-                end
-                if (dy > 12'sd0) begin
-                    `KF(-7, -2, 8, 2, KR_DARK)
-                    `KF(-6, -2, 7, 1, KR_GRAY)
-                end
-                // scafo principale + ponte superiore rialzato
-                `KB(-6, 0, 7, HT_T)
-                `KF(-6, 6, 1, HT_T - 12, KR_DARK)
-                `KF(-5, 6, 5, HT_T - 12, KR_GRAY_LIGHT)
-                `KB(-4, 7, 4, HT_T - 14)
-                `KL(-6, 11, 6, 1, KR_DARK)
-                `KL(-6, HT_T - 12, 6, 1, KR_DARK)
-                // basamento + ombra della torre e tetto spostato in parallasse 2.5D
-                `KL(-7, TBELT + 1, 6, 7, KR_DARK_DEEP)
-                `KL(-6, TBELT - 1, 6, 8, KR_DARK)
-                `KL(-5, TBELT + dy, 5, 6, KR_MARK)
-                `KL(-5, TBELT + dy, 5, 1, KR_MARK_LIGHT)
-                `KL(-5, TBELT + 5 + dy, 5, 1, KR_MARK_DARK)
-                `KL(-4, TBELT + 1 + dy, 3, 4, KR_GRAY_LIGHT)
-                `KL(-3, TBELT + 2 + dy, 2, 2, KR_DARK_DEEP)
-                `KL(-2, TBELT + 2 + dy, 1, 2, KR_MARK_LIGHT)
             end
             K_HAMMER: begin
-                // ANVIL-MK1: nave-martello a "T" con striscia rossa e grande booster centrale
-                // che si allunga fino a 11 px al colpo; micro-vibrazione meccanica di 1 px
+                // ANVIL-MK1: nave-martello con grande booster centrale che si allunga fino a 11 px al
+                // colpo; micro-vibrazione meccanica di 1 px e scintille sulla faccia
                 surge = (hit && f < 5'd8) ? 2'd3 : (hit && f < 5'd15) ? 2'd2 : (hit && f < 5'd21) ? 2'd1 : 2'd0;
                 if (surge >= 2'd2 || kpose[0]) u = u0 + 1;
-                `KB(-4, 0, 5, HT_H)
-                `KG(-4, 0, 2, 5)
-                `KG(-4, HT_H - 5, 2, 5)
-                `KM(-3, 5, 2, HT_H - 10)
-                `KL(-4, 5, 1, HT_H - 10, KR_DARK)
-                `KG(-10, HEYE - 5, 6, 10)
-                `KD(-8, HEYE - 4, 4, 8)
-                `KM(-7, HEYE - 3, 3, 6)
-                `KD(-11, HEYE - 6, 2, 12)
-                `KL(-10, HEYE - 4, 1, 8, KR_GRAY_LIGHT)
+                base = sp_px(K_HAMMER, u, v);
+                fill = base;
                 fl = (surge == 2'd3) ? 12'sd11 : (surge == 2'd2) ? 12'sd9 : (surge == 2'd1) ? 12'sd7 :
                      (kpose[1:0] == 2'd1) ? 12'sd5 : (kpose[1:0] == 2'd3) ? 12'sd3 : 12'sd4;
                 tlen = (fl >= 12'sd9) ? 12'sd3 : (fl >= 12'sd6) ? 12'sd2 : 12'sd1;
@@ -1037,171 +989,138 @@ function [3:0] kind_px(input p, input [2:0] kind, input signed [11:0] u0, input 
                 hlen = (mlen >>> 1) < 12'sd1 ? 12'sd1 : (mlen >>> 1);
                 jlen = fl - 12'sd1;
                 clen = ((fl >>> 1) < 12'sd2) ? 12'sd2 : (fl >>> 1);
-                if (surge == 2'd3) begin
-                    `KF(-12, HEYE - 4, 1, 8, KR_MARK)
+                if (sp_eng_n(K_HAMMER) != 2'd0) begin
+                    nx = sp_eng_x(K_HAMMER, 0);
+                    ny = sp_eng_y(K_HAMMER, 0);
+                    nr = sp_eng_r(K_HAMMER, 0);
+                    if (surge == 2'd3) begin
+                        `KL(nx - 1, ny - 3, 1, nr + 6, KR_MARK)
+                    end
+                    `KL(nx - tlen, ny - 2, tlen, nr + 4, KR_MARK)
+                    `KL(nx - mlen, ny - 1, mlen, nr + 2, KR_MARK)
+                    if (surge >= 2'd1) begin
+                        `KL(nx - hlen, ny - 1, hlen, nr + 2, KR_MARK_LIGHT)
+                    end
+                    `KL(nx - jlen, ny, jlen, nr, KR_MARK_LIGHT)
+                    `KL(nx - clen, ny, clen, nr, KR_BODY)
+                    `KL(nx - 1 - fl, ny + ((kpose[0] && nr > 1) ? 12'sd1 : 12'sd0), 2, 1, KR_MARK)
+                    if (surge >= 2'd2) begin
+                        `KL(nx - fl, ny + ((kpose[0] && nr > 1) ? 12'sd1 : 12'sd0), 1, 1, KR_MARK_LIGHT)
+                    end
+                    `KTR(nx - 1 - fl, ny + ((nr - 1) >>> 1), kbx[p])
+                    if (kbs[p] == 2'd3) `KIGN(nx, ny, nr)
                 end
-                `KF(-11 - tlen, HEYE - 3, tlen, 6, KR_MARK)
-                `KF(-11 - mlen, HEYE - 2, mlen, 4, KR_MARK)
-                if (surge >= 2'd1) begin
-                    `KF(-11 - hlen, HEYE - 2, hlen, 4, KR_MARK_LIGHT)
-                end
-                `KF(-11 - jlen, HEYE - 1, jlen, 2, KR_MARK_LIGHT)
-                `KF(-11 - clen, HEYE - 1, clen, 2, KR_BODY)
-                `KF(-12 - fl, HEYE - 1 + (kpose[0] ? 12'sd1 : 12'sd0), 2, 1, KR_MARK)
-                if (surge >= 2'd2) begin
-                    `KF(-11 - fl, HEYE - 1 + (kpose[0] ? 12'sd1 : 12'sd0), 1, 1, KR_MARK_LIGHT)
-                end
-                `KTR(-12 - fl, HEYE - 1, kbx[p])
-                if (kbs[p] == 2'd3) `KIGN(-11, HEYE - 1, 2)
                 if (hit && pd_spark(pd_spark_pose(f), u, v - row))
                     fill = (pd_spark_pose(f) >= 2'd2) ? KR_MARK_DARK : KR_MARK;
             end
             K_TWIST: begin
-                // VORTEX: caccia acrobatico inclinato con visiera da luchador e getti RCS sulle virate
+                // VORTEX: caccia acrobatico inclinato, ugello rotante e getti RCS dai due pod sulle virate
+                // (sale: spara il pod in basso, verso il basso; scende: quello in alto, verso l'alto)
                 d = v - HT_W / 2;
                 m = ktilt[p][2] ? -ktilt[p] : ktilt[p];
                 sh = (m[0] ? d : 12'sd0) + (m[1] ? d <<< 1 : 12'sd0);
                 sh = ktilt[p][2] ? -(sh >>> 3) : (sh >>> 3);
                 if (!spin[p]) u = u0 - sh;
-                `KB(-3, 3, 4, HT_W - 6)
-                `KB(-2, 1, 3, 2)
-                `KF(-1, 0, 2, 1, KR_GRAY)
-                `KB(-2, HT_W - 3, 3, 2)
-                `KF(-1, HT_W - 1, 2, 1, KR_GRAY)
-                `KM(-6, 7, 3, 6)
-                `KG(-7, 9, 2, 3)
-                `KM(-6, HT_W - 13, 3, 6)
-                `KG(-7, HT_W - 12, 2, 3)
-                `KM(-5, HT_W / 2 - 5, 5, 10)
-                `KL(-4, HT_W / 2 - 4, 3, 8, KR_MARK_DARK)
-                `KL(-3, HT_W / 2 - 3, 2, 6, KR_MARK)
-                `KL(-2, HT_W / 2 - 2, 2, 1, KR_BODY)
-                `KL(-2, HT_W / 2 + 1, 2, 1, KR_BODY)
+                base = sp_px(K_TWIST, u, v);
+                fill = base;
                 dy = (kpose[1:0] == 2'd1) ? -12'sd1 : (kpose[1:0] == 2'd3) ? 12'sd1 : 12'sd0;
                 fl = kmv ? (kpose[0] ? 12'sd3 : 12'sd2) : (kpose[0] ? 12'sd1 : 12'sd0);
                 clen = 12'sd2 + (fl >>> 1);
-                `KD(-7, HT_W / 2 - 2, 2, 4)
-                `KF(-9, HT_W / 2 - 2, 2, 4, KR_MARK)
-                `KF(-10 - fl, HT_W / 2 - 1 + dy, 3 + fl, 2, KR_MARK_LIGHT)
-                `KF(-7 - clen, HT_W / 2 - 1 + dy, clen, 2, KR_BODY)
-                `KF(-12 - fl, HT_W / 2 - 1 + dy + (kpose[0] ? 12'sd1 : 12'sd0), 2, 1, KR_MARK)
-                `KTR(-12 - fl, HT_W / 2 - 1, kbx[p])
-                if (kbs[p] == 2'd3) `KIGN(-9, HT_W / 2 - 1, 2)
-                s3 = kpose[0] ? 12'sd1 : 12'sd0;
-                if (kmv_up[p]) begin
-                    // sale: getto RCS brillante dal pod inferiore
-                    `KF(-13 - s3, HT_W - 8, 3, 3 + s3, KR_MARK)
-                    `KF(-11, HT_W - 3 + s3, 2, 3, KR_MARK)
-                    `KF(-11, HT_W - 10, 3, 4 + s3, KR_MARK_LIGHT)
-                    `KF(-10, HT_W - 6, 2, 4 + s3, KR_MARK_LIGHT)
-                    `KF(-9, HT_W - 11, 2, 3, KR_BODY)
-                    `KF(-9, HT_W - 8, 1, 3, KR_BODY)
-                    `KF(-13 - s3, HT_W - 2 + s3, 1, 1, KR_BODY)
-                end else if (kmv_dn[p]) begin
-                    // scende: getto RCS brillante dal pod superiore
-                    `KF(-13 - s3, 5 - s3, 3, 3 + s3, KR_MARK)
-                    `KF(-11, -s3, 2, 3, KR_MARK)
-                    `KF(-11, 6 - s3, 3, 4 + s3, KR_MARK_LIGHT)
-                    `KF(-10, 2 - s3, 2, 4 + s3, KR_MARK_LIGHT)
-                    `KF(-9, 8, 2, 3, KR_BODY)
-                    `KF(-9, 5, 1, 3, KR_BODY)
-                    `KF(-13 - s3, 1 - s3, 1, 1, KR_BODY)
+                if (sp_eng_n(K_TWIST) != 2'd0) begin
+                    nx = sp_eng_x(K_TWIST, 0);
+                    ny = sp_eng_y(K_TWIST, 0);
+                    nr = sp_eng_r(K_TWIST, 0);
+                    `KL(nx - 2, ny - 1, 2, nr + 2, KR_MARK)
+                    `KL(nx - 3 - fl, ny + dy, 3 + fl, nr, KR_MARK_LIGHT)
+                    `KL(nx - clen, ny + dy, clen, nr, KR_BODY)
+                    `KL(nx - 5 - fl, ny + dy + ((kpose[0] && nr > 1) ? 12'sd1 : 12'sd0), 2, 1, KR_MARK)
+                    `KTR(nx - 5 - fl, ny + ((nr - 1) >>> 1), kbx[p])
+                    if (kbs[p] == 2'd3) `KIGN(nx - 2, ny, nr)
                 end
-                // onda del colpo attorno alle due estremità, mai sul corpo
-                if (hit && !(u >= -3 && u <= 0 && v >= 0 && v < HT_W) &&
+                s3 = kpose[0] ? 12'sd1 : 12'sd0;
+                if (kmv_up[p] && sp_spc_n(K_TWIST) != 2'd0) begin
+                    // sale: getto dal pod inferiore, verso il basso
+                    nx = sp_spc_x(K_TWIST, sp_spc_n(K_TWIST) - 2'd1);
+                    ny = sp_spc_y(K_TWIST, sp_spc_n(K_TWIST) - 2'd1);
+                    nr = sp_spc_r(K_TWIST, sp_spc_n(K_TWIST) - 2'd1);
+                    `KL(nx - 6 - s3, ny + 3, 3, 3 + s3, KR_MARK)
+                    `KL(nx - 4, ny + 8 + s3, 2, 3, KR_MARK)
+                    `KL(nx - 4, ny - 1, 3, 4 + s3, KR_MARK_LIGHT)
+                    `KL(nx - 3, ny + 5, 2, 4 + s3, KR_MARK_LIGHT)
+                    `KL(nx - 2, ny, 2, nr, KR_BODY)
+                    `KL(nx - 2, ny + 3, 1, 3, KR_BODY)
+                    `KL(nx - 6 - s3, ny + 9 + s3, 1, 1, KR_BODY)
+                end else if (kmv_dn[p] && sp_spc_n(K_TWIST) != 2'd0) begin
+                    // scende: getto dal pod superiore, verso l'alto (lo stesso ribaltato)
+                    nx = sp_spc_x(K_TWIST, 0);
+                    ny = sp_spc_y(K_TWIST, 0);
+                    nr = sp_spc_r(K_TWIST, 0);
+                    `KL(nx - 6 - s3, ny + nr - 6 - s3, 3, 3 + s3, KR_MARK)
+                    `KL(nx - 4, ny + nr - 11 - s3, 2, 3, KR_MARK)
+                    `KL(nx - 4, ny + nr - 3 - s3, 3, 4 + s3, KR_MARK_LIGHT)
+                    `KL(nx - 3, ny + nr - 9 - s3, 2, 4 + s3, KR_MARK_LIGHT)
+                    `KL(nx - 2, ny, 2, nr, KR_BODY)
+                    `KL(nx - 2, ny + nr - 6, 1, 3, KR_BODY)
+                    `KL(nx - 6 - s3, ny + nr - 10 - s3, 1, 1, KR_BODY)
+                end
+                // onda del colpo attorno alle due estremità, mai sull'astronave
+                if (hit && base == KR_NONE &&
                     (ring_px(u + 1, v - 2, 1'b1, pd_ring_lo(f), pd_ring_hi(f)) ||
                      ring_px(u + 1, v - (HT_W - 2), 1'b0, pd_ring_lo(f), pd_ring_hi(f))))
                     fill = (f < 5'd15) ? KR_MARK : KR_MARK_DARK;
             end
             K_BLASTER: begin
-                // VIPER-X: cannoniera d'assalto con livrea verde a "X", doppi cannoni laser alari
-                // con rinculo e lampo verde simultanei e barra di carica laser (0..6 colpi)
+                // VIPER-X: cannoniera d'assalto; le canne davanti alla faccia rientrano nel rinculo, lampo
+                // verde alle bocche, il verde dello scafo fa da indicatore dei colpi (si spegne dall'alto)
                 if (fire && ff < 3) u = u0 + 1;
-                b_top = (fire && ff < 3) ? 3'd1 : (fire && ff < 8) ? 3'd2 : 3'd3;
-                b_bot = b_top;
-                `KB(-3, 0, 3, HT_B)
-                `KF(0, 2, 1, HT_B - 4, KR_BODY)
-                `KG(-6, 3, 3, 5)
-                `KG(-6, HT_B - 8, 3, 5)
-                for (c = 0; c < 2; c = c + 1) begin
-                    my = (c == 0) ? 12'sd5 : HT_B - 6;
-                    `KF(-7, my - 1, 1, 3, KR_DARK_DEEP)
-                    ph2 = (c == 0) ? kpose[1:0] : (kpose[1:0] + 2'd2);
-                    fl = (kmv ? ((ph2 == 2'd0) ? 12'sd6 : (ph2 == 2'd2) ? 12'sd7 : 12'sd8)
-                              : ((ph2 == 2'd0) ? 12'sd4 : (ph2 == 2'd2) ? 12'sd6 : 12'sd5));
-                    mlen = (fl + 12'sd1) >>> 1;
-                    jlen = fl - 12'sd1;
-                    clen = ((fl >>> 1) < 12'sd2) ? 12'sd2 : (fl >>> 1);
-                    `KF(-7 - mlen, my - 1, mlen, 3, KR_MARK)
-                    `KF(-8, my - 1, 1, 3, KR_MARK_LIGHT)
-                    `KF(-7 - jlen, my, jlen, 1, KR_MARK_LIGHT)
-                    `KF(-7 - clen, my, clen, 1, KR_BODY)
-                    `KF(-8 - fl, my, 2, 1, KR_MARK)
-                    if (kmv) begin
-                        s3 = (c == 0) ? $signed({10'd0, kpose3}) : ((kpose3 == 2'd2) ? 12'sd0 : $signed({10'd0, kpose3}) + 12'sd1);
-                        `KF(-9 - fl - s3, my - 1 + ((c == 0) ? s3 : ((s3 == 12'sd2) ? 12'sd0 : s3 + 12'sd1)), 1, 1,
-                            (s3 == 12'sd0) ? KR_MARK_LIGHT : KR_MARK)
+                bk = (fire && ff < 3) ? 12'sd2 : (fire && ff < 8) ? 12'sd1 : 12'sd0;
+                if (bk > SP_BARREL - 1) bk = SP_BARREL - 1;
+                base = sp_px(K_BLASTER, (u >= 1) ? u + bk : u, v);
+                lf = bl_lit(kammo[p]);
+                if (u < 1 && v < lf)
+                    base = (base == KR_MARK) ? KR_DARK : (base == KR_MARK_DARK) ? KR_DARK_DEEP :
+                           (base == KR_MARK_LIGHT) ? KR_GRAY : base;
+                fill = base;
+                for (c = 0; c < 2; c = c + 1)
+                    if (c < sp_eng_n(K_BLASTER)) begin
+                        nx = sp_eng_x(K_BLASTER, c);
+                        ny = sp_eng_y(K_BLASTER, c);
+                        nr = sp_eng_r(K_BLASTER, c);
+                        ph2 = (c == 0) ? kpose[1:0] : (kpose[1:0] + 2'd2);
+                        fl = (kmv ? ((ph2 == 2'd0) ? 12'sd6 : (ph2 == 2'd2) ? 12'sd7 : 12'sd8)
+                                  : ((ph2 == 2'd0) ? 12'sd4 : (ph2 == 2'd2) ? 12'sd6 : 12'sd5));
+                        mlen = (fl + 12'sd1) >>> 1;
+                        jlen = fl - 12'sd1;
+                        clen = ((fl >>> 1) < 12'sd2) ? 12'sd2 : (fl >>> 1);
+                        `KL(nx - mlen, ny - 1, mlen, nr + 2, KR_MARK)
+                        `KL(nx - 1, ny - 1, 1, nr + 2, KR_MARK_LIGHT)
+                        `KL(nx - jlen, ny, jlen, nr, KR_MARK_LIGHT)
+                        `KL(nx - clen, ny, clen, nr, KR_BODY)
+                        `KL(nx - 1 - fl, ny, 2, 1, KR_MARK)
+                        if (kmv) begin
+                            s3 = (c == 0) ? $signed({10'd0, kpose3}) : ((kpose3 == 2'd2) ? 12'sd0 : $signed({10'd0, kpose3}) + 12'sd1);
+                            `KL(nx - 2 - fl - s3, ny - 1 + ((c == 0) ? s3 : ((s3 == 12'sd2) ? 12'sd0 : s3 + 12'sd1)), 1, 1,
+                                (s3 == 12'sd0) ? KR_MARK_LIGHT : KR_MARK)
+                        end
+                        `KTR(nx - 1 - fl, ny + ((nr - 1) >>> 1), kbx[p])
+                        if (kbs[p] == 2'd3) `KIGN(nx - 1, ny, nr)
                     end
-                    `KTR(-8 - fl, my, kbx[p])
-                    if (kbs[p] == 2'd3) `KIGN(-8, my, 1)
-                end
-                `KL(-3, BMID - 4, 1, 2, KR_MARK)
-                `KL(-1, BMID - 4, 1, 2, KR_MARK)
-                `KL(-2, BMID - 2, 1, 1, KR_MARK_DARK)
-                `KL(-2, BMID - 1, 1, 2, KR_MARK)
-                `KL(-2, BMID + 1, 1, 1, KR_MARK_DARK)
-                `KL(-3, BMID + 2, 1, 2, KR_MARK)
-                `KL(-1, BMID + 2, 1, 2, KR_MARK)
-                `KF(-1, 8, 1, 2, KR_MARK)
-                if (b_top >= 3'd2) begin
-                    `KG(1, 8, $signed({9'd0, b_top}), 2)
-                end else begin
-                    `KF(1, 8, 1, 2, KR_GRAY)
-                end
-                `KF(-1, HT_B - 10, 1, 2, KR_MARK)
-                if (b_bot >= 3'd2) begin
-                    `KG(1, HT_B - 10, $signed({9'd0, b_bot}), 2)
-                end else begin
-                    `KF(1, HT_B - 10, 1, 2, KR_GRAY)
-                end
+                // lampo alle bocche dei cannoni (davanti agli agganci delle armi, con il rinculo)
                 if (fire && ff < 3) begin
-                    `KM(2, 7, 2, 4)
-                    `KF(3, 8, 3, 2, KR_MARK_LIGHT)
-                    `KF(3, 8, 2, 2, KR_BODY)
-                    `KF(6, 8, 2, 2, KR_MARK_LIGHT)
-                    `KM(2, HT_B - 11, 2, 4)
-                    `KF(3, HT_B - 10, 3, 2, KR_MARK_LIGHT)
-                    `KF(3, HT_B - 10, 2, 2, KR_BODY)
-                    `KF(6, HT_B - 10, 2, 2, KR_MARK_LIGHT)
-                end
-                // barra verticale di ricarica del condensatore laser (verde, da 0 a 19 px dal basso)
-                `KF(-6, BSTRAP, 3, 21, KR_DARK)
-                slot = (kammo[p] == 3'd0) ? 12'sd0 :
-                       (kammo[p] == 3'd1) ? 12'sd3 :
-                       (kammo[p] == 3'd2) ? 12'sd6 :
-                       (kammo[p] == 3'd3) ? 12'sd9 :
-                       (kammo[p] == 3'd4) ? 12'sd13 :
-                       (kammo[p] == 3'd5) ? 12'sd16 : 12'sd19;
-                if (slot > 12'sd0) begin
-                    `KF(-6, BSTRAP + 20 - slot, 2, slot, KR_MARK)
-                    `KF(-6, BSTRAP + 20 - slot, 2, (slot > 12'sd2) ? 12'sd2 : slot, KR_MARK_LIGHT)
+                    `KM(SP_GUN_X0 - bk, SP_GUN_Y0 - 1, 2, SP_GUN_R0 + 2)
+                    `KF(SP_GUN_X0 - bk + 1, SP_GUN_Y0, 3, SP_GUN_R0, KR_MARK_LIGHT)
+                    `KF(SP_GUN_X0 - bk + 1, SP_GUN_Y0, 2, SP_GUN_R0, KR_BODY)
+                    `KF(SP_GUN_X0 - bk + 4, SP_GUN_Y0, 2, SP_GUN_R0, KR_MARK_LIGHT)
+                    `KM(SP_GUN_X1 - bk, SP_GUN_Y1 - 1, 2, SP_GUN_R1 + 2)
+                    `KF(SP_GUN_X1 - bk + 1, SP_GUN_Y1, 3, SP_GUN_R1, KR_MARK_LIGHT)
+                    `KF(SP_GUN_X1 - bk + 1, SP_GUN_Y1, 2, SP_GUN_R1, KR_BODY)
+                    `KF(SP_GUN_X1 - bk + 4, SP_GUN_Y1, 2, SP_GUN_R1, KR_MARK_LIGHT)
                 end
             end
             K_RUSH: begin
-                // MACH-ZERO: intercettore supersonico ad ali a freccia, cockpit, postbruciatore nitro e scie
-                `KB(-3, 0, 4, HT_R)
-                `KB(-6, 1, 3, 5)
-                `KM(-9, 0, 4, 3)
-                `KF(-11, 0, 2, 2, KR_MARK_DARK)
-                `KB(-6, HT_R - 6, 3, 5)
-                `KM(-9, HT_R - 3, 4, 3)
-                `KF(-11, HT_R - 2, 2, 2, KR_MARK_DARK)
-                `KD(-3, HT_R / 2 - 4, 3, 8)
-                `KM(-2, HT_R / 2 - 3, 2, 6)
-                `KL(-1, HT_R / 2 - 2, 1, 4, KR_MARK_LIGHT)
-                `KG(-5, HT_R / 2 - 2, 2, 4)
-                // postbruciatore: quattro pose irregolari, alone e punta che sfarfallano, diamanti
-                // d'urto che scorrono lungo il getto e scintille
+                // MACH-ZERO: intercettore supersonico ad ali a freccia, postbruciatore nitro e scie alari
+                base = sp_px(K_RUSH, u, v);
+                fill = base;
                 fl = (kdash[p] ? ((kpose[1:0] == 2'd0) ? 12'sd11 : (kpose[1:0] == 2'd1) ? 12'sd13 :
                                   (kpose[1:0] == 2'd2) ? 12'sd12 : 12'sd14)
                                : ((kpose[1:0] == 2'd0) ? 12'sd5 : (kpose[1:0] == 2'd1) ? 12'sd7 :
@@ -1210,99 +1129,105 @@ function [3:0] kind_px(input p, input [2:0] kind, input signed [11:0] u0, input 
                 olen = ((fl + 12'sd1) >>> 1) + fz;
                 jlen = fl - 12'sd1;
                 clen = (fl >>> 2) + 12'sd1;
-                `KF(-5 - olen, HT_R / 2 - 2, olen, 4, KR_MARK)
-                `KF(-5 - jlen, HT_R / 2 - 1 + lean, jlen, 2, KR_MARK_LIGHT)
-                `KF(-5 - clen, HT_R / 2 - 1, clen, 2, KR_BODY)
-                d0 = clen + 12'sd1 + $signed({10'd0, kpose3});
-                if (d0 < jlen - 12'sd1) begin
-                    `KF(-6 - d0, HT_R / 2 - 1 + lean, 1, 2, KR_BODY)
+                if (sp_eng_n(K_RUSH) != 2'd0) begin
+                    nx = sp_eng_x(K_RUSH, 0);
+                    ny = sp_eng_y(K_RUSH, 0);
+                    nr = sp_eng_r(K_RUSH, 0);
+                    `KL(nx - olen, ny - 1, olen, nr + 2, KR_MARK)
+                    `KL(nx - jlen, ny + lean, jlen, nr, KR_MARK_LIGHT)
+                    `KL(nx - clen, ny, clen, nr, KR_BODY)
+                    d0 = clen + 12'sd1 + $signed({10'd0, kpose3});
+                    if (d0 < jlen - 12'sd1) begin
+                        `KL(nx - 1 - d0, ny + lean, 1, nr, KR_BODY)
+                    end
+                    if (d0 + 12'sd3 < jlen - 12'sd1) begin
+                        `KL(nx - 4 - d0, ny + lean, 1, nr, KR_BODY)
+                    end
+                    `KL(nx - 1 - fl, ny + lean + ((nr > 1) ? fz : 12'sd0), 2, 1, KR_MARK)
+                    if (kmv) begin
+                        `KL(nx - 2 - fl - $signed({10'd0, kpose3}), ny - 1 + $signed({10'd0, kpose[1:0] + kpose3}), 1, 1,
+                            (kpose3 == 2'd0) ? KR_MARK_LIGHT : KR_MARK)
+                    end
+                    `KTR(nx - 1 - fl, ny + ((nr - 1) >>> 1), kbx[p])
+                    if (kbs[p] == 2'd3) `KIGN(nx, ny, nr)
                 end
-                if (d0 + 12'sd3 < jlen - 12'sd1) begin
-                    `KF(-9 - d0, HT_R / 2 - 1 + lean, 1, 2, KR_BODY)
-                end
-                `KF(-6 - fl, HT_R / 2 - 1 + lean + fz, 2, 1, KR_MARK)
-                if (kmv) begin
-                    `KF(-7 - fl - $signed({10'd0, kpose3}), HT_R / 2 - 2 + $signed({10'd0, kpose[1:0] + kpose3}), 1, 1,
-                        (kpose3 == 2'd0) ? KR_MARK_LIGHT : KR_MARK)
-                end
-                `KTR(-6 - fl, HT_R / 2 - 1, kbx[p])
-                if (kbs[p] == 2'd3) `KIGN(-5, HT_R / 2 - 1, 2)
+                // scie d'aria dalle punte alari (gli agganci speciali)
                 wlen = kdash[p] ? 12'sd4 : 12'sd2;
-                w1 = $signed({10'd0, kpose3});
-                w2 = (kpose3 == 2'd2) ? 12'sd0 : w1 + 12'sd1;
-                `KF(-12 - w1 - wlen, 1, wlen, 1, kdash[p] ? KR_MARK_LIGHT : KR_MARK)
-                `KF(-12 - w2 - wlen, HT_R - 2, wlen, 1, kdash[p] ? KR_MARK_LIGHT : KR_MARK)
+                for (c = 0; c < 2; c = c + 1)
+                    if (c < sp_spc_n(K_RUSH)) begin
+                        ww = (c == 0) ? $signed({10'd0, kpose3}) : ((kpose3 == 2'd2) ? 12'sd0 : $signed({10'd0, kpose3}) + 12'sd1);
+                        nx = sp_spc_x(K_RUSH, c);
+                        ny = sp_spc_y(K_RUSH, c);
+                        nr = sp_spc_r(K_RUSH, c);
+                        `KF(nx - 1 - ww - wlen, ny + ((nr - 1) >>> 1), wlen, 1, kdash[p] ? KR_MARK_LIGHT : KR_MARK)
+                    end
             end
             K_GUARDIAN: begin
-                // BASTION-5: chiglia posteriore con stabilizzatori blu e propulsori ionici a cono +
-                // 5 piastre scudo anteriori indipendenti con impulso di scansione blu
-                `KG(-7, 5, 4, HT_G - 10)
-                `KD(-8, HT_G / 2 - 3, 3, 6)
-                `KM(-7, HT_G / 2 - 2, 2, 4)
-                `KM(-5, 2, 3, 3)
-                `KM(-5, HT_G - 5, 3, 3)
-                for (c = 0; c < 2; c = c + 1) begin
-                    my = (c == 0) ? 12'sd7 : HT_G - 9;
-                    `KF(-8, my - 1, 1, 4, KR_DARK_DEEP)
-                    ph2 = (c == 0) ? kpose[1:0] : (kpose[1:0] + 2'd2);
-                    fl = (kmv ? ((ph2 == 2'd0) ? 12'sd6 : (ph2 == 2'd2) ? 12'sd8 : 12'sd7)
-                              : ((ph2 == 2'd0) ? 12'sd4 : (ph2 == 2'd2) ? 12'sd6 : 12'sd5));
-                    jlen = fl - 12'sd1;
-                    clen = ((fl >>> 1) < 12'sd2) ? 12'sd2 : (fl >>> 1);
-                    `KF(-9, my - 1, 1, 4, KR_MARK)
-                    `KF(-8 - jlen, my, jlen, 2, KR_MARK_LIGHT)
-                    `KF(-8 - clen, my, clen, 2, KR_BODY)
-                    `KF(-9 - fl, my + (ph2[0] ? 12'sd1 : 12'sd0), 2, 1, KR_MARK)
-                    if (kmv) begin
-                        s3 = (c == 0) ? (kpose[0] ? 12'sd1 : 12'sd0) : (kpose[0] ? 12'sd0 : 12'sd1);
-                        `KF(-10 - fl - s3, my + s3, 1, 1, KR_MARK_LIGHT)
-                    end
-                    `KTR(-9 - fl, my, kbx[p])
-                    if (kbs[p] == 2'd3) `KIGN(-9, my, 2)
+                // BASTION-5: carrier fermo e cinque piastre scudo (i settori del muro, i pezzi dello sprite
+                // tra le giunture) che si montano, rientrano al colpo, lampeggiano e si rompono; impulso
+                // di scansione sul retro della piastra; due propulsori ionici agli agganci dei motori
+                if (u0 < -12'sd2) begin
+                    base = sp_px(K_GUARDIAN, u0, v0);
+                    fill = base;
                 end
+                for (c = 0; c < 2; c = c + 1)
+                    if (c < sp_eng_n(K_GUARDIAN)) begin
+                        nx = sp_eng_x(K_GUARDIAN, c);
+                        ny = sp_eng_y(K_GUARDIAN, c);
+                        nr = sp_eng_r(K_GUARDIAN, c);
+                        ph2 = (c == 0) ? kpose[1:0] : (kpose[1:0] + 2'd2);
+                        fl = (kmv ? ((ph2 == 2'd0) ? 12'sd6 : (ph2 == 2'd2) ? 12'sd8 : 12'sd7)
+                                  : ((ph2 == 2'd0) ? 12'sd4 : (ph2 == 2'd2) ? 12'sd6 : 12'sd5));
+                        jlen = fl - 12'sd1;
+                        clen = ((fl >>> 1) < 12'sd2) ? 12'sd2 : (fl >>> 1);
+                        `KL(nx - 1, ny - 1, 1, nr + 2, KR_MARK)
+                        `KL(nx - jlen, ny, jlen, nr, KR_MARK_LIGHT)
+                        `KL(nx - clen, ny, clen, nr, KR_BODY)
+                        `KL(nx - 1 - fl, ny + ((ph2[0] && nr > 1) ? 12'sd1 : 12'sd0), 2, 1, KR_MARK)
+                        if (kmv) begin
+                            s3 = (c == 0) ? (kpose[0] ? 12'sd1 : 12'sd0) : (kpose[0] ? 12'sd0 : 12'sd1);
+                            `KL(nx - 2 - fl - s3, ny + ((nr > 1) ? s3 : 12'sd0), 1, 1, KR_MARK_LIGHT)
+                        end
+                        `KTR(nx - 1 - fl, ny + ((nr - 1) >>> 1), kbx[p])
+                        if (kbs[p] == 2'd3) `KIGN(nx - 1, ny, nr)
+                    end
                 alive = {2'd0, kwall[p][0]} + kwall[p][1] + kwall[p][2] + kwall[p][3] + kwall[p][4];
+                warn = alive == 3'd1 && !kpose[1];
                 ka = PD_BARRIER_FRAMES - kba[p];               // frame dalla rottura dell'ultimo settore
                 ca = ka - PD_CRACK_FRAMES;
                 for (c = 0; c < 5; c = c + 1) begin
                     u = u0 + ((hit && f < 5'd6 && krc[p] == c) ? 12'sd1 : 12'sd0);
                     v = v0 - (kbuild ? gbd[c] : 12'sd0);
-                    y0 = (c == 0) ? 0 : (c == 1) ? GY1 : (c == 2) ? GY2 : (c == 3) ? GY3 : GY4;
-                    y1 = (c == 0) ? GY1 : (c == 1) ? GY2 : (c == 2) ? GY3 : (c == 3) ? GY4 : HT_G;
-                    ys = (c > 0) ? y0 + 1 : y0;                // righe sotto la fuga
-                    hh = y1 - ys;
+                    y0 = gs_y0(c);
+                    y1 = gs_y1(c);
+                    yt = (c > 0) ? gs_y1(c - 1) : 12'sd0;       // la giuntura sopra va con questa piastra
                     recent = !kwall[p][c] && khit[p][c] && kba[p] != 6'd0;
-                    if (!kbuild || gbv[c]) begin
-                        if (kwall[p][c]) begin
-                            warn = (alive == 3'd1 && !kpose[1]);
-                            if (warn) begin
-                                `KF(-2, y0, 3, y1 - y0, KR_MARK_LIGHT)
-                            end else begin
-                                `KB(-2, y0, 3, y1 - y0)
-                            end
-                            `KF(-2, ys, 1, hh, (kpose5 == c || warn) ? KR_MARK_LIGHT : KR_MARK)
+                    if ((!kbuild || gbv[c]) && u >= -12'sd2 && u <= 12'sd0 && v >= yt && v < y1) begin
+                        base = sp_px(K_GUARDIAN, u, v);
+                        if (v < y0) begin
+                            if (c > 0 && !kwall[p][c] && !kwall[p][c - 1]) base = KR_BLACK;
+                        end else if (kwall[p][c]) begin
+                            if ((warn || (kpose5 == c && u == -12'sd2)) && (base == KR_BODY || base == KR_SHADE))
+                                base = KR_MARK_LIGHT;
                         end else if (recent && ka < PD_CRACK_FRAMES) begin
-                            `KF(-2, y0, 3, y1 - y0, KR_MARK_LIGHT)
-                            `KF(-1, ys + 1, 1, (hh > 2) ? hh - 2 : 1, KR_MARK)
+                            base = (base == KR_BODY || base == KR_SHADE) ? KR_MARK_LIGHT : KR_MARK;
                         end else begin
-                            `KD(-2, y0, 3, y1 - y0)
-                            `KF(-1, ys + 1, 1, (hh > 2) ? hh - 2 : 1, KR_DARK_DEEP)
-                            if (recent && ka >= PD_CRACK_FRAMES && ka < PD_BREAK_FRAMES)
-                                for (j = 0; j < 4; j = j + 1) begin
-                                    if (j % 2 == 1) begin
-                                        `KF(pd_chip_x(ca[4:0], j), ys + pd_chip_y(ca[4:0], j), 1, 1, KR_GRAY)
-                                    end else begin
-                                        `KF(pd_chip_x(ca[4:0], j), ys + pd_chip_y(ca[4:0], j), 2, 1, KR_DARK)
-                                    end
-                                end
+                            base = (base == KR_BODY || base == KR_SHADE || base == KR_GRAY || base == KR_GRAY_LIGHT) ? KR_DARK :
+                                   (base == KR_BLACK) ? KR_BLACK : KR_DARK_DEEP;
                         end
-                        if (c > 0) begin
-                            `KF(-2, y0, 3, 1, (!kwall[p][c] && !kwall[p][c - 1]) ? KR_BLACK : KR_MARK)
-                        end
+                        if (base != KR_NONE) fill = base;
                     end
+                    if ((!kbuild || gbv[c]) && recent && ka >= PD_CRACK_FRAMES && ka < PD_BREAK_FRAMES)
+                        for (j = 0; j < 4; j = j + 1) begin
+                            if (j % 2 == 1) begin
+                                `KF(pd_chip_x(ca[4:0], j), y0 + pd_chip_y(ca[4:0], j), 1, 1, KR_GRAY)
+                            end else begin
+                                `KF(pd_chip_x(ca[4:0], j), y0 + pd_chip_y(ca[4:0], j), 2, 1, KR_DARK)
+                            end
+                        end
                 end
                 u = u0;
                 v = v0;
-                `KL(-3, 0, 1, HT_G, KR_BLACK)
             end
             default: begin
                 // senza tipo (solo con una mossa di livello 2: la racchetta gialla)
@@ -1641,17 +1566,14 @@ always @(*) begin
                         end
                 end
             end
-            // RUSH: tre immagini dell'intercettore (corpo e ali a freccia) tra casa e dove si trova
+            // RUSH: tre immagini dell'intercettore (la sagoma dello sprite) tra casa e dove si trova
             // mentre scatta in avanti, più scure verso casa e che sfumano (kfade da 3 a 1)
             if (kd[p] == K_RUSH && kfade[p] != 2'd0 && !spin[p] && !(wv && wsd == p) && (kcp[p] == KR_NONE || kcp[p] == KR_SHADOW) &&
                 sy - kt[p] >= 0 && sy - kt[p] < $signed({2'b0, kh[p]}) &&
                 !($signed({2'b0, x}) - kl[p] >= 0 && $signed({2'b0, x}) - kl[p] < PW))
                 for (k = 0; k < 3; k = k + 1)
-                    if (((($signed({2'b0, x}) - kg[3*p + k] >= 0 && $signed({2'b0, x}) - kg[3*p + k] < PW) ||
-                         ((sy - kt[p] < 3 || sy - kt[p] >= $signed({2'b0, kh[p]}) - 3) &&
-                          (p == 0 ? ($signed({2'b0, x}) - kg[3*p + k] >= -6 && $signed({2'b0, x}) - kg[3*p + k] < 0)
-                                  : ($signed({2'b0, x}) - kg[3*p + k] >= PW && $signed({2'b0, x}) - kg[3*p + k] < PW + 6))))) &&
-                        k + kfade[p] >= 3) begin
+                    if (sp_px(K_RUSH, (p == 0) ? $signed({2'b0, x}) - kg[3*p + k] - 12'sd3 : kg[3*p + k] - $signed({2'b0, x}),
+                              sy - kt[p]) != KR_NONE && k + kfade[p] >= 3) begin
                         on = 1'b1;
                         col = (k + kfade[p] == 5) ? P_RGHOST3 : (k + kfade[p] == 4) ? P_RGHOST2 : P_RGHOST1;
                     end

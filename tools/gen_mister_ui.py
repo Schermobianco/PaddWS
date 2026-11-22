@@ -221,8 +221,8 @@ def howto_assets(gfx: Gfx) -> list[str]:
 
 
 def paddle_images(gfx: Gfx) -> list[str]:
-    """Racchette dei personaggi fuori dalla partita, ferme (tools/paddle_shapes.py, le forme di
-    kind_px di next_render.v), rivolte a destra (a sinistra si specchiano), a grandezza reale.
+    """Racchette dei personaggi fuori dalla partita, ferme (tools/paddle_shapes.py: gli sprite e gli
+    effetti di kind_px di next_render.v), rivolte a destra (a sinistra si specchiano), a grandezza reale.
     PREVIEW per la scelta e lo schermo VS: TWIST inclinata e le immagini dello scatto del RUSH;
     PLAIN per le forme di OMEGA e la sua rottura nel finale (le stesse, tranne TWIST dritta e RUSH
     senza le immagini). 8 bit per pixel: il colore è la base
@@ -262,15 +262,19 @@ def paddle_images(gfx: Gfx) -> list[str]:
             h = heights[k]
             px = ps.render(k, h, tilt=3 if preview and k == ps.TWIST else 0, pw=pw)
             if preview and k == ps.RUSH:
-                # immagini dello scatto dietro, come la scelta del PC (sotto l'intercettore), con le ali
+                # immagini dello scatto dietro, come la scelta del PC (sotto l'intercettore): la sagoma
+                # dello sprite
+                s = ps.ship(k)
+                su0, su1 = s.u_range()
                 for g, role in ((1, ps.GHOST1), (2, ps.GHOST2), (3, ps.GHOST3)):
-                    u0 = -3 - 2 * pw * (4 - g)
-                    for u in range(u0, u0 + pw):
+                    off = -2 * pw * (4 - g)
+                    for u in range(su0, su1 + 1):
+                        c = ps.col(u, pw)
+                        if c is None:
+                            continue
                         for v in range(h):
-                            px.setdefault((u, v), role)
-                    for u in range(u0 - 6, u0):
-                        for v in (0, 1, 2, h - 3, h - 2, h - 1):
-                            px.setdefault((u, v), role)
+                            if s.at(u, v * s.h // h) != ps.NONE:
+                                px.setdefault((c + off, v), role)
             u0, u1 = min(p[0] for p in px), max(p[0] for p in px) + 1
             v0, v1 = min(p[1] for p in px), max(p[1] for p in px) + 1
             img = [[value(k, px[(u, v)]) if (u, v) in px else 0 for u in range(u0, u1)] for v in range(v0, v1)]
