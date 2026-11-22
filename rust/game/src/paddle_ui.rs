@@ -24,7 +24,7 @@ use paddws_core::{Event, Paddle, PaddleKind, Side};
 use crate::encoder::Action;
 use crate::gamepad::Control;
 use crate::input::{self, PadKeys};
-use crate::next_ui::{PICK_KEYS, PICK_SECONDS, Pick, READY_SECONDS, unit};
+use crate::next_ui::{PICK_KEYS, Pick, READY_SECONDS, unit};
 use crate::render::{ArtPart, Renderer};
 use crate::scenes::{App, Menu, Scene};
 use crate::ships::{self, Anchor, Ship};
@@ -143,9 +143,35 @@ pub struct Shape {
     pub dash: Option<(f32, f32)>,
     /// anteprima della scelta: RUSH mostra sempre le immagini dello scatto
     pub preview: bool,
-    /// ritaglio verticale in coordinate di schermo (y0..y1), usato dal salto del TELEPORT
-    pub clip_y: Option<(f32, f32)>,
+    /// salto del TELEPORT: la racchetta si scompone o si ricompone a righe
+    pub scan: Option<Scan>,
     pub anim: Anim,
+}
+
+/// Salto del TELEPORT: avanzamento da 0 a 32 (alla partenza quanto è scomposta, all'arrivo quanto è
+/// ricomposta), se è la racchetta d'arrivo e la fase del tremolio delle righe in luce.
+#[derive(Clone, Copy)]
+pub struct Scan {
+    pub level: i32,
+    pub arriving: bool,
+    pub jitter: bool,
+}
+
+/// TELEPORT: stato della riga `v` della racchetta (0 nascosta, 1 in luce, 2 piena). Ogni riga ha una
+/// soglia fissa in ordine sparso (da 0 a 19); alla partenza la riga resta piena finché l'avanzamento
+/// non arriva alla soglia, poi è in luce per 8 passi e sparisce; all'arrivo il contrario, con le
+/// soglie rovesciate. Lo stesso calcolo fa `warp_row` di next_render.v sul MiSTer.
+pub fn scan_row(v: i32, level: i32, arriving: bool) -> u8 {
+    let th = (((v * 5) & 7) * 11) >> 2;
+    let th = if arriving { 22 - th } else { th };
+    match (arriving, level) {
+        (false, l) if l < th => 2,
+        (false, l) if l < th + 8 => 1,
+        (false, _) => 0,
+        (true, l) if l >= th + 8 => 2,
+        (true, l) if l >= th => 1,
+        (true, _) => 0,
+    }
 }
 
 /// Inclinazione di TWIST dalla velocità della racchetta: salendo la faccia si gira verso l'alto.
@@ -486,18 +512,16 @@ fn nozzle(a: &Anchor, k: f32) -> (f32, f32, f32) {
 }
 
 /// TWIST: getto di manovra da un pod (aggancio speciale `a`), verso il basso (`down`) o verso
-/// l'alto: nucleo bianco all'ugello, alone e scia che piegano verso l'estremità della nave.
+/// l'alto: piccolo, un nucleo bianco all'ugello con un filo di luce dietro e una coda corta che
+/// piega verso l'estremità della nave.
 fn rcs(r: &mut Ops, a: &Anchor, k: f32, down: bool, p: f32) {
     let (nz, y, rows) = nozzle(a, k);
     // pezzi del getto verso il basso: colonna e riga dall'ugello e dalla prima riga dell'aggancio
     let parts = [
-        (-6.0 - p, 3.0, 3.0, 3.0 + p, Role::Mark),
-        (-4.0, 8.0 + p, 2.0, 3.0, Role::Mark),
-        (-4.0, -1.0, 3.0, 4.0 + p, Role::MarkLight),
-        (-3.0, 5.0, 2.0, 4.0 + p, Role::MarkLight),
         (-2.0, 0.0, 2.0, rows, Role::Body),
-        (-2.0, 3.0, 1.0, 3.0, Role::Body),
-        (-6.0 - p, 9.0 + p, 1.0, 1.0, Role::Body),
+        (-3.0, 0.0, 1.0, rows, Role::MarkLight),
+        (-3.0, rows, 2.0, 2.0 + p, Role::MarkLight),
+        (-3.0, rows + 2.0 + p, 1.0, 1.0, Role::Mark),
     ];
     for (dx, dy, w, hh, role) in parts {
         // verso l'alto: lo stesso getto ribaltato sulle righe dell'aggancio
@@ -877,17 +901,23 @@ pub fn draw_paddle_stretched(r: &Renderer, s: &Shape, u: f32, stretch_x: f32, lo
                 color: look.body,
             });
         } else {
-            let mut y0 = cy - s.h / 2.0;
-            let mut y1 = y0 + s.h;
-            if let Some((cy0, cy1)) = s.clip_y {
-                y0 = y0.max(cy0);
-                y1 = y1.min(cy1);
-                if y1 <= y0 {
-                    return;
+            let w = s.w * stretch_x;
+            let top = cy - s.h / 2.0;
+            match s.scan {
+                None => draw_rectangle(cx - w / 2.0, top, w, s.h, look.body),
+                Some(sc) => {
+                    let rows = (s.h / u).round().max(1.0) as i32;
+                    let ky = s.h / rows as f32;
+                    for v in 0..rows {
+                        let (dx, color) = match scan_row(v, sc.level, sc.arriving) {
+                            0 => continue,
+                            1 => (if (v & 1 == 0) == sc.jitter { u } else { -u }, lighter(look.mark, 0.45)),
+                            _ => (0.0, look.body),
+                        };
+                        draw_rectangle(cx - w / 2.0 + dx, top + v as f32 * ky, w, ky, color);
+                    }
                 }
             }
-            let w = s.w * stretch_x;
-            draw_rectangle(cx - w / 2.0, y0, w, y1 - y0, look.body);
         }
         return;
     };
@@ -947,21 +977,28 @@ pub fn draw_paddle_stretched(r: &Renderer, s: &Shape, u: f32, stretch_x: f32, lo
         let (dx, dy) = (f * (x + 0.5) * kx, top + y * ky - cy);
         vec2(cx + dx * cos - dy * sin, cy + dx * sin + dy * cos)
     };
-    let fill = |op: &Op, color: Color, ox: f32, oy: f32| match *op {
+    let mark_dark = scaled(look.mark, [0.6; 3]);
+    let mark_light = lighter(look.mark, 0.45);
+    // `main`: il disegno della racchetta (non l'ombra), dove le righe in luce del TELEPORT si accendono
+    let fill = |op: &Op, color: Color, ox: f32, oy: f32, main: bool| match *op {
         Op::Rect { x, y, w, h, .. } => {
             let (ww, hh) = (w * kx, h * ky);
             if angle == 0.0 {
                 let x0 = if f > 0.0 { cx + (x + ox + 0.5) * kx } else { cx - (x + ox + w + 0.5) * kx };
-                let mut ry0 = top + (y + oy) * ky;
-                let mut ry1 = ry0 + hh;
-                if let Some((cy0, cy1)) = s.clip_y {
-                    ry0 = ry0.max(cy0);
-                    ry1 = ry1.min(cy1);
-                    if ry1 <= ry0 {
-                        return;
-                    }
+                let Some(sc) = s.scan else {
+                    draw_rectangle(x0, top + (y + oy) * ky, ww, hh, color);
+                    return;
+                };
+                // TELEPORT: una riga alla volta, nascosta, in luce che trema o piena
+                for i in 0..h as i32 {
+                    let v = y as i32 + i;
+                    let (dx, c) = match scan_row(v, sc.level, sc.arriving) {
+                        0 => continue,
+                        1 => (if (v & 1 == 0) == sc.jitter { kx } else { -kx }, if main { mark_light } else { color }),
+                        _ => (0.0, color),
+                    };
+                    draw_rectangle(x0 + dx, top + (v as f32 + oy) * ky, ww, ky, c);
                 }
-                draw_rectangle(x0, ry0, ww, ry1 - ry0, color);
             } else {
                 let c = point(x + ox + w / 2.0, y + oy + h / 2.0);
                 draw_rectangle_ex(c.x, c.y, ww, hh, DrawRectangleParams {
@@ -976,8 +1013,6 @@ pub fn draw_paddle_stretched(r: &Renderer, s: &Shape, u: f32, stretch_x: f32, lo
         Op::Rect { role, .. } => role,
     };
 
-    let mark_dark = scaled(look.mark, [0.6; 3]);
-    let mark_light = lighter(look.mark, 0.45);
     let gray = rgb(180, 180, 180);
     let gray_light = rgb(226, 226, 230);
     let dark = rgb(92, 92, 98);
@@ -1005,19 +1040,19 @@ pub fn draw_paddle_stretched(r: &Renderer, s: &Shape, u: f32, stretch_x: f32, lo
         let sy_far = 3.5 - par * 1.5;
         let sy_mid = 2.0 - par * 0.8;
         for op in ops.0.iter().chain(&ops.1) {
-            fill(op, far_shadow, -4.5, sy_far);
+            fill(op, far_shadow, -4.5, sy_far, false);
         }
         for op in ops.0.iter().chain(&ops.1) {
-            fill(op, mid_shadow, -2.5, sy_mid);
+            fill(op, mid_shadow, -2.5, sy_mid, false);
         }
     } else {
         let shadow = rgb(48, 48, 58);
         for op in ops.0.iter().chain(&ops.1) {
-            fill(op, shadow, -1.0, 1.0);
+            fill(op, shadow, -1.0, 1.0, false);
         }
     }
     for op in &ops.0 {
-        fill(op, color(role_of(op)), 0.0, 0.0);
+        fill(op, color(role_of(op)), 0.0, 0.0, true);
     }
     // luce dall'alto e dalla faccia sui pezzi alti e larghi almeno 2 pixel (gli effetti: lo sprite
     // ha già le sue luci): retro e fondo del corpo in bianco in ombra, sui segni il bordo alto in
@@ -1027,10 +1062,10 @@ pub fn draw_paddle_stretched(r: &Renderer, s: &Shape, u: f32, stretch_x: f32, lo
         if w < 2.0 || h < 2.0 {
             continue;
         }
-        let edge = |x: f32, y: f32, w: f32, c: Color| fill(&Op::Rect { x, y, w, h: 1.0, role }, c, 0.0, 0.0);
+        let edge = |x: f32, y: f32, w: f32, c: Color| fill(&Op::Rect { x, y, w, h: 1.0, role }, c, 0.0, 0.0, true);
         if role == Role::Body {
             if x <= -3.0 {
-                fill(&Op::Rect { x, y, w: 1.0, h, role }, body_shade, 0.0, 0.0);
+                fill(&Op::Rect { x, y, w: 1.0, h, role }, body_shade, 0.0, 0.0, true);
             }
             edge(x + 1.0, y + h - 1.0, w - 2.0, body_shade);
         } else {
@@ -1045,7 +1080,7 @@ pub fn draw_paddle_stretched(r: &Renderer, s: &Shape, u: f32, stretch_x: f32, lo
         }
     }
     for op in &ops.1 {
-        fill(op, color(role_of(op)), 0.0, 0.0);
+        fill(op, color(role_of(op)), 0.0, 0.0, true);
     }
 }
 
@@ -1066,7 +1101,7 @@ pub fn draw_gallery(app: &App, kind: PaddleKind, zoom: f32) {
         tilt: if kind == PaddleKind::Twist { TWIST_MAX_TILT } else { 0.0 },
         dash: None,
         preview: true,
-        clip_y: None,
+        scan: None,
         anim: Anim::still(0.0),
     };
     let look = look(app, Some(kind), App::color(app.cfg.colors.white));
@@ -1086,7 +1121,6 @@ pub struct PaddlePick {
     duel: Option<Side>,
     cursor: [usize; 2],
     chosen: [bool; 2],
-    left: f64,
     ready: Option<f64>,
     /// encoder già impostati per la scelta
     knobs_ready: bool,
@@ -1100,7 +1134,6 @@ impl PaddlePick {
             duel: None,
             cursor: [0; 2],
             chosen: [false; 2],
-            left: PICK_SECONDS,
             ready: None,
             knobs_ready: false,
         };
@@ -1219,7 +1252,6 @@ impl PaddlePick {
             }
             return None;
         }
-        self.left -= dt;
         let n = PaddleKind::COUNT;
         for (side, &(up, down, toggle)) in PICK_KEYS.iter().enumerate() {
             if self.fixed == Some(side) {
@@ -1280,8 +1312,8 @@ impl PaddlePick {
                 None => self.toggle(app, side),
             }
         }
-        // tempo scaduto: vale la racchetta sotto il cursore
-        if self.chosen.iter().all(|&c| c) || self.left <= 0.0 {
+        // tutti hanno scelto
+        if self.chosen.iter().all(|&c| c) {
             self.chosen = [true; 2];
             self.ready = Some(READY_SECONDS);
             app.play(Event::Boost);
@@ -1292,7 +1324,6 @@ impl PaddlePick {
     pub fn draw(&self, app: &App) {
         let r = &app.renderer;
         let w = r.world_w;
-        let s = app.scale();
         let u = unit(app);
         let colors = &app.cfg.colors;
         let white = App::color(colors.white);
@@ -1305,17 +1336,6 @@ impl PaddlePick {
         let t1 = r.text_1x();
         r.fill(BLACK);
         r.text_centered("PICK YOUR PADDLE", font, t1, w / 2.0, at(app, 0.0, line(0)).y, 0.0, accent);
-        let secs = format!("{:02}", self.left.max(0.0).ceil() as u32);
-        let blink = self.left < 3.0 && (get_time() * 4.0) as i64 % 2 == 1;
-        r.text_centered(
-            &secs,
-            &app.assets.font_score,
-            48.0 * s,
-            w / 2.0,
-            at(app, 0.0, TIMER_Y).y,
-            0.0,
-            if blink { gray } else { white },
-        );
 
         // griglia: le caselle dei sette tipi e quella di OMEGA, il boss segreto (non si sceglie)
         for i in 0..CELLS {
@@ -1379,7 +1399,7 @@ impl PaddlePick {
                 tilt: if kind == PaddleKind::Twist { TWIST_MAX_TILT } else { 0.0 },
                 dash: None,
                 preview: true,
-                clip_y: None,
+                scan: None,
                 anim: Anim::still(get_time() as f32),
             };
             draw_paddle(r, &shape, u, look(app, Some(kind), white));
@@ -1462,7 +1482,6 @@ fn grid_step(i: usize, step: GridStep) -> usize {
         GridStep::Row => Some((i + 4) % CELLS).filter(|&j| j < n).unwrap_or(i),
     }
 }
-const TIMER_Y: f32 = TOP + 8.0 + 12.0;
 const COURT_Y: f32 = TOP + 13.0 * 8.0;
 const COURT_H: f32 = 9.0 * 8.0;
 pub(crate) const PADDLE_X: [f32; 2] = [14.0 * 8.0 + 4.0, 25.0 * 8.0 + 4.0];

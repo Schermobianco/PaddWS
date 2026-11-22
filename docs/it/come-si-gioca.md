@@ -47,7 +47,7 @@ Ogni capsula mostra il simbolo del suo bonus:
 
 | bonus | effetto |
 |:---:|---|
-| <img src="../icons/teleport.png" alt="" width="40" height="40"><br>**TELEPORT** | quando la palla in arrivo supera la metà campo, la racchetta entra in un portale ed esce da un altro nel punto in cui arriverà la palla, in tempo per prenderla |
+| <img src="../icons/teleport.png" alt="" width="40" height="40"><br>**TELEPORT** | quando la palla in arrivo supera la metà campo, la racchetta si scompone a righe e si ricompone nel punto in cui arriverà la palla, in tempo per prenderla |
 | <img src="../icons/smash.png" alt="" width="40" height="40"><br>**SMASH** | il prossimo tiro parte più veloce e angolato, lontano dall'avversario |
 | <img src="../icons/slow.png" alt="" width="40" height="40"><br>**SLOW** | la palla perde un terzo della velocità finché chi l'ha usato non la colpisce: allora riparte alla velocità di prima |
 | <img src="../icons/curve.png" alt="" width="40" height="40"><br>**CURVE** | il prossimo tiro curva, e la curva si inverte a ogni rimbalzo |

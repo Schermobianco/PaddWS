@@ -302,7 +302,7 @@ endfunction
 // salto del TELEPORT, come in next_ui.rs: con la palla in arrivo la racchetta affonda nel primo
 // portale e poi esce dal secondo sul punto d'arrivo; in posizione di dash il passo si dimezza (16 px)
 // o si riduce a 8 px (dash lungo RUSH) così l'animazione termina sempre prima dell'impatto.
-localparam integer WARP_SUNK = W / 2, WARP_LINE_HALF = 12;
+localparam integer WARP_SUNK = W / 2;
 
 wire [9:0] x = hc;
 wire [9:0] y = vc;
@@ -528,14 +528,29 @@ function signed [11:0] top_row(input signed [31:0] yv, input [9:0] h);
     end
 endfunction
 
+// TELEPORT: stato della riga `v` dell'astronave (0 nascosta, 1 in luce, 2 piena) con l'avanzamento
+// `lvl` (0-32), alla partenza o all'arrivo (`arrive`): ogni riga ha una soglia fissa in ordine sparso
+// (0-19); alla partenza resta piena fino alla soglia, poi è in luce per 8 passi e sparisce;
+// all'arrivo il contrario, con le soglie rovesciate. Come `scan_row` di paddle_ui.rs.
+function [1:0] warp_row(input signed [11:0] v, input [5:0] lvl, input arrive);
+    reg [2:0] m;
+    reg [5:0] th;
+    begin
+        m = v[2:0] * 3'd5;
+        th = ({3'd0, m} * 6'd11) >> 2;
+        if (arrive) th = 6'd22 - th;
+        if (!arrive) warp_row = (lvl < th) ? 2'd2 : (lvl < th + 6'd8) ? 2'd1 : 2'd0;
+        else warp_row = (lvl >= th + 6'd8) ? 2'd2 : (lvl >= th) ? 2'd1 : 2'd0;
+    end
+endfunction
+
 // Salto del TELEPORT in pixel dello schermo (y verso il basso): per l'entrata e per l'uscita,
-// la linea del portale, la riga alta spostata dell'astronave e la fascia [lo, hi) visibile oltre
-// la linea. In dash il passo accelera (16 px normale, 8 px RUSH lungo).
-reg signed [11:0] w_from, w_to, w_en_top, w_ex_top, en_edge, en_lo, en_hi, ex_edge, ex_lo, ex_hi, PH, w_d;
+// quanto l'astronave si è scomposta alla partenza e ricomposta all'arrivo (0-32) e le due posizioni.
+// In dash il passo accelera (16 px normale, 8 px RUSH lungo).
+reg signed [11:0] w_from, w_to, PH, w_d;
 reg signed [11:0] w_pad_d, w_step, w_rise;
 reg [5:0] w_sunk, w_out, w_ks, w_ko;
 reg [2:0] w_kind;
-reg w_down;
 always @(*) begin
     w_pad_d = warp_side ? W - $signed({2'b0, px_of(pad1_x)}) : $signed({2'b0, px_of(pad0_x)});
     w_step = (w_pad_d >= 12'sd96) ? 12'sd8 : (w_pad_d >= 12'sd48) ? 12'sd16 : 12'sd32;
@@ -551,52 +566,20 @@ always @(*) begin
     PH = $signed({2'b0, kind_px_h(w_kind)});
     w_from = H - $signed({2'b0, px_of(warp_from)});
     w_to = H - $signed({2'b0, px_of(warp_side ? pad1_y : pad0_y)});
-    w_down = w_to > w_from;
-    // entrata: la linea sta sul lato verso cui salta la racchetta, che ci affonda dentro
-    if (w_down) begin
-        en_edge = w_from + (PH >>> 1);
-        w_en_top = w_from - (PH >>> 1) + kind_warp_shift(w_kind, w_ks);
-        en_lo = w_en_top - 12'sd4;
-        en_hi = en_edge;
-    end else begin
-        en_edge = w_from - (PH >>> 1);
-        w_en_top = w_from - (PH >>> 1) - kind_warp_shift(w_kind, w_ks);
-        en_lo = en_edge;
-        en_hi = w_en_top + PH + 12'sd4;
-    end
-    // uscita: la linea sta sul lato opposto della posizione d'arrivo, la racchetta ne esce
-    if (w_down) begin
-        ex_edge = w_to - (PH >>> 1);
-        w_ex_top = w_to - (PH >>> 1) - (PH - kind_warp_shift(w_kind, w_ko));
-        ex_lo = ex_edge;
-        ex_hi = w_ex_top + PH + 12'sd4;
-    end else begin
-        ex_edge = w_to + (PH >>> 1);
-        w_ex_top = w_to - (PH >>> 1) + (PH - kind_warp_shift(w_kind, w_ko));
-        ex_lo = w_ex_top - 12'sd4;
-        ex_hi = ex_edge;
-    end
 end
 
-reg        wv, wsd, en_on, ex_on;
-reg [9:0]  wx;
-reg signed [11:0] wen_edge, wen_top, wen_lo, wen_hi, wex_edge, wex_top, wex_lo, wex_hi;
+reg        wv, wsd;
+// salto a righe: avanzamento della partenza e dell'arrivo (0-32) e righe in cima delle due astronavi
+reg [5:0]  wks, wko;
+reg signed [11:0] wtf, wtt;
 always @(posedge clk) begin
     if (snapshot) begin
         wv <= nxt && warp_on;
         wsd <= warp_side;
-        wx <= px_of(warp_side ? pad1_x : pad0_x);
-        // il primo portale resta finché la racchetta non è affondata, il secondo si apre a metà
-        en_on <= w_sunk < w_step[5:0];
-        ex_on <= w_sunk >= (w_step[5:0] >> 1);
-        wen_edge <= en_edge;
-        wen_top <= w_en_top;
-        wen_lo <= en_lo;
-        wen_hi <= en_hi;
-        wex_edge <= ex_edge;
-        wex_top <= w_ex_top;
-        wex_lo <= ex_lo;
-        wex_hi <= ex_hi;
+        wks <= w_ks;
+        wko <= w_ko;
+        wtf <= w_from - (PH >>> 1);
+        wtt <= w_to - (PH >>> 1);
     end
 end
 
@@ -864,6 +847,31 @@ function [3:0] kind_px(input p, input [2:0] kind, input signed [11:0] u0, input 
         late = KR_NONE;
         srole = KR_NONE;
         base = KR_NONE;
+        d = 12'sd0;
+        sh = 12'sd0;
+        fl = 12'sd0;
+        lean = 12'sd0;
+        dy = 12'sd0;
+        wlen = 12'sd0;
+        ww = 12'sd0;
+        s3 = 12'sd0;
+        nx = 12'sd0;
+        ny = 12'sd0;
+        nr = 12'sd1;
+        bk = 12'sd0;
+        lf = 12'sd0;
+        y0 = 12'sd0;
+        y1 = 12'sd0;
+        yt = 12'sd0;
+        c0 = 12'sd0;
+        m = 3'd0;
+        alive = 3'd0;
+        ka = 6'd0;
+        ca = 6'd0;
+        lit = 1'b0;
+        warn = 1'b0;
+        recent = 1'b0;
+        mk = 1'b0;
         cx = 12'sd0;
         mlen = 12'sd0;
         jlen = 12'sd0;
@@ -1014,8 +1022,8 @@ function [3:0] kind_px(input p, input [2:0] kind, input signed [11:0] u0, input 
                     fill = (pd_spark_pose(f) >= 2'd2) ? KR_MARK_DARK : KR_MARK;
             end
             K_TWIST: begin
-                // VORTEX: caccia acrobatico inclinato, ugello rotante e getti RCS dai due pod sulle virate
-                // (sale: spara il pod in basso, verso il basso; scende: quello in alto, verso l'alto)
+                // VORTEX: caccia acrobatico inclinato, ugello rotante e piccoli getti RCS dai due pod sulle
+                // virate (sale: spara il pod in basso, verso il basso; scende: quello in alto, verso l'alto)
                 d = v - HT_W / 2;
                 m = ktilt[p][2] ? -ktilt[p] : ktilt[p];
                 sh = (m[0] ? d : 12'sd0) + (m[1] ? d <<< 1 : 12'sd0);
@@ -1043,25 +1051,19 @@ function [3:0] kind_px(input p, input [2:0] kind, input signed [11:0] u0, input 
                     nx = sp_spc_x(K_TWIST, sp_spc_n(K_TWIST) - 2'd1);
                     ny = sp_spc_y(K_TWIST, sp_spc_n(K_TWIST) - 2'd1);
                     nr = sp_spc_r(K_TWIST, sp_spc_n(K_TWIST) - 2'd1);
-                    `KL(nx - 6 - s3, ny + 3, 3, 3 + s3, KR_MARK)
-                    `KL(nx - 4, ny + 8 + s3, 2, 3, KR_MARK)
-                    `KL(nx - 4, ny - 1, 3, 4 + s3, KR_MARK_LIGHT)
-                    `KL(nx - 3, ny + 5, 2, 4 + s3, KR_MARK_LIGHT)
                     `KL(nx - 2, ny, 2, nr, KR_BODY)
-                    `KL(nx - 2, ny + 3, 1, 3, KR_BODY)
-                    `KL(nx - 6 - s3, ny + 9 + s3, 1, 1, KR_BODY)
+                    `KL(nx - 3, ny, 1, nr, KR_MARK_LIGHT)
+                    `KL(nx - 3, ny + nr, 2, 2 + s3, KR_MARK_LIGHT)
+                    `KL(nx - 3, ny + nr + 2 + s3, 1, 1, KR_MARK)
                 end else if (kmv_dn[p] && sp_spc_n(K_TWIST) != 2'd0) begin
                     // scende: getto dal pod superiore, verso l'alto (lo stesso ribaltato)
                     nx = sp_spc_x(K_TWIST, 0);
                     ny = sp_spc_y(K_TWIST, 0);
                     nr = sp_spc_r(K_TWIST, 0);
-                    `KL(nx - 6 - s3, ny + nr - 6 - s3, 3, 3 + s3, KR_MARK)
-                    `KL(nx - 4, ny + nr - 11 - s3, 2, 3, KR_MARK)
-                    `KL(nx - 4, ny + nr - 3 - s3, 3, 4 + s3, KR_MARK_LIGHT)
-                    `KL(nx - 3, ny + nr - 9 - s3, 2, 4 + s3, KR_MARK_LIGHT)
                     `KL(nx - 2, ny, 2, nr, KR_BODY)
-                    `KL(nx - 2, ny + nr - 6, 1, 3, KR_BODY)
-                    `KL(nx - 6 - s3, ny + nr - 10 - s3, 1, 1, KR_BODY)
+                    `KL(nx - 3, ny, 1, nr, KR_MARK_LIGHT)
+                    `KL(nx - 3, ny - 2 - s3, 2, 2 + s3, KR_MARK_LIGHT)
+                    `KL(nx - 3, ny - 3 - s3, 1, 1, KR_MARK)
                 end
                 // onda del colpo attorno alle due estremità, mai sull'astronave
                 if (hit && base == KR_NONE &&
@@ -1200,12 +1202,14 @@ function [3:0] kind_px(input p, input [2:0] kind, input signed [11:0] u0, input 
                     v = v0 - (kbuild ? gbd[c] : 12'sd0);
                     y0 = gs_y0(c);
                     y1 = gs_y1(c);
-                    yt = (c > 0) ? gs_y1(c - 1) : 12'sd0;       // la giuntura sopra va con questa piastra
+                    yt = (c > 0) ? gs_y1((c > 0) ? c - 1 : 0) : 12'sd0;   // la giuntura sopra va con questa piastra
                     recent = !kwall[p][c] && khit[p][c] && kba[p] != 6'd0;
                     if ((!kbuild || gbv[c]) && u >= -12'sd2 && u <= 12'sd0 && v >= yt && v < y1) begin
                         base = sp_px(K_GUARDIAN, u, v);
                         if (v < y0) begin
-                            if (c > 0 && !kwall[p][c] && !kwall[p][c - 1]) base = KR_BLACK;
+                            if (c > 0) begin
+                                if (!kwall[p][c] && !kwall[p][(c > 0) ? c - 1 : 0]) base = KR_BLACK;
+                            end
                         end else if (kwall[p][c]) begin
                             if ((warn || (kpose5 == c && u == -12'sd2)) && (base == KR_BODY || base == KR_SHADE))
                                 base = KR_MARK_LIGHT;
@@ -1313,7 +1317,6 @@ reg [TEXT_W-1:0] trow;
 reg signed [10:0] sdx, sdy;
 reg signed [21:0] u8, v8;
 reg signed [11:0] sy;
-reg        w_col, w_line;
 reg signed [11:0] kx, ky, kq, kr, ka, lx, ly;
 reg signed [11:0] ke, kf, kv, kb, ko;  // colpo di una mossa: frame dal colpo, davanti, dal centro, dietro
 integer    k, m, p, r;
@@ -1332,6 +1335,8 @@ reg        sh_name;
 reg        sh_p, sh_occ, sh_wvis;
 reg [3:0]  sh_kr;
 reg signed [11:0] sh_u, sh_v, u_px, v_px;
+reg signed [11:0] w_v0, w_v1;            // salto a righe: riga nell'astronave di partenza e d'arrivo
+reg [1:0]  w_s0, w_s1, w_st;             // e il loro stato (warp_row), quello della riga scelta
 // pixel delle due racchette in partita: ruolo (kind_px, con l'ombra portata) e dentro il rettangolo
 reg [3:0]  kcp [0:1];
 reg        kin [0:1];
@@ -1363,8 +1368,6 @@ always @(*) begin
     kq = 12'sd0;
     ka = 12'sd0;
     kr = 12'sd0;
-    w_col = x - (wx - PW / 2) < PW;
-    w_line = x - (wx - WARP_LINE_HALF) < 2 * WARP_LINE_HALF;
     hb_p = x >= W / 2;
     mv_code = label_move == 2'd2;
     mv_dx = x - label_x - (NX_P1_W + 9) - (label_mx ? NX_MAX_W + 9 : 0);
@@ -1413,6 +1416,11 @@ always @(*) begin
     u_px = 12'sd0;
     v_px = 12'sd0;
     sh_wvis = 1'b1;
+    w_v0 = 12'sd0;
+    w_v1 = 12'sd0;
+    w_s0 = 2'd0;
+    w_s1 = 2'd0;
+    w_st = 2'd0;
     if (spin[sh_p]) begin
         sdx = $signed({1'b0, x}) - $signed({1'b0, pcx[sh_p]});
         sdy = $signed({1'b0, y}) - $signed({1'b0, pcy[sh_p]});
@@ -1428,17 +1436,27 @@ always @(*) begin
             sh_v = 12'sd60;
         end
     end else if (wv && wsd == sh_p) begin
-        if (en_on && sy >= wen_lo && sy < wen_hi) begin
-            sh_v = sy - wen_top;
-        end else if (ex_on && sy >= wex_lo && sy < wex_hi) begin
-            sh_v = sy - wex_top;
+        // salto a righe: la riga dell'astronave d'arrivo se si vede, se no quella di partenza (con
+        // gli effetti, 4 righe sopra e sotto); le righe in luce tremano di un pixel
+        w_v1 = sy - wtt;
+        w_v0 = sy - wtf;
+        w_s1 = warp_row(w_v1, wko, 1'b1);
+        w_s0 = warp_row(w_v0, wks, 1'b0);
+        if (w_v1 >= -4 && w_v1 < $signed({2'b0, kh[sh_p]}) + 4 && w_s1 != 2'd0) begin
+            sh_v = w_v1;
+            w_st = w_s1;
+        end else if (w_v0 >= -4 && w_v0 < $signed({2'b0, kh[sh_p]}) + 4 && w_s0 != 2'd0) begin
+            sh_v = w_v0;
+            w_st = w_s0;
         end else begin
             sh_u = 12'sd60;
             sh_v = 12'sd60;
             sh_wvis = 1'b0;
         end
+        if (w_st == 2'd1) sh_u = sh_u + ((sh_v[0] ^ kpose[0]) ? 12'sd1 : -12'sd1);
     end
     sh_kr = kind_px(sh_p, kd[sh_p], sh_u, sh_v);
+    if (w_st == 2'd1 && sh_kr != KR_NONE) sh_kr = KR_MARK_LIGHT;
     sh_occ = sh_kr != KR_NONE && (kd[sh_p] != K_NONE || spin[sh_p] || (wv && wsd == sh_p));
     if (!sh_occ && (kd[sh_p] != K_NONE || spin[sh_p] || (wv && wsd == sh_p)) && sh_up && sh_wvis)
         sh_kr = KR_SHADOW;
@@ -1695,13 +1713,6 @@ always @(*) begin
         // STEER: segni sui bordi alto e basso dove finisce la guida (3/4 del campo)
         if (steer_on && (y < 6 || y >= H - 6) &&
             (steer_side ? x - (W / 4 - 1) < 2 : x - (W - W / 4 - 1) < 2)) begin
-            on = 1'b1;
-            col = ACCENT;
-        end
-
-        // salto del TELEPORT: le due linee gialle dei portali sopra l'astronave che entra ed esce
-        if (wv && ((en_on && w_line && (sy == wen_edge - 1 || sy == wen_edge)) ||
-                   (ex_on && w_line && (sy == wex_edge - 1 || sy == wex_edge)))) begin
             on = 1'b1;
             col = ACCENT;
         end

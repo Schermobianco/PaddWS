@@ -13,7 +13,7 @@
 //!   cursore; [30:26] punti per vincere il livello
 //! - 6: [7:0] duelli vinti (BCD), [8] n WINS nella presentazione, [9] alla fine del duello, [10] lato
 //!   del vincitore del duello, [15:12] cifra che gira nella classifica
-//! - 7: scelta: [2:0] e [5:3] cursori dei bonus, [11:6] e [17:12] bonus presi, [21:18] secondi rimasti,
+//! - 7: scelta: [2:0] e [5:3] cursori dei bonus, [11:6] e [17:12] bonus presi, [21:18] liberi (erano i secondi rimasti),
 //!   [22] READY!, [23] a destra la CPU, [25:24] lati bloccati, [26] scelta della racchetta, [28:27]
 //!   controllo dell'OSD (HOW TO PLAY)
 //! - 8 + 2 i, 9 + 2 i: posto i della classifica: [17:0] iniziali, [21:18] livello; [27:0] punti in BCD

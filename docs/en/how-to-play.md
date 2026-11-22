@@ -49,7 +49,7 @@ Each capsule shows the symbol of its power-up:
 
 | power-up | effect |
 |:---:|---|
-| <img src="../icons/teleport.png" alt="" width="40" height="40"><br>**TELEPORT** | when the incoming ball crosses the half-way line, the paddle enters a portal and comes out of another one where the ball will arrive, in time to catch it |
+| <img src="../icons/teleport.png" alt="" width="40" height="40"><br>**TELEPORT** | when the incoming ball crosses the half-way line, the paddle breaks up line by line and comes back together where the ball will arrive, in time to catch it |
 | <img src="../icons/smash.png" alt="" width="40" height="40"><br>**SMASH** | the next shot is faster and angled, away from the opponent |
 | <img src="../icons/slow.png" alt="" width="40" height="40"><br>**SLOW** | the ball loses a third of its speed until the player who used it hits it: then it goes back to the speed it had before |
 | <img src="../icons/curve.png" alt="" width="40" height="40"><br>**CURVE** | the next shot curves, and the curve flips at each bounce |

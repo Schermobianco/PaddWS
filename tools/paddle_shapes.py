@@ -348,11 +348,10 @@ def ring(r: Ops, s: Ship, h: int, t: float) -> None:
 
 
 def rcs(r: Ops, a: Anchor, h: int, s: Ship, down: bool, p: int) -> None:
-    """TWIST: getto di manovra dal pod `a`, verso il basso o verso l'alto (ribaltato)."""
+    """TWIST: getto di manovra piccolo dal pod `a`, verso il basso o verso l'alto (ribaltato)."""
     nz, y, rows = nozzle(a, h, s)
-    parts = [(-6 - p, 3, 3, 3 + p, MARK), (-4, 8 + p, 2, 3, MARK), (-4, -1, 3, 4 + p, MARK_LIGHT),
-             (-3, 5, 2, 4 + p, MARK_LIGHT), (-2, 0, 2, rows, BODY), (-2, 3, 1, 3, BODY),
-             (-6 - p, 9 + p, 1, 1, BODY)]
+    parts = [(-2, 0, 2, rows, BODY), (-3, 0, 1, rows, MARK_LIGHT), (-3, rows, 2, 2 + p, MARK_LIGHT),
+             (-3, rows + 2 + p, 1, 1, MARK)]
     for dx, dy, w, hh, role in parts:
         yy = y + dy if down else y + rows - dy - hh
         r.late_rect(nz + dx, yy, w, hh, role)

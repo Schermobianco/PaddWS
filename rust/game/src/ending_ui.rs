@@ -812,7 +812,7 @@ fn draw_champion_warp(app: &App, at: f64, winner: PaddleKind, white: Color) {
                 tilt: 0.0,
                 dash: None,
                 preview: false,
-                clip_y: None,
+                scan: None,
                 anim,
             };
             draw_paddle_stretched(r, &shape, u, stretch, look);
@@ -898,7 +898,7 @@ fn draw_shatter(app: &App, at: f64, white: Color) {
             tilt: 0.0,
             dash: None,
             preview: false,
-            clip_y: None,
+            scan: None,
             anim: Anim::still(at as f32),
         };
         draw_paddle(r, &shape, u * zoom, paddle_ui::look(app, Some(kind), body));

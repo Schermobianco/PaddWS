@@ -3,11 +3,9 @@
 ; mister/rtl/next_render.v) e riserve in alto durante la partita.
 ;
 ; Ogni giocatore ha il suo cursore (joystick su e giù, o la rotazione del paddle) e il fuoco
-; prende o lascia la voce. Dopo 10 secondi vale quello che c'è (i bonus mancanti dalle scelte
-; predefinite), poi READY! per 1,2 secondi. Contro la CPU, la CPU sceglie da sola a caso dal seme
+; prende o lascia la voce. Niente tempo: quando tutti hanno scelto, READY! per 1,2 secondi. Contro la CPU, la CPU sceglie da sola a caso dal seme
 ; della partita, con gli stessi numeri del PC.
 
-PICK_FRAMES  = 10 * 50
 READY_FRAMES = 60               ; 1,2 secondi
 PICK_ROW0    = 8                ; prima voce, una ogni 2 righe
 PICK_HINT    = 24               ; riga dei comandi e di READY! (una vuota dopo la frase del tipo, riga 22)
@@ -53,9 +51,7 @@ pk_cursor: .res 2
 pk_count:  .res 2               ; bonus presi
 pk_chosen: .res 6               ; per giocatore 3 bonus nell'ordine in cui sono stati presi
 pk_ok:     .res 2               ; racchetta confermata
-pk_frames: .res 2               ; frame rimasti per scegliere
 pk_ready:  .res 1               ; frame di READY! rimasti (0 = si sceglie ancora)
-pk_secs:   .res 1               ; secondi a schermo ($ff = da disegnare)
 .segment "ZEROPAGE"
 pk_p:      .res 1               ; giocatore in esame
 .segment "NEXTBSS"
@@ -296,22 +292,16 @@ first:
     jmp pick_start
 .endproc
 
-; Parte comune delle due scelte: scena, tempo, cursori, schermo vuoto senza sprite.
+; Parte comune delle due scelte: scena, cursori, schermo vuoto senza sprite.
 .proc pick_start
     lda #ST_PICK
     sta state
-    lda #<PICK_FRAMES
-    sta pk_frames
-    lda #>PICK_FRAMES
-    sta pk_frames+1
     lda #0
     sta pk_ready
     sta pk_cursor
     sta pk_cursor+1
     sta sh_enable
     sta sh_bg
-    lda #$ff
-    sta pk_secs
     lda #MODE_TEXT
     sta sh_mode
     lda #PH_CLEAR               ; schermo e scritte nei prossimi frame
@@ -523,12 +513,6 @@ go:
     lda #COL_WHITE
     jmp clear_text
 choosing:
-    ; tempo
-    lda pk_frames
-    bne :+
-    dec pk_frames+1
-:   dec pk_frames
-    jsr draw_secs
     lda pk_fixed                ; chi non sceglie (la CPU o il campione) non ha comandi
     beq :+
     ldx #0
@@ -538,10 +522,7 @@ choosing:
     beq :+
     ldx #1
     jsr pick_player
-:   ; fine: tutti hanno scelto o il tempo è scaduto
-    lda pk_frames
-    ora pk_frames+1
-    beq finish
+:   ; fine: tutti hanno scelto
     lda pk_count
     and pk_count+1
     cmp #3
@@ -784,41 +765,6 @@ duel:
 hint_done:
     lda #3                      ; le colonne nei frame dopo, una per frame
     sta pk_dirty
-    rts
-.endproc
-
-; Secondi rimasti (cifre del punteggio, al centro) quando cambiano.
-.proc draw_secs
-    ; secondi = ceil(frame / 50)
-    lda pk_frames
-    sta m_lo
-    lda pk_frames+1
-    sta m_t
-    ldx #0
-:   lda m_t
-    bne sub
-    lda m_lo
-    beq got
-sub:
-    inx
-    lda m_lo
-    sec
-    sbc #50
-    sta m_lo
-    lda m_t
-    sbc #0
-    sta m_t
-    bcs :-
-    ; sotto zero: era l'ultimo pezzo di secondo
-got:
-    cpx pk_secs
-    beq done
-    stx pk_secs
-    txa
-    ldx #17
-    ldy #2
-    jmp draw_score2
-done:
     rts
 .endproc
 

@@ -23,6 +23,12 @@ crea il commit e il tag `vX.Y.Z`.
   del BLASTER, piastre del GUARDIAN che si montano e si rompono (PC, web, Deck e MiSTer; il C64
   resta com'era). Il BLASTER ha i cannoni che sporgono davanti, da cui partono i colpi, e mostra i
   colpi nel caricatore con il verde dell'astronave al posto della barra dietro la racchetta.
+- Il salto del TELEPORT ha un effetto nuovo: la racchetta si scompone a righe dove si trova, con le
+  righe che passano per il colore del personaggio e tremano, e si ricompone allo stesso modo nel
+  punto d'arrivo; niente più portali (PC, web, Deck, MiSTer e C64).
+- Niente più conto alla rovescia nella scelta della racchetta e dei bonus: si gioca quando tutti
+  hanno scelto (PC, web, Deck, MiSTer e C64).
+- I getti di manovra di TWIST sono più piccoli (PC, web, Deck e MiSTer).
 
 ### Aggiunto
 - `tools/paddle_editor.html`: editor degli sprite delle racchette (si apre con

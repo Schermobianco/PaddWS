@@ -1465,7 +1465,20 @@ fn training_level(m: &mut Machine, level: usize) -> Result<String, String> {
             m.read_u8("pk_cursor", 1)
         ));
     }
-    let mut worst = frames_until(m, 3000, "dalla scelta alla presentazione", |_| {}, |m| m.read_u8("state", 0) == ST_INTRO)?;
+    // niente tempo nelle scelte: il giocatore (porta 2) preme a turno fuoco e giù (conferma la
+    // racchetta, poi prende tre bonus diversi), per due frame (sull'NTSC fuori partita la scena
+    // salta un frame su sei)
+    let mut tick = 0u32;
+    let pick = |m: &mut Machine| {
+        m.cpu.joy_port2 = match tick % 8 {
+            0 | 1 => !0x10,
+            4 | 5 => !0x02,
+            _ => 0xFF,
+        };
+        tick += 1;
+    };
+    let mut worst = frames_until(m, 3000, "dalla scelta alla presentazione", pick, |m| m.read_u8("state", 0) == ST_INTRO)?;
+    m.cpu.joy_port2 = 0xFF;
     if m.read_u8("cg_active", 0) != CG_TRAIN || m.cpu.read(VOICE_COUNT) != 0x4C {
         return Err(format!(
             "presentazione: cg_active {}, VOICE_COUNT ${:02X} (il player del primo livello)",
@@ -1623,21 +1636,23 @@ fn challenger(m: &mut Machine) -> Result<(), String> {
         }
         step(m, 1);
     };
-    // un frame con il fuoco appena premuto sul joystick di un lato (porta 2 a sinistra, 1 a destra)
-    let fire = |m: &mut Machine, right: bool| {
+    // un frame con un comando appena premuto sul joystick di un lato (porta 2 a sinistra, 1 a
+    // destra): `bits` del registro, 0x10 il fuoco, 0x02 giù
+    let press = |m: &mut Machine, right: bool, bits: u8| {
         m.cpu.joy_port1 = 0xFF;
         m.cpu.joy_port2 = 0xFF;
         m.call("read_input");
         if right {
-            m.cpu.joy_port1 = !0x10;
+            m.cpu.joy_port1 = !bits;
         } else {
-            m.cpu.joy_port2 = !0x10;
+            m.cpu.joy_port2 = !bits;
         }
         m.call("read_input");
         m.call("run_scene");
         m.cpu.joy_port1 = 0xFF;
         m.cpu.joy_port2 = 0xFF;
     };
+    let fire = |m: &mut Machine, right: bool| press(m, right, 0x10);
     let state = |m: &Machine| m.read_u8("state", 0);
     let expect = |what: &str, got: i64, want: i64| -> Result<(), String> {
         if got == want {
@@ -1724,8 +1739,12 @@ fn challenger(m: &mut Machine) -> Result<(), String> {
     // prima la racchetta (quella del campione già confermata), poi i bonus
     expect("prima scelta dello sfidante: la racchetta", m.read_u8("pk_kind", 0) as i64, 1)?;
     expect("racchetta del campione", m.read_u8("pk_cursor", 0) as i64, PaddleKind::Blaster as i64)?;
+    // niente tempo: lo sfidante conferma la racchetta con il fuoco (finché non risulta scelta)
     let mut frames = 0;
     while m.read_u8("pk_kind", 0) != 0 && frames < 1000 {
+        if frames % 10 == 9 && m.read_u8("pk_ok", 1) == 0 {
+            fire(m, true);
+        }
         step(m, 1);
         frames += 1;
     }
@@ -1741,6 +1760,13 @@ fn challenger(m: &mut Machine) -> Result<(), String> {
             )?;
         }
     }
+    // lo sfidante prende i primi tre bonus (fuoco, giù, fuoco, giù, fuoco)
+    for (k, bits) in [0x10, 0x02, 0x10, 0x02, 0x10].into_iter().enumerate() {
+        press(m, true, bits);
+        step(m, 3);
+        let _ = k;
+    }
+    expect("bonus presi dallo sfidante", m.read_u8("pk_count", 1) as i64, 3)?;
     // dopo le scelte lo schermo VS della sfida (kvs.s, nella presentazione), poi la partita
     let (mut frames, mut vs) = (0, false);
     while (state(m) == ST_PICK || state(m) == ST_INTRO) && frames < 3000 {
@@ -1996,10 +2022,12 @@ impl PadCheck {
     }
 }
 
-/// Salto del TELEPORT in partita NEXT: in ogni frame del salto c'è almeno un pezzo (quello che
-/// affonda nella racchetta o quello che esce nello sprite dell'icona), acceso, con la sua immagine
-/// e il portale giallo (byte $FF) dentro. Prima il disegno aspettava un frame che non arrivava mai
-/// (frame_late era sempre vero a quel punto del frame) e la racchetta spariva.
+/// Salto del TELEPORT in partita NEXT: in ogni frame del salto c'è almeno un'astronave (quella che si
+/// scompone nella racchetta o quella che si ricompone nello sprite dell'icona), accesa e con il suo
+/// puntatore; all'inizio della scomposizione (wp_sunk sotto 8: tutte le righe ancora piene o in
+/// luce) e alla fine della ricomposizione (wp_out da 30: tutte piene) la sua immagine ha dei pixel.
+/// Prima il disegno aspettava un frame che non arrivava mai (frame_late era sempre vero a quel
+/// punto del frame) e la racchetta spariva.
 #[derive(Default)]
 struct WarpCheck {
     frames: u32,
@@ -2028,29 +2056,32 @@ impl WarpCheck {
         self.frames += 1;
         let side = m.read_u8("wp_side", 0) as u16;
         let enable = m.read_u8("sh_enable", 0);
-        let portal = |bytes: &[u8]| bytes.contains(&0xAA);
+        let drawn = |bytes: &[u8]| bytes.iter().any(|&b| b != 0);
+        // senza un'immagine da cui partire (wp_src 0) le astronavi sono vuote: sparisce e ricompare
+        let src = m.read_u8("wp_src", 0) != 0;
         let mut any = false;
         if m.read_u8("wp_en", 0) != 0 {
             any = true;
             let base = m.read_u8("img_base", side);
             let img: Vec<u8> = (0..63).map(|i| m.read_u8("sh_img", base as u16 + i)).collect();
-            if enable & (1 << (Self::SPN_PAD + side)) == 0 || !portal(&img) {
-                self.bad.push(format!(
-                    "pezzo che affonda (lato {side}): sprite spento o senza portale"
-                ));
+            let empty = src && m.read_u8("wp_sunk", 0) < 8 && !drawn(&img);
+            if enable & (1 << (Self::SPN_PAD + side)) == 0 || empty {
+                let why = if empty { "vuoto" } else { "spento" };
+                self.bad.push(format!("astronave che sparisce (lato {side}): sprite {why}"));
             }
             if m.read_u8("sh_ptr", Self::SPN_PAD + side) != m.read_u8("pad_slot", side) {
                 self.bad
-                    .push(format!("pezzo che affonda (lato {side}): puntatore sbagliato"));
+                    .push(format!("astronave che sparisce (lato {side}): puntatore sbagliato"));
             }
         }
         if m.read_u8("wp_ex", 0) != 0 {
             any = true;
             let ptr = m.read_u8("sh_ptr", Self::SPN_ICON + side) as usize;
             let img: Vec<u8> = (0..63).map(|i| m.cpu.mem[0xC000 + ptr * 64 + i]).collect();
-            if enable & (1 << (Self::SPN_ICON + side)) == 0 || !portal(&img) {
-                self.bad
-                    .push(format!("pezzo che esce (lato {side}): sprite spento o senza portale"));
+            let empty = src && m.read_u8("wp_out", 0) >= 30 && !drawn(&img);
+            if enable & (1 << (Self::SPN_ICON + side)) == 0 || empty {
+                let why = if empty { "vuoto" } else { "spento" };
+                self.bad.push(format!("astronave che compare (lato {side}): sprite {why}"));
             }
         }
         self.shown += any as u32;

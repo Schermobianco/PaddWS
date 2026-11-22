@@ -113,11 +113,6 @@ go:
     jsr kp_split_off
     jmp bonus_enter             ; (le tabelle dei quadrati le fa rifare la scelta dei bonus)
 choosing:
-    lda pk_frames
-    bne :+
-    dec pk_frames+1
-:   dec pk_frames
-    jsr kp_secs
     lda pk_fixed                ; chi non sceglie (la CPU o il campione) non ha comandi
     beq :+
     ldx #0
@@ -128,10 +123,7 @@ choosing:
     ldx #1
     jsr pick_player
 :   jsr kp_dirty
-    ; fine: tutti hanno scelto o il tempo è scaduto
-    lda pk_frames
-    ora pk_frames+1
-    beq finish
+    ; fine: tutti hanno scelto
     lda pk_ok
     and pk_ok+1
     beq done
@@ -846,48 +838,6 @@ next:
     beq :+
     iny
 :   rts
-.endproc
-
-; Secondi rimasti: draw_secs (pick.s) scrive le cifre del punteggio, 3x3 caratteri, nello schermo
-; di testo, che qui sono i colori della bitmap; quando cambiano, i loro glifi vanno nella bitmap e i
-; colori tornano bianchi. Se kp_job ha già occupato il frame, rimanda di un frame (20 ms).
-KP_SECS_LATE = (TV_BUDGET - 8500) / TV_LCYC
-.proc kp_secs
-    lda #KP_SECS_LATE
-    jsr frame_after
-    bcs done
-    lda pk_secs
-    pha
-    jsr draw_secs
-    pla
-    cmp pk_secs
-    beq done
-    lda #KP_TIMER_ROW
-    sta v_row
-row:
-    ldy v_row
-    lda row_lo,y
-    sta ptr2
-    lda row_hi,y
-    sta ptr2+1
-    ldy #KP_TIMER_COL
-    sty p_col
-cell:
-    lda (ptr2),y
-    pha
-    lda #COL_WHITE << 4
-    sta (ptr2),y
-    pla
-    jsr text_cell               ; (p_col + 1)
-    ldy p_col
-    cpy #KP_TIMER_COL + 6
-    bne cell
-    inc v_row
-    lda v_row
-    cmp #KP_TIMER_ROW + 3
-    bne row
-done:
-    rts
 .endproc
 
 .segment "CODE"

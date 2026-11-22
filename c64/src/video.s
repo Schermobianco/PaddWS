@@ -4380,20 +4380,20 @@ sp_px: .res 1
 sp_py: .res 1
 .segment "CODE"
 
-; NEXT: salto del TELEPORT, come next_ui.rs e il MiSTer. Con la palla in arrivo la racchetta
-; affonda nel primo portale (una linea gialla larga 18 pixel) mentre la palla va da metà campo a
-; 32 pixel più in là, poi esce dal secondo, sul punto d'arrivo, mentre la palla va da 96 a 64
-; pixel dal bordo del giocatore; il secondo portale si apre a metà dell'affondo. Il pezzo che
-; affonda è nello sprite della racchetta, quello che esce nello sprite dell'icona del bonus.
+; NEXT: salto del TELEPORT, come next_ui.rs e il MiSTer. Con la palla in arrivo la racchetta si
+; scompone a righe dove si trova mentre la palla va da metà campo a 32 pixel più in là, poi si
+; ricompone a righe sul punto d'arrivo mentre la palla va da 96 a 64 pixel dal bordo del giocatore
+; (warp_image). L'astronave che sparisce è nello sprite della racchetta, quella che compare nello
+; sprite dell'icona del bonus; le righe vengono dall'immagine che la racchetta mostrava (wp_src).
 WARP_STEP = 32
 WARP_SUNK = (P_WIDTH >> 16) / 2
 WARP_RISE = 3 * WARP_STEP
 SP_WARP   = SP_SPIN0 + 16       ; immagine del pezzo che esce
 ; Il salto si disegna dopo la scena, quando il frame è già oltre gli 8.000 cicli di frame_late (in
 ; NEXT a circa 10.000-12.500: con frame_late non si disegnava mai). Le due immagini costano circa
-; WARP_COST cicli (warp_image circa 1.050 l'una, misurate con paddws-c64 frames) e si fanno se
+; WARP_COST cicli (warp_image fino a circa 1.900 l'una, con molte righe in luce) e si fanno se
 ; dopo resta il tempo per HUD e controlli (circa 1.200); se no resta l'immagine di prima.
-WARP_COST = 2500
+WARP_COST = 3800
 WARP_LATE = (TV_BUDGET - (1200 + WARP_COST)) / TV_LCYC
 
 ; Il salto rimasto da disegnare nel frame prima (wp_pend, frame già avanti): all'inizio di questo,
@@ -4443,6 +4443,14 @@ done:
 :   stx wp_side
     lda pd_last,x
     sta wp_from
+    lda sh_ptr+SPN_PAD,x        ; immagine della racchetta, da cui vengono le righe del salto: se
+    cmp pad_slot,x              ; è quella rifatta, il muro intero del GUARDIAN o nessuna (la
+    bne :+                      ; racchetta sparisce e ricompare)
+    lda pd_full,x
+:   sta wp_src
+    lda #$ff                    ; nessuna immagine ancora fatta
+    sta wp_ls
+    sta wp_lo
     lda #1
     sta wp_on
     lda #0                      ; nessun pezzo finché non c'è un'immagine di questo salto
@@ -4489,149 +4497,88 @@ going:
     lda #WARP_RISE
     jsr warp_part
     sta wp_out
-    ; altezza della racchetta e verso del salto
+    ; righe in cima delle due astronavi: quella che sparisce dove era, quella che compare dove è
     lda wp_side
     asl a
     asl a
     tax
     lda pad_h+2,x
-    sta wp_ph
-    ldx wp_side
-    lda pd_cy,x
-    sta wp_to
-    ; primo portale finché la racchetta non è affondata
-    lda #0
-    sta wp_en
-    lda wp_sunk
-    cmp #WARP_STEP
-    jcs exit
-    inc wp_en
-    lda wp_sunk
-    jsr warp_shift              ; A = altezza * affondo / 32
-    sta m_t
-    lda wp_to
-    cmp wp_from
-    bcc en_up
-    ; giù: linea sotto, la racchetta scende dentro
-    lda wp_ph
     lsr a
-    sta m_lo
-    lda wp_from
-    clc
-    adc m_lo
-    sta wp_edge                 ; bordo basso
+    sta m_lo                    ; metà altezza
+    ldx wp_side
     lda wp_from
     sec
     sbc m_lo
-    clc
-    adc m_t
-    sta wp_lo
-    clc
-    adc wp_ph
-    cmp wp_edge
-    bcc :+
-    lda wp_edge
-:   sta wp_hi
-    jmp en_draw
-en_up:
-    lda wp_ph
-    lsr a
-    sta m_lo
-    lda wp_from
-    sec
-    sbc m_lo
-    sta wp_edge                 ; bordo alto
-    sec
-    sbc m_t
-    sta wp_lo                   ; cima della racchetta che sale
-    clc
-    adc wp_ph
-    sta wp_hi
-    lda wp_lo
-    cmp wp_edge
-    bcs en_draw
-    lda wp_edge
-    sta wp_lo
-en_draw:
-    ldx wp_side
-    ldy img_base,x
-    jsr warp_image
-    lda wp_top
     sta wp_en_top
+    lda pd_cy,x
+    sec
+    sbc m_lo
+    sta wp_ex_top
+    ; le immagini si rifanno solo quando cambiano l'avanzamento o il verso del tremolio: le due fasi
+    ; non si sovrappongono, quindi quasi sempre se ne rifà una sola
+    lda tick
+    lsr a
+    lsr a
+    and #1
+    sta m_t
+    lda wp_sunk
+    asl a
+    ora m_t
+    cmp wp_ls
+    beq arrival
+    sta wp_ls
+    ; partenza nell'immagine dinamica della racchetta
+    lda img_base,x
+    clc
+    adc #<sh_img
+    sta ptr
+    lda #>sh_img
+    adc #0
+    sta ptr+1
+    lda wp_sunk
+    ldx #0
+    jsr warp_image
     ldx wp_side
     lda #1
     sta pd_dirty,x
+    sta wp_en
     lda #$ff
     sta pd_n,x
-exit:
-    ; secondo portale da metà affondo
-    lda #0
-    sta wp_ex
-    lda wp_sunk
-    cmp #WARP_STEP / 2
-    bcc place
-    inc wp_ex
+arrival:
+    ; l'astronave d'arrivo si disegna solo quando comincia a comparire
     lda wp_out
-    jsr warp_shift
-    sta m_t                     ; altezza * uscita / 32
-    lda wp_ph
-    sec
-    sbc m_t
-    sta m_t                     ; ancora dentro
-    lda wp_ph
+    bne :+
+    sta wp_ex
+    jmp place
+:   lda tick
     lsr a
-    sta m_lo
-    lda wp_to
-    cmp wp_from
-    bcc ex_up
-    ; giù: linea sopra il punto d'arrivo, la racchetta esce in giù
-    lda wp_to
-    sec
-    sbc m_lo
-    sta wp_edge
-    sec
-    sbc m_t
+    lsr a
+    and #1
+    sta m_t
+    lda wp_out
+    asl a
+    ora m_t
+    cmp wp_lo
+    beq place
     sta wp_lo
-    clc
-    adc wp_ph
-    sta wp_hi
-    lda wp_lo
-    cmp wp_edge
-    bcs ex_draw
-    lda wp_edge
-    sta wp_lo
-    jmp ex_draw
-ex_up:
-    lda wp_to
-    clc
-    adc m_lo
-    sta wp_edge
-    lda wp_to
-    sec
-    sbc m_lo
-    clc
-    adc m_t
-    sta wp_lo
-    clc
-    adc wp_ph
-    cmp wp_edge
-    bcc :+
-    lda wp_edge
-:   sta wp_hi
-ex_draw:
+    ; arrivo nell'immagine di SP_WARP
     lda #<(SP_WARP * 64 + $C000)
     sta ptr
     lda #>(SP_WARP * 64 + $C000)
     sta ptr+1
-    ldy #$ff                    ; nell'immagine di SP_WARP
+    lda wp_out
+    ldx #1
     jsr warp_image
-    lda wp_top
-    sta wp_ex_top
+    lda #1
+    sta wp_ex
 place:
     ; sprite: il pezzo che affonda nella racchetta (immagine dinamica), quello che esce nell'icona
     ldy wp_side
     lda wp_en
     beq :+
+    lda bit_of+SPN_PAD,y
+    ora sh_enable
+    sta sh_enable
     lda pad_slot,y
     sta sh_ptr+SPN_PAD,y
     lda wp_en_top
@@ -4773,125 +4720,148 @@ done:
 :   rts
 .endproc
 
-; A = altezza della racchetta * A / 32.
-.proc warp_shift
-    ldy wp_ph
-    jsr umul8                   ; m_t:A = altezza * A
-    lsr m_t
-    ror a
-    lsr m_t
-    ror a
-    lsr m_t
-    ror a
-    lsr m_t
-    ror a
-    lsr m_t
-    ror a
+; Un'astronave del salto in (ptr), dalle righe dell'immagine wp_src (sprite in $C000 + 64 * wp_src,
+; 0 nessuna: vuota): ogni riga dello sprite (due dello schermo) piena, in luce o vuota secondo la
+; sua soglia (wp_th) e l'avanzamento A (0-32), come scan_row di paddle_ui.rs. Alla partenza (X = 0)
+; la riga è piena finché l'avanzamento non arriva alla soglia, poi in luce per 8 passi, poi vuota;
+; all'arrivo (X = 1) il contrario, con le soglie rovesciate. In luce: i pixel accesi nel colore del
+; personaggio (%10), spostati di un pixel doppio a sinistra o a destra, a righe e a tempi alterni.
+.proc warp_image
+    sta wp_lvl
+    stx wp_arr
+    lda wp_src                  ; (ptr2) = $C000 + 64 * wp_src
+    lsr a
+    lsr a
+    ora #$C0
+    sta ptr2+1
+    lda wp_src
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a
+    sta ptr2
+    ldx #0                      ; riga dello sprite
+    ldy #0                      ; suo primo byte
+    lda wp_src
+    bne row
+    tya                         ; nessuna immagine: tutto vuoto
+:   sta (ptr),y
+    iny
+    cpy #IMG_BYTES
+    bne :-
+    rts
+row:
+    lda wp_arr
+    bne arrive
+    lda wp_lvl                  ; partenza: avanzamento - soglia
+    sec
+    sbc wp_th,x
+    jcc full
+    cmp #8
+    bcc light
+    jcs empty
+arrive:
+    lda wp_th,x                 ; arrivo: avanzamento + soglia - 22
+    clc
+    adc wp_lvl
+    sec
+    sbc #22
+    jcc empty
+    cmp #8
+    jcs full
+light:
+    ; i pixel accesi (doppi) nel colore del personaggio: (b | b >> 1) & %01010101, << 1
+    lda (ptr2),y
+    sta m_lo
+    lsr a
+    ora m_lo
+    and #%01010101
+    asl a
+    sta wp_b
+    iny
+    lda (ptr2),y
+    sta m_lo
+    lsr a
+    ora m_lo
+    and #%01010101
+    asl a
+    sta wp_b+1
+    iny
+    lda (ptr2),y
+    sta m_lo
+    lsr a
+    ora m_lo
+    and #%01010101
+    asl a
+    sta wp_b+2
+    dey
+    dey
+    lda tick                    ; verso: riga e tempo (6 volte al secondo)
+    lsr a
+    lsr a
+    sta m_t
+    txa
+    eor m_t
+    lsr a
+    bcs right
+    asl wp_b+2
+    rol wp_b+1
+    rol wp_b
+    asl wp_b+2
+    rol wp_b+1
+    rol wp_b
+    jmp put
+right:
+    lsr wp_b
+    ror wp_b+1
+    ror wp_b+2
+    lsr wp_b
+    ror wp_b+1
+    ror wp_b+2
+put:
+    lda wp_b
+    sta (ptr),y
+    iny
+    lda wp_b+1
+    sta (ptr),y
+    iny
+    lda wp_b+2
+    sta (ptr),y
+    iny
+    jmp next
+full:
+    lda (ptr2),y
+    sta (ptr),y
+    iny
+    lda (ptr2),y
+    sta (ptr),y
+    iny
+    lda (ptr2),y
+    sta (ptr),y
+    iny
+    jmp next
+empty:
+    lda #0
+    sta (ptr),y
+    iny
+    sta (ptr),y
+    iny
+    sta (ptr),y
+    iny
+next:
+    inx
+    cpx #PAD_ROWS
+    jne row
     rts
 .endproc
 
-; Immagine di un pezzo del salto: righe wp_lo..wp_hi - 1 di racchetta (bianca) e il portale
-; (giallo, righe wp_edge - 1 e wp_edge, largo 20 pixel) dalla riga wp_top = min(wp_lo, wp_edge - 1).
-; Y = inizio in sh_img, oppure $ff per l'immagine in (ptr). Ogni riga dello sprite copre due righe
-; dello schermo (y = wp_top + 2 * i): l'immagine si svuota e si riempiono solo le righe del corpo
-; (y in [wp_lo - 1, wp_hi)) e del portale (y in [wp_edge - 2, wp_edge]).
-.proc warp_image
-    cpy #$ff
-    beq :+
-    tya                         ; (ptr) = sh_img + Y
-    clc
-    adc #<sh_img
-    sta ptr
-    lda #>sh_img
-    adc #0
-    sta ptr+1
-:   ldx wp_edge
-    dex
-    txa
-    cmp wp_lo
-    bcc :+
-    lda wp_lo
-:   sta wp_top
-    lda #0
-    ldy #IMG_BYTES - 1
-clear:
-    sta (ptr),y
-    dey
-    sta (ptr),y
-    dey
-    sta (ptr),y
-    dey
-    bpl clear
-    ; corpo: righe da (lo - top) / 2 a (hi - top + 1) / 2 escluso, colonne doppie 4 e 5
-    lda wp_hi
-    sec
-    sbc wp_lo
-    bcc portal                  ; (con hi = lo c'è ancora la riga lo - 1)
-    lda wp_hi
-    sec
-    sbc wp_top
-    adc #0                      ; C = 1: + 1
-    lsr a
-    cmp #PAD_ROWS
-    bcc :+
-    lda #PAD_ROWS
-:   sta m_lo
-    asl a
-    adc m_lo
-    sta wp_y                    ; fine * 3
-    lda wp_lo
-    sec
-    sbc wp_top
-    lsr a
-    sta m_lo
-    asl a
-    adc m_lo                    ; inizio * 3
-    cmp wp_y
-    bcs portal
-    tay
-    iny
-    inc wp_y
-    lda #$F0
-body:
-    sta (ptr),y
-    iny
-    iny
-    iny
-    cpy wp_y
-    bcc body
-portal:
-    ; portale: righe da (edge - top - 1) / 2 a (edge - top) / 2, colonne doppie 0-9 (%10: colore tipo)
-    lda wp_edge
-    sec
-    sbc wp_top
-    tax
-    lsr a
-    sta wp_y                    ; ultima riga
-    dex
-    txa
-    lsr a
-prow:
-    cmp #PAD_ROWS
-    bcs done
-    sta m_lo
-    asl a
-    adc m_lo
-    tay
-    lda #$AA
-    sta (ptr),y
-    iny
-    sta (ptr),y
-    iny
-    lda #$A0
-    sta (ptr),y
-    lda m_lo
-    cmp wp_y
-    bcs done
-    adc #1
-    bcc prow
-done:
-    rts
-.endproc
+; soglia di ogni riga dello sprite del salto, in ordine sparso (0-19): (((riga * 5) & 7) * 11) / 4
+wp_th:
+.repeat PAD_ROWS, I
+    .byte (((I * 5) & 7) * 11) >> 2
+.endrepeat
 
 pad_slot: .byte SP_PAD0, SP_PAD1
 
@@ -4901,22 +4871,21 @@ wp_pend:   .res 1               ; disegno del salto rimasto dal frame prima (war
 wp_dir:    .res 1               ; bit 7: il verso della palla all'inizio del salto
 wp_side:   .res 1
 wp_from:   .res 1               ; riga del centro della racchetta prima del salto
-wp_to:     .res 1
 wp_d:      .res 1
 wp_sunk:   .res 1
 wp_out:    .res 1
-wp_ph:     .res 1
 wp_en:     .res 1
 wp_ex:     .res 1
+wp_src:    .res 1               ; sprite dell'immagine della racchetta all'inizio del salto (0 nessuna)
+wp_ls:     .res 1               ; avanzamento * 2 + tremolio delle immagini fatte ($ff nessuna):
+wp_lo:     .res 1               ; partenza e arrivo
 .segment "ZEROPAGE"
-wp_edge:   .res 1
+wp_lvl:    .res 1               ; warp_image: avanzamento
 .segment "BSS"
 .segment "ZEROPAGE"
-wp_lo:     .res 1
+wp_arr:    .res 1               ; warp_image: 1 all'arrivo
 .segment "BSS"
-wp_hi:     .res 1
-wp_top:    .res 1
-wp_y:      .res 1
+wp_b:      .res 3               ; warp_image: la riga in luce
 wp_en_top: .res 1
 wp_ex_top: .res 1
 pd_cy:     .res 2               ; riga del centro delle racchette in questo frame

@@ -3,7 +3,7 @@
 //! sua metà dello schermo, gli oggetti di un lato sono ritagliati sulla sua metà).
 
 use crate::assets::game::{BONUS_NAMES, CAP, KIND_TAGS};
-use crate::assets::{IMG_CAP_FRAME, IMG_ICON, IMG_NAME, IMG_PICK_NET, IMG_SCORE, portraits};
+use crate::assets::{IMG_CAP_FRAME, IMG_ICON, IMG_NAME, IMG_PICK_NET, portraits};
 use crate::cast::{
     Cast, HALF_X, OMEGA, PADDLE_X, PORTRAIT_W, PORTRAIT_X, TOP, centered, frame, line, name_art, name_x, net,
     paddle, portrait,
@@ -18,7 +18,6 @@ const W: i32 = 320;
 struct Pick {
     cur: [u32; 2],
     mask: [u32; 2],
-    secs: u32,
     ready: bool,
     cpu: bool,
     lock: u32,
@@ -34,7 +33,6 @@ impl Pick {
         Self {
             cur: [field(w, 0, 3), field(w, 3, 3)],
             mask: [field(w, 6, 6), field(w, 12, 6)],
-            secs: field(w, 18, 4),
             ready: field(w, 22, 1) != 0,
             cpu: field(w, 23, 1) != 0,
             lock: field(w, 24, 2),
@@ -53,12 +51,10 @@ fn text_in(d: &mut Dl, x: i32, y: i32, s: &[u8], c: u8, half: (i32, i32)) {
     d.push(&o);
 }
 
-/// Titolo, secondi rimasti e mezzeria della scelta dei bonus.
+/// Titolo e mezzeria della scelta dei bonus.
 #[inline(never)]
-fn common(d: &mut Dl, p: &Pick, title: &[u8]) {
+fn common(d: &mut Dl, title: &[u8]) {
     d.text((W - text_w(title)) / 2, 8, title, ACCENT, 0);
-    let (a, b) = if p.secs >= 10 { (1, 0) } else { (0, p.secs as u8) };
-    d.cells(152, 30, &[(a, WHITE), (b, WHITE)]);
     d.img(W / 2 - 1, 56, &IMG_PICK_NET, WHITE);
 }
 
@@ -72,7 +68,7 @@ pub fn draw(r: &Regs, d: &mut Dl) {
         return;
     }
     {
-        common(d, &p, b"PICK 3 BONUSES");
+        common(d, b"PICK 3 BONUSES");
         for side in 0..2usize {
             let half = if side == 0 { (0, W / 2) } else { (W / 2, W) };
             let cxl = if side == 0 { W / 4 } else { 3 * W / 4 };
@@ -129,7 +125,6 @@ const PORTRAIT_Y: i32 = TOP + 5 * 8;
 const GRID_X: i32 = 12 * 8;
 const GRID_Y: i32 = PORTRAIT_Y;
 const CELL: i32 = 32;
-const TIMER_Y: i32 = TOP + 8 + 12;
 const COURT_Y: i32 = TOP + 13 * 8;
 const COURT_H: i32 = 9 * 8;
 const NAME_Y: i32 = TOP + 18 * 8 + 16;
@@ -144,12 +139,6 @@ fn paddles(r: &Regs, d: &mut Dl, p: &Pick) {
     let mut cast = Cast::new();
     let f = r.frame;
     centered(d, b"PICK YOUR PADDLE", 160, line(0), ACCENT);
-    // i secondi con le cifre del punteggio, grigi a tratti negli ultimi tre
-    let secs = p.secs.min(10);
-    let dim = secs <= 3 && (f / 15) % 2 == 1;
-    let c = if dim { GRAY } else { WHITE };
-    d.img(160 - 22, TIMER_Y - 11, &IMG_SCORE[(secs / 10) as usize], c);
-    d.img(160, TIMER_Y - 11, &IMG_SCORE[(secs % 10) as usize], c);
     // griglia: le caselle dei sette tipi e quella di OMEGA in sagoma con il punto di domanda
     for i in 0..8u32 {
         let (x, y) = cell_xy(i);

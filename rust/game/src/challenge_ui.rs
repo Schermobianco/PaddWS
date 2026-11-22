@@ -982,7 +982,7 @@ impl<'a> Stage<'a> {
                     tilt: if kind == PaddleKind::Twist { TWIST_MAX_TILT } else { 0.0 },
                     dash: None,
                     preview: true,
-                    clip_y: None,
+                    scan: None,
                     anim: Anim::still(get_time() as f32),
                 };
                 let body = if self.omega && side != me { crate::next_ui::omega_color(app) } else { self.white };
@@ -1050,7 +1050,7 @@ impl<'a> Stage<'a> {
                 tilt: 0.0,
                 dash: None,
                 preview: false,
-                clip_y: None,
+                scan: None,
                 anim: Anim::still(get_time() as f32),
             };
             draw_paddle(r, &shape, self.u, paddle_ui::look(self.app, Some(kind), body));

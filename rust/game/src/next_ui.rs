@@ -146,7 +146,6 @@ pub const SPECIAL_ICONS: [[&str; 9]; 2] = [
 /// Scelte predefinite quando scade il tempo.
 const DEFAULT_PICK: [Bonus; 3] = [Bonus::Smash, Bonus::Teleport, Bonus::Slow];
 /// Secondi per scegliere e pausa prima del servizio.
-pub const PICK_SECONDS: f64 = 10.0;
 pub const READY_SECONDS: f64 = 1.2;
 /// Riga dei nomi e dei conteggi sopra le colonne della scelta (unità a 480 righe).
 const HEAD_Y: f32 = 132.0;
@@ -196,12 +195,10 @@ const KICK_SHAKE_SECONDS: f64 = 0.15;
 const TRAIL_TICKS: usize = 24;
 /// Salto del TELEPORT, seguendo la palla in arrivo dalla metà campo fino alla racchetta (così in
 /// posizione di dash, anche quello lungo del RUSH, l'animazione accelera e termina sempre prima
-/// dell'impatto): la racchetta affonda nel primo portale nei primi `WARP_SPAN` della corsa, poi
-/// esce dal secondo, sul punto d'arrivo, da `WARP_EXIT_AT` per altri `WARP_SPAN`.
+/// dell'impatto): la racchetta si scompone a righe nei primi `WARP_SPAN` della corsa, poi si
+/// ricompone sul punto d'arrivo da `WARP_EXIT_AT` per altri `WARP_SPAN`.
 const WARP_SPAN: f32 = 0.32;
 const WARP_EXIT_AT: f32 = 0.36;
-/// metà larghezza della linea del portale (px a 240 righe)
-const WARP_LINE_HALF: f32 = 12.0;
 /// Bullet time, solo con i colori della palette (come sul MiSTer e sul C64): quello che è bianco
 /// diventa grigio, tranne la racchetta di chi l'ha attivato, che ha un bordo di accento; la coda
 /// della palla è lunga il doppio e lascia immagini grigie ogni `BULLET_GHOST_STEP` posizioni, fino
@@ -460,43 +457,14 @@ fn warp_progress(share: f32, pad: f32) -> (f32, f32) {
     (sunk, out)
 }
 
-/// Salto del TELEPORT (coordinate del core, y verso l'alto): la racchetta vera (con il suo tipo e
-/// i suoi dettagli) affonda per `sunk` in una linea orizzontale sul lato verso cui salta ed esce
-/// per `out` da una seconda linea sul lato opposto della posizione d'arrivo, ritagliata sulle due
-/// linee dei portali. Il secondo portale si apre a metà dell'affondo.
-fn draw_warp(
-    r: &Renderer,
-    (x, ph): (f32, f32),
-    (from, to): (f32, f32),
-    (sunk, out): (f32, f32),
-    u: f32,
-    line_color: Color,
-    mut draw_at: impl FnMut(f32, (f32, f32)),
-) {
-    let dir = if to > from { 1.0 } else { -1.0 };
-    let line = |y: f32| r.rect_centered(x, y, 2.0 * WARP_LINE_HALF * u, 2.0 * u, line_color);
-    if sunk < 1.0 {
-        let edge = from + dir * ph / 2.0;
-        let c = from + dir * ph * sunk;
-        let clip = if dir > 0.0 {
-            (r.screen_y(edge), r.world_h)
-        } else {
-            (0.0, r.screen_y(edge))
-        };
-        draw_at(c, clip);
-        line(edge);
-    }
-    if sunk >= 0.5 {
-        let edge = to - dir * ph / 2.0;
-        let c = to - dir * ph * (1.0 - out);
-        let clip = if dir > 0.0 {
-            (0.0, r.screen_y(edge))
-        } else {
-            (r.screen_y(edge), r.world_h)
-        };
-        draw_at(c, clip);
-        line(edge);
-    }
+/// Salto del TELEPORT (coordinate del core, y verso l'alto): la racchetta vera (con il suo tipo e i
+/// suoi dettagli) si scompone a righe dove si trovava (`sunk`) e si ricompone a righe sul punto
+/// d'arrivo (`out`), con le righe che passano per il colore del personaggio (`paddle_ui::scan_row`).
+/// `draw_at(y, scan)` disegna la racchetta.
+fn draw_warp((from, to): (f32, f32), (sunk, out): (f32, f32), jitter: bool, mut draw_at: impl FnMut(f32, paddle_ui::Scan)) {
+    let (s, o) = ((sunk * 32.0).round() as i32, (out * 32.0).round() as i32);
+    draw_at(from, paddle_ui::Scan { level: s, arriving: false, jitter });
+    draw_at(to, paddle_ui::Scan { level: o, arriving: true, jitter });
 }
 
 // ------------------------------------------------------------------ scelta
@@ -513,7 +481,6 @@ pub struct Pick {
     chosen: [Vec<Bonus>; 2],
     /// scelta chiusa: con tasti ed encoder al terzo bonus, con il touch toccando OK
     confirmed: [bool; 2],
-    left: f64,
     ready: Option<f64>,
     /// encoder già impostati per la scelta
     knobs_ready: bool,
@@ -542,7 +509,6 @@ impl Pick {
             cursor: [0; 2],
             chosen,
             confirmed: [false; 2],
-            left: PICK_SECONDS,
             ready: None,
             knobs_ready: false,
         }
@@ -656,7 +622,6 @@ impl Pick {
             }
             return None;
         }
-        self.left -= dt;
         let n = Bonus::PICKABLE.len();
         for (side, &(up, down, toggle)) in PICK_KEYS.iter().enumerate() {
             if self.fixed == Some(side) {
@@ -720,8 +685,8 @@ impl Pick {
             }
         }
         let done = (0..2).all(|i| self.fixed == Some(i) || self.confirmed[i]);
-        if done || self.left <= 0.0 {
-            // tempo scaduto: si completa con le scelte predefinite
+        if done {
+            // chi non ha scelto (la CPU, il campione) ha le scelte predefinite
             for chosen in &mut self.chosen {
                 for b in DEFAULT_PICK.iter().chain(Bonus::PICKABLE.iter()) {
                     if chosen.len() < 3 && !chosen.contains(b) {
@@ -747,18 +712,6 @@ impl Pick {
         let t1 = r.text_1x();
         r.fill(BLACK);
         r.text_centered("PICK 3 BONUSES", font, t1, w / 2.0, 34.0 * s, 0.0, accent);
-        let secs = format!("{:02}", self.left.max(0.0).ceil() as u32);
-        let blink = self.left < 3.0 && (get_time() * 4.0) as i64 % 2 == 1;
-        r.text_centered(
-            &secs,
-            &app.assets.font_score,
-            48.0 * s,
-            w / 2.0,
-            84.0 * s,
-            0.0,
-            if blink { gray } else { white },
-        );
-
         let dash = 10.0 * s;
         let mut y = 120.0 * s;
         while y < h - 20.0 * s {
@@ -1596,30 +1549,24 @@ impl NextFx {
         if let Some(from) = self.warp[side] {
             let progress = warp_progress(field_share(game, side), pad_share(game, side));
             let look = paddle_ui::look(app, pl.kind, skin);
-            draw_warp(
-                r,
-                (x, ph),
-                (from, y),
-                progress,
-                u,
-                accent,
-                |cy, clip| {
-                    let shape = Shape {
-                        kind: pl.kind,
-                        x,
-                        y: cy,
-                        w: pw,
-                        h: ph,
-                        front,
-                        tilt: 0.0,
-                        dash: None,
-                        preview: false,
-                        clip_y: Some(clip),
-                        anim,
-                    };
-                    paddle_ui::draw_paddle(r, &shape, u, look);
-                },
-            );
+            // tremolio delle righe in luce a 7,5 al secondo, come sul MiSTer
+            let jitter = (game.tick / 32).is_multiple_of(2);
+            draw_warp((from, y), progress, jitter, |cy, scan| {
+                let shape = Shape {
+                    kind: pl.kind,
+                    x,
+                    y: cy,
+                    w: pw,
+                    h: ph,
+                    front,
+                    tilt: 0.0,
+                    dash: None,
+                    preview: false,
+                    scan: Some(scan),
+                    anim,
+                };
+                paddle_ui::draw_paddle(r, &shape, u, look);
+            });
             return;
         }
         // RUSH vibra appena, a casa e avanzato: avanti e indietro di mezzo pixel arcade
@@ -1673,7 +1620,7 @@ impl NextFx {
                 tilt: rot,
                 dash,
                 preview: false,
-                clip_y: None,
+                scan: None,
                 anim,
             };
             let look = paddle_ui::look(app, pl.kind, color);

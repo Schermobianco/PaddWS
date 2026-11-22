@@ -166,7 +166,6 @@ localparam [10:0]  CH_SKIP_FRAMES = 11'd60;     // prima non si salta (niente sa
 // la voce dice il nome dell'avversario 0,5 s dopo l'inizio della presentazione (ANNOUNCE_AFTER del
 // gioco Rust): parte 4 frame prima per i 70 ms in cui sale il DC del SID (pong_sid)
 localparam [10:0]  CH_VOICE_FRAME = 11'd26;
-localparam [10:0]  PICK_FRAMES = 11'd600;       // 10 s per scegliere i bonus
 localparam [10:0]  READY_FRAMES = 11'd72;       // "READY!" prima della partita
 
 // opzioni dell'OSD
@@ -1091,7 +1090,7 @@ always @(posedge clk) begin
                     kind_chosen[pp] <= !kind_chosen[pp];
             end
         end
-        if (frame_start && !pick_ready && (kind_chosen == 2'b11 || mframe >= PICK_FRAMES)) begin
+        if (frame_start && !pick_ready && kind_chosen == 2'b11) begin
             kind_chosen <= 2'b11;
             pick_ready <= 1'b1;
             ready_at <= mframe;
@@ -1118,7 +1117,7 @@ always @(posedge clk) begin
             end
         end
         if (frame_start && !pick_ready &&
-            ((count6(pick_mask[0]) == 3'd3 && count6(pick_mask[1]) == 3'd3) || mframe >= PICK_FRAMES)) begin
+            count6(pick_mask[0]) == 3'd3 && count6(pick_mask[1]) == 3'd3) begin
             pick_mask[0] <= fill_pick(pick_mask[0]);
             pick_mask[1] <= fill_pick(pick_mask[1]);
             pick_ready <= 1'b1;
@@ -1127,10 +1126,6 @@ always @(posedge clk) begin
         if (frame_start && pick_ready && mframe >= ready_at + READY_FRAMES) pick_go <= 1'b1;
     end
 end
-
-// secondi rimasti: (600 - frame) / 60, con il reciproco
-wire [10:0] pick_left = (mframe >= PICK_FRAMES) ? 11'd0 : PICK_FRAMES - mframe + 11'd59;
-wire [3:0]  pick_secs = (pick_left * 22'd1093) >> 16;
 
 // ------------------------------------------------------------------- bonus
 
@@ -2538,7 +2533,7 @@ always @(posedge clk) begin
             uis[5] <= {1'b0, rung_points(ch_level), letter_code(ch_letter), ch_pos, ch_name};
             uis[6] <= {16'd0, sc_roll, 1'b0, duel_w, wins_over, wins_intro, ch_wins};
             // scelta di bonus e racchetta, HOW TO PLAY
-            uis[7] <= {3'd0, control, pick_paddle, pick_lock, pick_cpu, pick_ready, pick_secs, pick_mask[1],
+            uis[7] <= {3'd0, control, pick_paddle, pick_lock, pick_cpu, pick_ready, 4'd0, pick_mask[1],
                        pick_mask[0], pick_cur[1], pick_cur[0]};
             // partita, demo e fine partita (le scritte sopra il campo)
             uis[28] <= {8'd0, bul_on, lives, countdown, ch_cpu_left, over_perfect, over_solo, over_winner, nxt,
