@@ -27,7 +27,8 @@ PH_THEME = 6                    ; sfida di CHALLENGE: il tema (ch_duel_theme), p
 PH_RESTORE2 = 7                 ; la seconda metà delle lettere 2x, poi come PH_RESTORE
 ; HOW TO PLAY delle mosse speciali, dopo le scelte (come su PC e MiSTer): bitmap e
 ; colori dalla cartuccia (gen/howto.bin, banchi HOWTO_BANK) a schermo spento, HW_STEP pagine per
-; frame, poi le scritte (HT_TEXTS, un gruppo per frame, con i glifi del set: il font della ROM),
+; frame, poi le scritte (un gruppo per frame, con i glifi del set: il font della ROM; i testi li
+; porta la bitmap stessa, nella riga 1, vuota e nera: HT_TEXTS_AT),
 ; poi la bitmap per HOWTO_FRAMES frame (8 s); fuoco o Start la saltano dopo HOWTO_SKIP.
 ; La bitmap copre le tabelle dei quadrati ($F000), che poi si rifanno (math_invalidate, math_step
 ; nel conto alla rovescia o nella presentazione); i colori vanno nello schermo di testo ($C000),
@@ -1569,12 +1570,13 @@ leave:
     jmp clear_text
 .endproc
 
-; Le scritte del gruppo A di HT_TEXTS nella bitmap (print_str con i glifi del set).
+; Le scritte del gruppo A nella bitmap (print_str con i glifi del set), dai testi che la bitmap
+; copiata porta nella riga 1 (HT_TEXTS_AT, tools/gen_c64_assets.py).
 .proc howto_texts
     tax
-    lda #<ht_texts
+    lda #<HT_TEXTS_AT
     sta ptr2
-    lda #>ht_texts
+    lda #>HT_TEXTS_AT
     sta ptr2+1
 find:
     dex
@@ -1612,7 +1614,6 @@ ht_byte:
     inc ptr2+1
 :   rts
 .endproc
-ht_texts: .byte HT_TEXTS
 .assert HW_PAGES + 1 + HT_GROUPS < $ff, error, "HOW TO PLAY: hw_pg arriva a $FF"
 
 .segment "NEXTBSS"

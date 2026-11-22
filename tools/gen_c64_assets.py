@@ -42,7 +42,8 @@ Uscite in c64/gen/ (vanno nel repository, così l'assemblaggio non richiede Pyth
                 della cartuccia, tools/make_crt.py): 31 pagine di bitmap ($E000-$FEFF) e una
                 vuota, poi i colori (1.000 byte, 4 pagine) e gli stessi con giallo e rosso
                 scambiati per l'easter egg; disegnata con le figure di tools/gen_howto_assets.py,
-                con le celle delle scritte vuote (le scrive il programma, HT_TEXTS)
+                con le celle delle scritte vuote (le scrive il programma, HT_TEXTS: i loro
+                testi stanno nella riga 1 della bitmap, vuota e nera)
   titles.bin    i titoli disegnati (assets/titles) in caratteri: una pagina per nome degli avversari,
                 una per PERFECT, due per la targa di HERE COMES A NEW CHALLENGER! (con lo sprite
                 del rosso); nel file del finale della cartuccia, mappe e colori in assets.inc
@@ -1241,19 +1242,31 @@ def howto_image() -> list[list[int]]:
     return out
 
 
-def howto_texts() -> list[str]:
-    """HT_TEXTS per assets.inc: per scritta colonna (bit 7: 2x), riga, testo, 0; $FE alla fine di
-    ogni gruppo (un frame), $FF alla fine."""
-    out = []
+# riga di celle della bitmap, vuota e nera, che porta le scritte (howto_text_bytes): il programma le
+# legge da lì (HT_TEXTS_AT) e le scrive nelle loro celle, così non stanno nella sua memoria
+HT_DATA_ROW = 1
+
+
+def howto_text_bytes() -> bytes:
+    """Le scritte di HT_TEXTS come le legge il programma: per scritta colonna (bit 7: 2x), riga,
+    testo in ASCII, 0; $FE alla fine di ogni gruppo (un frame), $FF alla fine."""
+    out = bytearray()
     for group in HT_TEXTS:
         for col, row, big, _, text in group:
-            out.append(f'{col | (0x80 if big else 0)}, {row}, "{text}", 0')
-        out.append("$FE")
-    out[-1] = "$FF"
-    return ["; HOW TO PLAY: scritte nella bitmap (colonna, con il bit 7 a 2x; riga; testo; 0), $FE",
-            "; alla fine di ogni frame di disegno, $FF alla fine (i colori sono già in howto.bin)",
+            out += bytes([col | (0x80 if big else 0), row]) + text.encode("ascii") + bytes(1)
+        out.append(0xFE)
+    out[-1] = 0xFF
+    assert len(out) <= 320, "HOW TO PLAY: scritte oltre una riga di celle"
+    return bytes(out)
+
+
+def howto_texts() -> list[str]:
+    """Per assets.inc: quanti gruppi di scritte e dove sono, nella bitmap copiata a $E000."""
+    return ["; HOW TO PLAY: scritte nella riga HT_DATA_ROW della bitmap, vuota e nera (colonna, con il",
+            "; bit 7 a 2x; riga; testo; 0), $FE alla fine di ogni frame di disegno, $FF alla fine (i",
+            "; colori sono già in howto.bin)",
             f"HT_GROUPS = {len(HT_TEXTS)}",
-            ".define HT_TEXTS " + ", ".join(out)]
+            f"HT_TEXTS_AT = ${0xE000 + HT_DATA_ROW * 320:04X}"]
 
 
 def howto_bitmap() -> tuple[bytes, bytes, list[list[int]]]:
@@ -1302,9 +1315,16 @@ def howto_bitmap() -> tuple[bytes, bytes, list[list[int]]]:
 def howto_file() -> bytes:
     """howto.bin: 31 pagine di bitmap ($E000-$FEFF) e una vuota, i colori e quelli dell'easter egg
     (giallo e rosso scambiati), 4 pagine ciascuno. Le ultime 8 celle (da $FF00, sotto le variabili
-    a $FF40) non si copiano: devono essere vuote, con i colori a 0."""
+    a $FF40) non si copiano: devono essere vuote, con i colori a 0. Nella riga HT_DATA_ROW, vuota e
+    con i colori a 0 (nero su nero: non si vede), le scritte (howto_text_bytes)."""
     bitmap, colors, _ = howto_bitmap()
     assert not any(bitmap[0x1F00:]), "HOW TO PLAY: ultime celle non vuote"
+    at = HT_DATA_ROW * 320
+    row_colors = colors[HT_DATA_ROW * 40:HT_DATA_ROW * 40 + 40]
+    assert not any(bitmap[at:at + 320]) and not any(row_colors), "HOW TO PLAY: la riga delle scritte non è vuota e nera"
+    assert all(row != HT_DATA_ROW for row, _ in howto_text_cells()), "HOW TO PLAY: una scritta nella riga dei dati"
+    texts = howto_text_bytes()
+    bitmap = bitmap[:at] + texts + bitmap[at + len(texts):]
     colors = bytearray(colors)
     colors[992:] = bytes(8)
     swap = {C_YELLOW: C_RED, C_RED: C_YELLOW}

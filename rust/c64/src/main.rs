@@ -7,6 +7,7 @@
 //!       paddws-c64 [--build DIR] frames             cicli di ogni frame (attract, partita)
 //!       paddws-c64 params [--check]                 scrive (o controlla) c64/gen/params.inc
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -2559,6 +2560,11 @@ fn frames(m: &mut Machine) -> bool {
     let late_ticks = std::cell::Cell::new((0u32, 0u32));
     // frame di gioco che tengono gli sprite del frame prima (tick pesantissimo), su quelli di gioco
     let kept_sprites = std::cell::Cell::new((0u32, 0u32));
+    // racchette GUARDIAN: immagine dei settori persi in ritardo (vedi guardian_image)
+    let guardian = std::cell::Cell::new(GuardianLag::default());
+    // immagini delle racchette a schermo contro quelle giuste per tipo e stato (paddle_shown)
+    let expected = paddle_images(m);
+    let shown = std::cell::RefCell::new(ShownLag::default());
     // tabelle dei quadrati dopo math_init: in partita devono essere quelle (presentazioni, YOU WIN,
     // HOW TO PLAY e finale ci scrivono sopra e le fanno rifare prima)
     let squares: std::cell::RefCell<Vec<u8>> = std::cell::RefCell::new(Vec::new());
@@ -2727,6 +2733,10 @@ fn frames(m: &mut Machine) -> bool {
         if matches!(m.read_u8("state", 0), 6 | 7) {
             let (kept, all) = kept_sprites.get();
             kept_sprites.set((kept + (m.read_u8("pd_made", 0) == 0xAA) as u32, all + 1));
+        }
+        if m.read_u8("state", 0) == ST_PLAY && m.read_u8("m_next", 0) != 0 {
+            guardian_image(m, &guardian);
+            paddle_shown(m, &expected, &mut shown.borrow_mut(), m.cpu.read(0xFFFB) & 0x80 != 0);
         }
         m.cpu.frame_start = None;
         // presentazione nuova, o la sfida dopo le scelte dello sfidante (il tema di un avversario a
@@ -3498,6 +3508,29 @@ fn frames(m: &mut Machine) -> bool {
     println!("  musica in partita: {late} tick rimandati al frame dopo su {all} frame");
     let (kept, all) = kept_sprites.get();
     println!("  sprite del frame prima (dopo un tick pesantissimo) in {kept} frame su {all}");
+    let g = guardian.get();
+    println!(
+        "  racchette GUARDIAN: {} frame con i settori persi, {} con l'immagine in ritardo (al più {} di fila), {} con il pezzo del TELEPORT rimasto",
+        g.frames, g.stale, g.worst, g.warp_left
+    );
+    // (le partite dell'NTSC, con i tempi diversi, e quelle con PADDWS_C64_PICK_RAW, quasi solo
+    // ARCADE e BLASTER, non hanno un GUARDIAN che perde dei settori)
+    let sh = shown.borrow();
+    println!("  immagini delle racchette a schermo in partita NEXT (tipo: frame provati, sbagliati, al più di fila):");
+    for (k, name) in KIND_NAMES.iter().enumerate() {
+        let (n, bad, worst) = sh.per_kind[k];
+        println!("    {name:<9} {n:>6} {bad:>5} {worst:>5}");
+    }
+    if sh.per_kind.iter().any(|&(_, _, worst)| worst > GUARDIAN_LAG_MAX) {
+        println!("FAIL: racchetta a schermo diversa dall'immagine giusta per oltre {GUARDIAN_LAG_MAX} frame di fila");
+        return false;
+    }
+    if (g.frames == 0 && !ntsc() && !pick_raw) || g.worst > GUARDIAN_LAG_MAX || g.warp_left > 0 {
+        println!(
+            "FAIL: racchetta GUARDIAN non provata, immagine dei settori persi oltre {GUARDIAN_LAG_MAX} frame in ritardo o pezzo del TELEPORT rimasto nello sprite"
+        );
+        return false;
+    }
     // (sull'NTSC i tick più pesanti non stanno nel frame nemmeno sforando: lo scatto accettato, fino
     // allo 0,5%)
     let (limit, pct) = if ntsc() { (200, "0,5%") } else { (500, "0,2%") };
@@ -3555,6 +3588,13 @@ fn frames(m: &mut Machine) -> bool {
         Ok(s) => println!("  {s}"),
         Err(e) => {
             println!("FAIL: classifica: {e}");
+            return false;
+        }
+    }
+    match guardian_fast(m) {
+        Ok(s) => println!("  {s}"),
+        Err(e) => {
+            println!("FAIL: {e}");
             return false;
         }
     }
@@ -3719,6 +3759,219 @@ fn border_logic(m: &mut Machine) -> Result<String, String> {
         m.write_u8(n, 0, v);
     }
     Ok(format!("bordo della partita: {cases} casi di border_game come previsto"))
+}
+
+const KIND_NAMES: [&str; 7] = ["ARCADE", "TITAN", "HAMMER", "TWIST", "BLASTER", "RUSH", "GUARDIAN"];
+
+/// Immagini giuste delle racchette (pad_image), per lato, tipo e variante come pad_variant: BLASTER
+/// livello del caricatore * 32 (0-4), GUARDIAN settori persi (0-31), TWIST inclinazione + 3 (0-6),
+/// gli altri 0. Fatte su una copia dello stato della CPU, che poi torna com'era.
+fn paddle_images(m: &mut Machine) -> HashMap<(u8, u8, u8), Vec<u8>> {
+    let saved = m.cpu.clone();
+    let rows = m.addr("pv_rows");
+    let base = m.addr("sh_img");
+    let mut out = HashMap::new();
+    for side in 0..2u8 {
+        for kind in 0..7u8 {
+            let n = m.cpu.read(rows + u16::from(kind));
+            let vars: Vec<u8> = match kind {
+                3 => (0..7).collect(),
+                4 => (0..=4).collect(),
+                6 => (0..32).collect(),
+                _ => vec![0],
+            };
+            for var in vars {
+                m.write_u8("pi_side", 0, side);
+                m.write_u8("pi_kind", 0, kind);
+                m.write_u8("pi_n", 0, n);
+                m.write_u8("pi_var", 0, if kind == 4 { var * 32 } else { var });
+                if kind == 4 {
+                    m.cpu.a = var;
+                    m.call("mag_vis");
+                }
+                m.call("pad_image");
+                let img = base + 63 * u16::from(side);
+                let key = (side, kind, if kind == 4 { var * 32 } else { var });
+                out.insert(key, (0..63).map(|i| m.cpu.read(img + i)).collect());
+            }
+        }
+    }
+    m.cpu = saved;
+    out
+}
+
+/// Racchette a schermo in partita NEXT, frame per frame: per tipo frame provati, frame con lo
+/// sprite diverso dall'immagine giusta per lo stato del tick, il più lungo di fila.
+#[derive(Default)]
+struct ShownLag {
+    per_kind: [(u32, u32, u32); 7],
+    run: [u32; 2],
+}
+
+/// Lo sprite di ogni racchetta come si vedrà al prossimo vblank (l'immagine dinamica: sh_img se da
+/// copiare, se no la RAM degli sprite sotto l'I/O; le preparate a $E000) contro paddle_images.
+/// Non contano: il salto del TELEPORT, la rotazione del SUPER, la racchetta spenta, i frame che
+/// tengono gli sprite di prima, altezze diverse da quella del tipo (OMEGA appena trasformato vicino
+/// al bordo). Il lato di OMEGA sì, con la forma del momento (stesse immagini, colore a parte).
+fn paddle_shown(m: &Machine, expected: &HashMap<(u8, u8, u8), Vec<u8>>, s: &mut ShownLag, voice: bool) {
+    const SPN_PAD: u16 = 3;
+    if m.read_u8("pd_made", 0) == 0xAA {
+        return;
+    }
+    let (wp_on, wp_side) = (m.read_u8("wp_on", 0) != 0, m.read_u8("wp_side", 0));
+    let enable = m.read_u8("sh_enable", 0);
+    for side in 0..2u8 {
+        let x = u16::from(side) * 4;
+        let i = usize::from(side);
+        let kind = m.read_u8("nx_kind", x);
+        let skip = kind > 6
+            || enable & (1 << (SPN_PAD + u16::from(side))) == 0
+            || (wp_on && wp_side == side)
+            || (m.read_u8("nx_armed", x) == 5 && m.read_u8("nx_anim", x) == 0)
+            || m.read_u8("pd_cur_n", u16::from(side)) != m.cpu.read(m.addr("pv_rows") + u16::from(kind));
+        if skip {
+            s.run[i] = 0;
+            continue;
+        }
+        let ptr = m.read_u8("sh_ptr", SPN_PAD + u16::from(side));
+        let at = 0xC000 + u16::from(ptr) * 64;
+        let img: Vec<u8> = if ptr == m.read_u8("pad_slot", u16::from(side)) && m.read_u8("pd_dirty", u16::from(side)) != 0 && !voice {
+            let b = m.addr("sh_img") + 63 * u16::from(side);
+            (0..63).map(|k| m.cpu.read(b + k)).collect()
+        } else if (0xD000..0xE000).contains(&at) {
+            m.cpu.under_io[usize::from(at - 0xD000)..usize::from(at - 0xD000) + 63].to_vec()
+        } else {
+            (0..63).map(|k| m.cpu.read(at + k)).collect()
+        };
+        let ok = match kind {
+            3 => (0..7).any(|v| expected[&(side, 3, v)] == img),
+            4 => expected[&(side, 4, m.read_u8("bl_vis", u16::from(m.read_u8("nx_ammo", x))) * 32)] == img,
+            6 => expected[&(side, 6, !m.read_u8("nx_barrier", x) & 0x1F)] == img,
+            _ => expected[&(side, kind, 0)] == img,
+        };
+        let e = &mut s.per_kind[usize::from(kind)];
+        e.0 += 1;
+        if ok {
+            s.run[i] = 0;
+        } else {
+            e.1 += 1;
+            s.run[i] += 1;
+            e.2 = e.2.max(s.run[i]);
+        }
+    }
+}
+
+/// Frame di fila al più con l'immagine del GUARDIAN che non segue i settori persi (il frame del
+/// tick che perde il settore può essere già avanti, e allora la rifà il frame dopo).
+const GUARDIAN_LAG_MAX: u32 = 3;
+
+/// Racchette GUARDIAN in partita NEXT (pad_sprite di video.s): frame con dei settori persi, frame
+/// con l'immagine in ritardo (lo sprite non è l'immagine dinamica fatta con quei settori), il
+/// ritardo più lungo di fila; per ogni tipo, frame con lo sprite dinamico della racchetta a schermo
+/// che dopo il salto del TELEPORT ha ancora il pezzo del salto (pd_n = $FF: immagine da rifare).
+#[derive(Clone, Copy, Default)]
+struct GuardianLag {
+    frames: u32,
+    stale: u32,
+    worst: u32,
+    run: [u32; 2],
+    warp_left: u32,
+}
+
+fn guardian_image(m: &Machine, g: &std::cell::Cell<GuardianLag>) {
+    const SPN_PAD: u16 = 3;
+    const K_GUARDIAN: u8 = 6;
+    const B_SUPER: u8 = 5;
+    let mut s = g.get();
+    let (wp_on, wp_side) = (m.read_u8("wp_on", 0) != 0, m.read_u8("wp_side", 0));
+    let enable = m.read_u8("sh_enable", 0);
+    for side in 0..2u16 {
+        let x = side * 4;
+        let shown = enable & (1 << (SPN_PAD + side)) != 0;
+        let warping = wp_on && u16::from(wp_side) == side;
+        let ptr = m.read_u8("sh_ptr", SPN_PAD + side);
+        let dynamic = ptr == m.read_u8("pad_slot", side);
+        // (con il SUPER armato e la rotazione la racchetta è l'immagine dell'angolo)
+        let spin = m.read_u8("nx_armed", x) == B_SUPER && m.read_u8("nx_anim", x) == 0;
+        if shown && !warping && dynamic && m.read_u8("pd_n", side) == 0xFF {
+            s.warp_left += 1;
+        }
+        let lost = !m.read_u8("nx_barrier", x) & 0x1F;
+        if m.read_u8("nx_kind", x) != K_GUARDIAN || lost == 0 || warping || spin || !shown {
+            s.run[side as usize] = 0;
+            continue;
+        }
+        s.frames += 1;
+        let ok = dynamic
+            && m.read_u8("pd_kind", side) == K_GUARDIAN
+            && m.read_u8("pd_var", side) == lost
+            && m.read_u8("pd_n", side) == m.read_u8("pd_cur_n", side);
+        let run = &mut s.run[side as usize];
+        if ok {
+            *run = 0;
+        } else {
+            s.stale += 1;
+            *run += 1;
+            s.worst = s.worst.max(*run);
+        }
+    }
+    g.set(s);
+}
+
+/// L'immagine del GUARDIAN con dei settori persi fatta dal muro intero preparato (pad_sprite::guard):
+/// per ogni lato e ogni combinazione di settori persi uguale byte per byte a quella di pad_image.
+fn guardian_fast(m: &mut Machine) -> Result<String, String> {
+    const K_GUARDIAN: u8 = 6;
+    const IMG_BYTES: u16 = 63;
+    let n = m.cpu.read(m.addr("pv_rows") + u16::from(K_GUARDIAN));
+    let base = m.addr("sh_img");
+    // il muro intero nel primo posto delle immagini preparate (a $E000, sotto il KERNAL spento)
+    let slot = m.read_u8("prep_base", 0);
+    let at = 0xC000 + usize::from(slot) * 64;
+    let saved = m.cpu.mem[at..at + 64].to_vec();
+    let next = m.read_u8("m_next", 0);
+    m.write_u8("m_next", 0, 0); // (guard finisce in pad_spin: fuori da NEXT non fa niente)
+    let mut worst = (0, 0);
+    let mut result = Ok(());
+    'sides: for side in 0..2u8 {
+        let img = base + IMG_BYTES * u16::from(side);
+        let read = |m: &Machine| (0..IMG_BYTES).map(|i| m.cpu.read(img + i)).collect::<Vec<u8>>();
+        let image = |m: &mut Machine, var: u8| {
+            m.write_u8("pi_side", 0, side);
+            m.write_u8("pi_kind", 0, K_GUARDIAN);
+            m.write_u8("pi_n", 0, n);
+            m.write_u8("pi_var", 0, var);
+            m.call("pad_image")
+        };
+        image(m, 0);
+        let wall = read(m);
+        m.cpu.mem[at..at + wall.len()].copy_from_slice(&wall);
+        for lost in 1..32u8 {
+            let slow = image(m, lost);
+            let want = read(m);
+            for i in 0..IMG_BYTES {
+                m.cpu.write(img + i, 0x55);
+            }
+            m.write_u8("pi_side", 0, side);
+            m.write_u8("pi_var", 0, lost);
+            m.cpu.a = slot;
+            m.cpu.y = side;
+            let fast = m.call("guard");
+            if read(m) != want {
+                result = Err(format!("GUARDIAN lato {side}, settori persi {lost:05b}: l'immagine dal muro intero non è quella di pad_image"));
+                break 'sides;
+            }
+            worst = (worst.0.max(fast), worst.1.max(slow));
+        }
+    }
+    m.cpu.mem[at..at + 64].copy_from_slice(&saved);
+    m.write_u8("m_next", 0, next);
+    result.map(|()| {
+        format!(
+            "GUARDIAN con dei settori persi: le 31 immagini per lato dal muro intero come pad_image, al più {} cicli (pad_image {})",
+            worst.0, worst.1
+        )
+    })
 }
 
 /// Le immagini delle racchette dei tipi (pad_image) come le prepara la scelta, a caratteri: una
@@ -6063,6 +6316,10 @@ fn ending_run(m: &mut Machine, score: u32, fire_at: Option<u32>) -> Result<Endin
     }
     for (what, got, want) in [
         ("$D016", m.cpu.mem[0xD016], 0xC8),
+        // (lo split del raster della sfilata spento: parade.s, irq_normal di ending.s)
+        ("vettore dell'interrupt, byte basso", m.cpu.mem[0xFFFE], m.addr("irq_handler") as u8),
+        ("vettore dell'interrupt, byte alto", m.cpu.mem[0xFFFF], (m.addr("irq_handler") >> 8) as u8),
+        ("riga dell'interrupt", m.cpu.mem[0xD012], 250),
         ("$D025", m.cpu.mem[0xD025] & 15, COL_GRAY),
         ("$D01B", m.cpu.mem[0xD01B], 0),
         ("sprite accesi", m.read_u8("sh_enable", 0), 0),
@@ -6376,11 +6633,13 @@ fn ending_ui(m: &mut Machine) -> Result<String, String> {
     }
     m.call("enter_cont");
     // Start una volta, al primo frame in cui vale (CONT_SKIP_FRAMES di challenge.s dalla fine del
-    // disegno, ch_elapsed)
+    // disegno, ch_elapsed); sull'NTSC non nel frame su sei senza il passo (tv_beat: tv_six a 0), che
+    // non legge i comandi (sul C64 il tasto resta premuto anche nel frame dopo)
     const CONT_SKIP_FRAMES: u8 = 13;
     let mut pressed = false;
     for n in 0..30u32 {
-        let now = !pressed && m.read_u8("ch_phase", 0) == 0 && m.read_u8("ch_elapsed", 0) >= CONT_SKIP_FRAMES;
+        let skip = ntsc() && m.read_u8("tv_six", 0) == 0;
+        let now = !pressed && !skip && m.read_u8("ch_phase", 0) == 0 && m.read_u8("ch_elapsed", 0) >= CONT_SKIP_FRAMES;
         pressed |= now;
         m.cpu.joy_port2 = if now { !0x10 } else { 0xFF };
         full_frame(m).map_err(|e| format!("continue con Start, frame {n}: {e}"))?;

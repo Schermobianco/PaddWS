@@ -14,6 +14,12 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+### Corretto
+- C64: la racchetta del GUARDIAN mostra subito i settori persi del muro; prima l'immagine poteva
+  restare quella del muro intero anche per molti secondi.
+- C64: dopo il salto del TELEPORT la racchetta non resta rovinata dal pezzo dell'animazione (si
+  vedeva con il GUARDIAN che aveva perso dei settori).
+
 ## [4.6.1] - 2026-11-21
 
 ### Modificato

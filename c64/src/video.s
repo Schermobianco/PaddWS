@@ -175,6 +175,7 @@ pi_tabs:   .res 1
 pi_acc:    .res 1
 pd_made:   .res 1               ; immagine di racchetta già rifatta in questo frame
 pd_dirty:  .res 2               ; immagine da copiare nella RAM degli sprite
+pd_full:   .res 2               ; GUARDIAN con dei settori persi: sprite del muro intero (0 nessuno)
 
 .segment "CODE"
 
@@ -1803,6 +1804,8 @@ color:
     sta pd_cur_n,y
     jsr pad_variant
     ldy pi_side
+    lda #0                      ; (nessun muro intero del GUARDIAN da cui partire)
+    sta pd_full,y
     ; NEXT: l'immagine preparata a inizio partita, se c'è: TWIST per inclinazione, BLASTER per
     ; colpi nel caricatore (pi_ammo da pad_variant), così il caricatore cala nel frame del colpo
     lda m_next
@@ -1817,20 +1820,25 @@ color:
 :   cmp #K_BLASTER
     bne :+
     ldx pi_ammo
-:   cmp #K_GUARDIAN             ; GUARDIAN con un settore perso: l'immagine si rifà, una volta
-    bne :+
-    lda pi_var
-    bne dynamic
 :   lda pi_n
     cmp pp_n,y                  ; (il lato di OMEGA ha pp_n = $FF: prep_slot)
     bne other
     txa
     clc
     adc prep_base,y
-    bcc put                     ; (sempre)
+    bcc found                   ; (sempre)
 other:
     jsr prep_slot
     bcs dynamic
+found:
+    ; GUARDIAN con dei settori persi: l'immagine dinamica, fatta dal muro intero preparato
+    ldx pi_kind
+    cpx #K_GUARDIAN
+    bne put
+    ldx pi_var
+    beq put
+    sta pd_full,y
+    bcs dynamic                 ; (sempre: C = 1 da cpx)
 put:
     sta sh_ptr+SPN_PAD,y
     jmp done
@@ -1843,12 +1851,12 @@ dynamic:
     bne make
     lda pi_var
     cmp pd_var,y
-    beq done
+    beq done                    ; (game_sprites mette nello sprite l'immagine dinamica)
 make:
     ; una sola immagine per frame (costa qualche migliaio di cicli): l'altra al prossimo; nel
     ; GAME OVER le racchette sono ferme e quel frame ha già le scritte da fare
     lda pd_made
-    bne done
+    bne keep
     lda state
     cmp #ST_OVER
     beq done
@@ -1858,9 +1866,14 @@ make:
     cmp pi_side
     beq done
 :
-    ; frame già avanti: al prossimo
-    jsr frame_late
-    bcs done
+    ; frame già avanti: al prossimo. Il GUARDIAN dal muro intero (guard) costa meno di un terzo
+    ; di pad_image e si fa anche più avanti nel frame
+    lda #LATE_BIG
+    ldx pd_full,y
+    beq :+
+    lda #LATE_GUARD
+:   jsr frame_after
+    bcs keep
     inc pd_made
     lda pi_n
     sta pd_n,y
@@ -1870,15 +1883,77 @@ make:
     sta pd_var,y
     lda #1
     sta pd_dirty,y
-    jsr pad_image
-    ldy pi_side                 ; (l'immagine fatta ora nello sprite, anche dopo le preparate)
-    lda pad_slot,y
-    sta sh_ptr+SPN_PAD,y
+    lda pd_full,y
+    bne guard
+    jsr pad_image               ; (game_sprites ha messo nello sprite l'immagine dinamica)
+    ldy pi_side
+keep:
+    ; immagine rimandata (o appena fatta: pd_n non è $FF): se nello sprite dinamico non c'è la
+    ; racchetta (pd_n = $FF: c'è il pezzo del salto del TELEPORT) e c'è il muro intero del
+    ; GUARDIAN, intanto quello
+    ldx pd_n,y
+    inx
+    bne done
+    lda pd_full,y
+    bne put
 done:
     jsr pad_spin
     ldx side
     rts
+guard:
+    ; GUARDIAN con dei settori persi (pi_var): in sh_img l'immagine preparata del muro intero (lo
+    ; sprite A), con lo scudo grigio nei corsi persi; i corsi si contano dalle fughe gialle che
+    ; l'immagine ha già (guardian_row). Circa 2.000 cicli contro i 5.500-6.900 di pad_image.
+    ldx #0
+    stx ptr
+    lsr a
+    ror ptr
+    lsr a
+    ror ptr
+    ora #>$C000
+    sta ptr+1                   ; (ptr) = $C000 + A * 64
+    lda pi_var
+    sta pi_k                    ; bit 0: il corso della riga è perso
+    lda img_base,y
+    tax
+    ldy #0
+g_copy:
+    lda (ptr),y
+    sta sh_img,x
+    inx
+    iny
+    cpy #IMG_BYTES
+    bne g_copy
+    ; lo scudo (colonne doppie PAD_FAT e PAD_FAT + 1, anche nella racchetta destra) è il nibble
+    ; alto del byte 1 di ogni riga
+    ldx pi_side
+    ldy img_base,x
+    ldx #PAD_ROWS
+g_row:
+    lda sh_img+1,y
+    and #$F0
+    cmp #(COLOR_YELLOW * $55) & $F0     ; fuga: il corso dopo
+    bne :+
+    lsr pi_k
+:   cmp #(COLOR_WHITE * $55) & $F0      ; scudo del corso (le righe oltre la racchetta sono vuote)
+    bne g_next
+    lda pi_k
+    lsr a
+    bcc g_next
+    lda sh_img+1,y
+    and #$0F
+    ora #(COLOR_GRAY * $55) & $F0
+    sta sh_img+1,y
+g_next:
+    iny
+    iny
+    iny
+    dex
+    bne g_row
+    beq done                    ; (sempre)
 .endproc
+.assert PAD_FAT = 4, error, "pad_sprite: lo scudo del GUARDIAN nel nibble alto del byte 1"
+.assert COLOR_GRAY = 1 .and COLOR_YELLOW = 2 .and COLOR_WHITE = 3, error, "pad_sprite: colori dello scudo del GUARDIAN"
 
 ; SUPER armato con la rotazione (animazione 0): al posto della racchetta l'immagine dell'angolo
 ; del frame, centrata sulla racchetta (sprite hires espanso).
@@ -4060,6 +4135,7 @@ LATE_HUD   = (TV_BUDGET - (2000)) / TV_LCYC         ; NTSC: musica già a inizio
 LATE_HUD   = LATE_SMALL
 .endif
 LATE_SPIN  = (TV_BUDGET - (13000)) / TV_LCYC         ; un'immagine della rotazione del SUPER costa fino a circa 10.400
+LATE_GUARD = (TV_BUDGET - (5000)) / TV_LCYC          ; GUARDIAN dal muro intero (pad_sprite): circa 2.000 cicli
 
 .proc frame_late
     lda #LATE_BIG
@@ -4387,15 +4463,19 @@ running:
     bmi stop
     jsr warp_d                  ; A = distanza della palla dal bordo di chi salta
     cmp #WARP_RISE - WARP_STEP + 1
-    bcs :+
+    bcs going
 stop:
     lda #0
     sta wp_on
     ldx wp_side
     lda #$ff                    ; l'immagine della racchetta si rifà (con le immagini preparate
     sta pd_n,x                  ; torna subito una di quelle)
-    jmp remember
-:   sta wp_d
+    lda pd_full,x               ; GUARDIAN con dei settori persi: nello sprite dinamico c'è il
+    beq :+                      ; pezzo del salto, intanto il muro intero (pad_sprite)
+    sta sh_ptr+SPN_PAD,x
+:   jmp remember
+going:
+    sta wp_d
     lda #WARP_LATE              ; frame già avanti: resta l'immagine di prima, e il disegno si fa
     jsr frame_after             ; all'inizio del frame dopo (warp_early)
     bcc :+
