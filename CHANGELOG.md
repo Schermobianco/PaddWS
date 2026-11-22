@@ -40,6 +40,12 @@ crea il commit e il tag `vX.Y.Z`.
   fiamme, armi e getti, la guida dei settori del GUARDIAN, l'anteprima come in partita, la
   selezione con taglia, copia e incolla e la conversione da un'immagine di riferimento; con
   `--paddle-c64` gli sprite del C64 (12 pixel doppi, i tre colori dello sprite multicolore).
+- C64: la racchetta colpita dal laser del BLASTER lampeggia di verde finché è rallentata.
+
+### Corretto
+- C64 (PAL): la musica non rallenta più nei frame pesanti, come le raffiche del BLASTER: il passo
+  che non trovava il tempo a fine frame si perdeva, ora si suona all'inizio del frame dopo.
+- C64: il muro del GUARDIAN lampeggia nel colore del GUARDIAN, non più giallo e arancione.
 
 ## [4.6.2] - 2026-11-22
 

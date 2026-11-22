@@ -133,6 +133,11 @@ choosing:
     and pk_ok+1
     beq done
 finish:
+.ifdef PADTEST
+    lda #PADTEST                ; (prova per VICE, -Define PADTEST=k: tutti e due con il tipo k)
+    sta pk_cursor
+    sta pk_cursor+1
+.endif
     lda #1
     sta pk_ok
     sta pk_ok+1

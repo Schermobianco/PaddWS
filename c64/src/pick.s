@@ -1585,7 +1585,7 @@ hw_t:   .res 2                  ; frame da quando si vede
 
 ; Muro del GUARDIAN dietro la racchetta, sotto le riserve (righe BAR_ROW0-24): non si vede (i settori
 ; in piedi sono i corsi della racchetta, pad_image); il settore che rimanda la palla lampeggia per
-; BAR_FLASH frame, a tratti di colore alterno per settore (giallo e arancione), e sparisce. I settori non sono allineati ai
+; BAR_FLASH frame, a tratti, nel colore del GUARDIAN (azzurro), e sparisce. I settori non sono allineati ai
 ; caratteri: ogni riga di caratteri prende il settore del suo centro con la regola della logica
 ; (g_sector, sulla y del core che va verso l'alto), quindi il disegno è approssimato al carattere
 ; e la logica no. Si riscrivono solo le righe dei settori cambiati.
@@ -1667,12 +1667,7 @@ row:
     clc
     adc #>($d800 - SCREEN)
     sta ptr+1
-    ldx #COL_ORANGE             ; settori dispari arancioni, pari gialli
-    lda m_lo
-    and #%010101
-    beq :+
-    ldx #COL_YELLOW
-:   txa
+    lda #COL_LBLUE              ; nel colore del GUARDIAN (kind_col)
     sta (ptr),y
     dey
     sta (ptr),y

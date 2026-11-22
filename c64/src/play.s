@@ -574,6 +574,7 @@ EARLY_LATE = 300 / TV_LCYC
 :   jsr game_music
 .else
     jsr warp_early              ; NEXT: il salto del TELEPORT rimasto da disegnare
+    jsr music_owed              ; il passo della musica rimandato dal frame prima
 .endif
     ; tabelle dei quadrati da rifare, fuori dalle scene in bitmap
     lda math_ready
@@ -679,12 +680,12 @@ KEEP_SPRITES_OMEGA = (TV_BUDGET - KEEP_SPRITES_CYC - 500) / TV_LCYC ; lo stesso 
 music:
 .ifdef NTSC
     jmp trail_end               ; (la musica all'inizio del frame: game_music)
-.endif
+.else
     ; frame già troppo avanti per il player (il tema di CHALLENGE con due note nuove costa fino
-    ; a circa 1.700 cicli): la musica aspetta il prossimo, come gli effetti (fx_pend), con le
-    ; stesse scritture un frame dopo. Righe SID_LATE_LINE-249: il frame è oltre SID_LATE cicli
+    ; a circa 1.700 cicli): il passo si suona all'inizio del frame dopo (music_owed), con le
+    ; stesse scritture. Righe SID_LATE_LINE-249: il frame è oltre SID_LATE cicli
     jsr sid_time
-    bcc late
+    bcc owed
     jsr match_tempo             ; in partita il tempo della musica
     jsr sid_tick
     jsr border_game             ; (anche lui solo se il frame ha tempo)
@@ -696,6 +697,11 @@ music:
     jsr sid_more
 late:
     jmp trail_end               ; NEXT: la coda della palla, se il frame ha ancora tempo
+owed:
+    lda #1
+    sta sid_owed
+    bne late                    ; (sempre)
+.endif
 other:
     lda #0                      ; fuori dalla partita il tempo di sempre e il bordo dello sfondo
     sta sh_brd
@@ -715,6 +721,27 @@ other:
 .endif
     jmp sid_tick
 .endproc
+
+.ifndef NTSC
+; PAL: il passo della musica che il frame prima ha rimandato (sid_owed, scene_done), all'inizio di
+; questo frame, dove c'è sempre il tempo. Prima il passo rimandato si perdeva: nei frame pesanti,
+; come le raffiche del BLASTER, la canzone rallentava (sul C64 vero il VIC ruba circa 2.000 cicli
+; in più del banco di prova, e i frame oltre SID_LATE sono molti di più).
+.proc music_owed
+    lda sid_owed
+    beq done
+    lda #0
+    sta sid_owed
+    jsr match_tempo
+    jsr sid_tick
+    jmp border_game
+done:
+    rts
+.endproc
+.segment "BSS"
+sid_owed: .res 1
+.segment "CODE"
+.endif
 
 .ifdef NTSC
 ; NTSC: la musica del conto alla rovescia, della partita e del GAME OVER all'inizio del frame (il

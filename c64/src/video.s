@@ -1793,6 +1793,14 @@ white:
     bne :+
     lda #COL_YELLOW
     bne color
+:   ; colpita dal laser del BLASTER (rallentata): verde chiaro a tratti, come l'alone del PC
+    lda nx_lslow,x
+    beq :+
+    lda tick
+    and #PAD_BLINK
+    beq :+
+    lda #COL_GREEN
+    bne color
 :
     jsr om_white                ; colore dedicato del tipo (o viola per OMEGA, omega.s)
 color:
