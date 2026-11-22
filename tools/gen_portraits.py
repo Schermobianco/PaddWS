@@ -21,13 +21,19 @@ Le misure sono multipli di 8 (11x13 e 4x4 caratteri). Un ritratto del C64 ritocc
 tools/c64_editor.html (blocco tEXt "c64edit" nel PNG) non viene sovrascritto: per rifarlo dalla
 sorgente si cancella il file.
 
+E in bitmap multicolor (sottocartella c64mc/, c64_mc): pixel doppi (il PNG resta largo come
+l'hires, con le coppie uguali, come lo legge e lo scrive l'editor), in ogni cella 4x8 il nero dello
+sfondo ($D021) e al massimo 3 colori tra bianco, i tre grigi e il colore del personaggio. Il blocco
+tEXt "c64mode" dice all'editor il modo (bitmap multicolor) senza segnare il file come ritoccato.
+
 L'inquadratura del ritratto grande è larga BIG_SRC_W pixel della sorgente intorno al volto (FACE),
 spostata di SHIFT (positivo: il personaggio va a sinistra, per far entrare fucile e laser di
 BLASTER). Nel gioco il ritratto del giocatore di destra è specchiato.
 
 Uscite:
   assets/characters/portraits/*.png            PC, web e MiSTer (ruoli dei colori)
-  assets/characters/portraits/c64/*.png        C64 (numeri dei colori, 2 per cella 8x8)
+  assets/characters/portraits/c64/*.png        C64 hires (numeri dei colori, 2 per cella 8x8)
+  assets/characters/portraits/c64mc/*.png      C64 multicolor (sfondo nero e 3 colori per cella 4x8)
   assets/characters/portraits/portraits.json   ruoli, misure e colori dei personaggi
 
 Uso:  .venv\\Scripts\\python tools\\gen_portraits.py   (richiede Pillow e numpy)
@@ -41,6 +47,7 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw
+from PIL.PngImagePlugin import PngInfo
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "assets" / "characters" / "source"
@@ -449,6 +456,56 @@ def c64(name: str, w: int, h: int, src_w: int, up: float, shift: int,
     return im
 
 
+def _mc_dist(px: np.ndarray, cols: list[int]) -> np.ndarray:
+    """Distanze (pixel, colore) pesate come le vede l'occhio (il verde conta di più)."""
+    wgt = np.sqrt(np.array([0.30, 0.59, 0.11]))
+    pal = np.array(C64_PALETTE, dtype=float)[cols] * wgt
+    return (((px * wgt)[:, None, :] - pal[None, :, :]) ** 2).sum(-1)
+
+
+def c64_mc(name: str, w: int, h: int, defeated: bool = False, locked: bool = False) -> Image.Image:
+    """Versione C64 in bitmap multicolor: l'inquadratura di crop_hires ridotta a w/2 x h (pixel
+    doppi), poi per ogni cella 4x8 il nero dello sfondo e i 3 colori che la rendono meglio, tra quelli
+    del personaggio (nero, bianco, grigio scuro, grigio, grigio chiaro e il suo colore; in sagoma
+    grigi e colore). Lo sfondo esterno (nero, connesso ai bordi) resta nero."""
+    acc = C64_ACCENT[name]
+    allowed = [0, 11, 12, acc] if locked else [0, 1, 11, 12, 15, acc]
+    hi = crop_hires(name, w, h, defeated=defeated, locked=locked)
+    lo = np.asarray(hi.resize((w // 2, h), Image.LANCZOS), dtype=float)
+    ext = np.asarray(Image.fromarray(_exterior_bg(np.asarray(hi, dtype=float)).astype(np.uint8) * 255)
+                     .resize((w // 2, h), Image.BOX)) >= 160
+    out = np.zeros((h, w // 2), dtype=np.uint8)
+    for cy in range(0, h, 8):
+        for cx in range(0, w // 2, 4):
+            cell = lo[cy:cy + 8, cx:cx + 4].reshape(-1, 3)
+            bg = ext[cy:cy + 8, cx:cx + 4].reshape(-1)
+            d_all = _mc_dist(cell, allowed)
+            near = np.array(allowed)[d_all.argmin(1)]
+            near = near[~bg]
+            # candidati: i colori più vicini ai pixel della cella, i più frequenti
+            counts = sorted(((int((near == c).sum()), c) for c in set(near.tolist()) if c != 0), reverse=True)
+            cand = [c for _, c in counts[:6]]
+            best = None
+            for k in range(min(3, len(cand)) + 1):
+                for trio in combinations(cand, k):
+                    cols = [0, *trio]
+                    d = _mc_dist(cell, cols)
+                    d[bg, 1:] = np.inf      # lo sfondo esterno resta nero
+                    e = float(d.min(1).sum())
+                    if best is None or e < best[0]:
+                        best = (e, np.array(cols, dtype=np.uint8)[d.argmin(1)])
+            out[cy:cy + 8, cx:cx + 4] = best[1].reshape(8, 4)
+    im = Image.new("P", (w, h))
+    im.putdata(np.repeat(out, 2, axis=1).flatten().tolist())
+    im.putpalette([v for rgb in C64_PALETTE for v in rgb])
+    return im
+
+
+# modo per l'editor (tools/c64_editor.html): come il suo blocco "c64edit", ma con un altro nome,
+# così il generatore può rifare il file (hand_edited guarda solo "c64edit")
+MC_MODE = json.dumps({"v": 1, "mode": "mb", "gx": 0, "gy": 0, "cw": 8, "ch": 8, "bg": 0})
+
+
 def fade_cut_edges(lo: np.ndarray, pal: np.ndarray) -> np.ndarray:
     """Sfuma verso il nero i soli lati (sinistro e/o destro) dove il ritratto grande tocca il bordo."""
     raw = ((lo[:, :, None, :] - pal[None, None, :, :]) ** 2).sum(3).argmin(2)
@@ -500,16 +557,27 @@ def hand_edited(path: Path) -> bool:
         return "c64edit" in im.info
 
 
+def c64_mc_any(name: str, w: int, h: int, src_w: int, up: float, shift: int,
+               defeated: bool = False, locked: bool = False) -> Image.Image:
+    """c64_mc con gli argomenti di portrait e c64 (main li chiama tutti allo stesso modo)."""
+    return c64_mc(name, w, h, defeated=defeated, locked=locked)
+
+
 def main() -> None:
     (OUT / "c64").mkdir(parents=True, exist_ok=True)
+    (OUT / "c64mc").mkdir(parents=True, exist_ok=True)
     kept = []
-    for make, folder in ((portrait, OUT), (c64, OUT / "c64")):
+    for make, folder in ((portrait, OUT), (c64, OUT / "c64"), (c64_mc_any, OUT / "c64mc")):
         def save(image: Image.Image, stem: str) -> None:
             path = folder / f"{stem}.png"
             if folder != OUT and hand_edited(path):
-                kept.append(stem)       # ritoccato a mano: resta com'è
+                kept.append(f"{folder.name}/{stem}")       # ritoccato a mano: resta com'è
                 return
-            image.save(path, optimize=True)
+            info = None
+            if folder.name == "c64mc":
+                info = PngInfo()
+                info.add_text("c64mode", MC_MODE)
+            image.save(path, optimize=True, pnginfo=info)
 
         for name in NAMES:
             save(make(name, BIG_W, BIG_H, BIG_SRC_W, 0.0, 0), name)

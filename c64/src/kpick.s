@@ -5,15 +5,22 @@
 ; dell'anteprima, pick_preview), cursori gialli con la sigla del giocatore, frasi del tipo,
 ; comandi, tempo e READY!.
 ;
+; Le righe di celle KP_MC_ROW0-KP_MC_ROW1 (ritratti, caselle, campo fin sopra i nomi) sono in bitmap
+; multicolor, con il terzo colore nella Color RAM; le scritte del programma restano in hires. Lo
+; split del raster (kp_split) accende il multicolor nell'ultima riga di pixel prima di quelle righe e
+; lo spegne nella prima dopo, vuote: l'interrupt arriva una riga prima e aspetta quella. Funziona
+; anche mentre kp_panel copia con la ROM del KERNAL accesa (l'interrupt passa dal vettore $0314):
+; per questo kp_split sta a $C400 e la copia non spegne gli interrupt.
+;
 ; Dove sta. Il codice gira a $C400 (segmento KPCODE, al posto delle mosse speciali, che la scelta dei
 ; bonus ricopia a READY): kind_enter (pick.s) lo copia dalla cartuccia, banco KP_BANK, pagine
-; $80-$83. Dopo ci sono i dati di tools/gen_c64_portraits.py (gen/kpick.bin): lo sfondo (bitmap e
-; colori, le scritte senza pixel) e i pannelli dei sette tipi per lato (ritratto e nome, 11x17
-; celle). La bitmap copre le tabelle dei quadrati: math_ready resta a 1 finché si vede (math_step
+; $80-$83. Dopo ci sono i dati di tools/gen_c64_portraits.py (gen/kpick.bin): lo sfondo (bitmap,
+; colori e Color RAM, le scritte senza pixel) e i pannelli dei sette tipi per lato (ritratto e nome,
+; 11x17 celle). La bitmap copre le tabelle dei quadrati: math_ready resta a 1 finché si vede (math_step
 ; non ci scrive), poi math_invalidate le fa rifare nella scelta dei bonus.
 ;
 ; Lavoro per frame: la copia dello sfondo, 3 pagine per frame a schermo spento; un pannello in tre
-; pezzi da 6 righe di celle (circa 8.000 cicli l'uno; sull'NTSC quattro da 5), un pezzo per frame;
+; pezzi da 6 righe di celle (circa 9.000 cicli l'uno; sull'NTSC quattro da 5), un pezzo per frame;
 ; le scritte con i glifi del
 ; set (text_cell). Sprite: le sigle 0 e 1, i loro riquadri neri 2 e 5, le racchette 3 e 4, le
 ; cornici dei cursori 6 e 7 (davanti c'è il numero più basso: sigla, riquadro, cornice, come sul
@@ -24,8 +31,9 @@
 
 KP_RUN    = $C400
 KP_BG     = $84                 ; pagina dello sfondo nella finestra a 16K, dopo il codice
-KP_LOADED = KP_BG_PAGES + KP_COL_PAGES + 2      ; kp_pg: sfondo copiato, scritte, poi i pannelli
-; righe di celle di un pezzo di pannello (uno per frame, circa 1.300 cicli a riga): sull'NTSC 5,
+KP_BG_ALL = KP_BG_PAGES + KP_COL_PAGES + KP_CRAM_PAGES
+KP_LOADED = KP_BG_ALL + 2       ; kp_pg: sfondo copiato, scritte, poi i pannelli
+; righe di celle di un pezzo di pannello (uno per frame, circa 1.500 cicli a riga): sull'NTSC 5,
 ; con la frase del tipo nel frame dell'ultimo pezzo 6 non ci stanno
 .ifdef NTSC
 KP_PART_ROWS = 5
@@ -33,7 +41,10 @@ KP_PART_ROWS = 5
 KP_PART_ROWS = 6
 .endif
 KP_PIECES = (KP_PANEL_H + KP_PART_ROWS - 1) / KP_PART_ROWS
-KP_ROW_BYTES = KP_PANEL_W * 9   ; per riga del pannello: bitmap e colori
+KP_MC_ROW_BYTES = KP_PANEL_W * 10   ; per riga dei pannelli: bitmap, colori e Color RAM (anche kvs.s)
+; split del raster: righe di pixel vuote del cambio (prima e dopo le righe multicolor)
+KP_LINE_ON  = 51 + KP_MC_ROW0 * 8 - 1
+KP_LINE_OFF = 51 + (KP_MC_ROW1 + 1) * 8
 KP_TEXT_IMG = $C000 + (KP_SPRITE + 3) * 64      ; immagini delle due sigle
 .assert KP_PIECES < 8, error, "pannello: troppi pezzi"
 
@@ -57,6 +68,7 @@ kp_x:      .byte 0
     lda #KEY_STOP               ; RUN/STOP: il menu (le tabelle dei quadrati da rifare)
     jsr key_pressed
     bcc :+
+    jsr kp_split_off
     jsr math_invalidate
     jmp enter_menu
 :   lda kp_pg
@@ -64,6 +76,14 @@ kp_x:      .byte 0
     bcs live
     jmp kp_load
 live:
+.ifdef KPTEST
+    lda kp_part                 ; (prova per VICE, -Define KPTEST: a schermo acceso il pannello di
+    cmp #KP_PIECES              ; sinistra si ricopia di continuo, con lo split che arriva durante
+    bcc :+                      ; la copia)
+    lda #0
+    sta kp_part
+:
+.endif
     jsr kp_job
     lda pk_ready
     beq choosing
@@ -90,6 +110,7 @@ live:
     ldy #KP_HINT_ROW
     jmp kp_print
 go:
+    jsr kp_split_off
     jmp bonus_enter             ; (le tabelle dei quadrati le fa rifare la scelta dei bonus)
 choosing:
     lda pk_frames
@@ -137,48 +158,6 @@ done:
     rts
 .endproc
 
-; Secondi rimasti: draw_secs (pick.s) scrive le cifre del punteggio, 3x3 caratteri, nello schermo
-; di testo, che qui sono i colori della bitmap; quando cambiano, i loro glifi vanno nella bitmap e i
-; colori tornano bianchi. Se kp_job ha già occupato il frame, rimanda di un frame (20 ms).
-KP_SECS_LATE = (TV_BUDGET - 8500) / TV_LCYC
-.proc kp_secs
-    lda #KP_SECS_LATE
-    jsr frame_after
-    bcs done
-    lda pk_secs
-    pha
-    jsr draw_secs
-    pla
-    cmp pk_secs
-    beq done
-    lda #KP_TIMER_ROW
-    sta v_row
-row:
-    ldy v_row
-    lda row_lo,y
-    sta ptr2
-    lda row_hi,y
-    sta ptr2+1
-    ldy #KP_TIMER_COL
-    sty p_col
-cell:
-    lda (ptr2),y
-    pha
-    lda #COL_WHITE << 4
-    sta (ptr2),y
-    pla
-    jsr text_cell               ; (p_col + 1)
-    ldy p_col
-    cpy #KP_TIMER_COL + 6
-    bne cell
-    inc v_row
-    lda v_row
-    cmp #KP_TIMER_ROW + 3
-    bne row
-done:
-    rts
-.endproc
-
 ; Stringa (A: byte basso tra le stringhe di questo file, KS_PAGE) nella bitmap alla colonna X,
 ; riga Y; da big quella in ptr2.
 .proc kp_print
@@ -191,29 +170,6 @@ big:
     jsr print_str
     lda #0
     sta v_big
-    rts
-.endproc
-
-; Comandi cambiati da pick_player (pk_dirty): il pannello se il tipo è cambiato, poi l'OK.
-.proc kp_dirty
-    ldx #1
-side:
-    lda pk_dirty
-    and pk_bit,x
-    beq next
-    eor pk_dirty
-    sta pk_dirty
-    lda #1
-    sta kp_label,x
-    lda pk_cursor,x
-    cmp kp_shown,x
-    beq next
-    sta kp_shown,x
-    lda #0
-    sta kp_part,x
-next:
-    dex
-    bpl side
     rts
 .endproc
 
@@ -281,7 +237,7 @@ done:
     lda #1                      ; niente math_step nella bitmap
     sta math_ready
     lda kp_pg
-    cmp #KP_BG_PAGES + KP_COL_PAGES
+    cmp #KP_BG_ALL
     bcs texts
     lda #3
     sta kp_n
@@ -296,6 +252,9 @@ page:
     bcc :+
     sbc #KP_BG_PAGES            ; (C = 1) i colori
     ldy #>SCREEN
+    cmp #KP_COL_PAGES
+    bcc :+
+    ldy #>($D800 - KP_COL_PAGES * 256)  ; poi la Color RAM
 :   sty kp_r
     clc
     adc kp_r
@@ -305,13 +264,14 @@ page:
     jsr ef_copy
     inc kp_pg
     lda kp_pg
-    cmp #KP_BG_PAGES + KP_COL_PAGES
+    cmp #KP_BG_ALL
     beq :+
     dec kp_n
     bne page
 :   rts
 texts:
     bne panels
+    jsr kp_split_on             ; (sfondo copiato: c'è KPCODE3)
     ; le ultime 8 celle della bitmap ($FF00-$FF3F: dopo ci sono le variabili) non si copiano
     lda #0
     ldx #63
@@ -368,24 +328,13 @@ panels:
 :   rts
 .endproc
 
-; Y = X + 1 se il lato X è la CPU (il destro), se no Y = X: indice di kp_name_lo, kp_tag_lo,
-; kp_box_dx.
-.proc kp_cpu
-    txa
-    tay
-    beq :+
-    lda pk_cpu
-    beq :+
-    iny
-:   rts
-.endproc
-
 
 ; ------------------------------------------------------------------------------------ pannelli
 
 ; Pezzo kp_part,X del pannello del lato X (tipo kp_shown,X): KP_PART_ROWS righe di celle, per riga
-; 88 byte di bitmap e 11 di colori, dalla cartuccia (modo a 16K, $01 = $37, interrupt spenti; le
-; scritture vanno nella RAM anche sotto il KERNAL).
+; 88 byte di bitmap, 11 di colori e 11 di Color RAM, dalla cartuccia (modo a 16K, $01 = $37; le
+; scritture vanno nella RAM anche sotto il KERNAL, e nella Color RAM). Interrupt accesi: lo split
+; passa dal KERNAL (kp_split).
 .proc kp_panel
     ; pannello lato * 7 + tipo: banco e pagina
     txa
@@ -402,7 +351,7 @@ panels:
     sta src+2
     lda #0
     sta src+1
-    ; prima riga del pezzo: kp_part * 6; sorgente + riga * 99
+    ; prima riga del pezzo: kp_part * KP_PART_ROWS; sorgente + riga * KP_MC_ROW_BYTES
     sta kp_r
     ldy kp_part,x
     beq first
@@ -415,7 +364,7 @@ panels:
     tay
 :   lda src+1
     clc
-    adc #KP_ROW_BYTES
+    adc #KP_MC_ROW_BYTES
     sta src+1
     bcc :+
     inc src+2
@@ -451,7 +400,6 @@ first:
     lda row_hi,y
     adc #0
     sta cdst+2
-    sei
 bank:
     lda #KP_BANK
     sta EF_BANK
@@ -460,6 +408,12 @@ bank:
     lda #EF_16K
     sta EF_MODE
 row:
+    lda cdst+1                  ; Color RAM: come i colori, da $D800
+    sta rdst+1
+    lda cdst+2
+    clc
+    adc #>($D800 - SCREEN)
+    sta rdst+2
     ldy #KP_PANEL_W * 8 - 1
 src:
     lda $ff00,y
@@ -476,16 +430,26 @@ dst:
     adc #0
     sta src+2
     sta csrc+2
+    lda csrc+1                  ; la Color RAM dopo i colori
+    adc #KP_PANEL_W             ; (C = 0)
+    sta rsrc+1
+    lda csrc+2
+    adc #0
+    sta rsrc+2
     ldy #KP_PANEL_W - 1
 csrc:
     lda $ffff,y
 cdst:
     sta $ffff,y
+rsrc:
+    lda $ffff,y
+rdst:
+    sta $ffff,y
     dey
     bpl csrc
-    lda src+1                   ; sorgente + 11
+    lda src+1                   ; sorgente + 22
     clc
-    adc #KP_PANEL_W
+    adc #KP_PANEL_W * 2
     sta src+1
     bcc :+
     inc src+2
@@ -503,14 +467,61 @@ cdst:
     bcc :+
     inc cdst+2
 :   dec kp_n
-    bne row
+    jne row
     lda #EF_OFF
     sta EF_MODE
     lda #$35
     sta $01
-    cli
     rts
 .endproc
+
+; Split del raster: alla riga KP_LINE_ON - 1 aspetta la riga KP_LINE_ON (vuota) e accende il
+; multicolor, alla KP_LINE_OFF - 1 aspetta la KP_LINE_OFF (vuota) e lo spegne, poi alla riga 250
+; l'interrupt di sempre. Con A, X e Y nello stack: da kp_irq (vettore in RAM, $01 = $35) o dal
+; KERNAL (vettore $0314, con la ROM accesa durante kp_panel), quindi qui a $C400.
+.proc kp_split
+    ldx kp_irq_n                ; 0 la riga 250, 1 accendere, 2 spegnere
+    beq vbl
+:   lda $d012
+    cmp kp_line,x
+    bcc :-
+    lda kp_d016,x
+    sta $d016
+    lda kp_next,x
+    sta $d012
+    inx
+    cpx #3
+    bcc :+
+    ldx #0
+:   stx kp_irq_n
+    lda #$ff
+    sta $d019
+    pla
+    tay
+    pla
+    tax
+    pla
+    rti
+vbl:
+    lda #KP_LINE_ON - 1
+    sta $d012
+    inc kp_irq_n
+    pla
+    tay
+    pla
+    tax
+    pla
+    jmp irq_handler             ; frame_flag, frame_count (in pagina zero; irq_handler sotto $8000)
+.endproc
+kp_irq_n: .byte 0
+kp_line   = * - 1               ; (per kp_irq_n 1 e 2)
+    .byte KP_LINE_ON, KP_LINE_OFF
+kp_d016   = * - 1
+    .byte $c8 | $10, $c8        ; multicolor, hires
+kp_next   = * - 1
+    .byte KP_LINE_OFF - 1, RASTER_LINE
+.assert KP_LINE_ON < KP_LINE_OFF - 1 .and KP_LINE_OFF < RASTER_LINE, error, "righe dello split"
+.assert irq_handler < $8000, error, "kp_split: irq_handler sotto la cartuccia"
 
 ; ------------------------------------------------------------------------------------ sprite
 
@@ -538,8 +549,8 @@ kp_panel_col: .byte KP_PANEL_COL0, KP_PANEL_COL1
 ; per indice kp_cpu (sinistro, destro, destro della CPU): nome e sigla
 kp_name_lo:   .byte <ks_p1, <ks_p2, <ks_cpu
 kp_tag_lo:    .byte <ks_1p, <ks_2p, <ks_cpu
-kp_panel_bank: .byte KP_PANEL_BANK
-kp_panel_page: .byte KP_PANEL_PAGE
+kp_panel_bank: .byte KP_MC_BANK
+kp_panel_page: .byte KP_MC_PAGE
 ks_p1:    .byte "P1 ", 0
 ks_p2:    .byte "P2 ", 0
 ks_cpu:   .byte "CPU", 0
@@ -746,5 +757,137 @@ kp_img_lo:    .byte <KP_TEXT_IMG, <(KP_TEXT_IMG + 64)
 ; 26 pixel)
 kp_box_img:   .byte KP_SPRITE + 1, KP_SPRITE + 1, KP_SPRITE + 2
 kp_box_dx:    .byte 2, 32 - 2 - 18, 32 - 2 - 26
+
+; ------------------------------------------------------------------------------------ righe 2-3
+
+; Codice nella riga 2 dalla colonna 23 e nella riga 3 fino alla colonna 16, vuote e nere su nero
+; (segmento KPCODE3): tools/make_crt.py lo mette nello sfondo della cartuccia, quindi c'è solo dopo
+; la copia dello sfondo. Gira solo con $01 = $35 (sotto c'è la ROM del KERNAL).
+.segment "KPCODE3"
+
+; Interrupt dal vettore in RAM ($FFFE): come quello del KERNAL, A, X e Y nello stack, poi kp_split.
+.proc kp_irq
+    pha
+    txa
+    pha
+    tya
+    pha
+    jmp kp_split
+.endproc
+
+; Split acceso (kp_irq e kp_split al posto di irq_handler e del vettore del KERNAL) o spento (di
+; nuovo irq_handler alla riga 250, il vettore di prima, senza multicolor): kp_load con lo sfondo
+; copiato, ogni uscita dalla scelta. L'interrupt dopo è quello della riga 250 (kp_irq_n 0).
+.proc kp_split_on
+    lda $0314
+    sta kp_kernal
+    lda $0315
+    sta kp_kernal+1
+    sei
+    lda #<kp_split
+    sta $0314
+    lda #>kp_split
+    sta $0315
+    ldx #<kp_irq
+    ldy #>kp_irq
+    bne kp_split_set            ; (sempre)
+.endproc
+kp_split_off:
+    lda #RASTER_LINE
+    sta $d012
+    lda #$c8
+    sta $d016
+    sei
+    lda kp_kernal
+    sta $0314
+    lda kp_kernal+1
+    sta $0315
+    ldx #<irq_handler
+    ldy #>irq_handler
+kp_split_set:
+    lda #0
+    sta kp_irq_n
+    stx $fffe
+    sty $ffff
+    cli
+    rts
+kp_kernal: .word 0              ; vettore $0314 di prima
+
+; Comandi cambiati da pick_player (pk_dirty): il pannello se il tipo è cambiato, poi l'OK.
+.proc kp_dirty
+    ldx #1
+side:
+    lda pk_dirty
+    and pk_bit,x
+    beq next
+    eor pk_dirty
+    sta pk_dirty
+    lda #1
+    sta kp_label,x
+    lda pk_cursor,x
+    cmp kp_shown,x
+    beq next
+    sta kp_shown,x
+    lda #0
+    sta kp_part,x
+next:
+    dex
+    bpl side
+    rts
+.endproc
+
+; Y = X + 1 se il lato X è la CPU (il destro), se no Y = X: indice di kp_name_lo, kp_tag_lo,
+; kp_box_dx.
+.proc kp_cpu
+    txa
+    tay
+    beq :+
+    lda pk_cpu
+    beq :+
+    iny
+:   rts
+.endproc
+
+; Secondi rimasti: draw_secs (pick.s) scrive le cifre del punteggio, 3x3 caratteri, nello schermo
+; di testo, che qui sono i colori della bitmap; quando cambiano, i loro glifi vanno nella bitmap e i
+; colori tornano bianchi. Se kp_job ha già occupato il frame, rimanda di un frame (20 ms).
+KP_SECS_LATE = (TV_BUDGET - 8500) / TV_LCYC
+.proc kp_secs
+    lda #KP_SECS_LATE
+    jsr frame_after
+    bcs done
+    lda pk_secs
+    pha
+    jsr draw_secs
+    pla
+    cmp pk_secs
+    beq done
+    lda #KP_TIMER_ROW
+    sta v_row
+row:
+    ldy v_row
+    lda row_lo,y
+    sta ptr2
+    lda row_hi,y
+    sta ptr2+1
+    ldy #KP_TIMER_COL
+    sty p_col
+cell:
+    lda (ptr2),y
+    pha
+    lda #COL_WHITE << 4
+    sta (ptr2),y
+    pla
+    jsr text_cell               ; (p_col + 1)
+    ldy p_col
+    cpy #KP_TIMER_COL + 6
+    bne cell
+    inc v_row
+    lda v_row
+    cmp #KP_TIMER_ROW + 3
+    bne row
+done:
+    rts
+.endproc
 
 .segment "CODE"

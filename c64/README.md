@@ -68,7 +68,8 @@ senza installare nulla: bitmap hires e multicolor, caratteri, sprite, griglia de
 l'origine a scelta, celle non valide in rosso; *File → Importa e converti* trasforma un'immagine
 qualsiasi (anche quella di riferimento) in uno di questi modi, con retino e colori a scelta.
 Legge e scrive i PNG a palette dei generatori
-(indice = colore del C64), per esempio i ritratti di `assets/characters/portraits/c64`, e ci lascia
+(indice = colore del C64), per esempio i ritratti di `assets/characters/portraits/c64` (hires) e
+`c64mc` (multicolor, quelli che usa il C64: scelta, VS e sfilata), e ci lascia
 un segno: `tools/gen_portraits.py` non sovrascrive più quei file (per rifarne uno dalla sorgente lo
 si cancella). Dopo il ritocco: `tools/gen_c64_portraits.py`, poi la build. Dentro VS Code (browser
 integrato o Simple Browser) la pagina non può aprire né salvare file: si avvia

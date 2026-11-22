@@ -1244,7 +1244,10 @@ async function decodeAny(buf, blob) {
   let meta = null, img = null;
   const png = parsePng(buf);
   if (png) {
-    if (png.text.c64edit) { try { meta = JSON.parse(png.text.c64edit); } catch (_) { meta = null; } }
+    // c64edit: salvato dall'editor; c64mode: il modo scritto da un generatore (tools/gen_portraits.py,
+    // ritratti multicolor), che lascia il file rifacibile
+    const tag = png.text.c64edit || png.text.c64mode;
+    if (tag) { try { meta = JSON.parse(tag); } catch (_) { meta = null; } }
     if (png.ctype === 3 && png.interlace === 0 && png.plte) img = await decodePalettePng(png);
   }
   if (!img) img = await decodeViaCanvas(blob);

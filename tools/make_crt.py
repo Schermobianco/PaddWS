@@ -26,7 +26,7 @@ Banchi e indirizzi in c64/src/ef.inc:
 - PROGRAMMA.prg.kpick (accanto al programma, non è un argomento) e c64/gen/kpick.bin: la scelta
   della racchetta con i ritratti, il codice (c64/src/kpick.s, 4 pagine) e poi i dati
   (tools/gen_c64_portraits.py), dal banco KP_BANK, ROML e ROMH; il resto del codice
-  (PROGRAMMA.prg.kpick2) va nella riga 1 della bitmap dello sfondo, vuota;
+  (PROGRAMMA.prg.kpick2 e .kpick3) va nelle righe 1-3 della bitmap dello sfondo, vuote;
 - FINALE.bin: il finale di CHALLENGE (c64/src/ending.s, l'uscita PROGRAMMA.prg.end di ld65), nella
   ROML dei banchi da END_BANK, 8 KB per banco;
 - banco della vittoria WIN_BANK (ROML): "YOU WIN!" (c64/gen/you_win.bin) con il player delle voci,
@@ -219,26 +219,44 @@ def main() -> None:
     if len(kcode2) != 0x1C8 or any(bg[0x140:0x308]):
         sys.exit(f"{program}.kpick2: {len(kcode2)} byte invece di 456, o righe 1-2 dello sfondo non vuote")
     bg[0x140:0x308] = kcode2
-    # lo schermo VS (PROGRAMMA.prg.kvs, .kvs2, .kvs3): il codice all'inizio del suo banco, nelle 4
-    # pagine lasciate vuote da tools/gen_c64_portraits.py, poi quello della riga 24 della bitmap a
-    # KV_ROW24P e quello dei caratteri 64-159 a KV_CHARSP
+    # lo split del raster e il tempo (PROGRAMMA.prg.kpick3) nella riga 2 dalla colonna 23 e nella
+    # riga 3 fino alla 16, vuote: da $E338
+    kcode3 = Path(str(program) + ".kpick3").read_bytes()
+    if len(kcode3) != 0x110 or any(bg[0x338:0x448]):
+        sys.exit(f"{program}.kpick3: {len(kcode3)} byte invece di 272, o righe 2-3 dello sfondo non vuote")
+    bg[0x338:0x448] = kcode3
+    # lo schermo VS (PROGRAMMA.prg.kvs, .kvs2, .kvs3, .kvs4): il codice all'inizio del suo banco,
+    # nelle 4 pagine lasciate vuote da tools/gen_c64_portraits.py, poi quello della riga 24 della
+    # bitmap a KV_ROW24P, quello dei caratteri 64-159 a KV_CHARSP e quello delle celle della riga 14
+    # e della riga 15 nelle tre pagine da KV_CODE4P (copiate a $F100: dentro, da KV_CODE4 e da
+    # KV_CODE5)
     vs_bank = const("KV_BANK_REL", "../gen/kpick.inc")
     vs_row24 = const("KV_ROW24P", "../gen/kpick.inc", 0x80)
     vs_chars = const("KV_CHARSP", "../gen/kpick.inc", 0x80)
+    vs_code4p = const("KV_CODE4P", "../gen/kpick.inc", 0x80)
+    vs_code4 = const("KV_CODE4", "../gen/kpick.inc") - 0xF100
+    vs_code5 = const("KV_CODE5", "../gen/kpick.inc") - 0xF100
     at = vs_bank * 2 * HALF - 0x400
-    for ext, page, size in ((".kvs", 0x80, 0x400), (".kvs2", vs_row24, 0x100), (".kvs3", vs_chars, 0x300)):
+    for ext, page, size in ((".kvs", 0x80, 0x400), (".kvs2", vs_row24, 0x100), (".kvs3", vs_chars, 0x300),
+                            (".kvs4", vs_code4p, 0x90), (".kvs5", vs_code4p, 0x90)):
         code = Path(str(program) + ext).read_bytes()
-        here = at + (page - 0x80) * 256
+        here = at + (page - 0x80) * 256 + {".kvs4": vs_code4, ".kvs5": vs_code5}.get(ext, 0)
         if len(code) > size or any(bg[here:here + size]):
             sys.exit(f"{program}{ext}: oltre {size} byte, o il suo posto nei dati non vuoto")
         bg[here:here + len(code)] = code
-    # la sfilata del finale (PROGRAMMA.prg.parade): all'inizio del suo banco, come il VS
+    # la sfilata del finale (PROGRAMMA.prg.parade): all'inizio del suo banco, come il VS; il codice
+    # della riga 0 della bitmap (.parade2) nella pagina PR_CODE2P
     pr_bank = const("PR_BANK_REL", "../gen/kpick.inc")
     pcode = Path(str(program) + ".parade").read_bytes()
     here = pr_bank * 2 * HALF - 0x400
     if len(pcode) != 0x400 or any(bg[here:here + 0x400]):
         sys.exit(f"{program}.parade: {len(pcode)} byte invece di 1024, o il suo posto nei dati non vuoto")
     bg[here:here + 0x400] = pcode
+    pcode2 = Path(str(program) + ".parade2").read_bytes()
+    here += 0x400 + (const("PR_CODE2P", "../gen/kpick.inc", 0x80) - 0x80 - 4) * 256
+    if len(pcode2) != 0x100 or any(bg[here:here + 0x100]):
+        sys.exit(f"{program}.parade2: {len(pcode2)} byte invece di 256, o il suo posto nei dati non vuoto")
+    bg[here:here + 0x100] = pcode2
     kpick = kcode + bytes(bg)
     for i in range(0, len(kpick), HALF):
         chips.append(chip(KP_BANK + i // (2 * HALF), 0x8000 + i // HALF % 2 * HALF, kpick[i:i + HALF]))

@@ -569,13 +569,30 @@ e_io:    .byte 0                ; fuori dall'overlay dei fuochi: resta 0 dopo la
 
 ; ------------------------------------------------------------------------------------ uscita
 
+; L'interrupt di sempre (irq_handler alla riga 250) e niente multicolor: dopo lo split della
+; sfilata (parade.s), alla sua fine e se il finale si salta.
+.proc irq_normal
+    sei
+    lda #<irq_handler
+    sta $fffe
+    lda #>irq_handler
+    sta $ffff
+    lda #RASTER_LINE
+    sta $d012
+    lda #$c8
+    sta $d016
+    cli
+    rts
+.endproc
+
 ; Fine o salto: la voce si ferma, registri come prima, poi il set di caratteri del programma
 ; dalla cartuccia (EP_CLOSE, a schermo spento).
 .proc close_enter
     bit $fffb                   ; voce in corso: si ferma (il SID torna al programma)
     bpl :+
     jsr VOICE_HUSH
-:   lda #EP_CLOSE
+:   jsr irq_normal              ; (saltato durante la sfilata: il suo split)
+    lda #EP_CLOSE
     sta e_part
     lda #0
     sta e_pg
@@ -583,8 +600,6 @@ e_io:    .byte 0                ; fuori dall'overlay dei fuochi: resta 0 dopo la
     sta $d01b
     lda #MODE_OFF
     sta sh_mode
-    lda #$c8
-    sta $d016
     lda #COL_GRAY               ; il grigio delle racchette
     sta $d025
     lda #$ff

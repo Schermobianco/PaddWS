@@ -68,7 +68,8 @@ with nothing to install: hires and multicolour bitmaps, characters, sprites, a c
 movable origin, invalid cells shown in red; *File → Importa e converti* turns any image (including
 the reference image) into one of these modes, with a choice of dithering and colours.
 It reads and writes the generators' palette PNGs
-(index = C64 colour), such as the portraits in `assets/characters/portraits/c64`, and marks them:
+(index = C64 colour), such as the portraits in `assets/characters/portraits/c64` (hires) and `c64mc`
+(multicolour, the ones the C64 uses: pick, VS and parade), and marks them:
 `tools/gen_portraits.py` no longer overwrites those files (delete one to remake it from the
 source). After retouching: `tools/gen_c64_portraits.py`, then the build. Inside VS Code (integrated
 browser or Simple Browser) the page cannot open or save files: run

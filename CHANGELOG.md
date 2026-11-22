@@ -14,6 +14,12 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+### Modificato
+- C64: i ritratti della scelta della racchetta, dello schermo VS e della sfilata del finale sono in
+  bitmap multicolor, con i grigi per luce e ombra al posto del bianco pieno; le scritte restano in
+  hires. Nel VS i ritratti partono una riga più in basso (sotto il livello); nella sfilata il timbro
+  DEFEATED ha lettere nuove, più alte.
+
 ### Corretto
 - C64: la racchetta del GUARDIAN mostra subito i settori persi del muro; prima l'immagine poteva
   restare quella del muro intero anche per molti secondi.
