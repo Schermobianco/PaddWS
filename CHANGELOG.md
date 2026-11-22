@@ -14,6 +14,8 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+## [4.6.2] - 2026-11-22
+
 ### Modificato
 - C64: i ritratti della scelta della racchetta, dello schermo VS e della sfilata del finale sono in
   bitmap multicolor, con i grigi per luce e ombra al posto del bianco pieno; le scritte restano in
@@ -1392,7 +1394,8 @@ Ricostruite dalle cartelle di backup in `archive/` (date indicative).
 - **1.5** (2020-08) – versione per Raspberry Pi con encoder rotativi.
 - **1.1 – 1.4** (2020-08) – prime versioni pygame: menu, modalità CLASSIC ed EVO, suoni, splash.
 
-[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.6.1...HEAD
+[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.6.2...HEAD
+[4.6.2]: https://github.com/Schermobianco/PaddWS/compare/v4.6.1...v4.6.2
 [4.6.1]: https://github.com/Schermobianco/PaddWS/compare/v4.6.0...v4.6.1
 [4.6.0]: https://github.com/Schermobianco/PaddWS/compare/v4.6.0-dev...v4.6.0
 [4.5.0]: https://github.com/Schermobianco/PaddWS/compare/v4.4.1...v4.5.0
