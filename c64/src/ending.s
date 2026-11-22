@@ -2079,6 +2079,8 @@ out:
     bne :+
     lda #128                    ; BLASTER carico
 :   sta pi_var
+    lda #BLASTER_VIS
+    sta pi_ammo
     jsr pad_image
     lda #1
     sta pd_dirty

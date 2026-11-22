@@ -219,6 +219,8 @@ dialog button.primary { background: var(--accent2); border-color: var(--accent);
   <aside id="side">
     <section>
       <h3>Racchetta</h3>
+      <div class="row"><select id="plat" style="flex:1" title="Gli sprite del C64 sono in assets/ships/sprites/c64/">
+        <option value="pc">PC, web e MiSTer</option><option value="c64">C64</option></select></div>
       <div class="row"><select id="kind" style="flex:1"></select></div>
       <div class="row">
         <label>Altezza base <input id="base" type="number" min="8" max="160" value="40"></label>
@@ -248,7 +250,7 @@ dialog button.primary { background: var(--accent2); border-color: var(--accent);
       <h3>Guide</h3>
       <div class="row">
         <label><input type="checkbox" id="showGrid" checked> Pixel</label>
-        <label><input type="checkbox" id="showHit" checked> Hitbox PC (5)</label>
+        <label><input type="checkbox" id="showHit" checked> <span id="hitLbl">Hitbox PC (5)</span></label>
         <label><input type="checkbox" id="showMister"> MiSTer (4)</label>
         <label><input type="checkbox" id="showErr" checked> Errori</label>
         <label title="Solo per GUARDIAN: i cinque settori del muro sulle piastre"><input type="checkbox" id="showSect" checked> Settori</label>
@@ -275,7 +277,7 @@ dialog button.primary { background: var(--accent2); border-color: var(--accent);
         </select>
       </div>
       <div class="pvwrap"><canvas id="pv"></canvas></div>
-      <div class="small">Su nero con l'ombra portata del gioco: attuale, sinistra, destra.</div>
+      <div class="small" id="pvNote">Su nero con l'ombra portata del gioco: attuale, sinistra, destra.</div>
     </section>
     <section>
       <h3>Riferimento</h3>
@@ -331,7 +333,10 @@ dialog button.primary { background: var(--accent2); border-color: var(--accent);
     <tr><td>Ctrl+frecce</td><td>Sposta tutto il disegno di un pixel</td></tr>
     <tr><td>+ − Ctrl+0, Ctrl+rotella</td><td>Zoom</td></tr>
     <tr><td>Ctrl+Z, Ctrl+Y</td><td>Annulla, ripeti</td></tr>
-    <tr><td>Ctrl+S</td><td>Salva (con il server in assets/ships/sprites/&lt;tipo&gt;.png)</td></tr>
+    <tr><td>Ctrl+S</td><td>Salva (con il server in assets/ships/sprites/&lt;tipo&gt;.png, quelli del C64 in sprites/c64/)</td></tr>
+    <tr><td>C64</td><td>Sprite multicolore di 12 pixel doppi, ogni riga alta due righe dello schermo:
+      grigio (%01, condiviso), colore del personaggio (%10, cambia con lo stato della racchetta),
+      bianco (%11, condiviso). La hitbox sono le 2 colonne fino alla faccia; niente agganci e niente ombra</td></tr>
   </table>
   <p class="small">La faccia che colpisce è a destra (la hitbox vera è quella del core: gli spigoli
   possono essere arrotondati). Il corpo (bianco) e il corpo in ombra cambiano colore con lo stato della racchetta; i tre colori del
@@ -356,7 +361,8 @@ const KINDS = [
   { id: 'rush', name: 'RUSH', mult: 0.85, maxW: 22, accent: [60, 200, 220] },
   { id: 'guardian', name: 'GUARDIAN', mult: 0.8, maxW: 12, accent: [90, 150, 255] },
 ];
-const FACE = 5, FACE_MISTER = 4;
+const FACE_PC = 5, FACE_MISTER = 4;
+let FACE = FACE_PC;
 
 // ruoli (codici di tools/paddle_shapes.py)
 const NONE = 0, BODY = 1, SHADE = 2, MARK = 3, MARK_DARK = 4, MARK_LIGHT = 5, GRAY = 6,
@@ -364,13 +370,26 @@ const NONE = 0, BODY = 1, SHADE = 2, MARK = 3, MARK_DARK = 4, MARK_LIGHT = 5, GR
 // agganci: dopo i ruoli (13-15 sono le immagini fantasma del RUSH in paddle_shapes.py)
 const ENGINE = 16, WEAPON = 17, SPECIAL = 18;
 const isAnchor = c => c >= ENGINE;
-const ROLES = [
+const ROLES_PC = [
   [NONE, 'trasparente', '0'], [BODY, 'corpo', '1'], [SHADE, 'corpo in ombra', '2'],
   [MARK, 'personaggio', '3'], [MARK_DARK, 'personaggio scuro', '4'], [MARK_LIGHT, 'personaggio chiaro', '5'],
   [GRAY, 'grigio', '6'], [GRAY_LIGHT, 'grigio chiaro', '7'], [DARK, 'scuro', '8'],
   [DARK_DEEP, 'scurissimo', '9'], [BLACK, 'nero', ''], [SIGNAL, 'giallo segnali', ''],
   [ENGINE, 'aggancio motore', ''], [WEAPON, 'aggancio arma', ''], [SPECIAL, 'aggancio speciale', ''],
 ];
+// C64: sprite multicolore, l'indice è la coppia di bit (%01 grigio $D025, %10 colore dello sprite
+// $D027+i, %11 bianco $D026)
+const C64_GRAY = 1, C64_MARK = 2, C64_WHITE = 3;
+const ROLES_C64 = [[NONE, 'trasparente', '0'], [C64_GRAY, 'grigio (%01)', '1'],
+                   [C64_MARK, 'personaggio (%10)', '2'], [C64_WHITE, 'bianco (%11)', '3']];
+// colore dello sprite (%10) di ogni tipo sul C64 (kind_col, tavolozza Colodore)
+const C64_ACCENT = [[0xEF, 0xF3, 0x47], [0x9F, 0x48, 0x15], [0x96, 0x28, 0x2E], [0x9F, 0x2D, 0xAD],
+                    [0x41, 0xB9, 0x36], [0x5B, 0xD6, 0xCE], [0x68, 0x64, 0xFF]];
+// altezze delle racchette del C64 in righe dello schermo (T_KIND_H di c64/gen/params.inc)
+const C64_LINES = [27, 40, 33, 33, 37, 28, 27];
+const C64_W = 12, C64_FACE = 2;
+let plat = 'pc', ROLES = ROLES_PC;
+const isC64 = () => plat === 'c64';
 const ROLE_NAME = c => (ROLES.find(r => r[0] === c) || [0, '?'])[1];
 // agganci attesi per tipo: [motore, arma, speciale] (gruppi in colonna)
 const ANCHORS = [[2, 0, 0], [2, 0, 0], [1, 0, 0], [1, 0, 2], [2, 2, 0], [1, 0, 2], [2, 0, 0]];
@@ -402,7 +421,11 @@ function ramp(c) {
 }
 // il corpo in ombra: il colore del corpo per (212, 214, 224) / 255, come body_shade
 const bodyShade = c => [Math.round(c[0] * 212 / 255), Math.round(c[1] * 214 / 255), Math.round(c[2] * 224 / 255)];
-function colorsFor(kind, body = [255, 255, 255]) {
+function colorsFor(kind, body) {
+  if (isC64())
+    return { [C64_GRAY]: [0xAE, 0xAE, 0xAE], [C64_MARK]: body || C64_ACCENT[kind], [C64_WHITE]: [255, 255, 255],
+             [SHADOW]: [0, 0, 0] };
+  body = body || [255, 255, 255];
   return { ...FIXED, ...ramp(KINDS[kind].accent), [BODY]: body, [SHADE]: bodyShade(body),
            [SHADOW]: kind === 1 ? SHADOW_TITAN : SHADOW_RGB };
 }
@@ -428,14 +451,16 @@ const opt = {
   get sym() { return $('#optSym').checked; },
   get grid() { return $('#showGrid').checked; },
 };
-const kindH = k => Math.round(+$('#base').value * KINDS[k].mult);
+// sul C64 righe dello sprite (ognuna alta due righe dello schermo), come pad_sprite in video.s
+const kindH = k => isC64() ? ((C64_LINES[k] - 1) >> 1) + 1 : Math.round(+$('#base').value * KINDS[k].mult);
+const spritePath = k => `assets/ships/sprites/${isC64() ? 'c64/' : ''}${KINDS[k].id}.png`;
 // colonna della faccia (dopo, solo le canne che sporgono)
 const faceX = () => doc.w - 1 - (doc.front || 0);
 const COL = () => colorsFor(doc.kind);
 
 function blankDoc(kind, w, h) {
   return { kind, w, h, front: 0, px: new Uint8Array(w * h), name: KINDS[kind].id + '.png',
-           path: `assets/ships/sprites/${KINDS[kind].id}.png`, dirty: false };
+           path: spritePath(kind), dirty: false };
 }
 
 // ---------------------------------------------------------------- disegno
@@ -672,30 +697,32 @@ function checks() {
   // profondità della nave: dalla prima colonna disegnata (gli agganci dietro non contano) alla faccia
   let x0 = 0;
   while (x0 < doc.w && ![...Array(doc.h).keys()].some(y => get(x0, y) && !isAnchor(get(x0, y)))) x0++;
-  if (faceX() + 1 - x0 > k.maxW) out.push([`Profonda ${faceX() + 1 - x0} fino alla faccia: dietro la racchetta ${k.name} c'è posto per ${k.maxW}`
+  if (isC64() && doc.w !== C64_W) out.push([`Larga ${doc.w}: lo sprite del C64 ha ${C64_W} colonne`, true]);
+  if (!isC64() && faceX() + 1 - x0 > k.maxW) out.push([`Profonda ${faceX() + 1 - x0} fino alla faccia: dietro la racchetta ${k.name} c'è posto per ${k.maxW}`
                                 + (doc.kind === 6 ? ' (poi c\'è il muro)' : ''), true]);
   if (doc.kind === GUARDIAN) sectorChecks(out, bad);
   const need = ANCHORS[doc.kind], names = ['motore', 'arma', 'speciale'];
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < (isC64() ? 0 : 3); i++) {
     const n = anchorGroups(ENGINE + i).length;
     if (n !== need[i]) out.push([`Agganci ${names[i]}: ${n}, per ${k.name} ne servono ${need[i]}`, true]);
   }
   const used = new Set(doc.px);
-  if (!used.has(BODY) && !used.has(SHADE)) out.push(['Niente corpo: lo sprite non cambierebbe colore con il bonus e con OMEGA', true]);
+  if (!isC64() && !used.has(BODY) && !used.has(SHADE)) out.push(['Niente corpo: lo sprite non cambierebbe colore con il bonus e con OMEGA', true]);
   if (!out.length) out.push(['Tutto a posto', false]);
   return { out, bad };
 }
 // GUARDIAN: colonne delle piastre, giunture (righe di piastre tutte blu o nere) e settori, i pezzi
 // tra le giunture: [{y0, y1}] con y1 escluso
-const GUARDIAN = 6, SECTORS = 5, PLATE = 4;
-const plateCols = () => [faceX() - PLATE + 1, faceX()];
-const seamColor = c => c === MARK || c === MARK_LIGHT || c === MARK_DARK || c === BLACK;
+// (sul C64 lo scudo è di 2 colonne e le giunture sono nel colore del personaggio, come in guard)
+const GUARDIAN = 6, SECTORS = 5, plate = () => isC64() ? 2 : 4;
+const plateCols = () => [faceX() - plate() + 1, faceX()];
+const seamColor = c => isC64() ? c === C64_MARK : c === MARK || c === MARK_LIGHT || c === MARK_DARK || c === BLACK;
 function seamRows(px = doc.px) {
   const [xa, xb] = plateCols(), out = [];
   for (let y = 0; y < doc.h; y++) {
     let n = 0;
     for (let x = xa; x <= xb; x++) if (seamColor(px[y * doc.w + x])) n++;
-    if (n === PLATE) out.push(y);
+    if (n === plate()) out.push(y);
   }
   return out;
 }
@@ -712,10 +739,11 @@ function sectorChecks(out, bad) {
   const seams = seamRows(), bands = sectorBands();
   if (bands.length !== SECTORS)
     out.push([`Settori: ${bands.length} pezzi tra ${seams.length} giunture, ne servono ${SECTORS}`
-              + ` (4 righe di piastre tutte blu)`, true]);
+              + ` (righe di piastre tutte ${isC64() ? 'nel colore del personaggio' : 'blu'})`, true]);
+  const low = isC64() ? 2 : 3;
   for (const b of bands)
-    if (b.y1 - b.y0 < 3) {
-      out.push([`Settori: il pezzo alle righe ${b.y0}-${b.y1 - 1} è troppo basso (almeno 3 righe)`, true]);
+    if (b.y1 - b.y0 < low) {
+      out.push([`Settori: il pezzo alle righe ${b.y0}-${b.y1 - 1} è troppo basso (almeno ${low} righe)`, true]);
       const [xa, xb] = plateCols();
       for (let y = b.y0; y < b.y1; y++) for (let x = xa; x <= xb; x++) bad.add(y * doc.w + x);
     }
@@ -727,6 +755,17 @@ function wallState(px, spec) {
   const out = px.slice(), [xa, xb] = plateCols(), state = {}, bands = sectorBands(px);
   if (bands.length !== SECTORS) return px;
   for (const t of spec.split(',')) state[+t.slice(1)] = t[0];
+  if (isC64()) {
+    // C64: lo scudo bianco di un settore rotto diventa grigio (guard in video.s), quello colpito
+    // del colore del personaggio
+    for (let i = 0; i < SECTORS; i++) {
+      const { y0, y1 } = bands[i], st = state[i];
+      for (let y = y0; y < y1 && st; y++)
+        for (let x = xa; x <= xb; x++)
+          if (px[y * doc.w + x] === C64_WHITE) out[y * doc.w + x] = st === 'b' ? C64_GRAY : C64_MARK;
+    }
+    return out;
+  }
   const dark = { [BODY]: DARK, [SHADE]: DARK, [GRAY]: DARK, [GRAY_LIGHT]: DARK, [MARK]: DARK_DEEP,
                  [MARK_DARK]: DARK_DEEP, [MARK_LIGHT]: DARK_DEEP, [SIGNAL]: DARK_DEEP };
   for (let i = 0; i < SECTORS; i++) {
@@ -926,7 +965,7 @@ function spriteWithShadow(px, w, h, mirror) {
   for (let y = -1; y <= h; y++)
     for (let x = -1; x <= w; x++) {
       let c = at(x, y);
-      if (c === NONE && at(x + 1, y - 1) !== NONE) c = SHADOW;
+      if (c === NONE && !isC64() && at(x + 1, y - 1) !== NONE) c = SHADOW;     // (niente ombra sul C64)
       if (c !== NONE) out.set(`${mirror ? w - 1 - x : x},${y}`, c);
     }
   return out;
@@ -940,7 +979,7 @@ function drawPixels(ctx, map, ox, oy, s, col) {
 }
 function drawPreview() {
   const pv = $('#pv'), c = pv.getContext('2d'), s = +$('#pvScale').value;
-  const body = $('#pvBody').value.match(/../g).map(h => parseInt(h, 16));
+  const v = $('#pvBody').value, body = v ? v.match(/../g).map(h => parseInt(h, 16)) : undefined;
   const col = colorsFor(doc.kind, body);
   const px = wallState(doc.px, $('#pvWall').value);
   const left = spriteWithShadow(px, doc.w, doc.h, false), right = spriteWithShadow(px, doc.w, doc.h, true);
@@ -954,10 +993,11 @@ function drawPreview() {
   if (cur) { drawPixels(c, cur.map, (x - cur.u0) * s, (1 - cur.v0) * s, s, col); x += curW; }
   drawPixels(c, left, x * s, s, s, col);
   x += doc.w + 1 + gap;
-  // la palla, quadrata di 4 pixel arcade, a metà altezza
+  // la palla, quadrata di 4 pixel arcade (2 pixel doppi sul C64), a metà altezza
+  const ball = isC64() ? 2 : 4;
   c.fillStyle = '#fff';
-  c.fillRect(x * s, (1 + Math.floor(doc.h / 2) - 2) * s, 4 * s, 4 * s);
-  x += 4 + gap;
+  c.fillRect(x * s, (1 + Math.floor(doc.h / 2) - ball / 2) * s, ball * s, ball * s);
+  x += ball + gap;
   drawPixels(c, right, x * s, s, s, col);
 }
 
@@ -1137,6 +1177,13 @@ function syncKind() {
 function sizeInfo() {
   $('#pvWall').hidden = doc.kind !== GUARDIAN;
   const k = KINDS[doc.kind], h = kindH(doc.kind);
+  if (isC64()) {
+    $('#sizeInfo').textContent = `altezza ${h} righe doppie (${C64_LINES[doc.kind]} dello schermo)`;
+    $('#btnSize').textContent = doc.h === h && doc.w === C64_W ? 'La tela è già della misura giusta' : `Adatta la tela a ${C64_W}×${h}`;
+    $('#kindInfo').textContent = `Hitbox: le ${C64_FACE} colonne fino alla faccia`
+      + (doc.front ? `, poi ${doc.front} di sporgenza` : ', l\'ultima a destra') + `. Lo sprite è largo ${C64_W} pixel doppi.`;
+    return;
+  }
   $('#sizeInfo').textContent = `altezza ${h} (${k.mult}×), max ${k.maxW}`;
   $('#btnSize').textContent = doc.h === h && doc.w === +$('#width').value ? 'La tela è già della misura giusta'
     : `Adatta la tela a ${$('#width').value}×${h}`;
@@ -1147,12 +1194,12 @@ function setKind(k) {
   if (k === doc.kind) return;
   pushUndo();
   doc.kind = k;
-  doc.path = `assets/ships/sprites/${KINDS[k].id}.png`; doc.name = KINDS[k].id + '.png';
+  doc.path = spritePath(k); doc.name = KINDS[k].id + '.png';
   syncKind(); changed(); updateTitle();
   if (doc.h !== kindH(k)) msg(`${KINDS[k].name} è alta ${kindH(k)}: "Adatta la tela" per cambiare la misura`, true);
 }
 function applySize() {
-  const w = clamp(+$('#width').value | 0, FACE, 64), h = kindH(doc.kind);
+  const w = isC64() ? C64_W : clamp(+$('#width').value | 0, FACE, 64), h = kindH(doc.kind);
   if (w === doc.w && h === doc.h) return;
   pushUndo();
   resizeTo(w, h);
@@ -1160,9 +1207,43 @@ function applySize() {
   msg(`Tela ${w}×${h}: la faccia resta a destra, il disegno al centro in altezza`);
 }
 
+// piattaforma: colori, hitbox, misure e cartella degli sprite (senza toccare il documento)
+const PV_BODY = {
+  pc: [['ffffff', 'corpo bianco'], ['ffd225', 'bonus armato'], ['e62828', 'OMEGA'], ['a040e0', 'OMEGA (easter egg)']],
+  c64: [['', 'colore del personaggio'], ['aeaeae', 'grigio (bonus armato)'], ['eff347', 'giallo (colpo)'], ['9f2dad', 'OMEGA']],
+};
+function applyPlat(p) {
+  plat = p;
+  ROLES = isC64() ? ROLES_C64 : ROLES_PC;
+  FACE = isC64() ? C64_FACE : FACE_PC;
+  $('#plat').value = p;
+  $('#hitLbl').textContent = isC64() ? `Hitbox C64 (${C64_FACE})` : `Hitbox PC (${FACE_PC})`;
+  for (const id of ['#showMister', '#pvCur']) $(id).parentElement.style.display = isC64() ? 'none' : '';
+  $('#pvNote').textContent = isC64() ? 'Su nero (sul C64 niente ombra): sinistra, destra.'
+    : "Su nero con l'ombra portata del gioco: attuale, sinistra, destra.";
+  $('#base').disabled = $('#width').disabled = isC64();
+  const pv = $('#pvBody');
+  pv.textContent = '';
+  for (const [v, t] of PV_BODY[p]) pv.add(new Option(t, v));
+  if (!ROLES.some(r => r[0] === prim)) prim = isC64() ? C64_WHITE : BODY;
+  if (!ROLES.some(r => r[0] === sec)) sec = NONE;
+  convOff.clear();
+}
+async function setPlat(p) {
+  if (p === plat) return;
+  if (!(await confirmDiscard())) { $('#plat').value = plat; return; }
+  const k = doc.kind;
+  applyPlat(p);
+  doc = blankDoc(k, isC64() ? C64_W : 16, kindH(k));
+  undoStack = []; redoStack = []; current = null;
+  syncKind(); fit(); updateTitle(); renderFiles();
+  if (server && fileEntries.includes(doc.path)) await openPath(doc.path);
+  else msg(`Nuovo sprite ${isC64() ? 'del C64' : 'del PC'} per ${KINDS[k].name}: ${doc.w}×${doc.h}`);
+}
+
 // racchetta disegnata oggi dal gioco (tools/paddle_shapes.py, dal server)
 async function loadCurrent() {
-  if (!server) return;
+  if (!server || isC64()) { current = null; return; }
   const kind = doc.kind, h = doc.h;
   if (current && current.kind === kind && current.h === h) return;
   try {
@@ -1295,11 +1376,12 @@ async function encodePng() {
   const { w, h, px } = doc, col = COL();
   const ihdr = new Uint8Array(13), dv = new DataView(ihdr.buffer);
   dv.setUint32(0, w); dv.setUint32(4, h); ihdr[8] = 8; ihdr[9] = 3;
-  const plte = new Uint8Array((SPECIAL + 1) * 3);
+  const n = isC64() ? C64_WHITE + 1 : SPECIAL + 1, plte = new Uint8Array(n * 3);
   plte.set([255, 0, 255], 0);
-  for (let i = 1; i <= SPECIAL; i++) plte.set(col[i] || [0, 0, 0], i * 3);
+  for (let i = 1; i < n; i++) plte.set(col[i] || [0, 0, 0], i * 3);
   const trns = new Uint8Array([0]);
-  const meta = JSON.stringify({ v: 1, kind: KINDS[doc.kind].id, base: +$('#base').value, front: doc.front || 0 });
+  const meta = JSON.stringify(isC64() ? { v: 1, plat: 'c64', kind: KINDS[doc.kind].id, front: doc.front || 0 }
+    : { v: 1, kind: KINDS[doc.kind].id, base: +$('#base').value, front: doc.front || 0 });
   const raw = new Uint8Array((w + 1) * h);
   for (let y = 0; y < h; y++) raw.set(px.subarray(y * w, (y + 1) * w), y * (w + 1) + 1);
   return new Blob([SIG, pngChunk('IHDR', ihdr), pngChunk('PLTE', plte), pngChunk('tRNS', trns),
@@ -1401,7 +1483,7 @@ function renderFiles() {
     ul.appendChild(li);
   }
 }
-const isSpritePath = p => /\/sprites\/[^/]+\.png$/i.test(p);
+const isSpritePath = p => /\/sprites\/(c64\/)?[^/]+\.png$/i.test(p);
 const kindOfName = n => { const i = KINDS.findIndex(k => n.toLowerCase().includes(k.id)); return i < 0 ? doc.kind : i; };
 async function fetchBlob(path) {
   const r = await fetch('/api/file?path=' + encodeURIComponent(path));
@@ -1414,11 +1496,13 @@ async function openBlob(blob, name, path) {
   try { meta = JSON.parse(pngText(buf).paddedit || 'null'); } catch (_) { meta = null; }
   const mk = meta ? KINDS.findIndex(k => k.id === meta.kind) : -1;
   const kind = mk >= 0 ? mk : kindOfName(name);
+  // la piattaforma prima di leggere i colori: dal blocco paddedit o dalla cartella
+  applyPlat((meta && meta.plat) === 'c64' || /\/sprites\/c64\//i.test(path || '') ? 'c64' : 'pc');
   if (meta && meta.base) $('#base').value = meta.base;
   const img = await decodeSprite(blob, kind);
   if (img.w > 64 || img.h > 200) { msg(`${name} è ${img.w}×${img.h}: troppo grande per uno sprite, lo uso come riferimento`, true); setRef(await createImageBitmap(blob), name); return; }
   doc = { kind, w: img.w, h: img.h, front: (meta && meta.front) || 0, px: img.px, name,
-          path: path || `assets/ships/sprites/${name}`, dirty: false };
+          path: path || `assets/ships/sprites/${isC64() ? 'c64/' : ''}${name}`, dirty: false };
   undoStack = []; redoStack = [];
   current = null;
   syncKind(); fit(); updateTitle(); renderFiles();
@@ -1436,7 +1520,7 @@ async function refPath(path) {
 async function save(as) {
   let path = doc.path;
   if (as || !path) {
-    path = await ask('Percorso nel repository:', { input: path || `assets/ships/sprites/${KINDS[doc.kind].id}.png`, ok: 'Salva' });
+    path = await ask('Percorso nel repository:', { input: path || spritePath(doc.kind), ok: 'Salva' });
     if (!path) return;
     if (!path.toLowerCase().endsWith('.png')) path += '.png';
   }
@@ -1460,12 +1544,12 @@ async function save(as) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   doc.dirty = false; updateTitle();
-  msg(`Scaricato ${a.download}: va messo in assets/ships/sprites/`);
+  msg(`Scaricato ${a.download}: va messo in assets/ships/sprites/${isC64() ? 'c64/' : ''}`);
 }
 async function newSprite() {
   if (!(await confirmDiscard())) return;
   const k = +$('#kind').value;
-  doc = blankDoc(k, Math.min(KINDS[k].maxW, Math.max(FACE, +$('#width').value || 16)), kindH(k));
+  doc = blankDoc(k, isC64() ? C64_W : Math.min(KINDS[k].maxW, Math.max(FACE, +$('#width').value || 16)), kindH(k));
   undoStack = []; redoStack = []; current = null;
   syncKind(); fit(); updateTitle(); renderFiles();
   msg(`Nuovo sprite ${KINDS[k].name} ${doc.w}×${doc.h}`);
@@ -1534,7 +1618,7 @@ document.addEventListener('keydown', e => {
     if (k.toLowerCase() === 'x') cmd = 'swap';
     else if (k.toLowerCase() === 'g') cmd = 'toggleGrid';
     else if (k.toLowerCase() === 'm') { $('#optSym').checked = !$('#optSym').checked; render(); e.preventDefault(); return; }
-    else if (/^[0-9]$/.test(k)) { prim = +k; updateColors(); return; }
+    else if (/^[0-9]$/.test(k)) { if (ROLES.some(r => r[0] === +k)) { prim = +k; updateColors(); } return; }
   }
   if (cmd) { e.preventDefault(); CMDS[cmd](); }
 });
@@ -1551,6 +1635,7 @@ for (const ev of ['keydown', 'keyup'])
 
 KINDS.forEach((k, i) => $('#kind').add(new Option(`${k.name} (altezza ${k.mult}×)`, i)));
 $('#kind').onchange = () => setKind(+$('#kind').value);
+$('#plat').onchange = () => setPlat($('#plat').value);
 $('#base').oninput = () => { sizeInfo(); render(); };
 $('#width').oninput = sizeInfo;
 $('#front').oninput = () => {
@@ -1564,7 +1649,7 @@ $('#fileFilter').oninput = renderFiles;
 $('#fileInput').onchange = async e => {
   const f = e.target.files[0];
   e.target.value = '';
-  if (f) await openBlob(f, f.name, `assets/ships/sprites/${f.name}`);
+  if (f) await openBlob(f, f.name, `assets/ships/sprites/${isC64() ? 'c64/' : ''}${f.name}`);
 };
 $('#refInput').onchange = async e => {
   const f = e.target.files[0];
@@ -1583,12 +1668,13 @@ window.addEventListener('beforeunload', e => { if (doc.dirty) { e.preventDefault
 window.addEventListener('resize', render);
 
 (async () => {
-  doc = blankDoc(0, 16, kindH(0));
+  applyPlat(new URLSearchParams(location.search).get('plat') === 'c64' ? 'c64' : 'pc');
+  doc = blankDoc(0, isC64() ? C64_W : 16, kindH(0));
   setTool('pencil');
   syncKind(); fit(); updateTitle();
   await serverInit();
   if (server) {
-    const first = fileEntries.find(isSpritePath);
+    const first = fileEntries.includes(doc.path) ? doc.path : fileEntries.find(isSpritePath);
     if (first) await openPath(first);
     else syncKind();
   }

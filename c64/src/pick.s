@@ -523,6 +523,19 @@ choosing:
     ldx #1
     jsr pick_player
 :   ; fine: tutti hanno scelto
+.ifdef AUTONEXT
+    ; (prova per VICE, senza tempo nella scelta: ogni 128 frame tutti confermano la racchetta, e
+    ; nei bonus prendono quelli predefiniti)
+    lda frame_count
+    and #127
+    bne :+
+    lda pk_kind
+    beq finish
+    lda #1
+    sta pk_ok
+    sta pk_ok+1
+:
+.endif
     lda pk_count
     and pk_count+1
     cmp #3
@@ -2117,8 +2130,9 @@ place:
     eor #$ff
     and sh_xexp
     sta sh_xexp
-    ; x: il corpo è al centro dell'immagine (24 pixel)
+    ; x: la faccia dell'astronave dove c'era il corpo della racchetta senza tipo
     lda pv_x,y
+    jsr pad_face_x
     sta sh_x+SPN_PAD,y
     lda bit_of+SPN_PAD,y
     eor #$ff
@@ -2150,3 +2164,22 @@ pv_x:    .byte SPR_X0 + 14 * 8 + 4 - 12, SPR_X0 + 25 * 8 + 4 - 12
 .segment "NEXTBSS"
 pv_kind: .res 2                 ; tipo nell'immagine dell'anteprima ($ff nessuna)
 .segment "CODE"
+
+; A + 8 - pad_dx del tipo X sul lato Y: la x di uno sprite di racchetta con la faccia dove sarebbe
+; il corpo della racchetta senza tipo con lo sprite ad A. X e Y restano.
+.proc pad_face_x
+    stx m_lo
+    cpy #0
+    beq :+
+    pha
+    txa
+    ora #8
+    tax
+    pla
+:   clc
+    adc #8
+    sec
+    sbc pad_dx,x
+    ldx m_lo
+    rts
+.endproc

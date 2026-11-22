@@ -171,6 +171,21 @@ TRAIL_SPAN = 48    ; coda: coordinate dei quadrati nello sprite + 16, da 0 a 47
 ; colori sono già in howto.bin)
 HT_GROUPS = 10
 HT_TEXTS_AT = $E140
+; astronavi delle racchette di NEXT (assets/ships/sprites/c64): righe viste dalla racchetta
+; sinistra, 3 byte per riga; x dello sprite: colonna della racchetta - PAD_DX_L / PAD_DX_R
+; (per tipo, poi la racchetta senza tipo); PAD_BL_THR: prima riga accesa del BLASTER per
+; livello del caricatore (0-4)
+.define PAD_DX_L 8, 8, 8, 12, 10, 8, 8, 8
+.define PAD_DX_R 12, 12, 12, 8, 10, 12, 12, 12
+.define PAD_IMG_N 14, 20, 17, 17, 19, 14, 14
+.define PAD_BL_THR 19, 10, 9, 8, 0
+.define PAD_IMG_ARCADE $01, $40, $00, $05, $50, $00, $0F, $F0, $00, $3F, $F0, $00, $7F, $F0, $00, $05, $50, $00, $0A, $A0, $00, $0A, $A0, $00, $05, $50, $00, $7F, $F0, $00, $3F, $F0, $00, $0F, $F0, $00, $05, $50, $00, $01, $40, $00
+.define PAD_IMG_TITAN $03, $F0, $00, $03, $F0, $00, $01, $50, $00, $1F, $F0, $00, $47, $F0, $00, $17, $F0, $00, $1F, $F0, $00, $03, $F0, $00, $0A, $A0, $00, $05, $A0, $00, $05, $A0, $00, $0A, $A0, $00, $03, $F0, $00, $1F, $F0, $00, $17, $F0, $00, $47, $F0, $00, $1F, $F0, $00, $01, $50, $00, $03, $F0, $00, $03, $F0, $00
+.define PAD_IMG_HAMMER $05, $80, $00, $00, $90, $00, $0A, $90, $00, $08, $D0, $00, $08, $D0, $00, $08, $D0, $00, $08, $D0, $00, $10, $D0, $00, $08, $D0, $00, $10, $D0, $00, $08, $D0, $00, $08, $D0, $00, $08, $D0, $00, $08, $D0, $00, $08, $D0, $00, $00, $10, $00, $05, $40, $00
+.define PAD_IMG_TWIST $00, $0C, $00, $00, $0F, $00, $00, $3F, $00, $00, $BD, $00, $02, $BD, $00, $00, $BD, $00, $00, $3D, $00, $00, $AD, $00, $02, $A9, $00, $00, $AD, $00, $00, $3D, $00, $00, $BD, $00, $02, $BD, $00, $00, $BD, $00, $00, $3F, $00, $00, $0F, $00, $00, $0C, $00
+.define PAD_IMG_BLASTER $03, $D0, $00, $0F, $F4, $00, $0F, $F4, $00, $0F, $F4, $00, $04, $F4, $00, $01, $01, $80, $03, $F4, $00, $43, $F4, $00, $AE, $E4, $00, $AF, $B4, $00, $AE, $E4, $00, $43, $F4, $00, $03, $F4, $00, $01, $01, $80, $04, $F4, $00, $0F, $F4, $00, $0F, $F4, $00, $0F, $F4, $00, $03, $D0, $00
+.define PAD_IMG_RUSH $02, $80, $00, $09, $D0, $00, $23, $D0, $00, $03, $D0, $00, $03, $D0, $00, $03, $F0, $00, $06, $90, $00, $06, $90, $00, $03, $F0, $00, $03, $D0, $00, $03, $D0, $00, $23, $D0, $00, $09, $D0, $00, $02, $80, $00
+.define PAD_IMG_GUARDIAN $00, $F0, $00, $00, $F0, $00, $00, $A0, $00, $08, $F0, $00, $02, $F0, $00, $05, $A0, $00, $05, $F0, $00, $05, $F0, $00, $05, $A0, $00, $02, $F0, $00, $08, $F0, $00, $00, $A0, $00, $00, $F0, $00, $00, $F0, $00
 
 ; titoli disegnati (assets/titles): caratteri hires, un colore per cella. Nomi e PERFECT
 ; da TN_FIRST (una pagina di titles.bin ciascuno), la targa da TC_FIRST (due pagine)

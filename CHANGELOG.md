@@ -20,9 +20,13 @@ crea il commit e il tag `vX.Y.Z`.
 - Le racchette di NEXT sono gli sprite delle astronavi viste dall'alto, disegnati a mano
   (`assets/ships/sprites`), con più dettagli delle forme di prima e le stesse animazioni attaccate
   ai motori e alle armi: fiamme e booster, getti di manovra di TWIST, rinculo e lampo dei cannoni
-  del BLASTER, piastre del GUARDIAN che si montano e si rompono (PC, web, Deck e MiSTer; il C64
-  resta com'era). Il BLASTER ha i cannoni che sporgono davanti, da cui partono i colpi, e mostra i
-  colpi nel caricatore con il verde dell'astronave al posto della barra dietro la racchetta.
+  del BLASTER, piastre del GUARDIAN che si montano e si rompono (PC, web, Deck e MiSTer). Il
+  BLASTER ha i cannoni che sporgono davanti, da cui partono i colpi, e mostra i colpi nel
+  caricatore con il verde dell'astronave al posto della barra dietro la racchetta.
+- Anche sul C64 le racchette di NEXT sono le astronavi, ridisegnate a mano per lo sprite
+  multicolore (`assets/ships/sprites/c64`): la TWIST si inclina, il BLASTER spegne il verde
+  dall'alto con i colpi nel caricatore, il GUARDIAN ha lo scudo a cinque settori che diventano
+  grigi quando si perdono.
 - Il salto del TELEPORT ha un effetto nuovo: la racchetta si scompone a righe dove si trova, con le
   righe che passano per il colore del personaggio e tremano, e si ricompone allo stesso modo nel
   punto d'arrivo; niente più portali (PC, web, Deck, MiSTer e C64).
@@ -34,7 +38,8 @@ crea il commit e il tag `vX.Y.Z`.
 - `tools/paddle_editor.html`: editor degli sprite delle racchette (si apre con
   `tools/c64_editor.py --paddle`), con la griglia alla misura di ogni tipo, i pixel di aggancio per
   fiamme, armi e getti, la guida dei settori del GUARDIAN, l'anteprima come in partita, la
-  selezione con taglia, copia e incolla e la conversione da un'immagine di riferimento.
+  selezione con taglia, copia e incolla e la conversione da un'immagine di riferimento; con
+  `--paddle-c64` gli sprite del C64 (12 pixel doppi, i tre colori dello sprite multicolore).
 
 ## [4.6.2] - 2026-11-22
 

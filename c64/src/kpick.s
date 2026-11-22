@@ -124,6 +124,11 @@ choosing:
     jsr pick_player
 :   jsr kp_dirty
     ; fine: tutti hanno scelto
+.ifdef AUTONEXT
+    lda frame_count             ; (prova per VICE, senza tempo nella scelta: al più 128 frame)
+    and #127
+    beq finish
+.endif
     lda pk_ok
     and pk_ok+1
     beq done

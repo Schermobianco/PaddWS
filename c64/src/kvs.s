@@ -1009,6 +1009,7 @@ side:
 color:
     sta sh_col+SPN_PAD,y
     lda pv_x,y
+    jsr pad_face_x
     sta sh_x+SPN_PAD,y
     lda #<(SPR_Y0 + KV_PAD_CY)
     sec
