@@ -44,7 +44,8 @@ Alcuni file sono generati e non si modificano a mano: `mister/rtl/gen/*.vh` (da 
 `c64/gen/` (da `tools/gen_c64_assets.py`), le bitmap e i tempi dell'attract in `assets/attract/` (da
 `tools/gen_attract_assets.py`). Si cambia il generatore e si rigenerano.
 
-Sul C64 un frame non può superare 18.000 cicli (`paddws-c64 frames` lo controlla) e la pagina zero è
+Sul C64 un frame di partita deve stare nel 90% del suo tempo (17.700 cicli sul PAL, 15.400
+sull'NTSC: `paddws-c64 frames` lo controlla) e la pagina zero è
 piena: vedi [c64/README.md](c64/README.md).
 
 ## Compilare e verificare

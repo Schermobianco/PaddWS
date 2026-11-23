@@ -59,7 +59,6 @@ CH_ARROW_L = 229
 CH_ARROW_R = 230
 CH_BAR_R = 231    ; pixel 7 della colonna
 CH_BAR_L = 232    ; pixel 0 della colonna
-.define SHOT_CHARS 233, 0, 234, 235, 236, 237, 238, 239    ; per fase: primo, secondo
 CH_STEER_TOP_R = 240
 CH_STEER_TOP_L = 241
 CH_STEER_BOTTOM_R = 242
@@ -142,6 +141,24 @@ TITLE_B_ROW = 24
 TITLE_B_END = 25
 TITLE_SIZE = 1608    ; byte di title.bin
 .define AT_COPYRIGHT_TEXT "2026 SCHERMOBIANCO"
+; BLASTER: caratteri dei fasci per altezza del tratto (righe 2h e 2h + 1) e fase: primo e
+; secondo carattere (0: nessuno); quelli dell'altezza SHOT_H0 nel set, gli altri SHOT_BN da
+; SHOT_B0 presi in prestito in NEXT (shot_glyphs), dove stanno le lettere 2x da SHOT_LETTER0
+; (SHOT_LETTERS, rifatte al GAME OVER) e il vuoto dopo. Riserva dei caratteri fusi (bd_fuse):
+; SHOT_PN da SHOT_P0, uno per cella di fascio. Righe di schermo delle bocche dei cannoni:
+; SHOT_TOP - ceil(y) e SHOT_BOT - ceil(y)
+.define SHOT_CHARS 107, 0, 108, 109, 110, 111, 112, 113, 114, 0, 115, 116, 117, 118, 119, 120, 121, 0, 122, 123, 124, 125, 126, 127, 233, 0, 234, 235, 236, 237, 238, 239
+SHOT_H0 = 3
+SHOT_OWN = 233
+SHOT_B0 = 107
+SHOT_BN = 21
+SHOT_P0 = 64
+SHOT_PN = 32
+SHOT_LETTER0 = 0
+SHOT_LETTERS = 12
+SHOT_TOP = 192
+SHOT_BOT = 208
+
 CHARSET_USED = 250
 PICK_FIRST = 64    ; scelta dei bonus: caratteri sostituiti (pagine intere)
 PICK_PAGES = 3

@@ -114,7 +114,16 @@ cargo run --release -p paddws-c64 -- frames           # cicli di ogni frame (att
 Con `--ntsc` prima del comando (`paddws-c64 --ntsc frames`) i passi valgono per la cartuccia
 NTSC, compilata prima con `-Ntsc`. Sono gli stessi passi della GitHub Action `C64`. In più: `ending` gioca solo il finale della
 scalata, `profile` dà i cicli per routine, `--build DIR` usa un'altra cartella di build e
-`game --ticks N` cambia la durata delle partite (5 minuti di default).
+`game --ticks N` cambia la durata delle partite (5 minuti di default). Per confrontare i cicli
+del banco di prova con quelli di VICE: `tools\c64_vice_frames.py` cattura i frame di una build
+di prova e `paddws-c64 --prg NOME vice FILE` li riesegue; con `--frametest` lo stesso strumento
+conta in VICE i frame oltre il tempo di una build con `FRAMETEST`.
+
+Prima di toccare il codice di disegno o di scena conviene registrare un golden test, che `game`
+non copre: `PADDWS_C64_GOLDEN=record:FILE paddws-c64 frames` salva per ogni frame un'impronta di
+quello che si vede e si sente (schermo, colori, sprite, SID) con il raster congelato, e dopo la
+modifica `PADDWS_C64_GOLDEN=check:FILE` dice il primo frame diverso. Con `PADDWS_C64_PICK_RAW=1`
+le partite sono quasi tutte BLASTER (i colpi a schermo).
 
 ## Sorgenti
 
@@ -146,15 +155,24 @@ scalata, `profile` dà i cicli per routine, `--build DIR` usa un'altra cartella 
   il codice nuovo va di solito nella cartuccia, da copiare in RAM quando serve (come le mosse
   speciali, la classifica e il finale). Lo spazio libero si legge in `c64\build\paddws.map`.
 - **Variabili temporanee condivise.** `m_t` e `ptr` non tengono un valore attraverso una `jsr`.
-- **18.000 cicli per frame** (NTSC 15.500; in partita, dopo un tick molto pesante, il frame può
-  finire fino a 2.500 cicli dopo l'interrupt e il frame dopo recupera). `paddws-c64 frames`
-  fallisce se un frame li supera. Il suo modello del
-  raster (58 cicli per riga) è approssimato: con frame vicini al limite conviene controllare anche
-  in VICE. Il lavoro lungo si divide su più frame o aspetta il frame dopo guardando il raster.
+- **Tempo del frame.** Un frame PAL dura 19.656 cicli, uno NTSC 17.095. In partita l'obiettivo è
+  restare entro il 90% (17.700 e 15.400); fuori partita basta il frame intero. `paddws-c64 frames`
+  conta i cicli veri dall'interrupt della riga 250, compresi quelli che il VIC-II ruba per le
+  righe dei caratteri e per gli sprite (modello tarato su VICE), e fallisce se un frame fuori
+  partita supera il suo tempo o se in partita troppi superano il 90%. Passi della musica ed
+  effetti sonori partono a inizio frame, a un'ora fissa del raster; sprite e riserve si rifanno a
+  ogni frame. Il lavoro lungo si divide su più frame o aspetta il frame dopo guardando il raster.
+  Sul PAL nessun frame di partita supera il 90%; sull'NTSC ne restano pochi (circa tre su
+  mille nel caso peggiore: raffiche del BLASTER con il salto del TELEPORT nel bullet time), e se
+  uno supera il frame quello dopo parte subito e recupera.
 - **Set di caratteri e sprite quasi finiti.** Dei 256 caratteri ne restano liberi pochi (un
   carattere nuovo ne sostituisce uno dove l'altro non serve, e `tools/gen_c64_assets.py` lo
   controlla) e gli 8 sprite sono tutti usati. Le lettere non sono nella cartuccia: all'avvio si
-  copiano dalla ROM dei caratteri del C64, e da lì si fanno anche quelle grandi.
+  copiano dalla ROM dei caratteri del C64, e da lì si fanno anche quelle grandi. Nelle partite
+  NEXT i caratteri 64-127 (le lettere grandi e il vuoto dopo) servono ai laser del BLASTER, e
+  tornano al loro posto a fine partita: una schermata nuova che li usi li deve rifare. Sopra
+  punteggi, barre, riserve e riga di metà campo il laser non copre: il programma fonde al volo il
+  suo tratto con il carattere che c'è sotto, che tiene il suo colore.
 - **BASIC e KERNAL spenti** (`$01 = $35`): sotto le loro ROM ci sono dati e variabili, e la RAM sotto
   l'I/O si legge e si scrive con `$01 = $34`.
 - **Bordo e sfondo** (`$D020`, `$D021`) si scrivono solo quando il colore cambia: ogni scrittura

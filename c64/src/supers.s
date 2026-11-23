@@ -225,15 +225,14 @@ MV_ALL    = 32                  ; mv_key: armata i trattini disegnati (meno di t
 MV_HIT    = 64                  ; quelli accesi; al colpo MV_HIT + la fase (mv_r4m)
 .assert MV_COL + 19 + MV_W <= 38 .and MV_COL + MV_W <= 19, error, "scritte delle mosse sul muro o sulla mezzeria"
 
+; (next_fx_scene la chiama solo con sm_on e con qualcosa da fare: un colpo con la mossa, una
+; scritta o una mossa armata.)
 .proc sm_labels
-    lda sm_on
-    beq done
     ldx #1
 side:
     jsr one
     dex
     bpl side
-done:
     rts
 one:
     txa
@@ -964,39 +963,43 @@ half_out:
     rts
 .endproc
 
-; Joystick del giocatore Y (X = Y * 4), a ogni frame prima del fuoco (next_keys): età delle tre
-; direzioni, poi il fuoco che completa un gesto, se la mossa può partire, diventa la mossa (e non
-; attiva il bonus). X e Y restano.
+; Joystick del giocatore Y (X = Y * 4), a ogni frame prima del fuoco (next_keys, solo con sm_on):
+; età delle tre direzioni, poi il fuoco che completa un gesto, se la mossa può partire, diventa la
+; mossa (e non attiva il bonus). X e Y restano.
 .proc sm_joy
-    lda sm_on
-    beq done
-    lda joy,y                   ; tenute: bit 0 giù, 1 giù-avanti, 2 avanti
-    and #JOY_DOWN | JOY_UP
-    sta m_lo
-    lda joy,y
+    lda joy,y                   ; tenute: bit 0 giù, 1 giù-avanti, 2 avanti, e il bit 3 che
+    sta m_lo                    ; ferma il conto delle età
     and toward,y
     beq not_fw
     lda m_lo
+    and #JOY_DOWN | JOY_UP
     beq fw
     cmp #JOY_DOWN
     bne none
-    lda #2
+    lda #2 | 8
     bne have
-fw: lda #4
+fw: lda #4 | 8
     bne have
 not_fw:
     lda m_lo
     and #JOY_DOWN
     lsr a
+    ora #8
     .byte $2c                   ; (bit: salta il lda)
 none:
-    lda #0
+    lda #8
 have:
     sta m_lo
-    lda #3
-    sta m_t
+    cmp #8                      ; nessuna tenuta e le tre età già al massimo (quasi sempre
+    bne age                     ; il joystick della CPU): restano
+    lda sm_age,x
+    and sm_age+1,x
+    and sm_age+2,x
+    cmp #$ff
+    beq fire
 age:
     lsr m_lo
+    beq aged
     lda #0
     bcs :+
     lda sm_age,x
@@ -1005,12 +1008,12 @@ age:
     adc #1
 :   sta sm_age,x
 :   inx
-    dec m_t
-    bne age
-    tya
-    asl a
-    asl a
-    tax
+    bne age                     ; (sempre)
+aged:
+    dex
+    dex
+    dex
+fire:
     lda fire_edge,y
     beq done
     jsr sm_allow
@@ -1065,13 +1068,9 @@ no: lda #0
     rts
 .endproc
 
-; A ogni frame di partita NEXT (next_hud, dopo gli sprite): palla e racchette gialle, scritta e
-; suono della mossa attivata o del suo colpo, barre, icone ancora da preparare.
+; A ogni frame di partita NEXT con sm_on (next_hud, dopo gli sprite): palla e racchette gialle,
+; scritta e suono della mossa attivata o del suo colpo, barre, icone ancora da preparare.
 .proc sm_hud
-    lda sm_on
-    bne :+
-    rts
-:
 .ifdef SMFULL
     lda #P_SUPER_METER_MAX      ; prova per VICE (-Define SMFULL): barre sempre piene, mosse MAX
     sta sm_meter
@@ -1088,23 +1087,33 @@ no: lda #0
     ldx #COL_WHITE
 :   stx sh_col
 pads:
-    ldx #0                      ; mossa di livello 2 armata (sm_arm pari): racchetta gialla
-    jsr pad
-    ldx #4
-    jsr pad
-    jsr frame_late_small        ; frame già avanti: il resto al prossimo
-    bcs done
+    lda sm_arm                  ; mossa di livello 2 armata (sm_arm pari): racchetta gialla
+    beq :+
+    lsr a
+    bcs :+
+    lda #COL_YELLOW
+    sta sh_col + SPN_PAD
+:   lda sm_arm+4
+    beq :+
+    lsr a
+    bcs :+
+    lda #COL_YELLOW
+    sta sh_col + SPN_PAD + 1
+:
+    ; il resto solo con il frame indietro: suono, barre e icone guardano il tempo solo se hanno
+    ; da fare (un frame avanti lo resta fino alla fine)
 sound:
     lda sm_fxp                  ; MOVE dopo BOOST e punto, SPECIAL solo dopo il punto (pong_sid.v)
     beq bars
+    jsr frame_late_small        ; frame già avanti: il resto al prossimo
+    bcs done
+    lda sm_fxp
     cmp #SFX_MOVE
     bne :+
     lda events
     and #EV_BOOST | EV_SCORE
     bne drop
-:   jsr frame_late_small
-    bcs bars
-    bit $fffb                   ; la voce di CHALLENGE ha il SID
+:   bit $fffb                   ; la voce di CHALLENGE ha il SID
     bmi drop
     ldx sm_fxp
     jsr sid_fx_start
@@ -1126,18 +1135,6 @@ bars:
     jmp icon
 done:
     rts
-pad:
-    lda sm_arm,x
-    beq :+
-    lsr a
-    bcs :+
-    txa
-    lsr a
-    lsr a
-    tax
-    lda #COL_YELLOW
-    sta sh_col + SPN_PAD,x
-:   rts
 .endproc
 
 ; Barra del giocatore X, se è cambiata e il frame ha tempo: quattro celle dalla colonna del suo
@@ -1153,6 +1150,7 @@ pad:
     pla
     bcs done
     sta sm_shown,x
+    jsr shots_off_hud           ; (un fascio sopra la barra la rimetterebbe com'era; X resta)
     lda sm_meter,x
     sta m_t                     ; da distribuire
     sta v_n

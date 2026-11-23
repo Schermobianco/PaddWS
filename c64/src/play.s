@@ -67,7 +67,7 @@ menu_i:      .res 1             ; voce in disegno (print_str usa v_n)
 menu_n:      .res 1             ; voci del menu (MENU_ITEMS, una in più con il JUKEBOX)
 screen_clear: .res 1            ; begin_match: schermo di testo già pulito nel frame prima
 over_next: .res 1               ; partita finita: GAME OVER al prossimo frame
-fx_pend:   .res 1               ; effetti sonori rimandati dal frame prima (già avanti)
+fx_pend:   .res 1               ; effetti sonori del tick: partono all'inizio del frame dopo (frame_music)
 match_song: .res 1              ; musica della prossima partita: il tema di CHALLENGE, o 0
 cpu_side:  .res 1               ; lato della CPU in partita * 4 ($ff nessuna)
 win_pg:    .res 1               ; YOU WIN o PERFECT nel GAME OVER: 0 no, 1-16 prossima pagina + 1,
@@ -414,7 +414,7 @@ loop:
 ; Prova per VICE (-Define FRAMETEST), dopo ogni frame: un frame finito dopo l'interrupt del frame
 ; dopo è oltre il suo tempo; quanti (una cifra, al più 9) nella cella in basso a destra, rossa;
 ; ft_over e lo stato del primo (ft_state) li legge il monitor di VICE (mon.py). Nella
-; pagina dello stack ($0100, FTCODE: nel .prg in INIT, copiato da title_unpack), perché nel
+; pagina dello stack (FTCODE, dopo STKCODE: nel .prg in INIT, copiato da title_unpack), perché nel
 ; programma non c'è più posto (sull'NTSC).
 .segment "FTCODE"
 .proc ft_check
@@ -502,9 +502,9 @@ ft_show:
 .endif
     rts
 .ifdef NTSC
-; righe dopo l'interrupt ammesse in partita: i 2.500 cicli del banco di prova, o FT_LINES=n
+; righe dopo l'interrupt ammesse in partita: nessuna, o FT_LINES=n
 .ifndef FT_LINES
-FT_SPILL = 2500 / TV_LCYC
+FT_SPILL = 0
 .else
 FT_SPILL = FT_LINES
 .endif
@@ -535,8 +535,9 @@ scenes:
     .word intro_scene - 1, cl_scene - 1, cl_scene - 1, initials_scene - 1, scores_scene - 1
     .word challenger_scene - 1, end_scene - 1, warn_scene - 1, jb_scene - 1
 
-; Un frame: registri ombra nel VIC (vblank), comandi, scena, sprite e musica. Il banco di prova
-; (paddws-c64 frames) lo chiama per misurare i cicli di un frame intero. Prosegue in scene_done.
+; Un frame: registri ombra nel VIC (vblank), comandi, musica, scena, poi sprite e riserve. Il banco
+; di prova (paddws-c64 frames) lo chiama per misurare i cicli di un frame intero. Prosegue in
+; scene_done.
 .ifdef NTSC
 ; righe dall'interrupt oltre le quali il frame è partito in ritardo (tv_lateness, all'inizio del
 ; frame: senza ritardo parte alla riga dell'interrupt)
@@ -563,18 +564,20 @@ EARLY_LATE = 300 / TV_LCYC
 .endif
     jsr apply_shadows
     jsr read_input
+    ; la musica a un'ora fissa del raster, subito dopo i registri, in ogni scena: un passo per
+    ; frame, mai rimandato né perso (a fine frame, nei frame pesanti, slittava)
+    jsr frame_music
 .ifdef NTSC
     ; i lavori rimasti dal frame prima, solo se questo frame parte in orario: dopo uno sforamento
-    ; (il frame prima finito dopo l'interrupt, ammesso dopo un tick pesantissimo) un altro tick
-    ; pesante più il lavoro rimasto andrebbe oltre il ritardo ammesso; aspettano il frame dopo
+    ; (il frame prima finito dopo l'interrupt) un altro tick pesante più il lavoro rimasto
+    ; allungherebbe il ritardo; aspettano il frame dopo
     bit tv_late
     bmi :+
     jsr warp_early              ; NEXT: il salto del TELEPORT rimasto da disegnare
     jsr om_early                ; contro OMEGA: il nome della forma nuova
-:   jsr game_music
+:
 .else
     jsr warp_early              ; NEXT: il salto del TELEPORT rimasto da disegnare
-    jsr music_owed              ; il passo della musica rimandato dal frame prima
 .endif
     ; tabelle dei quadrati da rifare, fuori dalle scene in bitmap
     lda math_ready
@@ -604,39 +607,19 @@ skip:
     jsr run_scene
 .endproc                        ; (prosegue in scene_done)
 
-; Dopo ogni scena: sprite e riserve di NEXT dallo stato della partita e musica.
-; Segue frame senza salto.
-; (sull'NTSC SID_LATE vale fuori dalla partita, dove la canzone dell'easter egg letta dalla cartuccia
-; arriva a circa 3.660 cicli per passo: la musica della partita è all'inizio del frame, game_music)
-; sid_tick (o sid_more) più pesante in partita, anche con il tempo (circa 2.100 con i temi, 2.600
-; con le sezioni di OMEGA: sid) che cambia nel bullet time e con il filtro (paddws-c64 sid: i temi
-; fino a circa 2.260, al primo frame di HAMMER; fuori dalla partita il primo frame del titolo arriva
-; a circa 2.930)
+; Dopo ogni scena: sprite e riserve di NEXT dallo stato della partita. Segue frame senza salto.
+; Si rifanno sempre, anche dopo un tick pesantissimo: se il frame finisce dopo l'interrupt, quello
+; dopo parte subito e copia i registri nel VIC ancora nel bordo in alto (la prima riga visibile è
+; a circa 7.000 cicli dall'interrupt), poi recupera. Restano quelli del frame prima solo se
+; l'interrupt è già passato da più di KEEP_OVER righe (frame_flag: il tick da solo ha superato il
+; frame di oltre 1.600 cicli), o due volte.
+KEEP_SPRITES_COUNT = (TV_FRAME - 4300) / TV_LINE   ; conto alla rovescia: sprite e riserve (circa 4.000 cicli) entro il frame
+KEEP_OVER = 1600 / TV_LINE      ; righe dopo l'interrupt entro cui sprite e riserve si rifanno ancora
 .ifdef NTSC
-SID_TICK_MAX  = 3700
+.assert KEEP_OVER > TV_LINES - RASTER_LINE, error, "KEEP_OVER: sull'NTSC oltre la riga 262"
 .else
-SID_TICK_MAX  = 2450
+.assert KEEP_OVER > 6 .and KEEP_OVER < TV_LINES - RASTER_LINE, error, "KEEP_OVER: sul PAL tra le righe 256 e 311"
 .endif
-SID_LATE      = TV_BUDGET - SID_TICK_MAX
-SID_LATE_LINE = RASTER_LINE + SID_LATE / TV_LCYC - TV_LINES
-; righe oltre le quali restano gli sprite del frame prima: sprite e HUD costano fino a circa 3.800
-; cicli sul PAL (con il salto del TELEPORT, warp_fx), 4.000 sull'NTSC. Sull'NTSC dopo un tick pesante il frame può finire fino a 2.500
-; cicli dopo l'interrupt del frame dopo (quello dopo parte subito, ancora nel bordo, e recupera):
-; gli sprite si rifanno lo stesso, e restano quelli di prima solo oltre il budget meno 1.700
-; (KEEP_SPRITES_CYC; keep_sprites del banco di prova, rust/c64, deve restare uguale)
-.ifdef NTSC
-KEEP_SPRITES_CYC = 1700
-.else
-KEEP_SPRITES_CYC = 3900
-.endif
-KEEP_SPRITES_LINE = (TV_BUDGET - KEEP_SPRITES_CYC) / TV_LCYC
-.ifdef NTSC
-KEEP_SPRITES_COUNT = (TV_BUDGET - 3800) / TV_LCYC  ; conto alla rovescia (il primo frame prepara la partita): senza sforare
-.endif
-KEEP_SPRITES_OMEGA = (TV_BUDGET - KEEP_SPRITES_CYC - 500) / TV_LCYC ; lo stesso contro OMEGA, che dopo gli sprite ha
-                                ; om_tick (misurato in VICE: con la soglia di sempre un frame arrivava
-                                ; oltre il suo tempo)
-.assert SID_LATE_LINE >= 56 && SID_LATE_LINE < RASTER_LINE, error, "SID_LATE_LINE fuori dalle righe 56-249"
 .proc scene_done
     lda state
     cmp #ST_COUNT
@@ -644,124 +627,90 @@ KEEP_SPRITES_OMEGA = (TV_BUDGET - KEEP_SPRITES_CYC - 500) / TV_LCYC ; lo stesso 
     cmp #ST_OVER + 1
     bcs other
     cmp #ST_OVER                ; GAME OVER: sprite e riserve li tiene il suo codice (ov_scene),
-    beq music                   ; che sta dove ci sono le mosse speciali (sm_hud)
-    ; dopo un tick pesantissimo (frame già oltre circa 14.500 cicli: colpo con previsioni, capsula e
-    ; BULLET insieme) restano gli sprite del frame prima: il resto aspetta comunque (frame_after).
-    ; Sprite, riserve e controlli costano fino a circa 3.400 cicli: con la soglia più in alto un
-    ; frame arriverebbe oltre il suo tempo e i controlli dopo troverebbero il raster "all'inizio"
-    lda #KEEP_SPRITES_LINE
+    beq tail                    ; che sta dove ci sono le mosse speciali (sm_hud)
+    lda frame_flag
+    beq on_time
+    cmp #2                      ; l'interrupt è già passato: da poco?
+    bcs hud
+    lda $d011
+    bmi high
+    lda $d012
+    cmp #RASTER_LINE
+    bcs sprites                 ; righe 250-255
 .ifdef NTSC
-    ldx state
-    cpx #ST_COUNT
+    cmp #KEEP_OVER - (TV_LINES - RASTER_LINE)   ; righe 0-249: 13 e più dall'interrupt
+    bcc sprites
+    bcs hud                     ; (sempre)
+.else
+    bcc hud                     ; righe 0-249: 62 e più dall'interrupt (sempre)
+.endif
+high:
+.ifdef NTSC
+    bmi sprites                 ; righe 256-262: al più 12 dall'interrupt (sempre)
+.else
+    lda $d012                   ; righe 256-311: 6 e più dall'interrupt
+    cmp #KEEP_OVER - 6
+    bcc sprites
+    bcs hud                     ; (sempre)
+.endif
+on_time:
+    ; il primo frame del conto alla rovescia prepara la partita e ridisegna il campo: se è già
+    ; avanti, sprite e riserve dal frame dopo (sull'NTSC non ci starebbero)
+    lda state
+    cmp #ST_COUNT
     bne :+
     lda #KEEP_SPRITES_COUNT
+    jsr frame_after
+    bcs tail
 :
-.endif
-    ldx om_flash                ; contro OMEGA più presto, tranne nel frame della trasformazione
-    cpx #OM_FLASH               ; (la forma nuova nel frame del tick)
-    beq :+
-    ldx om_on
-    beq :+
-    lda #KEEP_SPRITES_OMEGA
-:   jsr frame_after
-    bcs :+
+sprites:
     jsr compute_sprites
-.ifndef NTSC
-:
-.endif
+hud:
     jsr next_hud
-.ifdef NTSC
-:
-.endif
     lda state                   ; OMEGA: lampo, musica e rete (omega.s), dopo gli sprite
     cmp #ST_PLAY
-    bne music
+    bne tail
     jsr om_tick
-music:
-.ifdef NTSC
-    jmp trail_end               ; (la musica all'inizio del frame: game_music)
-.else
-    ; frame già troppo avanti per il player (il tema di CHALLENGE con due note nuove costa fino
-    ; a circa 1.700 cicli): il passo si suona all'inizio del frame dopo (music_owed), con le
-    ; stesse scritture. Righe SID_LATE_LINE-249: il frame è oltre SID_LATE cicli
-    jsr sid_time
-    bcc owed
-    jsr match_tempo             ; in partita il tempo della musica
-    jsr sid_tick
-    jsr border_game             ; (anche lui solo se il frame ha tempo)
-    ; match point: il passo della canzone in più (uno ogni 4 frame), se c'è ancora tempo
-    lda sid_extra
-    beq late
-    jsr sid_time
-    bcc late
-    jsr sid_more
-late:
+tail:
     jmp trail_end               ; NEXT: la coda della palla, se il frame ha ancora tempo
-owed:
-    lda #1
-    sta sid_owed
-    bne late                    ; (sempre)
-.endif
 other:
-    lda #0                      ; fuori dalla partita il tempo di sempre e il bordo dello sfondo
+    lda #0                      ; fuori dalla partita il bordo dello sfondo
     sta sh_brd
-    jsr sid_tempo
     lda state
     cmp #ST_PICK                ; scelta della racchetta: anteprime
     bne :+
-    jsr pick_preview
-:
-.ifdef NTSC
-    ; NTSC: anche fuori dalla partita la musica aspetta il frame dopo se questo è già oltre SID_LATE
-    ; (pulizie dello schermo, copie: nel frame NTSC con la musica non ci stanno)
-    jsr sid_time
-    bcs :+
-    rts
-:
-.endif
-    jmp sid_tick
+    jmp pick_preview
+:   rts
 .endproc
 
-.ifndef NTSC
-; PAL: il passo della musica che il frame prima ha rimandato (sid_owed, scene_done), all'inizio di
-; questo frame, dove c'è sempre il tempo. Prima il passo rimandato si perdeva: nei frame pesanti,
-; come le raffiche del BLASTER, la canzone rallentava (sul C64 vero il VIC ruba circa 2.000 cicli
-; in più del banco di prova, e i frame oltre SID_LATE sono molti di più).
-.proc music_owed
-    lda sid_owed
-    beq done
-    lda #0
-    sta sid_owed
-    jsr match_tempo
-    jsr sid_tick
-    jmp border_game
-done:
-    rts
-.endproc
-.segment "BSS"
-sid_owed: .res 1
-.segment "CODE"
-.endif
-
-.ifdef NTSC
-; NTSC: la musica del conto alla rovescia, della partita e del GAME OVER all'inizio del frame (il
-; tempo della canzone, un passo, il bordo, il passo in più del match point), sullo stato del tick
-; prima: dopo sprite e HUD il frame NTSC era spesso oltre SID_LATE, e ogni passo rimandato era un
-; passo perso (la canzone rallentava). Qui c'è sempre il tempo.
-.proc game_music
-    lda state
+; La musica del frame, chiamata da frame subito dopo i registri del VIC e i comandi: prima gli
+; effetti sonori del tick prima (fx_pend; subito dopo sid_tick fa il loro secondo passo), poi nel conto
+; alla rovescia, in partita e nel GAME OVER il tempo della canzone (sullo stato del tick prima),
+; un passo, il bordo e il passo in più del match point; nelle altre scene il tempo di sempre e un
+; passo. sid_tick più pesante: circa 2.100 cicli con i temi, 2.600 con le sezioni di OMEGA, 2.930
+; al primo frame del titolo, 3.660 con la canzone dell'easter egg letta dalla cartuccia.
+.proc frame_music
+    lda fx_pend                 ; effetti del tick prima, insieme all'immagine che li mostra
+    beq :+
+    ldx #0
+    stx fx_pend
+    jsr sid_fx
+:   lda state
     cmp #ST_COUNT
-    bcc done
+    bcc other
     cmp #ST_OVER + 1
-    bcs done
+    bcs other
     jsr match_tempo
     jsr sid_tick
     jsr border_game
     jmp sid_more
-done:
-    rts
+other:
+    lda #0
+    jsr sid_tempo
+    jmp sid_tick
 .endproc
 
+.ifdef NTSC
 ; NTSC: un frame su sei senza il passo del player del SID (tv_skip con il bit 7), così canzoni ed
 ; effetti restano a 50 passi al secondo come sul PAL.
 .segment "BSS"
@@ -815,35 +764,6 @@ late:
     rts
 .endproc
 .endif
-
-; C = 0 se il frame è già oltre SID_LATE cicli (righe SID_LATE_LINE-249) o un giro dopo (un nuovo
-; interrupt in frame_flag, come in frame_after: sull'NTSC a qualsiasi riga, sul PAL alle righe
-; 250-311), 1 se c'è tempo.
-.proc sid_time
-    lda $d011
-    bmi early
-    lda $d012
-    cmp #RASTER_LINE
-    bcs early
-    sec
-    sbc #SID_LATE_LINE
-    cmp #RASTER_LINE - SID_LATE_LINE
-.ifdef NTSC
-    bcc late                    ; (frame_flag dopo il raster, come in frame_after)
-    lda frame_flag
-    bne late
-    sec
-.endif
-    rts
-early:
-    lda frame_flag
-    bne late
-    sec
-    rts
-late:
-    clc
-    rts
-.endproc
 
 ; Tempo della musica in partita, come Game::tempo del gioco Rust: match point (bit 0) in due, con
 ; uno dei giocatori a un punto dalla vittoria, fino alla fine della partita; bullet time (bit 7)
@@ -1765,6 +1685,12 @@ not_volume:
     jsr ch_join_match           ; CHALLENGE: può entrare un nuovo sfidante
     bcc :+
     rts
+:   lda m_next                  ; NEXT: i glifi dei fasci del BLASTER a metà conto (un frame
+    beq :+                      ; leggero; il primo prepara la partita)
+    lda timer
+    cmp #COUNT_FRAMES / 2
+    bne :+
+    jsr shot_glyphs
 :   lda timer
     jsr VOICE_COUNT             ; RTS senza file e fuori da CHALLENGE (start_game)
     ldx #3
@@ -1810,16 +1736,8 @@ done:
     rts
 .endproc
 
-; Lampo bianco del punto: per qualche frame bordo e sfondo bianchi, senza sprite.
-.proc flash_frame
-    lda #COL_BLACK
-    ldx flash
-    beq :+
-    dec flash
-    lda #COL_WHITE
-:   sta sh_bg
-    rts
-.endproc
+; I due tasti della partita, nella stessa riga della tastiera: bit 7 e 6 (bit: N e V).
+.assert KEY_STOP = 7 * 8 + 7 .and KEY_Q = 7 * 8 + 6, error, "play_scene: RUN/STOP e Q nei bit 7 e 6 della riga 7"
 
 .proc play_scene
     lda over_next               ; ultimo punto nel frame prima (punteggio già disegnato)
@@ -1827,23 +1745,29 @@ done:
     lda #0
     sta over_next
     jmp enter_over
-:   lda #KEY_STOP
-    jsr key_pressed
-    bcc :+
+:   bit keys_edge + 7           ; RUN/STOP appena premuto (key_pressed, senza chiamarla)
+    bpl :+
     lda paused
     eor #1
     sta paused
-:   lda #KEY_Q
-    jsr key_pressed
-    bcc :+
+:   bit keys_edge + 7           ; Q
+    bvc :+
     jmp enter_menu
 :   lda paused
     beq :+
     rts
-:   jsr ch_join_match           ; CHALLENGE: può entrare un nuovo sfidante
+:   lda cg_active               ; CHALLENGE: nella scala può entrare un nuovo sfidante
+    cmp #CG_LADDER
+    bne :+
+    jsr ch_join_match
     bcc :+
     rts
-:   jsr flash_frame
+:   lda #COL_BLACK              ; lampo bianco del punto: per qualche frame bordo e sfondo
+    ldx flash                   ; bianchi, senza sprite
+    beq :+
+    dec flash
+    lda #COL_WHITE
+:   sta sh_bg
     jsr build_input
     ldx cpu_side
     bmi :+
@@ -1861,9 +1785,16 @@ done:
     jsr match_step
     jsr dash_after
     jsr next_fx_scene           ; NEXT: scritta del bonus attivato, segni di STEER
-    jsr ch_tick                 ; CHALLENGE: punti arcade
+    lda cg_active               ; CHALLENGE, nella scala: punti arcade
+    cmp #CG_LADDER
+    bne :+
+    jsr ch_tick
     jsr ch_hud
-    ; effetto sonoro, con il frame già avanti al prossimo (avviarlo costa). NEXT e tipi di
+:
+    ; effetto sonoro: si segna in fx_pend e parte all'inizio del frame dopo (frame_music), a un'ora
+    ; fissa del raster e insieme all'immagine che mostra il colpo; avviarlo costa fino a circa
+    ; 1.100 cicli, e questo frame è il più pesante (prima partiva qui, o con il frame già avanti
+    ; a metà del frame dopo: quasi sempre sull'NTSC). NEXT e tipi di
     ; racchetta come nel MiSTer: capsula e barriera del GUARDIAN = muro, sparo del BLASTER =
     ; laser (bit 7), bonus attivato e TELEPORT = boost, SUPER = punto (senza questi eventi, la
     ; via corta)
@@ -1898,15 +1829,8 @@ done:
     and #EV_WALL | EV_HIT | EV_BOOST | EV_SCORE   ; il bit 4 del player è il gettone
     ora m_t
     ora fx_pend
-    beq :+
-    sta fx_pend
-    jsr frame_late_small
-    bcs :+
-    lda fx_pend
-    ldx #0
-    stx fx_pend
-    jsr sid_fx
-:    lda events
+    sta fx_pend                 ; (parte all'inizio del frame dopo: frame_music)
+    lda events
     and #EV_SCORE
     beq check
     lda #FLASH_FRAMES
@@ -1917,6 +1841,7 @@ done:
     dec lives
 :   cmp #2
     bne all
+    jsr shots_off_hud           ; (un fascio sopra il punteggio lo rimetterebbe com'era)
     lda scorer                  ; in due solo il punteggio di chi ha segnato (scorer è già il lato
     eor #4                      ; della battuta, chi ha subito il punto)
     tay
@@ -1933,27 +1858,19 @@ check:
     beq over
     rts
 two:
-    ldx #0
-    jsr reached
+    lda score+1                 ; arrivato ai punti per vincere, il sinistro o il destro
+    bne over
+    lda score
+    cmp win_points
     bcs over
-    ldx #4
-    jsr reached
+    lda score+5
+    bne over
+    lda score+4
+    cmp win_points
     bcs over
     rts
 over:
     inc over_next
-    rts
-.endproc
-
-; C = 1 se il punteggio X (0 o 4) è arrivato ai punti per vincere.
-.proc reached
-    lda score+1,x
-    bne yes
-    lda score,x
-    cmp win_points
-    rts
-yes:
-    sec
     rts
 .endproc
 

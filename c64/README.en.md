@@ -113,7 +113,16 @@ cargo run --release -p paddws-c64 -- frames           # cycles of every frame (a
 With `--ntsc` before the command (`paddws-c64 --ntsc frames`) the steps apply to the NTSC
 cartridge, built first with `-Ntsc`. These are the same steps as the `C64` GitHub Action. Also: `ending` plays only the ladder
 ending, `profile` gives cycles per routine, `--build DIR` uses another build folder, and
-`game --ticks N` changes the length of the matches (5 minutes by default).
+`game --ticks N` changes the length of the matches (5 minutes by default). To compare the test
+bench cycles with VICE: `tools\c64_vice_frames.py` captures the frames of a test build and
+`paddws-c64 --prg NAME vice FILE` runs them again; with `--frametest` the same tool counts in
+VICE the frames that go over their time in a `FRAMETEST` build.
+
+Before touching drawing or scene code, record a golden test, which `game` does not cover:
+`PADDWS_C64_GOLDEN=record:FILE paddws-c64 frames` saves for every frame a fingerprint of what is
+seen and heard (screen, colours, sprites, SID) with the raster frozen, and after the change
+`PADDWS_C64_GOLDEN=check:FILE` reports the first frame that differs. With `PADDWS_C64_PICK_RAW=1`
+almost every match is BLASTER (shots on screen).
 
 ## Sources
 
@@ -144,15 +153,24 @@ ending, `profile` gives cycles per routine, `--build DIR` uses another build fol
   code usually goes into the cartridge and is copied to RAM when needed (like the special moves,
   the high score table and the ending). Free space is in `c64\build\paddws.map`.
 - **Shared temporaries.** `m_t` and `ptr` do not keep a value across a `jsr`.
-- **18,000 cycles per frame** (NTSC 15,500; in a match, after a very heavy tick, a frame may end
-  up to 2,500 cycles after the interrupt and the next frame catches up). `paddws-c64 frames` fails
-  if a frame goes over. Its raster model (58
-  cycles per line) is approximate: with frames close to the limit, check in VICE too. Long work is
-  split over several frames, or waits for the next frame by looking at the raster.
+- **Frame time.** A PAL frame lasts 19,656 cycles, an NTSC one 17,095. In a match the goal is to
+  stay within 90% (17,700 and 15,400); outside a match the whole frame is enough. `paddws-c64
+  frames` counts real cycles from the line 250 interrupt, including those the VIC-II steals for
+  character rows and sprites (a model calibrated against VICE), and fails if a frame outside a
+  match goes over its time or if too many match frames go over 90%. Music steps and sound effects
+  start at the beginning of the frame, at a fixed raster time; sprites and reserves are redone
+  every frame. Long work is split over several frames, or waits for the next frame by looking at
+  the raster. On PAL no match frame goes over 90%; on NTSC a few remain (about three in a
+  thousand in the worst case: BLASTER bursts with the TELEPORT jump in bullet time), and if one
+  goes over the frame the next one starts at once and catches up.
 - **Charset and sprites are nearly used up.** Only a few of the 256 characters are free (a new
   character replaces one where the other is not needed, and `tools/gen_c64_assets.py` checks it),
   and all 8 sprites are taken. The letters are not in the cartridge: at boot they are copied from
-  the C64 character ROM, and the big ones are built from there too.
+  the C64 character ROM, and the big ones are built from there too. In NEXT matches characters
+  64-127 (the big letters and the blanks after them) are used by the BLASTER lasers, and go back
+  when the match ends: a new screen that uses them has to rebuild them. Over scores, bars,
+  reserves and the centre line the laser does not cover anything: the program merges its stroke
+  on the fly with the character underneath, which keeps its colour.
 - **BASIC and KERNAL are off** (`$01 = $35`): data and variables live under their ROMs, and the RAM
   under I/O is read and written with `$01 = $34`.
 - **Border and background** (`$D020`, `$D021`) are written only when the colour changes: every

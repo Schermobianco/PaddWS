@@ -13,21 +13,24 @@ use std::process::ExitCode;
 
 use paddws_c64::params_inc::{c64_params, params_inc};
 use paddws_c64::cpu6502::{EF_HALF, EF_OFF, EasyFlash};
-use paddws_c64::{Machine, c64_dir, default_build_dir, frame_budget, ntsc, set_ntsc};
+use paddws_c64::{IRQ_LEAD, Machine, c64_dir, default_build_dir, frame_budget, frame_cycles, ntsc, set_ntsc};
 use paddws_core::fixed::{self, mul, mul_recip};
 use paddws_core::challenge::{OMEGA, OMEGA_LEVEL, RUNGS, Score, TABLE_SIZE, Table};
 use paddws_core::{Bonus, Cpu, Input, Match, PaddleKind, PlayerInput, Rng, Side, Special};
 
 const USAGE: &str =
-    "Uso: paddws-c64 [--ntsc] [--build DIR] math [PROVE] | game [--ticks N] | sid | ui | frames | ending | profile | paddles | params [--check]";
+    "Uso: paddws-c64 [--ntsc] [--build DIR] [--prg NOME] math [PROVE] | game [--ticks N] | sid | ui | frames | ending | profile | paddles | params [--check] | vice FILE";
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     let mut build = None;
+    let mut prg = String::from("paddws");
     let mut command = Vec::new();
     while let Some(a) = args.next() {
         match a.as_str() {
             "--build" => build = Some(PathBuf::from(args.next().unwrap_or_default())),
+            // un'altra build della stessa cartella (c64/build.ps1 -Name), per `vice`
+            "--prg" => prg = args.next().unwrap_or_default(),
             // la versione NTSC: parametri a 60 Hz, c64/build/ntsc, budget e raster NTSC
             "--ntsc" => set_ntsc(true),
             "-h" | "--help" => {
@@ -53,6 +56,17 @@ fn main() -> ExitCode {
         Some("ending") => with_machine(&build, ending_alone),
         Some("profile") => with_machine(&build, profile),
         Some("paddles") => with_machine(&build, paddles),
+        Some("vice") => match (Machine::load_named(&build, &prg), command.get(1)) {
+            (Ok(mut m), Some(file)) => vice(&mut m, std::path::Path::new(file)),
+            (Err(e), _) => {
+                eprintln!("{e}");
+                false
+            }
+            _ => {
+                eprintln!("{USAGE}");
+                false
+            }
+        },
         Some("game") => {
             let ticks = command
                 .iter()
@@ -78,6 +92,119 @@ fn with_machine(build: &std::path::Path, f: impl FnOnce(&mut Machine) -> bool) -
             false
         }
     }
+}
+
+/// Taratura del modello del VIC-II (`cpu6502::Vic`) contro VICE: per ogni frame catturato da
+/// `tools/c64_vice_frames.py` (stato all'ingresso di `frame`, posizione del raster all'ingresso e
+/// all'uscita) riesegue il frame dallo stesso stato e confronta i cicli. PADDWS_C64_VICE_SHIFT=n
+/// sposta di n cicli la posizione del raster (per cercare l'allineamento), PADDWS_C64_VICE_LIST
+/// elenca i frame.
+fn vice(m: &mut Machine, file: &std::path::Path) -> bool {
+    const HEAD: usize = 7;
+    const STATE: usize = 0x10000 + 0x1000;
+    const RECORD: usize = 16 + 2 * STATE;
+    let data = match std::fs::read(file) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("{}: {e}", file.display());
+            return false;
+        }
+    };
+    let frame = m.addr("frame");
+    if data.len() < HEAD || &data[..4] != b"PWSF" || (data[4] != 0) != ntsc() || u16::from_le_bytes([data[5], data[6]]) != frame {
+        eprintln!("{}: non è una cattura di questa build (PAL/NTSC, indirizzo di frame)", file.display());
+        return false;
+    }
+    let shift: i64 = std::env::var("PADDWS_C64_VICE_SHIFT").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+    let verbose = std::env::var_os("PADDWS_C64_VICE_LIST").is_some();
+    let (lines, cpl) = (paddws_c64::raster_lines(), paddws_c64::line_cycles());
+    let pos = |lin: u64, cyc: u64| ((lin + lines - 250) % lines) * cpl + cyc;
+    let word = |r: &[u8], i: usize| u64::from(u16::from_le_bytes([r[2 * i], r[2 * i + 1]]));
+    let ef_page: Vec<u8> = m.cpu.mem[0xDF00..0xE000].to_vec();
+    m.cpu.frame_flag_at = Some(m.addr("frame_flag"));
+    // differenze (banco - VICE) dei frame rieseguiti uguali, e i frame andati diversi
+    let mut diffs: Vec<(i64, u64, usize)> = Vec::new();
+    let (mut split, mut irqs) = (0u32, 0u32);
+    for (n, r) in data[HEAD..].as_chunks::<RECORD>().0.iter().enumerate() {
+        let r = r.as_slice();
+        let (p0, p1, flags) = (pos(word(r, 0), word(r, 1)), pos(word(r, 2), word(r, 3)), word(r, 4));
+        // interrupt passato durante il frame: nel banco di prova non si esegue (39 cicli)
+        if flags > 0 {
+            irqs += 1;
+            continue;
+        }
+        if p1 <= p0 {
+            continue;
+        }
+        let want = p1 - p0;
+        let (cpu0, rest) = r[16..].split_at(0x10000);
+        let (ram0, rest) = rest.split_at(0x1000);
+        let (cpu1, _) = rest.split_at(0x10000);
+        m.cpu.mem.copy_from_slice(cpu0);
+        m.cpu.under_io.copy_from_slice(ram0);
+        m.cpu.mem[0xDF00..0xE000].copy_from_slice(&ef_page);
+        (m.cpu.a, m.cpu.x, m.cpu.y, m.cpu.sp, m.cpu.p) = (r[10], r[11], r[12], r[13], r[14]);
+        m.cpu.cycles += 1_000_000;
+        // call() conta i 6 cicli del JSR prima della prima istruzione
+        m.cpu.frame_start = Some((m.cpu.cycles as i64 + 6 - p0 as i64 - shift) as u64);
+        let got = match m.cpu.call(frame, 2_000_000) {
+            Ok(c) => c - 6,
+            Err(e) => {
+                println!("  frame {n}: {e}");
+                continue;
+            }
+        };
+        m.cpu.frame_start = None;
+        // lo stesso frame? la memoria all'uscita deve essere quella di VICE (non lo stack e la
+        // pagina zero, dove ci sono frame_flag e frame_count, e non i registri)
+        // (nemmeno i paddle letti dal SID, pot_raw, e i colori salvati sotto i colpi del BLASTER,
+        // sv_k: letti dalla RAM del colore, che sul C64 ha solo il nibble basso)
+        let pots = m.addr("pot_raw") as usize;
+        let saved = m.try_addr("sv_k").zip(m.try_addr("sd_y")).map_or(0..0, |(a, b)| a as usize..b as usize);
+        let wrong: Vec<usize> = (0x200..0xD000)
+            .chain(0xE000..0x10000)
+            .filter(|&a| m.cpu.mem[a] != cpu1[a] && a != pots && a != pots + 1 && !saved.contains(&a))
+            .collect();
+        if !wrong.is_empty() {
+            split += 1;
+            if verbose {
+                let first: Vec<String> = wrong.iter().take(6).map(|a| format!("${a:04X}")).collect();
+                println!(
+                    "  frame {n}: {} byte diversi da VICE all'uscita ({}; VICE {want} cicli, banco {got})",
+                    wrong.len(),
+                    first.join(" ")
+                );
+            }
+            continue;
+        }
+        diffs.push((got as i64 - want as i64, want, n));
+    }
+    if diffs.is_empty() {
+        println!("FAIL: nessun frame confrontabile ({split} diversi, {irqs} con un interrupt dentro)");
+        return false;
+    }
+    let sum: i64 = diffs.iter().map(|d| d.0).sum();
+    let worst = diffs.iter().map(|d| d.0.abs()).max().unwrap_or(0);
+    let heavy = diffs.iter().map(|d| d.1).max().unwrap_or(0);
+    println!(
+        "  {} frame uguali a VICE ({split} andati diversi, {irqs} con un interrupt dentro): cicli di VICE fino a {heavy}, scarto medio {:.1}, al più {worst}",
+        diffs.len(),
+        sum as f64 / diffs.len() as f64
+    );
+    if verbose {
+        diffs.sort_by_key(|d| std::cmp::Reverse(d.1));
+        for (d, want, n) in diffs.iter().take(12) {
+            println!("    frame {n}: VICE {want} cicli, banco {d:+}");
+        }
+        let off = diffs.iter().filter(|d| d.0 != 0).count();
+        println!("    con uno scarto: {off}");
+        for (d, want, n) in diffs.iter().filter(|d| d.0 != 0).take(30) {
+            println!("    frame {n}: VICE {want} cicli, banco {d:+}");
+        }
+    }
+    let ok = worst < 100;
+    println!("{}: scarto dei cicli da VICE {}", if ok { "PASS" } else { "FAIL" }, if ok { "sotto 100" } else { "oltre 100" });
+    ok
 }
 
 /// Scene e menu: ogni routine di avvio, attract, menu e partita deve tornare entro un
@@ -653,10 +780,6 @@ fn supers_ui(m: &mut Machine) -> Result<String, String> {
     ))
 }
 
-/// Cicli di un frame: PAL 312 righe da 63 cicli, NTSC 263 da 65.
-fn frame_cycles() -> u64 {
-    if ntsc() { 263 * 65 } else { 312 * 63 }
-}
 /// Voci di CHALLENGE (c64/src/voice.inc): dove si carica il file voce (VOICE_TICK, poi
 /// VOICE_STOP), dove comincia la parte che resta del file del primo livello, il salto del conto
 /// alla rovescia e i frame del conto.
@@ -1546,7 +1669,7 @@ fn training_level(m: &mut Machine, level: usize) -> Result<String, String> {
         return Err(format!("GAME OVER dell'allenamento con la canzone {}", m.read_u8("sid_song_n", 0)));
     }
     worst = worst.max(frames_until(m, 600, "dopo il GAME OVER", |_| {}, |m| m.read_u8("state", 0) != ST_OVER)?);
-    if worst > FRAME_BUDGET() {
+    if worst > frame_cycles() {
         return Err(format!("un frame di {worst} cicli, oltre il budget"));
     }
     let after: Vec<u8> = (0..80).map(|i| m.read_u8("ch_table", i)).collect();
@@ -1978,6 +2101,642 @@ fn program_charset(m: &Machine) -> Vec<u8> {
     cs
 }
 
+/// Caratteri dei fasci del BLASTER (gen/assets.inc): quelli presi in prestito in NEXT (da SHOT_P0, i
+/// fusi, o da SHOT_B0, fino alla pagina dei nomi a 128) e i sette del set (SHOT_OWN). Senza le
+/// definizioni (sorgenti di prima della 4.6.3) quelli di allora, 233-239.
+fn shot_ranges() -> (std::ops::Range<usize>, std::ops::Range<usize>) {
+    static V: std::sync::OnceLock<(std::ops::Range<usize>, std::ops::Range<usize>)> = std::sync::OnceLock::new();
+    V.get_or_init(|| {
+        let inc = std::fs::read_to_string(c64_dir().join("gen/assets.inc")).unwrap_or_default();
+        let own = inc_const(&inc, "SHOT_OWN").unwrap_or(233);
+        let taken = match (inc_const(&inc, "SHOT_B0"), inc_const(&inc, "SHOT_BN")) {
+            (Some(b0), Some(n)) => inc_const(&inc, "SHOT_P0").unwrap_or(b0).min(b0)..b0 + n,
+            _ => 128..128,
+        };
+        (taken, own..own + 7)
+    })
+    .clone()
+}
+
+/// Caratteri fusi dei fasci (bd_fuse di pick.s): SHOT_PN da SHOT_P0, uno per cella di fascio.
+fn fused_range() -> std::ops::Range<usize> {
+    let inc = std::fs::read_to_string(c64_dir().join("gen/assets.inc")).unwrap_or_default();
+    match (inc_const(&inc, "SHOT_P0"), inc_const(&inc, "SHOT_PN")) {
+        (Some(p0), Some(n)) => p0..p0 + n,
+        _ => 0..0,
+    }
+}
+
+/// Le righe 0-3 sono tutte disegnate (riserve, barre) e nessuna voce parla (gli NMI del player
+/// durante il ridisegno andrebbero persi): `hud_redraw` dà quello che c'è a schermo.
+fn hud_drawn(m: &Machine) -> bool {
+    let voice = m.cpu.cia2.running || m.cpu.read(0xFFFB) & 0x80 != 0;
+    !voice
+        && (0..6).all(|i| m.read_u8("hud_res", i) != 0xFF)
+        && (0..2).all(|i| m.read_u8("hud_sel", i) < 3)
+        && (m.read_u8("sm_on", 0) == 0 || (m.read_u8("sm_shown", 0) != 0 && m.read_u8("sm_shown", 4) != 0))
+}
+
+/// Celle delle righe 0-3 che `hud_redraw` non rifà: il muro del GUARDIAN (righe 3-24,
+/// draw_barrier) e contro OMEGA la sua rete (om_net).
+fn hud_skip(omega: bool, row: usize, col: usize) -> bool {
+    (row == 3 && matches!(col, 0 | 1 | 38 | 39)) || (omega && matches!(col, 19 | 20))
+}
+
+/// COL_GREEN di video.s (verde chiaro): il colore dei fasci del BLASTER.
+const COL_LGREEN: u8 = 13;
+
+/// Il VIC mostra lo schermo di testo hires di $C000 con i caratteri di $C800 (mode_d011 e
+/// mode_d018 di video.s), acceso.
+fn text_screen(m: &Machine) -> bool {
+    let mem = &m.cpu.mem;
+    mem[0xD011] & 0x70 == 0x10 && mem[0xD018] == 0x02 && mem[0xD016] & 0x10 == 0
+}
+
+/// Pixel accesi nel colore dei fasci (COL_GREEN, che in partita hanno solo loro) dello schermo di
+/// testo a $C000, dai glifi del set a $C800 e dalla RAM del colore: 320 x 200, riga per riga. None
+/// se il VIC non mostra quel testo hires (bitmap, multicolore, schermo spento).
+fn green_pixels(m: &Machine) -> Option<Vec<bool>> {
+    if !text_screen(m) {
+        return None;
+    }
+    let mem = &m.cpu.mem;
+    let mut px = vec![false; 320 * 200];
+    for cell in 0..1000 {
+        if mem[0xD800 + cell] & 15 != COL_LGREEN {
+            continue;
+        }
+        let c = usize::from(mem[0xC000 + cell]);
+        let (row, col) = (cell / 40, cell % 40);
+        for r in 0..8 {
+            let g = mem[CHARSET + 8 * c + r];
+            for b in 0..8 {
+                if g & 0x80 >> b != 0 {
+                    px[(8 * row + r) * 320 + 8 * col + b] = true;
+                }
+            }
+        }
+    }
+    Some(px)
+}
+
+/// Le righe 0-3 come le darebbe un ridisegno completo con lo stato a schermo (riserve hud_res e
+/// hud_sel, barre sm_shown, punteggi, mezzeria e colori del bullet time bl_on, segni di STEER
+/// st_drawn): sulla stessa macchina, con la memoria rimessa com'era dopo. Le celle `skip` restano
+/// quelle di prima. Per cella il glifo e il colore.
+fn hud_redraw(m: &mut Machine, skip: &dyn Fn(usize, usize) -> bool) -> Vec<([u8; 8], u8)> {
+    let (mem, under_io) = (m.cpu.mem.clone(), m.cpu.under_io.clone());
+    let regs = (m.cpu.a, m.cpu.x, m.cpu.y, m.cpu.sp, m.cpu.pc, m.cpu.p);
+    let (cycles, nmis, ef_cycles) = (m.cpu.cycles, m.cpu.nmis, m.cpu.ef_cycles);
+    let (writes, write_cycles) = (m.cpu.writes.len(), m.cpu.write_cycles.len());
+    let marks = (m.cpu.mark_at, m.cpu.mark, m.cpu.mark_fx_at, m.cpu.mark_fx);
+    let (vic, cia2, frame_start) = (m.cpu.vic.clone(), m.cpu.cia2.clone(), m.cpu.frame_start);
+    m.cpu.mark_at = None;
+    m.cpu.mark_fx_at = None;
+    // il frame appena cominciato: frame_late e simili dicono che c'è tempo
+    m.cpu.frame_start = None;
+    m.cpu.mem[0xD012] = 250;
+    m.cpu.mem[0xD011] &= 0x7F;
+    m.write_u8("frame_flag", 0, 0);
+    for row in 0..4 {
+        for col in 0..40 {
+            if !skip(row, col) {
+                m.cpu.mem[0xC000 + 40 * row + col] = 0;
+            }
+        }
+    }
+    if !skip(0, 19) {
+        for row in 0..4u8 {
+            m.write_u8("v_row", 0, row);
+            m.call("center_line_row");
+        }
+    }
+    m.call("draw_scores");
+    for p in 0..2u16 {
+        for i in 0..3u16 {
+            m.write_u8("pk_p", 0, p as u8);
+            m.write_u8("pk_i", 0, i as u8);
+            m.write_u8("m_t", 0, m.read_u8("hud_res", 3 * p + i));
+            m.call("hud_slot");
+        }
+    }
+    if m.read_u8("sm_on", 0) != 0 {
+        for x in [0u16, 4] {
+            let shown = m.read_u8("sm_shown", x);
+            m.write_u8("sm_meter", x, shown.wrapping_sub(1));
+            m.write_u8("sm_shown", x, 0);
+            m.cpu.x = x as u8;
+            m.call("bar");
+        }
+    }
+    if m.read_u8("st_drawn", 0) != 0 {
+        m.cpu.a = 1;
+        m.call("steer_marks");
+    }
+    m.cpu.x = m.read_u8("bl_on", 0);
+    m.call("bullet_look");
+    let out = (0..160)
+        .map(|cell| {
+            let c = usize::from(m.cpu.mem[0xC000 + cell]);
+            (m.cpu.mem[CHARSET + 8 * c..CHARSET + 8 * c + 8].try_into().unwrap(), m.cpu.mem[0xD800 + cell] & 15)
+        })
+        .collect();
+    (m.cpu.mem, m.cpu.under_io) = (mem, under_io);
+    (m.cpu.a, m.cpu.x, m.cpu.y, m.cpu.sp, m.cpu.pc, m.cpu.p) = regs;
+    (m.cpu.cycles, m.cpu.nmis, m.cpu.ef_cycles) = (cycles, nmis, ef_cycles);
+    m.cpu.writes.truncate(writes);
+    m.cpu.write_cycles.truncate(write_cycles);
+    (m.cpu.mark_at, m.cpu.mark, m.cpu.mark_fx_at, m.cpu.mark_fx) = marks;
+    (m.cpu.vic, m.cpu.cia2, m.cpu.frame_start) = (vic, cia2, frame_start);
+    out
+}
+
+/// Colpi del BLASTER a schermo (next_shots di pick.s), dopo ogni frame di `frames`:
+/// - per ogni colpo (lo stato prima del frame, quello che next_shots disegna) i pixel accesi dei due
+///   fasci, presi dallo schermo, dalla RAM del colore e dal set in memoria (`green_pixels`, non dai
+///   codici), stanno in due righe di fila entro un pixel dalla prima riga della bocca del suo
+///   cannone (le righe dell'immagine del BLASTER, PAD_IMG_BLASTER, con il colore del tipo nella
+///   coppia di pixel più avanti, nello sprite espanso che pad_sprite mette dalla riga
+///   floor(P_HEIGHT - 1/2 - y - h/2) + 1) e coprono i 7 pixel da int(x) - 3 a passi di 2 (il pixel
+///   pari prima), niente di più accanto; salvo i frame senza next_shots (NTSC, tv_late), quelli in
+///   cui chi ridisegna sotto ha appena tolto i fasci (sv_n a 0: allora niente fasci a schermo), i
+///   fasci vicini a un altro e quelli al bordo dello schermo;
+/// - nelle righe 0-3, dove sotto il fascio c'è qualcosa, la cella ha un carattere fuso (bd_fuse):
+///   il suo, con il glifo di quello di sotto (sv_c) più il tratto e il colore di sotto (sv_k); quello
+///   di sotto è quello che darebbe un ridisegno completo (`hud_redraw`); nessun carattere fuso
+///   altrove;
+/// - senza colpi nessun pixel dei fasci e nessun carattere fuso;
+/// - fuori dalla partita NEXT nessun carattere preso in prestito (SHOT_B0) a schermo con il glifo di
+///   un fascio;
+/// - senza fasci a schermo le righe 0-3 come un ridisegno completo (`hud_redraw`): un fascio non ci
+///   ha rimesso un contenuto vecchio. Ogni 8 frame, e in ogni frame per 100 dopo un fascio lì.
+#[derive(Default)]
+struct LaserCheck {
+    /// build con i fasci a quattro altezze (shot_glyphs)
+    on: bool,
+    /// righe delle bocche nell'immagine, metà altezza del BLASTER e P_HEIGHT (Q16.16)
+    muzzle: [i32; 2],
+    half: i64,
+    height: i64,
+    /// caratteri presi in prestito e i 28 glifi dei fasci; i caratteri fusi
+    taken: std::ops::Range<usize>,
+    glyphs: Vec<[u8; 8]>,
+    pool: std::ops::Range<usize>,
+    /// celle fuse verificate, e quelle con il sotto confrontato con il ridisegno
+    fused: u32,
+    fused_redraw: u32,
+    /// celle fuse fuori dalle righe 0-3 (la rete)
+    fused_field: u32,
+    /// colpi verificati (almeno un fascio), fasci verificati; quelli nelle righe 0-3
+    shots: u32,
+    beams: u32,
+    hud_shots: u32,
+    hud_beams: u32,
+    /// fasci per scarto dalla riga della bocca (-1, 0, +1 pixel)
+    dev: [u32; 3],
+    /// frame con colpi non verificati: next_shots rimandato (tv_late), fasci tolti per ridisegnare
+    late: u32,
+    erased: u32,
+    /// fasci non verificati: vicini a un altro, al bordo dello schermo
+    near: u32,
+    edge: u32,
+    /// frame di partita NEXT senza colpi (senza fasci a schermo)
+    empty: u32,
+    /// righe 0-3 confrontate con il ridisegno: frame, e frame che restano da guardare tutti
+    hud_frames: u32,
+    hud_recent: u32,
+    /// celle con un carattere preso in prestito fuori dalla partita NEXT (con un altro glifo)
+    shown_out: u32,
+}
+
+impl LaserCheck {
+    fn new(m: &Machine) -> Result<Self, String> {
+        if m.try_addr("shot_glyphs").is_none() {
+            return Ok(Self::default());
+        }
+        let params = std::fs::read_to_string(c64_dir().join(if ntsc() { "gen/ntsc/params.inc" } else { "gen/params.inc" }))
+            .unwrap_or_default();
+        let hex = |v: &str| i64::from_str_radix(v.trim().trim_start_matches('$'), 16).ok();
+        let kinds: Vec<i64> = params
+            .lines()
+            .find_map(|l| l.strip_prefix(".define T_KIND_H "))
+            .map(|l| l.split(',').filter_map(hex).collect())
+            .unwrap_or_default();
+        let height = params
+            .lines()
+            .find_map(|l| hex(l.strip_prefix("P_HEIGHT")?.trim_start().strip_prefix('=')?.split(';').next()?));
+        // bocche: le righe con il colore del tipo (%10) nella coppia di pixel più avanti (a destra:
+        // l'immagine è quella della racchetta sinistra)
+        let muzzle: Vec<i32> = assets_list("PAD_IMG_BLASTER")
+            .chunks(3)
+            .enumerate()
+            .filter(|(_, r)| {
+                let bits = u32::from(r[0]) << 16 | u32::from(r[1]) << 8 | u32::from(r[2]);
+                bits != 0 && bits >> (bits.trailing_zeros() / 2 * 2) & 3 == 2
+            })
+            .map(|(i, _)| i as i32)
+            .collect();
+        let (Some(height), &[top, bottom]) = (height, muzzle.as_slice()) else {
+            return Err(format!("bocche dei cannoni in PAD_IMG_BLASTER: {muzzle:?}, P_HEIGHT in params.inc"));
+        };
+        let Some(&blaster) = kinds.get(PaddleKind::Blaster as usize) else {
+            return Err("T_KIND_H in params.inc".into());
+        };
+        // i glifi: tratto di 7 pixel dal pixel p (0, 2, 4, 6) e il resto nel carattere dopo, alle
+        // righe 2h e 2h + 1
+        let mut glyphs = Vec::new();
+        for h in 0..4 {
+            for p in [0, 2, 4, 6] {
+                let first = (p..8).filter(|x| *x < p + 7).fold(0u8, |a, x| a | 0x80 >> x);
+                let second = (8..p + 7).fold(0u8, |a, x| a | 0x80 >> (x - 8));
+                for b in [first, second] {
+                    if b != 0 {
+                        let mut g = [0; 8];
+                        (g[2 * h], g[2 * h + 1]) = (b, b);
+                        glyphs.push(g);
+                    }
+                }
+            }
+        }
+        Ok(Self {
+            on: true,
+            muzzle: [top, bottom],
+            half: blaster / 2,
+            height,
+            taken: shot_ranges().0,
+            glyphs,
+            pool: fused_range(),
+            ..Self::default()
+        })
+    }
+
+    /// Prima riga di schermo delle due bocche per la y (Q16.16) del colpo, quella della racchetta
+    /// quando ha sparato.
+    fn rows(&self, y: i32) -> [i32; 2] {
+        let r0 = ((self.height - 0x8000 - i64::from(y) - self.half) >> 16) as i32 + 1;
+        [r0 + 2 * self.muzzle[0], r0 + 2 * self.muzzle[1]]
+    }
+
+    /// Dopo un frame: `before` i colpi prima del frame (posto, x in pixel, y), `was` lo stato prima.
+    fn check(&mut self, m: &mut Machine, before: &[(u16, i32, i32)], was: u8, hud: bool) -> Result<(), String> {
+        if !self.on {
+            return Ok(());
+        }
+        let now = m.read_u8("state", 0);
+        let next = m.read_u8("m_next", 0) != 0;
+        if !(next && matches!(now, ST_COUNT | ST_PLAY)) {
+            // fuori dalla partita NEXT: i caratteri presi a schermo con un glifo non dei fasci
+            if !text_screen(m) {
+                return Ok(());
+            }
+            // nel GAME OVER (stato 8) le lettere 2x si rifanno nei primi frame (sg_on): prima non
+            // devono essere a schermo
+            let pending = now == 8 && m.try_addr("sg_on").is_some_and(|a| m.cpu.read(a) != 0);
+            let mem = &m.cpu.mem;
+            for (i, &c) in mem[0xC000..0xC3E8].iter().enumerate() {
+                let c = usize::from(c);
+                if !self.taken.contains(&c) {
+                    continue;
+                }
+                if pending {
+                    return Err(format!(
+                        "GAME OVER: il carattere {c} di una lettera 2x a schermo (riga {}, colonna {}) prima che le lettere siano rifatte",
+                        i / 40,
+                        i % 40
+                    ));
+                }
+                let g = &mem[CHARSET + 8 * c..CHARSET + 8 * c + 8];
+                if self.glyphs.iter().any(|x| x[..] == *g) {
+                    return Err(format!(
+                        "il carattere preso {c} con il glifo di un fascio a schermo fuori dalla partita NEXT (stato {was} -> {now}, riga {}, colonna {})",
+                        i / 40,
+                        i % 40
+                    ));
+                }
+                self.shown_out += 1;
+            }
+            return Ok(());
+        }
+        // next_shots rimandato al frame dopo (NTSC, partito in ritardo): a schermo i fasci di prima
+        if !matches!(was, ST_COUNT | ST_PLAY) || m.try_addr("tv_late").is_some_and(|a| m.cpu.read(a) & 0x80 != 0) {
+            self.late += u32::from(!before.is_empty());
+            return Ok(());
+        }
+        let Some(mut green) = green_pixels(m) else { return Ok(()) };
+        let lit = green.iter().filter(|&&p| p).count();
+        // celle con un carattere fuso a schermo
+        let fused_cells: Vec<usize> = (0..1000).filter(|&c| self.pool.contains(&usize::from(m.cpu.mem[0xC000 + c]))).collect();
+        if before.is_empty() || m.read_u8("sv_n", 0) == 0 {
+            if lit != 0 || !fused_cells.is_empty() {
+                return Err(format!(
+                    "{lit} pixel dei fasci e {} caratteri fusi a schermo senza colpi disegnati ({} colpi, stato {now})",
+                    fused_cells.len(),
+                    before.len()
+                ));
+            }
+            if before.is_empty() {
+                self.empty += 1;
+            } else {
+                self.erased += 1;
+            }
+            self.hud_recent = self.hud_recent.saturating_sub(1);
+            if hud && now == ST_PLAY && (self.hud_recent > 0 || self.empty.is_multiple_of(8)) {
+                return self.hud(m);
+            }
+            return Ok(());
+        }
+        // i fasci (posto, prima e ultima colonna, prima riga della bocca): a schermo da x0 = int(x)
+        // - 3 >= 0 e colonna x0 / 8 < 40, come next_shots
+        let mut beams = Vec::new();
+        for &(k, x, y) in before {
+            let x0 = x - 3;
+            if (0..320).contains(&x0) {
+                let xs = x0 & !1;
+                for r in self.rows(y) {
+                    beams.push((k, xs, (xs + 6).min(319), r));
+                }
+            }
+        }
+        // celle di un fascio: il tratto sta nelle due righe di pixel dalla riga pari (r & !1)
+        let cells_of = |xs: i32, xe: i32, r: i32| ((xs / 8)..=(xe / 8)).map(move |c| ((r & !1) / 8 * 40 + c) as usize);
+        let mut owned = [false; 1000];
+        for &(_, xs, xe, r) in &beams {
+            if (0..199).contains(&r) {
+                for c in cells_of(xs, xe, r) {
+                    owned[c] = true;
+                }
+            }
+        }
+        if let Some(&c) = fused_cells.iter().find(|&&c| !owned[c]) {
+            return Err(format!("carattere fuso {} nella cella riga {} colonna {} senza un fascio lì", m.cpu.mem[0xC000 + c], c / 40, c % 40));
+        }
+        // quello che un ridisegno completo metterebbe nelle righe 0-3: il sotto dei caratteri fusi
+        let omega = m.read_u8("nx_morph", 0) & 0x80 == 0;
+        let redraw = if fused_cells.iter().any(|&c| c < 160) && hud && hud_drawn(m) {
+            Some(hud_redraw(m, &|row, col| hud_skip(omega, row, col)))
+        } else {
+            None
+        };
+        let (mut ok, mut on_hud) = ([false; SHOT_SLOTS as usize], [false; SHOT_SLOTS as usize]);
+        for (i, &(k, xs, xe, r)) in beams.iter().enumerate() {
+            if r < 0 || r + 1 > 199 {
+                self.edge += 1;
+                continue;
+            }
+            // vicino a un altro fascio: i pixel accanto, o una cella in comune (un carattere solo
+            // per cella: si vede uno dei due)
+            let near = beams.iter().enumerate().any(|(j, &(_, xs2, xe2, r2))| {
+                j != i && (r2 - r).abs() <= 8 && ((xs2 <= xe + 2 && xe2 + 2 >= xs) || (xs2 / 8 <= xe / 8 && xe2 / 8 >= xs / 8))
+            });
+            if near {
+                self.near += 1;
+                continue;
+            }
+            // celle fuse del fascio: il carattere del posto (colpo, fascio, colonna), il glifo di
+            // sotto più il tratto, il colore di sotto; i pixel del tratto contano come accesi
+            for cell in cells_of(xs, xe, r) {
+                let c = usize::from(m.cpu.mem[0xC000 + cell]);
+                if !self.pool.contains(&c) {
+                    continue;
+                }
+                let (row, col) = (cell / 40, cell % 40);
+                let slot = c - self.pool.start;
+                let base = usize::from(k) * 4 + (col & 1);
+                let under = usize::from(m.read_u8("sv_c", slot as u16));
+                let under_color = m.read_u8("sv_k", slot as u16) & 15;
+                let glyph = |c: usize| -> [u8; 8] { m.cpu.mem[CHARSET + 8 * c..CHARSET + 8 * c + 8].try_into().unwrap() };
+                let (u, got) = (glyph(under), glyph(c));
+                let mut stroke = [0u8; 8];
+                for px in (xs..=xe).filter(|px| (px / 8) as usize == col) {
+                    for py in [r & !1, (r & !1) + 1] {
+                        stroke[(py % 8) as usize] |= 0x80 >> (px % 8);
+                    }
+                }
+                let color = m.cpu.mem[0xD800 + cell] & 15;
+                if (slot != base && slot != base + 2)
+                    || under == 0
+                    || color != under_color
+                    || (0..8).any(|i| got[i] != u[i] | stroke[i])
+                {
+                    return Err(format!(
+                        "carattere fuso {c} del colpo {k} nella cella riga {row} colonna {col}: glifo {got:02X?} colore {color}, sotto il carattere {under} {u:02X?} colore {under_color}, tratto {stroke:02X?}"
+                    ));
+                }
+                if let Some(redraw) = &redraw
+                    && row < 4
+                    && !hud_skip(omega, row, col)
+                {
+                    let (g, kk) = redraw[cell];
+                    if g != u || (g.iter().any(|&b| b != 0) && kk != under_color) {
+                        return Err(format!(
+                            "sotto il carattere fuso nella cella riga {row} colonna {col} il carattere {under} {u:02X?} colore {under_color}, il ridisegno dà {g:02X?} colore {kk}"
+                        ));
+                    }
+                    self.fused_redraw += 1;
+                }
+                self.fused += 1;
+                self.fused_field += u32::from(row >= 4);
+                for (i, bits) in stroke.iter().enumerate() {
+                    for b in (0..8).filter(|b| bits & 0x80 >> b != 0) {
+                        green[(8 * row + i) * 320 + 8 * col + b] = true;
+                    }
+                }
+            }
+            let want: Vec<i32> = (xs..=xe).collect();
+            let mut rows = Vec::new();
+            for py in (r - 3).max(0)..=(r + 4).min(199) {
+                let cols: Vec<i32> = ((xs - 1).max(0)..=(xe + 1).min(319)).filter(|&px| green[(py * 320 + px) as usize]).collect();
+                if cols.is_empty() {
+                    continue;
+                }
+                if cols != want {
+                    let row = (py / 8) as usize;
+                    let cells: Vec<String> = ((xs / 8).max(1) as usize - 1..=((xe / 8) as usize + 1).min(39))
+                        .map(|c| format!("{c}:{}/{}", m.cpu.mem[0xC000 + 40 * row + c], m.cpu.mem[0xD800 + 40 * row + c] & 15))
+                        .collect();
+                    return Err(format!(
+                        "fascio del colpo {k} (colonne {xs}-{xe}, bocca alla riga {r}): nella riga {py} i pixel accesi {cols:?} (riga di celle {row}: {}; sv_n {}, sd_cw {}, sd_y {}, stato {was} -> {now})",
+                        cells.join(" "),
+                        m.read_u8("sv_n", 0),
+                        m.read_u8("sd_cw", k),
+                        m.read_u8("sd_y", k)
+                    ));
+                }
+                rows.push(py);
+            }
+            if rows.len() != 2 || rows[1] != rows[0] + 1 || (rows[0] - r).abs() > 1 {
+                return Err(format!("fascio del colpo {k} (colonne {xs}-{xe}): righe accese {rows:?}, la bocca del cannone dalla riga {r}"));
+            }
+            self.dev[(rows[0] - r + 1) as usize] += 1;
+            self.beams += 1;
+            ok[k as usize] = true;
+            if rows[0] < 32 {
+                self.hud_beams += 1;
+                on_hud[k as usize] = true;
+                self.hud_recent = 100;
+            }
+        }
+        self.shots += ok.iter().filter(|&&b| b).count() as u32;
+        self.hud_shots += on_hud.iter().filter(|&&b| b).count() as u32;
+        Ok(())
+    }
+
+    /// Righe 0-3 senza fasci a schermo: come il ridisegno completo (con lo stato già a schermo).
+    fn hud(&mut self, m: &mut Machine) -> Result<(), String> {
+        if !hud_drawn(m) {
+            return Ok(());
+        }
+        let omega = m.read_u8("nx_morph", 0) & 0x80 == 0;
+        let skip = |row: usize, col: usize| hud_skip(omega, row, col);
+        let want = hud_redraw(m, &skip);
+        let mem = &m.cpu.mem;
+        for (cell, (g, k)) in want.iter().enumerate() {
+            let (row, col) = (cell / 40, cell % 40);
+            if skip(row, col) {
+                continue;
+            }
+            let c = usize::from(mem[0xC000 + cell]);
+            let got = &mem[CHARSET + 8 * c..CHARSET + 8 * c + 8];
+            let color = mem[0xD800 + cell] & 15;
+            if got != &g[..] || (g.iter().any(|&b| b != 0) && color != *k) {
+                let real: Vec<u8> = (0..160).map(|i| mem[0xC000 + i]).collect();
+                return Err(format!(
+                    "righe 0-3 diverse dal ridisegno nella cella riga {row} colonna {col}: carattere {c} colore {color}, ridisegnata {g:02X?} colore {k} (sm_shown {} {}, sm_meter {} {}; righe 0-3 {real:?})",
+                    m.read_u8("sm_shown", 0),
+                    m.read_u8("sm_shown", 4),
+                    m.read_u8("sm_meter", 0),
+                    m.read_u8("sm_meter", 4)
+                ));
+            }
+        }
+        self.hud_frames += 1;
+        Ok(())
+    }
+
+    fn result(&self) -> Result<String, String> {
+        if !self.on {
+            return Ok("colpi del BLASTER: build senza i fasci a quattro altezze, niente controllo".into());
+        }
+        let line = format!(
+            "colpi del BLASTER: {} colpi verificati ({} fasci), {} con un fascio nelle righe 0-3 ({} fasci); scarto dalla bocca -1/0/+1 pixel: {}/{}/{}; non verificati: {} frame con next_shots rimandato, {} con i fasci tolti per ridisegnare, {} fasci vicini a un altro, {} al bordo; {} frame senza colpi puliti, righe 0-3 uguali al ridisegno in {} frame; {} celle fuse verificate ({} con il sotto uguale al ridisegno, {} fuori dalle righe 0-3); caratteri presi a schermo fuori dalla partita NEXT con il loro glifo: {} celle",
+            self.shots,
+            self.beams,
+            self.hud_shots,
+            self.hud_beams,
+            self.dev[0],
+            self.dev[1],
+            self.dev[2],
+            self.late,
+            self.erased,
+            self.near,
+            self.edge,
+            self.empty,
+            self.hud_frames,
+            self.fused,
+            self.fused_redraw,
+            self.fused_field,
+            self.shown_out
+        );
+        if self.shots == 0 || self.hud_frames == 0 || (!self.pool.is_empty() && self.fused_redraw == 0) {
+            return Err(format!("nessun colpo, nessun confronto delle righe 0-3 o nessuna cella fusa: {line}"));
+        }
+        Ok(line)
+    }
+}
+
+/// Ultimo byte del codice sotto lo stack nel caso peggiore (paddws.cfg, FTRAM: STKCODE e, nelle build
+/// di prova con FRAMETEST, FTCODE fino a $01C7; senza FRAMETEST solo fino a $0127) e margine che il
+/// banco chiede sopra.
+const STACK_FLOOR: u16 = 0x01C7;
+const STACK_MARGIN: u16 = 24;
+
+/// Parti dell'impronta di un frame nel golden test (`golden_file`).
+const GOLD_PARTS: usize = 7;
+
+/// Golden test: `spec` record:FILE scrive le impronte (riferimento PWG2), check:FILE le confronta.
+/// Riferimento PWG2 (registrato da questo banco): registri del VIC, immagini degli sprite, SID e il
+/// set di caratteri senza quelli dei fasci sempre uguali; schermo e colori nei frame senza fasci a
+/// schermo in tutte e due le versioni. Riferimento di prima (4 impronte per frame): tutto uguale,
+/// salvo con PADDWS_C64_GOLDEN_SKIP=0 lo schermo, i colori e i caratteri.
+fn golden_file(gold: &[[u64; GOLD_PARTS]], spec: &str) -> bool {
+    const PARTS: [&str; 6] = [
+        "schermo, colori o caratteri",
+        "registri del VIC o puntatori degli sprite",
+        "immagini degli sprite",
+        "registri del SID",
+        "schermo o colori (frame senza fasci)",
+        "set di caratteri (senza i caratteri dei fasci)",
+    ];
+    const HEAD: &[u8; 4] = b"PWG2";
+    let Some((mode, file)) = spec.split_once(':') else {
+        println!("FAIL: PADDWS_C64_GOLDEN=record:FILE o check:FILE");
+        return false;
+    };
+    if mode == "record" {
+        let mut bytes = HEAD.to_vec();
+        bytes.extend(gold.iter().flatten().flat_map(|h| h.to_le_bytes()));
+        return match std::fs::write(file, &bytes) {
+            Ok(()) => {
+                println!("PASS: {} frame registrati in {file}", gold.len());
+                true
+            }
+            Err(e) => {
+                println!("FAIL: {file}: {e}");
+                false
+            }
+        };
+    }
+    let want = match std::fs::read(file) {
+        Ok(w) => w,
+        Err(e) => {
+            println!("FAIL: {file}: {e}");
+            return false;
+        }
+    };
+    let words = |b: &[u8]| -> Vec<u64> { b.chunks(8).map(|c| u64::from_le_bytes(c.try_into().unwrap_or([0; 8]))).collect() };
+    let (v2, want) = match want.strip_prefix(HEAD) {
+        Some(rest) => (true, words(rest)),
+        None => (false, words(&want)),
+    };
+    let per = if v2 { GOLD_PARTS } else { 4 };
+    let skip_screen = std::env::var("PADDWS_C64_GOLDEN_SKIP").is_ok_and(|v| v == "0");
+    let mut screens = (0u32, 0u32);
+    for (i, (got, want)) in gold.iter().zip(want.chunks(per)).enumerate() {
+        for p in 0..per.min(6) {
+            let compare = match p {
+                0 => !v2 && !skip_screen,
+                4 => {
+                    let quiet = got[6] == 0 && want[6] == 0;
+                    screens.0 += u32::from(quiet);
+                    screens.1 += u32::from(!quiet);
+                    quiet
+                }
+                _ => true,
+            };
+            if compare && got[p] != want[p] {
+                println!("FAIL: frame {i} diverso dal riferimento: {}", PARTS[p]);
+                return false;
+            }
+        }
+    }
+    if gold.len() * per != want.len() {
+        println!("FAIL: {} frame, nel riferimento {}", gold.len(), want.len() / per);
+        return false;
+    }
+    if v2 {
+        println!(
+            "PASS: {} frame uguali al riferimento {file} (schermo e colori confrontati in {}, non nei {} con dei fasci)",
+            gold.len(),
+            screens.0,
+            screens.1
+        );
+    } else {
+        let what = if skip_screen { " (senza schermo, colori e caratteri)" } else { "" };
+        println!("PASS: {} frame uguali al riferimento {file}{what}", gold.len());
+    }
+    true
+}
+
 /// Racchette in partita NEXT: le immagini preparate a inizio partita diventano pronte per tutti e
 /// due i lati e la racchetta sinistra (sprite 3) ha sempre un'immagine non vuota, letta nella RAM
 /// che vede il VIC (anche sotto l'I/O), salvo il lampo del punto e il salto del TELEPORT.
@@ -2147,14 +2906,14 @@ impl CometCheck {
     const SP_TRAIL0: u8 = 128;
     const TRAIL_BUFS: u8 = 4;
     /// cicli del frame sotto i quali trail_end ha avuto il tempo di disegnare (TRAIL_LATE di video.s:
-    /// comincia entro il budget meno circa 5.500 cicli; PAL 12.000)
+    /// comincia entro il budget meno 5.700 cicli)
     fn light() -> u64 {
-        frame_budget() - 6_000
+        frame_budget() - 6_500
     }
-    /// KEEP_SPRITES_LINE di play.s in cicli: oltre, gli sprite possono restare quelli del frame prima
-    /// (il budget meno KEEP_SPRITES_CYC)
+    /// Oltre il frame intero gli sprite restano quelli del frame prima (scene_done di play.s:
+    /// l'interrupt è già passato)
     fn keep_sprites() -> u64 {
-        keep_sprites()
+        frame_cycles()
     }
 
     /// `prev`: cicli del frame prima (è lì che trail_end disegna la cometa che si vede in questo).
@@ -2163,7 +2922,7 @@ impl CometCheck {
         let ptr = m.read_u8("sh_ptr", 0);
         if m.read_u8("sh_enable", 0) & 1 != 0 && (Self::SP_TRAIL0..Self::SP_TRAIL0 + Self::TRAIL_BUFS).contains(&ptr) {
             self.trails += 1;
-            // (in un frame oltre KEEP_SPRITES di play.s gli sprite possono essere quelli del frame
+            // (in un frame finito dopo l'interrupt gli sprite possono essere quelli del frame
             // prima, con la palla dov'era: lì l'angolo è quello di prima, e va bene)
             self.trails_wrong += (m.read_u8("tr_shdir", 0) != trail_dir(m) && self.cur <= Self::keep_sprites()) as u32;
         }
@@ -2302,6 +3061,7 @@ struct SuperFrames {
     labels: u32,
     yellow_ball: u32,
     sounds: u32,
+    last_moving: bool,
     last_arm: [u8; 2],
     last_fxp: u8,
 }
@@ -2356,11 +3116,14 @@ impl SuperFrames {
         if m.read_u8("sm_fl", 0) != 0 && m.read_u8("sh_col", 0) & 15 == 7 {
             self.yellow_ball += 1;
         }
+        // suono di una mossa partito: sul canale degli effetti c'è la sua traccia e al frame prima
+        // no (sm_hud lo fa partire nel frame stesso), oppure era rimasto da fare (sm_fxp) e ora è
+        // partito
         let fxp = m.read_u8("sm_fxp", 0);
-        if fxp == 0 && self.last_fxp != 0 {
-            let ptr = m.read_u8("ch_start_lo", 3) as u16 | (m.read_u8("ch_start_hi", 3) as u16) << 8;
-            self.sounds += [m.addr("sid_track_move"), m.addr("sid_track_special")].contains(&ptr) as u32;
-        }
+        let ptr = m.read_u8("ch_start_lo", 3) as u16 | (m.read_u8("ch_start_hi", 3) as u16) << 8;
+        let moving = [m.addr("sid_track_move"), m.addr("sid_track_special")].contains(&ptr);
+        self.sounds += (moving && (!self.last_moving || (fxp == 0 && self.last_fxp != 0))) as u32;
+        self.last_moving = moving;
         self.last_fxp = fxp;
     }
 
@@ -2403,6 +3166,9 @@ impl SuperFrames {
     }
 }
 
+/// Posti dei colpi del BLASTER (2 * MAX_SHOTS di next.s).
+const SHOT_SLOTS: u16 = 8;
+
 /// Le scene del C64 (`state`), per nome.
 const SCENES: [&str; 12] = [
     "boot",
@@ -2430,29 +3196,6 @@ thread_local! {
     static FIRM: std::cell::RefCell<Vec<Vec<u64>>> = std::cell::RefCell::new(vec![Vec::new(); 12]);
     /// la chiamata più lunga per subroutine in tutti i frame profilati
     static LONGEST: std::cell::RefCell<Vec<u64>> = const { std::cell::RefCell::new(Vec::new()) };
-}
-
-/// KEEP_SPRITES_LINE di play.s in cicli: oltre, il frame tiene gli sprite del frame prima (il budget
-/// meno KEEP_SPRITES_CYC: PAL 3.900, NTSC 1.700, dove sprite e HUD si fanno anche sforando).
-fn keep_sprites() -> u64 {
-    frame_budget() - if ntsc() { 1_700 } else { 3_900 }
-}
-
-/// Parte del frame che non si rimanda oltre la quale il tick è pesantissimo: sprite, HUD e il resto
-/// (fino a circa 4.500 cicli) non ci stanno più nel budget, e il frame può sforare (spill_max).
-fn heavy_tick_from() -> u64 {
-    frame_budget() - 4_500
-}
-
-/// Cicli oltre il budget ammessi a un frame di partita con un tick pesantissimo (`frames`): il
-/// frame dopo parte subito, ancora nel bordo in alto, scrive gli sprite prima della prima riga
-/// visibile (la 51) e ha meno tempo per il suo lavoro rimandabile (le soglie contano le righe
-/// dall'interrupt); il ritardo si somma finché un frame lo recupera. Nessun frame perso. Solo
-/// NTSC, dove il tick più pesante non sta sempre nel frame (sul PAL 0). Nelle schermate no: lì
-/// il lavoro si divide, e un frame in ritardo cambierebbe per esempio i colori dei titoli di coda
-/// con il raster già sul testo.
-fn spill_max() -> u64 {
-    if ntsc() { 2_500 } else { 0 }
 }
 
 /// PADDWS_C64_HEAVY=N: profilo dei frame oltre N cicli, scena per scena, per cercare i cicli da
@@ -2558,7 +3301,9 @@ fn print_heavy(m: &mut Machine) {
             println!("    con le subroutine chiamate:");
             let mut inc_rows: Vec<(u64, u16)> = inc.iter().enumerate().filter(|r| *r.1 > 0).map(|(a, &c)| (c, a as u16)).collect();
             inc_rows.sort_by_key(|r| std::cmp::Reverse(r.0));
-            for (c, addr) in inc_rows.iter().take(70) {
+            // PADDWS_C64_ROWS=N: quante subroutine elencare (70 se manca)
+            let rows = std::env::var("PADDWS_C64_ROWS").ok().and_then(|v| v.parse().ok()).unwrap_or(70);
+            for (c, addr) in inc_rows.iter().take(rows) {
                 let name = labels.iter().find(|l| l.0 == *addr).map_or("?", |l| l.1.as_str());
                 let k = calls[*addr as usize];
                 let long = LONGEST.with_borrow(|l| l.get(*addr as usize).copied().unwrap_or(0));
@@ -2575,6 +3320,36 @@ fn print_heavy(m: &mut Machine) {
 /// Nessun comando: joystick e tastiera a riposo.
 fn frames(m: &mut Machine) -> bool {
     const NAMES: [&str; 12] = SCENES;
+    // Golden test, PADDWS_C64_GOLDEN=record:FILE o check:FILE: lo stato visibile di ogni frame
+    // (schermo e colori, registri del VIC e puntatori degli sprite, immagini degli sprite accesi,
+    // registri del SID)
+    // con il raster congelato, per confrontare due versioni del programma: un frame su quattro
+    // "in ritardo" (riga 248: ogni lavoro rimandabile aspetta), gli altri all'inizio (riga 250,
+    // quella dell'interrupt: anche tv_lateness dell'NTSC li prende per puntuali), a prescindere
+    // dai cicli. Attract e partite EVO e NEXT (senza voci: i loro NMI seguono i cicli). Con
+    // PADDWS_C64_PICK_RAW le partite sono quasi tutte ARCADE e BLASTER: i colpi a schermo.
+    let golden = std::env::var("PADDWS_C64_GOLDEN").ok();
+    let gold: std::cell::RefCell<Vec<[u64; GOLD_PARTS]>> = std::cell::RefCell::new(Vec::new());
+    // colpi del BLASTER a schermo (LaserCheck)
+    let lasers = std::cell::RefCell::new(match LaserCheck::new(m) {
+        Ok(l) => l,
+        Err(e) => {
+            println!("FAIL: colpi del BLASTER: {e}");
+            return false;
+        }
+    });
+    // PADDWS_C64_ALL: un controllo fallito non ferma la prova (per vedere tutte le misure)
+    let keep_going = std::env::var_os("PADDWS_C64_ALL").is_some() || golden.is_some();
+    let failed = std::cell::Cell::new(false);
+    macro_rules! fail {
+        () => {
+            if keep_going {
+                failed.set(true);
+            } else {
+                return false;
+            }
+        };
+    }
     let inc = std::fs::read_to_string(c64_dir().join("gen/assets.inc")).unwrap_or_default();
     if inc_const(&inc, "CH_GRID_T") != Some(ch_grid_t()) || inc_const(&inc, "CH_WALL") != Some(CH_WALL) {
         println!("FAIL: CH_GRID_T o CH_WALL diversi da gen/assets.inc");
@@ -2591,6 +3366,9 @@ fn frames(m: &mut Machine) -> bool {
     let late_ticks = std::cell::Cell::new((0u32, 0u32));
     // frame di gioco che tengono gli sprite del frame prima (tick pesantissimo), su quelli di gioco
     let kept_sprites = std::cell::Cell::new((0u32, 0u32));
+    // effetti sonori della partita (fx_pend di play.s): chiesti da un tick, e partiti all'inizio
+    // del frame dopo (frame_music: il canale degli effetti acceso, fx_pend consumato)
+    let fx_count = std::cell::Cell::new((0u32, 0u32));
     // racchette GUARDIAN: immagine dei settori persi in ritardo (vedi guardian_image)
     let guardian = std::cell::Cell::new(GuardianLag::default());
     // immagini delle racchette a schermo contro quelle giuste per tipo e stato (paddle_shown)
@@ -2621,12 +3399,19 @@ fn frames(m: &mut Machine) -> bool {
     let rom_glyphs_now = program_glyphs(m);
     m.cpu.watch = Some((0xD418, 0xD418));
     let nmi = m.addr("nmi_handler");
-    // NTSC: un frame di partita può finire dopo l'interrupt del frame dopo, di poco (spill_max): il
-    // frame dopo parte subito, con il raster già avanti, e recupera (vedi spill_max). Ritardo del
-    // prossimo frame, sforamenti ammessi (quanti, il più lungo)
-    let carry = std::cell::Cell::new(0u64);
-    let spills = std::cell::Cell::new((0u32, 0u64));
+    // ciclo del prossimo interrupt della riga 250 e ciclo a cui il frame prima ha lasciato il
+    // processore (se è cambiato, il banco di prova ha chiamato altro: si riparte da un interrupt)
+    let clock = std::cell::Cell::new((0u64, u64::MAX));
+    // frame finiti dopo l'interrupt del frame dopo (quanti, il più lungo, frame persi), che il
+    // frame dopo trova il raster già avanti
+    let spills = std::cell::Cell::new((0u32, 0u64, 0u32));
+    // frame di partita oltre il budget, per i più pesanti a fine prova (cicli, frame, stato)
+    let worst_frames: std::cell::RefCell<Vec<(u64, u32, String)>> = std::cell::RefCell::new(Vec::new());
+    let frame_no = std::cell::Cell::new(0u32);
+    // frame di partita, e quelli finiti dopo l'interrupt del frame dopo (oltre il frame intero)
+    let play_over = std::cell::Cell::new((0u32, 0u32));
     m.cpu.frame_flag_at = Some(m.addr("frame_flag"));
+    m.cpu.mark_fx_at = Some(m.addr("sid_fx_start"));
     let pick_raw = std::env::var_os("PADDWS_C64_PICK_RAW").is_some();
     let frame = |m: &mut Machine,
                  stats: &mut [(u64, u64, u32, u32); 12],
@@ -2648,12 +3433,39 @@ fn frames(m: &mut Machine) -> bool {
         }
         m.cpu.writes.clear();
         let addr = m.addr("frame");
-        let (start, nmis) = (m.cpu.cycles, m.cpu.nmis);
+        let nmis = m.cpu.nmis;
         let phase = m.read_u8("sid_phase", 0);
         let voice_before = m.cpu.read(0xFFFB) & 0x80 != 0;
-        // $D012 dà la riga del raster, contata dall'interrupt (prima, se il frame prima ha sforato)
-        let late = carry.get();
-        m.cpu.frame_start = Some(start - late);
+        // colpi del BLASTER prima del frame (next_shots li disegna da qui): posto, x in pixel e y
+        // (Q16.16)
+        let shots_before: Vec<(u16, i32, i32)> =
+            if matches!(state as u8, ST_COUNT | ST_PLAY) && m.read_u8("m_next", 0) != 0 {
+                (0..SHOT_SLOTS)
+                    .filter(|&k| m.read_u8("shot_on", k) != 0)
+                    .map(|k| (k, m.read_i32("shot_x", 4 * k) >> 16, m.read_i32("shot_y", 4 * k)))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+        let fx_asked = m.read_u8("fx_pend", 0) != 0 && !voice_before && !(ntsc() && state != ST_PLAY as usize);
+        m.cpu.mark_fx = None;
+        // l'interrupt della riga 250: $D012 e i cicli rubati dal VIC-II si contano da lì. Il frame
+        // comincia IRQ_LEAD cicli dopo, o appena finito il frame prima se ha sforato (play_main: 19
+        // cicli)
+        let (irq_at, left_at) = clock.get();
+        let irq = if left_at == m.cpu.cycles { irq_at } else { m.cpu.cycles };
+        m.cpu.frame_start = Some(irq);
+        let begin = if irq + IRQ_LEAD >= m.cpu.cycles { irq + IRQ_LEAD } else { m.cpu.cycles + 19 };
+        m.cpu.idle(begin)?;
+        let start = m.cpu.cycles;
+        let late = start - (irq + IRQ_LEAD);
+        frame_no.set(frame_no.get() + 1);
+        if golden.is_some() {
+            // raster congelato: niente cicli rubati, riga fissa per tutto il frame
+            m.cpu.frame_start = None;
+            let n = frame_no.get();
+            m.cpu.mem[0xD012] = if n.wrapping_mul(0x9E37_79B1) >> 30 == 0 { 248 } else { 250 };
+        }
         m.write_u8("frame_flag", 0, 0); // play_main lo azzera prima del frame
         let ef = m.cpu.ef_cycles;
         let flash = m.cpu.ef.as_ref().map_or(0, |e| e.programs + e.erases);
@@ -2678,20 +3490,111 @@ fn frames(m: &mut Machine) -> bool {
                 None => m.cpu.inclusive = Some(Box::default()),
             }
         }
-        // cicli dall'interrupt: quelli del frame più il ritardo con cui è partito
-        let c = m.cpu.call(addr, 1_000_000)? + late;
-        let spill = c.saturating_sub(FRAME_BUDGET());
-        // solo in partita dopo un tick pesantissimo: la parte che non si rimanda oltre
-        // KEEP_SPRITES_LINE di play.s, quando il frame tiene gli sprite di prima (il lavoro
-        // rimandabile, code, immagini e scritte, non deve mai far sforare)
-        let heavy_tick = mark_label() != "scene_done"
-            || m.cpu.mark.is_some_and(|at| at - start + late >= heavy_tick_from());
-        let allowed = spill > 0 && state == ST_PLAY as usize && spill <= spill_max() && heavy_tick;
-        carry.set(if allowed { spill } else { 0 });
-        if allowed {
-            let (n, worst) = spills.get();
-            spills.set((n + 1, worst.max(spill)));
+        // cicli dall'interrupt: quelli del frame (con quelli rubati dal VIC-II) più l'attesa e il
+        // ritardo con cui è partito
+        m.cpu.call(addr, 1_000_000)?;
+        if golden.is_some() {
+            let fnv = |parts: &[&[u8]]| {
+                let mut h = 0xCBF2_9CE4_8422_2325u64;
+                for p in parts {
+                    for &b in *p {
+                        h = (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01B3);
+                    }
+                }
+                h
+            };
+            let mem = &m.cpu.mem;
+            // immagini degli sprite accesi ($D015), dai puntatori in fondo allo schermo in uso
+            // ($D018); quelle a $D000-$DFFF sono nella RAM sotto l'I/O. Non tutta l'area degli
+            // sprite: dove non ci sono immagini restano pezzi di codice copiato, che cambiano
+            // con gli indirizzi
+            let screen = 0xC000 + (usize::from(mem[0xD018] >> 4) << 10);
+            let mut images = Vec::with_capacity(8 * 63);
+            for i in 0..8 {
+                if mem[0xD015] >> i & 1 != 0 {
+                    let at = 0xC000 + usize::from(mem[screen + 0x3F8 + i]) * 64;
+                    if (0xD000..0xE000).contains(&at) {
+                        images.extend_from_slice(&m.cpu.under_io[at - 0xD000..at - 0xD000 + 63]);
+                    } else {
+                        images.extend_from_slice(&mem[at..at + 63]);
+                    }
+                }
+            }
+            // PADDWS_C64_GOLDEN_AT=n: gli sprite accesi del frame n (puntatore, posizione e
+            // impronta dell'immagine), per capire una differenza
+            if std::env::var("PADDWS_C64_GOLDEN_AT").ok().and_then(|v| v.parse().ok()) == Some(gold.borrow().len()) {
+                for i in 0..8 {
+                    if mem[0xD015] >> i & 1 != 0 {
+                        let ptr = mem[screen + 0x3F8 + i];
+                        let at = 0xC000 + usize::from(ptr) * 64;
+                        let img: Vec<u8> = if (0xD000..0xE000).contains(&at) {
+                            m.cpu.under_io[at - 0xD000..at - 0xD000 + 63].to_vec()
+                        } else {
+                            mem[at..at + 63].to_vec()
+                        };
+                        if std::env::var_os("PADDWS_C64_GOLDEN_BYTES").is_some() {
+                            let hex: Vec<String> = img.chunks(3).map(|r| format!("{:02X}{:02X}{:02X}", r[0], r[1], r[2])).collect();
+                            println!("    {}", hex.join(" "));
+                        }
+                        println!(
+                            "  sprite {i}: puntatore {ptr} (${at:04X}), x {} y {}, colore {}, immagine {:016X}",
+                            u16::from(mem[0xD000 + 2 * i]) | u16::from(mem[0xD010] >> i & 1) << 8,
+                            mem[0xD001 + 2 * i],
+                            mem[0xD027 + i] & 15,
+                            fnv(&[&img])
+                        );
+                    }
+                }
+                println!("  stato {}, m_next {}, schermo ${screen:04X}", mem[m.addr("state") as usize], m.read_u8("m_next", 0));
+                // con PADDWS_C64_GOLDEN_BYTES anche le 25 righe dello schermo di testo (codici) e
+                // dei colori (un nibble per cella)
+                if std::env::var_os("PADDWS_C64_GOLDEN_BYTES").is_some() {
+                    for row in 0..25 {
+                        let codes: String = mem[0xC000 + 40 * row..0xC028 + 40 * row].iter().map(|c| format!("{c:02X}")).collect();
+                        let cols: String = mem[0xD800 + 40 * row..0xD828 + 40 * row].iter().map(|c| format!("{:X}", c & 15)).collect();
+                        println!("    riga {row:2}: {codes} {cols}");
+                    }
+                }
+            }
+            // in più (riferimento PWG2): schermo e colori da soli (il nibble basso della RAM del
+            // colore), il set di caratteri senza quelli dei fasci (SHOT_B0-127 e SHOT_OWN-239, che
+            // dalla 4.6.3 cambiano), e se nel frame ci possono essere fasci a schermo (colpi prima o
+            // dopo, celle salvate)
+            let colors: Vec<u8> = mem[0xD800..0xDBE8].iter().map(|c| c & 15).collect();
+            // PADDWS_C64_GOLDEN_DUMP=FILE: schermo e colori di ogni frame in coda a FILE (2.000
+            // byte a frame), per confrontare due versioni cella per cella
+            if let Some(file) = std::env::var_os("PADDWS_C64_GOLDEN_DUMP") {
+                use std::io::Write;
+                let done = std::fs::OpenOptions::new().create(true).append(true).open(&file).and_then(|mut f| {
+                    f.write_all(&mem[0xC000..0xC3E8])?;
+                    f.write_all(&colors)
+                });
+                if let Err(e) = done {
+                    return Err(format!("{}: {e}", file.display()));
+                }
+            }
+            let (b0, own) = shot_ranges();
+            let lasers = !shots_before.is_empty()
+                || (0..SHOT_SLOTS).any(|k| m.read_u8("shot_on", k) != 0)
+                || m.read_u8("sv_n", 0) != 0;
+            gold.borrow_mut().push([
+                fnv(&[&mem[0xC000..0xC3F8], &mem[0xD800..0xDBE8], &mem[0xC800..0xD000]]),
+                fnv(&[&mem[0xD000..0xD02F], &mem[screen + 0x3F8..screen + 0x400]]),
+                fnv(&[&images]),
+                fnv(&[&mem[0xD400..0xD419]]),
+                fnv(&[&mem[0xC000..0xC3E8], &colors]),
+                fnv(&[
+                    &mem[CHARSET..CHARSET + 8 * b0.start],
+                    &mem[CHARSET + 8 * b0.end..CHARSET + 8 * own.start],
+                    &mem[CHARSET + 8 * own.end..CHARSET + 0x800],
+                ]),
+                u64::from(lasers),
+            ]);
         }
+        let c = m.cpu.cycles - irq;
+        let end = m.cpu.cycles;
+        // finito dopo l'interrupt del frame dopo: quello parte subito, in ritardo
+        let spill = c.saturating_sub(frame_cycles());
         // nel profilo, i frame della partita con la cometa del SUPER in volo a parte (scena 4)
         let scene = if state == 7 && m.read_u8("nx_super", 0) != 0 && m.read_u8("nx_super_a", 0) == 2 {
             4
@@ -2699,7 +3602,7 @@ fn frames(m: &mut Machine) -> bool {
             state
         };
         // PADDWS_C64_HEAVY_FIRM: i frame si scelgono per la parte fino a mark_label, non per il totale
-        let weight = if heavy_firm { m.cpu.mark.map_or(0, |at| at - start) } else { c };
+        let weight = if heavy_firm { m.cpu.mark.map_or(0, |at| at - irq) } else { c };
         if let (Some(limit), Some(p)) = (heavy_limit, &m.cpu.profile)
             && weight > limit
             && state < 12
@@ -2732,7 +3635,7 @@ fn frames(m: &mut Machine) -> bool {
             && state < 12
             && let Some(at) = m.cpu.mark
         {
-            FIRM.with_borrow_mut(|fm| fm[scene].push(at - start));
+            FIRM.with_borrow_mut(|fm| fm[scene].push(at - irq));
         }
         // CH_GRID_T e il muro (righe e trattini delle scritte animate, pavimento del continue,
         // entrate di TITAN e GUARDIAN) devono restare i loro: la capsula del BULLET prende altri
@@ -2757,13 +3660,36 @@ fn frames(m: &mut Machine) -> bool {
             // il font e le lettere 2x della ROM dei caratteri: anche dopo le scelte, il GAME OVER
             // e il finale (non nello schermo VS della presentazione, kvs.s: al posto delle lettere 2x
             // c'è il suo codice, e le rifà alla fine)
+            // (con i glifi dei fasci di NEXT, sg_on, non le ultime lettere 2x prese in prestito: si
+            // rifanno al primo frame del GAME OVER, e fino ad allora non si vedono, LaserCheck)
             if !(m.read_u8("state", 0) == 10 && m.read_u8("in_vs", 0) != 0) {
-                check_glyphs(m, &rom_glyphs_now, &format!("stato {}", m.read_u8("state", 0)))?;
+                let what = format!("stato {}", m.read_u8("state", 0));
+                if m.try_addr("sg_on").is_some_and(|a| m.cpu.read(a) != 0) {
+                    let taken = shot_ranges().0;
+                    let glyphs: Vec<(usize, [u8; 8])> = rom_glyphs_now.iter().filter(|(c, _)| !taken.contains(c)).copied().collect();
+                    check_glyphs(m, &glyphs, &what)?;
+                } else {
+                    check_glyphs(m, &rom_glyphs_now, &what)?;
+                }
             }
         }
-        if matches!(m.read_u8("state", 0), 6 | 7) {
+        // (non nel conto alla rovescia: il suo primo frame, che prepara la partita, può lasciarli al
+        // frame dopo)
+        if m.read_u8("state", 0) == ST_PLAY {
             let (kept, all) = kept_sprites.get();
             kept_sprites.set((kept + (m.read_u8("pd_made", 0) == 0xAA) as u32, all + 1));
+        }
+        // colpi del BLASTER a schermo, caratteri presi in prestito e righe 0-3 (LaserCheck); non
+        // nel golden test (il riferimento si registra anche dai sorgenti di prima) né con il
+        // profilo (il ridisegno delle righe 0-3 gira sulla stessa macchina)
+        if golden.is_none() {
+            lasers.borrow_mut().check(m, &shots_before, state as u8, heavy_limit.is_none())?;
+        }
+        if fx_asked {
+            // partito prima della scena: sid_fx_start nei primi cicli del frame
+            let (asked, started) = fx_count.get();
+            let early = m.cpu.mark_fx.is_some_and(|at| at - start < 2_000);
+            fx_count.set((asked + 1, started + early as u32));
         }
         if m.read_u8("state", 0) == ST_PLAY && m.read_u8("m_next", 0) != 0 {
             guardian_image(m, &guardian);
@@ -2795,8 +3721,26 @@ fn frames(m: &mut Machine) -> bool {
             voiced.1 += 1;
             voiced.2 = voiced.2.max(c);
         }
-        // il resto del frame, con gli NMI della voce
-        m.cpu.idle(start + frame_cycles())?;
+        // il resto del frame, con gli NMI della voce (un caricamento a schermo fermo riparte da un
+        // interrupt)
+        let loading = saved || file;
+        let mut next = irq + frame_cycles();
+        let mut lost = 0;
+        while m.cpu.cycles >= next + frame_cycles() {
+            next += frame_cycles();
+            lost += 1;
+        }
+        if loading {
+            clock.set((0, u64::MAX));
+        } else {
+            if spill > 0 {
+                let (n, worst, gone) = spills.get();
+                spills.set((n + 1, worst.max(spill), gone + lost));
+            }
+            m.cpu.idle(next)?;
+            clock.set((next, m.cpu.cycles));
+        }
+        let _ = end;
         // (con la voce di CHALLENGE il player aspetta: non è un tick rimandato; sull'NTSC nemmeno
         // il frame su sei senza il passo, tv_skip)
         let voice = voice_before || m.cpu.read(0xFFFB) & 0x80 != 0;
@@ -2835,9 +3779,28 @@ fn frames(m: &mut Machine) -> bool {
         s.0 = s.0.max(c);
         s.1 += c;
         s.2 += 1;
-        s.3 += (c > FRAME_BUDGET() && !allowed) as u32;
+        // in partita il margine del 10%, nelle altre scene (anche il conto alla rovescia, che prepara
+        // le immagini della partita) il frame
+        let limit = if state == ST_PLAY as usize { FRAME_BUDGET() } else { frame_cycles() };
+        s.3 += (c > limit) as u32;
+        if state == ST_PLAY as usize {
+            let (n, over) = play_over.get();
+            play_over.set((n + 1, over + (c > frame_cycles()) as u32));
+        }
         let now = m.read_u8("state", 0);
-        if c > FRAME_BUDGET() && !allowed {
+        if c > limit {
+            worst_frames.borrow_mut().push((
+                c,
+                frame_no.get(),
+                format!(
+                    "stato {state} -> {now}, partito {late} cicli in ritardo, {} NMI, {} a {}",
+                    m.cpu.nmis - nmis,
+                    mark_label(),
+                    m.cpu.mark.map_or(0, |at| at - irq)
+                ),
+            ));
+        }
+        if c > limit && heavy_limit.is_some() {
             println!(
                 "  frame oltre il budget: stato {state} -> {now}, {c} cicli ({} NMI, tabelle {}, partito {late} cicli in ritardo, battuta {})",
                 m.cpu.nmis - nmis,
@@ -2846,7 +3809,7 @@ fn frames(m: &mut Machine) -> bool {
             );
             // con PADDWS_C64_HEAVY: le parti del frame (cicli con le subroutine chiamate)
             if let Some(parts) = frame_parts(m) {
-                let mark = m.cpu.mark.map_or(String::new(), |at| format!("; {} a {}", mark_label(), at - start));
+                let mark = m.cpu.mark.map_or(String::new(), |at| format!("; {} a {}", mark_label(), at - irq));
                 println!("    {parts}{mark}");
             }
         }
@@ -2908,6 +3871,10 @@ fn frames(m: &mut Machine) -> bool {
     };
     for r in ["title_unpack", "clear_vars", "math_init", "video_init", "input_init", "sid_init"] {
         m.call(r);
+        if r == "video_init" && !m.restore_sprites() {
+            println!("FAIL: l'avvio non copia gli sprite sotto l'I/O dal primo schermo");
+            return false;
+        }
     }
     *squares.borrow_mut() = m.cpu.mem[0xF000..0xF800].to_vec();
     // vettore dell'NMI del programma (irq_init)
@@ -2933,7 +3900,7 @@ fn frames(m: &mut Machine) -> bool {
     for _ in 0..attract {
         if let Err(e) = frame(m, &mut stats, &mut voiced) {
             println!("FAIL: attract: {e}");
-            return false;
+            fail!();
         }
     }
     m.call("start_game");
@@ -2941,7 +3908,7 @@ fn frames(m: &mut Machine) -> bool {
     for _ in 0..50 * 60 * 3 {
         if let Err(e) = frame(m, &mut stats, &mut voiced) {
             println!("FAIL: partita: {e}");
-            return false;
+            fail!();
         }
         // in partita la racchetta sinistra (sprite 3) è sempre accesa, salvo il lampo del punto
         if m.read_u8("state", 0) == 7 && m.read_u8("sh_bg", 0) == 0 {
@@ -2950,7 +3917,7 @@ fn frames(m: &mut Machine) -> bool {
     }
     if !pad_on {
         println!("FAIL: in partita la racchetta sinistra non compare");
-        return false;
+        fail!();
     }
     // NEXT contro la CPU dal menu, con P1 al joystick (porta 2): insegue la palla (non con il
     // TELEPORT armato, così il salto è lungo e si vede), ogni tanto scatta (destra, verso
@@ -3044,14 +4011,14 @@ fn frames(m: &mut Machine) -> bool {
     m.cpu.joy_port2 = 0xFF;
     if !next_on {
         println!("FAIL: dopo le scelte la partita NEXT non parte");
-        return false;
+        fail!();
     }
     if !next_pads.ok("NEXT") || !warp.ok() || !comet.ok() {
-        return false;
+        fail!();
     }
     if rings < 2 {
         println!("FAIL: NEXT: le immagini degli aloni di SLOW non sono mai pronte ({rings} su 2)");
-        return false;
+        fail!();
     }
     // NEXT contro la CPU con le mosse speciali (SUPER MOVES): P1 insegue la palla e, con la palla
     // in arrivo, fa i gesti del joystick; la CPU usa le mosse. Il codice delle mosse nella RAM del
@@ -3082,7 +4049,7 @@ fn frames(m: &mut Machine) -> bool {
     m.cpu.joy_port2 = 0xFF;
     if let Err(e) = moves.ok() {
         println!("FAIL: NEXT con le mosse speciali: {e}");
-        return false;
+        fail!();
     }
     println!("  mosse speciali: {}", moves.line());
     // ancora NEXT contro la CPU, con il BULLET sempre in gioco: appena non c'è torna per chi
@@ -3144,7 +4111,10 @@ fn frames(m: &mut Machine) -> bool {
     m.cpu.joy_port2 = 0xFF;
     if forced.2 == 0 {
         println!("FAIL: NEXT con il BULLET: il tema imposto non suona");
-        return false;
+        fail!();
+    }
+    if let Some(g) = &golden {
+        return golden_file(&gold.borrow(), g);
     }
     // CHALLENGE (con le mosse speciali, che la CPU usa): P1 gioca finché supera un livello, poi
     // lascia la racchetta e non continua; le iniziali si scelgono a caso, la classifica torna
@@ -3191,14 +4161,14 @@ fn frames(m: &mut Machine) -> bool {
     let missing: Vec<_> = (10..15).filter(|&s| !seen[s]).collect();
     if !missing.is_empty() {
         println!("FAIL: CHALLENGE non passa dagli stati {missing:?}");
-        return false;
+        fail!();
     }
     if !ch_pads.ok("CHALLENGE") {
-        return false;
+        fail!();
     }
     if ch_moves.armed == 0 || ch_moves.code_bad > 0 {
         println!("FAIL: CHALLENGE con le mosse speciali: {}", ch_moves.line());
-        return false;
+        fail!();
     }
     println!("  mosse speciali in CHALLENGE: {}", ch_moves.line());
     // CHALLENGE con un nuovo sfidante: P2 (porta 1) entra nella prima presentazione e sceglie a
@@ -3264,18 +4234,18 @@ fn frames(m: &mut Machine) -> bool {
     m.cpu.joy_port2 = 0xFF;
     if !seen[15] {
         println!("FAIL: CHALLENGE: lo sfidante non entra");
-        return false;
+        fail!();
     }
     if right_frames == 0 {
         println!("FAIL: CHALLENGE: dopo la sfida chi ha vinto da destra non gioca contro la CPU");
-        return false;
+        fail!();
     }
     println!("  CHALLENGE con lo sfidante: {right_frames} frame di P2, che ha vinto la sfida, a destra contro la CPU");
     match ending_frames(m) {
         Ok(s) => println!("  {s}"),
         Err(e) => {
             println!("FAIL: finale di CHALLENGE: {e}");
-            return false;
+            fail!();
         }
     }
     // OMEGA: battuto il GUARDIAN 5 a 0 con la scala fatta tutta a HARD (il file voce del primo
@@ -3433,7 +4403,7 @@ fn frames(m: &mut Machine) -> bool {
         Ok(s) => println!("  {s}"),
         Err(e) => {
             println!("FAIL: OMEGA: {e}");
-            return false;
+            fail!();
         }
     }
     // JUKEBOX: i brani uno dopo l'altro (giù ogni 3 s), poi OMEGA per 70 s (cambia sezione ogni due
@@ -3492,18 +4462,29 @@ fn frames(m: &mut Machine) -> bool {
         Ok(s) => println!("  {s}"),
         Err(e) => {
             println!("FAIL: {e}");
-            return false;
+            fail!();
         }
     }
-    let (n, worst) = spills.get();
-    if spill_max() > 0 {
-        println!("  frame di partita finiti dopo l'interrupt del frame dopo, ripresi da quelli dopo: {n} (al più {worst} cicli oltre, ammessi {})", spill_max());
+    let (n, worst, lost) = spills.get();
+    println!("  frame finiti dopo l'interrupt del frame dopo: {n} (al più {worst} cicli oltre, {lost} frame persi)");
+    {
+        let mut w = worst_frames.borrow_mut();
+        w.sort_by_key(|r| std::cmp::Reverse(r.0));
+        println!(
+            "  frame oltre il budget ({} cicli in partita, {} nelle altre scene): {}; i più pesanti:",
+            FRAME_BUDGET(),
+            frame_cycles(),
+            w.len()
+        );
+        for (c, f, what) in w.iter().take(12) {
+            println!("    {c} cicli al frame {f}: {what}");
+        }
     }
     let mut over = 0;
     for (i, s) in stats.iter().enumerate() {
         if s.2 > 0 {
             println!(
-                "  {:<10} {:5} frame: cicli max {:6}, media {:6}, oltre {}: {}",
+                "  {:<10} {:5} frame: cicli max {:6}, media {:6}, oltre il budget ({}): {}",
                 NAMES[i],
                 s.2,
                 s.0,
@@ -3532,13 +4513,22 @@ fn frames(m: &mut Machine) -> bool {
     );
     if n == 0 || ready != n || vias == 0 || go != vias {
         println!("FAIL: READY e GO non sempre al loro frame");
-        return false;
+        fail!();
     }
     m.cpu.watch = None;
     let (late, all) = late_ticks.get();
     println!("  musica in partita: {late} tick rimandati al frame dopo su {all} frame");
+    // lo stack: sotto, fino a STACK_FLOOR, c'è del codice (FTCODE delle build di prova, STKCODE);
+    // il banco chiama il frame senza l'interrupt del raster né il ciclo principale: resta margine
+    println!("  stack: sceso al più a ${:04X} (codice fino a ${STACK_FLOOR:04X})", 0x100 + u16::from(m.cpu.sp_min) + 1);
+    if 0x100 + u16::from(m.cpu.sp_min) < STACK_FLOOR + STACK_MARGIN {
+        println!("FAIL: lo stack scende a meno di {STACK_MARGIN} byte dal codice che ha sotto");
+        fail!();
+    }
     let (kept, all) = kept_sprites.get();
     println!("  sprite del frame prima (dopo un tick pesantissimo) in {kept} frame su {all}");
+    let (fx_asked, fx_started) = fx_count.get();
+    println!("  effetti sonori: {fx_asked} chiesti da un tick, {fx_started} partiti all'inizio del frame dopo");
     let g = guardian.get();
     println!(
         "  racchette GUARDIAN: {} frame con i settori persi, {} con l'immagine in ritardo (al più {} di fila), {} con il pezzo del TELEPORT rimasto",
@@ -3554,44 +4544,46 @@ fn frames(m: &mut Machine) -> bool {
     }
     if sh.per_kind.iter().any(|&(_, _, worst)| worst > GUARDIAN_LAG_MAX) {
         println!("FAIL: racchetta a schermo diversa dall'immagine giusta per oltre {GUARDIAN_LAG_MAX} frame di fila");
-        return false;
+        fail!();
     }
     if (g.frames == 0 && !ntsc() && !pick_raw) || g.worst > GUARDIAN_LAG_MAX || g.warp_left > 0 {
         println!(
             "FAIL: racchetta GUARDIAN non provata, immagine dei settori persi oltre {GUARDIAN_LAG_MAX} frame in ritardo o pezzo del TELEPORT rimasto nello sprite"
         );
-        return false;
+        fail!();
     }
-    // (sull'NTSC i tick più pesanti non stanno nel frame nemmeno sforando: lo scatto accettato, fino
-    // allo 0,5%)
-    let (limit, pct) = if ntsc() { (200, "0,5%") } else { (500, "0,2%") };
-    if kept * limit > all {
-        println!("FAIL: troppi frame con gli sprite del frame prima (oltre lo {pct})");
-        return false;
+    // in partita gli sprite si rifanno a ogni frame: nessun frame con quelli di prima
+    let _ = all;
+    if kept > 0 {
+        println!("FAIL: {kept} frame con gli sprite del frame prima");
+        fail!();
     }
     let (fast, slow, extra) = tempo.get();
     println!("  tempo della musica: {fast} frame al match point, {slow} nel bullet time, al più {extra} passi in più in sospeso");
     if fast == 0 || slow == 0 || extra > 2 {
         println!("FAIL: tempo della musica non provato (match point o bullet time) o passi in più che si accumulano");
-        return false;
+        fail!();
     }
-    // limite all'1%: la quota cambia con le partite che il giocatore simulato sceglie (con un altro
-    // seme la 4.4.1 arrivava allo 0,68%, la 4.5.0 con questo allo 0,74%)
-    if late * 100 > all {
-        println!("FAIL: troppi tick della musica rimandati (oltre l'1%)");
-        return false;
+    if fx_asked == 0 || fx_started != fx_asked {
+        println!("FAIL: effetti sonori non provati o non partiti all'inizio del frame dopo");
+        fail!();
+    }
+    // la musica non ritarda mai un passo
+    if late > 0 {
+        println!("FAIL: {late} tick della musica rimandati");
+        fail!();
     }
     if voiced.1 == 0 {
         println!("FAIL: la voce di CHALLENGE non suona mai");
-        return false;
+        fail!();
     }
     if voiced.3 == 0 {
         println!("FAIL: il tema di CHALLENGE non suona mai");
-        return false;
+        fail!();
     }
     if forced.0 == 0 {
         println!("FAIL: nessun frame con il bullet time");
-        return false;
+        fail!();
     }
     let [gray, yellow, _, pulse, wrong] = border.get();
     println!(
@@ -3599,7 +4591,7 @@ fn frames(m: &mut Machine) -> bool {
     );
     if gray == 0 || yellow == 0 || pulse == 0 || wrong > 0 {
         println!("FAIL: bordo della partita non provato o sbagliato (fuori dalla partita deve tornare quello dello sfondo)");
-        return false;
+        fail!();
     }
     match border_logic(m) {
         Ok(s) => println!("  {s}"),
@@ -3626,14 +4618,50 @@ fn frames(m: &mut Machine) -> bool {
         Ok(s) => println!("  {s}"),
         Err(e) => {
             println!("FAIL: {e}");
-            return false;
+            fail!();
         }
     }
-    if over > 0 {
-        println!("FAIL: {over} frame oltre il budget");
+    match warp_fast(m) {
+        Ok(s) => println!("  {s}"),
+        Err(e) => {
+            println!("FAIL: {e}");
+            fail!();
+        }
+    }
+    match lasers.borrow().result() {
+        Ok(s) => println!("  {s}"),
+        Err(e) => {
+            println!("FAIL: colpi del BLASTER: {e}");
+            fail!();
+        }
+    }
+    // Fuori dalla partita nessun frame oltre il suo tempo. In partita l'obiettivo è il 90% del
+    // frame per ogni frame (PADDWS_C64_STRICT: fallisce al primo oltre); senza, il controllo
+    // tiene ferme le misure del 2026-11-23, con un margine (i conteggi oscillano con le partite
+    // del giocatore simulato): PAL al più lo 0,02% dei frame di partita oltre il 90% e nessuno
+    // oltre il frame (misurati: 0); NTSC lo 0,33% e lo 0,033% (misurati 6 e 0 su 45.525; nella
+    // prova sbilanciata PADDWS_C64_PICK_RAW, raffiche del BLASTER con il TELEPORT nel bullet time,
+    // 87 e 7 su 47.597)
+    let (play_frames, play_late) = play_over.get();
+    let over_play = stats[ST_PLAY as usize].3;
+    let over_other = over - over_play;
+    let strict = std::env::var_os("PADDWS_C64_STRICT").is_some();
+    let (allow_90, allow_100) = match (strict, ntsc()) {
+        (true, _) => (0, 0),
+        (false, false) => (play_frames / 5000, 0),
+        (false, true) => (play_frames / 300, play_frames / 3000),
+    };
+    println!(
+        "  frame di partita: {play_frames}, oltre il 90% del frame {over_play} (ammessi {allow_90}), oltre il frame {play_late} (ammessi {allow_100}); fuori dalla partita oltre il frame {over_other}"
+    );
+    if over_other > 0 || over_play > allow_90 || play_late > allow_100 {
+        println!("FAIL: frame oltre il budget");
+        fail!();
+    }
+    if failed.get() {
         return false;
     }
-    println!("PASS: nessun frame oltre il budget");
+    println!("PASS: frame nel budget");
     true
 }
 
@@ -3681,7 +4709,7 @@ fn scores_border(m: &mut Machine) -> Result<String, String> {
     let Some(left) = after else {
         return Err("la classifica non finisce".into());
     };
-    if frames < 300 || worst > FRAME_BUDGET() {
+    if frames < 300 || worst > frame_cycles() {
         return Err(format!("{frames} frame, cicli max {worst}"));
     }
     Ok(format!("classifica: {frames} frame con il bordo nero, cicli max {worst}; uscita al frame {left}"))
@@ -4005,6 +5033,70 @@ fn guardian_fast(m: &mut Machine) -> Result<String, String> {
     })
 }
 
+/// Salto del TELEPORT (warp_image di video.s): l'immagine rifatta solo nelle righe cambiate da
+/// quella di prima dev'essere uguale a quella rifatta tutta, alla partenza e all'arrivo, per ogni
+/// avanzamento e tremolio, anche tornando indietro. Usa tre sprite della coda della palla (li
+/// rimette).
+fn warp_fast(m: &mut Machine) -> Result<String, String> {
+    const SRC: u8 = 128; // sprite a $E000
+    const AT: usize = 0xC000 + SRC as usize * 64;
+    let saved = m.cpu.mem[AT..AT + 192].to_vec();
+    let saved_vars: Vec<(&str, u8)> = ["wp_src", "tick", "wp_ls", "wp_lo"].into_iter().map(|n| (n, m.read_u8(n, 0))).collect();
+    let mut rng = Rng::new(0x5EED_1234);
+    let (mut calls, mut worst_step, mut worst_full) = (0u32, 0u64, 0u64);
+    let image = |m: &mut Machine, to: usize, level: u8, arr: u8, tick: u8, prev: u8| -> u64 {
+        m.write_u8("ptr", 0, to as u8);
+        m.write_u8("ptr", 1, (to >> 8) as u8);
+        m.write_u8("tick", 0, tick);
+        m.write_u8("tr_r0", 0, prev); // wp_prev
+        m.cpu.a = level;
+        m.cpu.x = arr;
+        m.call("warp_image")
+    };
+    for round in 0..40 {
+        // un'astronave a caso (anche righe vuote), e una volta nessuna
+        for i in 0..63 {
+            let b = if round == 0 || rng.below(8) == 0 { 0 } else { rng.next_u32() as u8 };
+            m.cpu.mem[AT + i] = b;
+        }
+        m.write_u8("wp_src", 0, if round == 0 { 0 } else { SRC });
+        for arr in 0..2u8 {
+            let (mut level, mut tick, mut prev) = (0u8, rng.next_u32() as u8, 0xFFu8);
+            m.cpu.mem[AT + 64..AT + 192].fill(0xAA);
+            for _ in 0..60 {
+                let key = level << 1 | (tick >> 2 & 1);
+                let step = image(m, AT + 64, level, arr, tick, prev);
+                let full = image(m, AT + 128, level, arr, tick, 0xFF);
+                calls += 1;
+                if prev != 0xFF {
+                    worst_step = worst_step.max(step);
+                }
+                worst_full = worst_full.max(full);
+                if m.cpu.mem[AT + 64..AT + 127] != m.cpu.mem[AT + 128..AT + 191] {
+                    return Err(format!(
+                        "salto del TELEPORT: immagine a righe diversa da quella rifatta tutta (arrivo {arr}, avanzamento {level}, tick {tick}, chiave di prima ${prev:02X})"
+                    ));
+                }
+                prev = key;
+                // la palla avanza di 0-7 pixel, ogni tanto torna indietro o salta
+                level = match rng.below(12) {
+                    0 => rng.below(33) as u8,
+                    1 => level.saturating_sub(rng.below(6) as u8),
+                    _ => (level + rng.below(8) as u8).min(32),
+                };
+                tick = tick.wrapping_add(rng.below(3) as u8);
+            }
+        }
+    }
+    m.cpu.mem[AT..AT + 192].copy_from_slice(&saved);
+    for (n, v) in saved_vars {
+        m.write_u8(n, 0, v);
+    }
+    Ok(format!(
+        "salto del TELEPORT: {calls} immagini a righe come quelle rifatte tutte, al più {worst_step} cicli ({worst_full} tutta)"
+    ))
+}
+
 /// Le immagini delle racchette dei tipi (pad_image) come le prepara la scelta, a caratteri: una
 /// cella dello sprite multicolore per carattere ("." niente, "-" grigio $D025, "o" colore dedicato
 /// $D027+i, "#" bianco $D026); in più TWIST inclinata nei due versi e il GUARDIAN con due settori persi.
@@ -4322,6 +5414,8 @@ fn sid(m: &mut Machine) -> bool {
             return false;
         }
     };
+    // le variabili azzerate come all'avvio: nel .prg al loro posto c'è ancora il segmento INIT
+    m.call("clear_vars");
     m.call("sid_init");
     // il rimbalzo del continue (effetto 9): la sua traccia sta in CLCODE, che il C64 copia a $C400
     // solo nella schermata del continue; qui la si mette al suo posto, presa dalla ROM della musica
@@ -6026,7 +7120,7 @@ fn full_frame(m: &mut Machine) -> Result<u64, String> {
     let c = m.cpu.call(addr, 1_000_000);
     m.cpu.frame_start = None;
     let c = c?;
-    if heavy && c > FRAME_BUDGET() {
+    if heavy && c > frame_cycles() {
         println!("  frame oltre il budget: stato {}, {c} cicli", m.read_u8("state", 0));
         if let Some(parts) = frame_parts(m) {
             println!("    {parts}");
@@ -6213,7 +7307,7 @@ fn ending_run(m: &mut Machine, score: u32, fire_at: Option<u32>) -> Result<Endin
                     // la riga dei colori scritta prima che il raster ci arrivi (8 righe del raster
                     // per riga di testo, dalla prima, colors_before)
                     let row = (w.0.wrapping_sub(0xD800) / 40) as u64;
-                    (0xD800..0xDBE8).contains(&w.0) && cy - start > colors_before() + row * 8 * paddws_c64::raster_cycles()
+                    (0xD800..0xDBE8).contains(&w.0) && cy - start > colors_before() + row * 8 * paddws_c64::line_cycles()
                 });
             r.late += late as u32;
         }
@@ -6397,7 +7491,7 @@ fn ending_frames(m: &mut Machine) -> Result<String, String> {
         e.dedup();
         return Err(format!("{} ({} controlli falliti)", e.join("; "), r.errors.len()));
     }
-    if r.worst > FRAME_BUDGET() {
+    if r.worst > frame_cycles() {
         return Err(format!("frame di {} cicli nella parte {} (per parte cicli e frame: {:?})", r.worst, r.worst_part, r.part_worst));
     }
     if r.you_win != 1 {
@@ -6860,7 +7954,7 @@ fn pick_chars_ui(m: &mut Machine) -> Result<String, String> {
     if m.cpu.mem[CHARSET..CHARSET + 0x800] != before[..] {
         return Err("dopo la scelta le lettere 2x non sono quelle di prima".into());
     }
-    if worst > FRAME_BUDGET() - 3_000 {
+    if worst > frame_cycles() - 3_000 {
         return Err(format!("{worst} cicli"));
     }
     Ok(format!("pick_chars: metà delle lettere della scelta dei bonus dai glifi del font, poi di nuovo le lettere 2x (al più {worst} cicli)"))
@@ -6929,7 +8023,7 @@ fn perfect_ui(m: &mut Machine) -> Result<String, String> {
         m.cpu.watch = Some((0xD418, 0xD418));
         m.cpu.writes.clear();
         let c = full_frame(m).map_err(|e| format!("{what}: frame del GAME OVER: {e}"))?;
-        if m.read_u8("state", 0) != ST_OVER || c > FRAME_BUDGET() {
+        if m.read_u8("state", 0) != ST_OVER || c > frame_cycles() {
             return Err(format!("{what}: frame del GAME OVER con lo stato {} e {c} cicli", m.read_u8("state", 0)));
         }
         worst_enter = worst_enter.max(c);
@@ -6960,7 +8054,7 @@ fn perfect_ui(m: &mut Machine) -> Result<String, String> {
             let c = full_frame(m).map_err(|e| format!("{what}, frame {frames} (win_pg {}): {e}", m.read_u8("win_pg", 0)))?;
             // (dopo la sfida la presentazione: la copia del file voce è un caricamento, come in frames)
             let c = if m.read_u8("state", 0) == ST_INTRO { c - (m.cpu.ef_cycles - ef) } else { c };
-            if c > FRAME_BUDGET() {
+            if c > frame_cycles() {
                 return Err(format!("{what}: frame {frames} del GAME OVER di {c} cicli"));
             }
             worst = worst.max(c);

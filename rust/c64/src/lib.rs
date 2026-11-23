@@ -14,7 +14,7 @@ use cpu6502::{Cpu, EF_HALF, EasyFlash};
 const EF_IMAGE: usize = 0xD000;
 const EF_RAM: usize = 0xDF00;
 /// Segmenti del .prg che girano a un altro indirizzo (simboli `__NOME_LOAD__`, `RUN__`, `SIZE__`).
-pub const MOVED_SEGMENTS: [&str; 4] = ["BOOTCODE", "LOWCODE", "SMCODE", "HSCODE"];
+pub const MOVED_SEGMENTS: [&str; 6] = ["BOOTCODE", "LOWCODE", "SMCODE", "HSCODE", "FZCODE", "STKCODE"];
 
 /// Cartella della versione C64 (`c64/`), accanto a `rust/`.
 pub fn c64_dir() -> PathBuf {
@@ -33,20 +33,36 @@ pub fn ntsc() -> bool {
     NTSC.load(Ordering::Relaxed)
 }
 
-/// Righe del frame e cicli utili per riga del modello del raster (`Cpu::frame_start`): PAL 312 righe
-/// da 63 cicli, NTSC 263 da 65, meno le righe dei caratteri e gli sprite (circa 58 e 59).
+/// Righe del frame (`Cpu::frame_start`): PAL 312 da 63 cicli, NTSC 263 da 65.
 pub fn raster_lines() -> u64 {
     if ntsc() { 263 } else { 312 }
 }
 
+/// Cicli di una riga del raster, compresi quelli che il VIC-II ruba (`cpu6502::Vic`).
+pub fn line_cycles() -> u64 {
+    if ntsc() { 65 } else { 63 }
+}
+
+/// Cicli di un frame, dall'interrupt della riga 250 a quello dopo: PAL 19.656, NTSC 17.095.
+pub fn frame_cycles() -> u64 {
+    raster_lines() * line_cycles()
+}
+
+/// Cicli utili per riga con cui il programma calcola le sue soglie (TV_LCYC di c64/src: PAL 58,
+/// NTSC 59), per i conti del banco di prova che seguono quelle soglie.
 pub fn raster_cycles() -> u64 {
     if ntsc() { 59 } else { 58 }
 }
 
-/// Cicli utili di un frame: il budget del banco di prova (PAL 18.000; NTSC 15.500).
+/// Cicli veri dall'interrupt della riga 250 entro cui deve finire ogni frame: il 90% del frame
+/// (PAL 17.700, NTSC 15.400), badline e sprite compresi.
 pub fn frame_budget() -> u64 {
-    if ntsc() { 15_500 } else { 18_000 }
+    if ntsc() { 15_400 } else { 17_700 }
 }
+
+/// Cicli dall'interrupt della riga 250 alla prima istruzione di `frame`: la fine dell'istruzione
+/// in corso, l'interrupt (irq_handler) e il ciclo di play_main.
+pub const IRQ_LEAD: u64 = 63;
 
 /// Cartella di build della versione C64 (`c64/build`, per l'NTSC `c64/build/ntsc`).
 pub fn default_build_dir() -> PathBuf {
@@ -73,7 +89,12 @@ impl Machine {
     /// l'avvio della cartuccia), le etichette `paddws.lbl` (formato VICE di ld65 `-Ln`) e la
     /// cartuccia `paddws.crt`, con la flash della classifica cancellata.
     pub fn load(build: &Path) -> Result<Self, String> {
-        let prg_path = build.join("paddws.prg");
+        Self::load_named(build, "paddws")
+    }
+
+    /// Come `load`, con il nome della build (`c64/build.ps1 -Name`): le build di prova per VICE.
+    pub fn load_named(build: &Path, name: &str) -> Result<Self, String> {
+        let prg_path = build.join(format!("{name}.prg"));
         let prg = std::fs::read(&prg_path)
             .map_err(|e| format!("{}: {e} (assemblare prima con c64/build.ps1)", prg_path.display()))?;
         if prg.len() < 3 {
@@ -89,8 +110,8 @@ impl Machine {
         cpu.load(start as u16, &data[..split]);
         cpu.load(EF_RAM as u16, &data[split..(split + 256).min(data.len())]);
         cpu.mem[1] = 0x35; // come dopo l'avvio: BASIC e KERNAL spenti, I/O acceso
-        cpu.ef = Some(Box::new(load_crt(&build.join("paddws.crt"))?));
-        let lbl_path = build.join("paddws.lbl");
+        cpu.ef = Some(Box::new(load_crt(&build.join(format!("{name}.crt")))?));
+        let lbl_path = build.join(format!("{name}.lbl"));
         let text = std::fs::read_to_string(&lbl_path).map_err(|e| format!("{}: {e}", lbl_path.display()))?;
         let mut labels = HashMap::new();
         let mut all_labels = Vec::new();
@@ -146,6 +167,18 @@ impl Machine {
             .iter()
             .find(|(n, _, _)| n == name)
             .map(|(_, a, b)| (*a, b.as_slice()))
+    }
+
+    /// Dopo `video_init`: rimette sotto l'I/O le immagini degli sprite da $D400 (capsule e icone
+    /// dei bonus). L'avvio le copia lì dal primo schermo ($C000-$C7FF), ma nel banco di prova
+    /// `load` ha già messo a $C400 il codice delle mosse speciali (SMCODE), e la copia porterebbe
+    /// quello. Restituisce false se la prima metà (non coperta) non è quella del .prg: l'avvio non
+    /// copia più gli sprite da lì.
+    pub fn restore_sprites(&mut self) -> bool {
+        let at = |a: usize| a - 0x0801;
+        let same = self.cpu.under_io[..0x400] == self.image[at(0xC000)..at(0xC400)];
+        self.cpu.under_io[0x400..0x800].copy_from_slice(&self.image[at(0xC400)..at(0xC800)]);
+        same
     }
 
     /// Etichetta, se c'è.

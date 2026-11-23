@@ -1,7 +1,8 @@
 ; Aritmetica a virgola fissa Q16.16 su 32 bit, identica a rust/core/src/fixed.rs e rng.rs.
 ;
 ; I numeri sono a 32 bit in complemento a due, byte basso per primo. Le moltiplicazioni passano
-; per un prodotto senza segno a 64 bit e troncano verso lo zero come `fixed::mul` (>> 16) e
+; per il prodotto senza segno dei valori assoluti (i byte 0-6 dei 64) e troncano verso lo zero
+; come `fixed::mul` (>> 16) e
 ; `fixed::mul_recip` (>> 24); il prodotto 8x8 usa le tabelle dei quarti di quadrato
 ; (a*b = f(a+b) - f(a-b), f(x) = x*x/4) e salta i byte nulli dei fattori.
 
@@ -172,16 +173,20 @@ done:
     op8 sta, {dst}, 3
 .endmacro
 
-; m_a = a * b / 2^16 (fixed::mul)
+; m_a = a * b / 2^16 (fixed::mul); con a = m_a niente copia
 .macro mulq16 pa, pb
+  .if .not .xmatch({pa}, m_a)
     mov32 m_a, {pa}
+  .endif
     mov32 m_b, {pb}
     jsr mul_q16
 .endmacro
 
-; m_a = a * r / 2^24 (fixed::mul_recip)
+; m_a = a * r / 2^24 (fixed::mul_recip); con a = m_a niente copia
 .macro mulq24 pa, pr
+  .if .not .xmatch({pa}, m_a)
     mov32 m_a, {pa}
+  .endif
     mov32 m_b, {pr}
     jsr mul_q24
 .endmacro
@@ -212,7 +217,7 @@ done:
 .segment "ZEROPAGE"
 m_a:    .res 4          ; primo fattore (e risultato di mul_q16 / mul_q24)
 m_b:    .res 4          ; secondo fattore (distrutto)
-m_p:    .res 8 + 3      ; prodotto a 64 bit (3 byte in più per il riporto)
+m_p:    .res 8 + 3      ; prodotto nei byte 0-6 (altri file usano tutti gli 11 byte come variabili)
 m_sign: .res 1
 m_t:    .res 1
 m_lo:   .res 1
@@ -394,13 +399,23 @@ ready:
 
 ; ------------------------------------------------------------------------------------ prodotto
 
-; Prodotto parziale m_a[i] * m_b[j] (puntatori sq* già impostati per m_a[i]) sommato in m_p dal
-; byte i + j, con il riporto. Il byte basso del prodotto aspetta in X, l'alto in Y.
+; Prodotto parziale P = m_b[i] * m_a[j] (puntatori sq* già impostati per m_b[i]) sommato in m_p
+; dal byte i + j, con il riporto fino al byte 6. Entra ed esce con C = 0: le sottrazioni danno
+; P - 1 (P >= 1, i byte nulli si saltano, quindi alla fine C = 1) e il riporto della prima somma
+; rimette l'1. Il byte basso aspetta in X, l'alto in Y.
 .macro umul_part i, j
-    .local done
-    ldy m_b+j
+    .local done, carry
+    ldy m_a+j
     beq done
+  .if i + j = 6
+    ; solo il byte basso: il byte 7 non serve
+    lda (sq1_lo),y
+    sbc (sq2_lo),y
     sec
+    adc m_p+6
+    sta m_p+6
+    clc
+  .else
     lda (sq1_lo),y
     sbc (sq2_lo),y
     tax
@@ -408,36 +423,126 @@ ready:
     sbc (sq2_hi),y
     tay
     txa
-    clc
     adc m_p+i+j
     sta m_p+i+j
     tya
     adc m_p+i+j+1
     sta m_p+i+j+1
-    .if i + j + 2 <= 7
+    .if i + j = 5
+    clc                         ; il riporto nel byte 7 non serve
+    .else
     bcc done
-    .repeat 6 - (i + j), k
+    .repeat 5 - (i + j), k
     inc m_p+i+j+2+k
-    bne done
+      .if i + j + k < 4
+    bne carry
+      .endif
     .endrepeat
+carry:
+    clc
     .endif
+  .endif
 done:
 .endmacro
 
-; Riga del prodotto per il byte i di m_a (saltata se è zero).
-.macro umul_row i
-    .local next
-    lda m_a+i
+; Come umul_part per la prima riga (i = 0): prima di lei nessuno ha scritto i byte 0-3 di m_p
+; (il 4 è a zero), quindi l'alto si scrive senza somma (alto + riporto <= 255: nessun riporto
+; oltre) e il basso del primo prodotto anche; un byte nullo di m_a scrive 0 al posto dell'alto.
+.macro umul_part0 j
+    .local done, do
+    ldy m_a+j
+  .if j = 3
+    beq done
+  .else
+    bne do
+    .if j = 0
+    sty m_p
+    .endif
+    sty m_p+j+1
+    beq done
+  .endif
+do:
+    lda (sq1_lo),y
+    sbc (sq2_lo),y
+    tax
+    lda (sq1_hi),y
+    sbc (sq2_hi),y
+    tay
+    txa
+  .if j = 0
+    adc #0
+  .else
+    adc m_p+j
+  .endif
+    sta m_p+j
+    tya
+    adc #0
+    sta m_p+j+1
+done:
+.endmacro
+
+; Riga del prodotto per il byte i di m_b (saltata se è zero; la prima riga saltata azzera i byte
+; 0-3). Le righe vanno sul fattore m_b, che nelle chiamate è più spesso una costante con pochi
+; byte non nulli. Le righe 2 e 3 (parte intera dei fattori Q16.16 e Q8.24) con il byte 1 o 2
+; passano da umul_small. `small` è l'etichetta di umul_small i.
+.macro umul_row i, small
+    .local next, row
+    lda m_b+i
+  .if i = 0
+    bne row
+    .repeat 4, k
+    sta m_p+k
+    .endrepeat
+    jmp next
+row:
+  .elseif i = 3
+    beq next
+  .else
     jeq next
+  .endif
     sta sq1_lo
     sta sq1_hi
     eor #$ff
+  .if i = 3
+    cmp #$fd                    ; 255 - m_b[i] >= 253: m_b[i] = 1 o 2; se no C = 0
+    bcs small
+  .elseif i = 2
+    cmp #$fd
+    jcs small
+  .endif
     sta sq2_lo
     sta sq2_hi
     .repeat 4, j
+  .if i = 0
+    umul_part0 j
+  .else
     umul_part i, j
+  .endif
     .endrepeat
 next:
+.endmacro
+
+; Riga i (2 o 3) con m_b[i] = 1 o 2 (A = 255 - m_b[i]): m_a sommato una o due volte dal byte i,
+; senza tabelle, fino al byte 6. Esce con C = 0.
+.macro umul_small i
+    .local add, hi
+    eor #$ff
+    tax
+    clc
+add:
+    .repeat 4, k
+    lda m_a+k
+    adc m_p+i+k
+    sta m_p+i+k
+    .endrepeat
+  .if i = 2
+    bcc hi
+    inc m_p+6
+hi:
+  .endif
+    clc
+    dex
+    bne add
 .endmacro
 
 ; Prodotto del fattore impostato (puntatori sq*) per il byte in Y: A = byte basso, m_t = alto.
@@ -452,18 +557,6 @@ next:
     lda m_lo
 .endmacro
 
-; m_p (64 bit) = m_a * m_b, senza segno. m_a e m_b restano intatti. Tutto srotolato: indirizzi
-; fissi in pagina zero, nessun ciclo.
-umul32:
-    lda #0
-    .repeat 8, k
-    sta m_p+k
-    .endrepeat
-    .repeat 4, i
-    umul_row i
-    .endrepeat
-    rts
-
 ; A * Y senza segno: m_t = byte alto, A = byte basso.
 umul8:
     sta sq1_lo
@@ -474,67 +567,84 @@ umul8:
     mul8
     rts
 
-; Prepara m_a e m_b per un prodotto con segno: valori assoluti e segno del risultato in m_sign.
-abs_operands:
-    lda m_a+3
-    eor m_b+3
-    sta m_sign
-    lda m_a+3
-    bpl :+
-    neg32 m_a, m_a
-:   lda m_b+3
-    bpl :+
-    neg32 m_b, m_b
-:   rts
-
 ; m_a = m_a * m_b / 2^16, troncato verso lo zero (fixed::mul). Distrugge m_b.
 mul_q16:
     jsr abs_operands
-    jsr umul32
-    lda m_p+2
-    sta m_a
-    lda m_p+3
-    sta m_a+1
-    lda m_p+4
-    sta m_a+2
-    lda m_p+5
-    sta m_a+3
-    jmp apply_sign
+    lda m_sign
+    bmi :+
+    mov32 m_a, {m_p+2}
+    rts
+:   neg32 m_a, {m_p+2}          ; -(|a * b| >> 16): troncato verso lo zero
+    rts
 
 ; m_a = m_a * m_b / 2^24 con m_b reciproco Q8.24 (fixed::mul_recip). Distrugge m_b.
 mul_q24:
     jsr abs_operands
-    jsr umul32
-    lda m_p+3
-    sta m_a
-    lda m_p+4
-    sta m_a+1
-    lda m_p+5
-    sta m_a+2
-    lda m_p+6
-    sta m_a+3
-apply_sign:
     lda m_sign
-    bpl :+
+    bmi :+
+    mov32 m_a, {m_p+3}
+    rts
+:   neg32 m_a, {m_p+3}
+    rts
+
+; Prodotto con segno: valori assoluti di m_a e m_b, segno del risultato in m_sign, poi m_p =
+; |m_a| * |m_b| (prosegue in umul32).
+.proc abs_operands
+    lda m_a+3
+    bmi neg_a
+    lda m_b+3                   ; a >= 0: il segno è quello di b
+    sta m_sign
+    bpl umul32
+    bmi neg_b
+neg_a:
+    eor m_b+3
+    sta m_sign
     neg32 m_a, m_a
-:   rts
+    lda m_b+3
+    bpl umul32
+neg_b:
+    neg32 m_b, m_b
+    ; (prosegue in umul32)
+.endproc
+
+; m_p = m_a * m_b, senza segno, nei byte 0-6 (il byte 7 non si calcola: non serve a nessuno). m_a
+; e m_b restano intatti. Tutto srotolato: indirizzi fissi in pagina zero, nessun ciclo.
+.proc umul32
+    lda #0                      ; i byte 0-3 li scrive la prima riga
+    sta m_p+4
+    sta m_p+5
+    sta m_p+6
+    clc
+    umul_row 0, 0
+    umul_row 1, 0
+    umul_row 2, small2
+row3:
+    umul_row 3, small3
+    rts
+small3:
+    umul_small 3
+    rts
+small2:
+    umul_small 2
+    jmp row3
+.endproc
 
 ; ------------------------------------------------------------------------------------ generatore
 
 ; rng = xorshift32(rng): x ^= x << 13; x ^= x >> 17; x ^= x << 5 (Rng::next_u32)
 ;
-; Uno shift a sinistra di 8k + 5 bit dà al byte j il valore (x[j-k-1] >> 3) | (x[j-k] << 5):
-; con le tabelle shr3 e shl5 ogni byte costa una ventina di cicli. I byte si aggiornano dall'alto,
-; così quelli letti sono ancora i vecchi.
-.macro xor_shl5 j, k
+; Uno shift a sinistra di 8k + 5 bit dà al byte j il valore (x[j-k] << 5) | (x[j-k-1] >> 3):
+; con le tabelle shl5 e shr3 ogni byte costa una ventina di cicli. I byte si aggiornano dall'alto,
+; così quelli letti sono ancora i vecchi, e Y resta su x[j-k-1], che serve subito al byte j - 1
+; (`first` = 0: Y è già pronto).
+.macro xor_shl5 j, k, first
+    .if first
+    ldy rng + j - k
+    .endif
+    lda shl5,y
     .if j - k - 1 >= 0
     ldy rng + j - k - 1
-    lda shr3,y
-    ldy rng + j - k
-    ora shl5,y
-    .else
-    ldy rng + j - k
-    lda shl5,y
+    ora shr3,y
     .endif
     eor rng + j
     sta rng + j
@@ -542,40 +652,119 @@ apply_sign:
 
 rng_next:
     ; x ^= x << 13 (k = 1)
-    xor_shl5 3, 1
-    xor_shl5 2, 1
-    xor_shl5 1, 1
+    xor_shl5 3, 1, 1
+    xor_shl5 2, 1, 0
+    xor_shl5 1, 1, 0
     ; x ^= x >> 17
     lda rng+3
     lsr a
-    sta r_t
+    tay
     lda rng+2
     ror a
     eor rng
     sta rng
-    lda r_t
+    tya
     eor rng+1
     sta rng+1
     ; x ^= x << 5 (k = 0)
-    xor_shl5 3, 0
-    xor_shl5 2, 0
-    xor_shl5 1, 0
-    xor_shl5 0, 0
+    xor_shl5 3, 0, 1
+    xor_shl5 2, 0, 0
+    xor_shl5 1, 0, 0
+    xor_shl5 0, 0, 0
     rts
 
 ; A:X (A basso) = Rng::below(n) con n in m_b (16 bit): ((x >> 16) * n) >> 16. Avanza il generatore.
-rng_below:
+; Prodotto 16x16 dei byte x = rng+2, rng+3 per n, solo fino ai byte 2 e 3 che servono (byte 1 e
+; 2 in m_p+1 e m_p+2, il 3 in m_p+3). Le sottrazioni partono da C = 1: i fattori nulli danno 0.
+.proc rng_below
     jsr rng_next
-    lda rng+2
-    sta m_a
-    lda rng+3
-    sta m_a+1
-    lda #0
-    sta m_a+2
-    sta m_a+3
-    sta m_b+2
-    sta m_b+3
-    jsr umul32
-    lda m_p+2
-    ldx m_p+3
+    lda m_b
+    sta sq1_lo
+    sta sq1_hi
+    eor #$ff
+    sta sq2_lo
+    sta sq2_hi
+    ; x1 * n0: basso nel byte 1 (X), alto nel byte 2 (A)
+    ldy rng+3
+    sec
+    lda (sq1_lo),y
+    sbc (sq2_lo),y
+    tax
+    lda (sq1_hi),y
+    sbc (sq2_hi),y
+    ldy m_b+1
+    bne wide
+    ; n < 256: l'alto di x0 * n è al più n - 1, quindi se basso + n + 1 (C = 1) non riporta, il
+    ; byte 2 è già l'alto di x1 * n
+    tay
+    txa
+    adc m_b
+    bcs exact
+    tya
+    ldx #0
     rts
+exact:
+    tya
+wide:
+    sta m_p+2
+    stx m_p+1
+    ; x0 * n0: solo l'alto, nel byte 1 (il basso è da solo nel byte 0: nessun riporto)
+    ldy rng+2
+    sec
+    lda (sq1_lo),y
+    sbc (sq2_lo),y
+    lda (sq1_hi),y
+    sbc (sq2_hi),y
+    clc
+    adc m_p+1
+    sta m_p+1
+    lda m_p+2
+    adc #0                      ; (alto di x1 * n0) + 1 <= 255
+    sta m_p+2
+    ldx m_b+1
+    bne wide2
+    rts                         ; n < 256: X = 0 è il byte 3
+wide2:
+    stx sq1_lo
+    stx sq1_hi
+    txa
+    eor #$ff
+    sta sq2_lo
+    sta sq2_hi
+    ; x0 * n1: basso nel byte 1 (serve solo il riporto), alto nel byte 2
+    ldy rng+2
+    sec
+    lda (sq1_lo),y
+    sbc (sq2_lo),y
+    tax
+    lda (sq1_hi),y
+    sbc (sq2_hi),y
+    tay
+    txa
+    clc
+    adc m_p+1
+    tya
+    adc m_p+2
+    sta m_p+2
+    lda #0
+    rol a
+    sta m_p+3
+    ; x1 * n1: basso nel byte 2, alto nel byte 3
+    ldy rng+3
+    sec
+    lda (sq1_lo),y
+    sbc (sq2_lo),y
+    tax
+    lda (sq1_hi),y
+    sbc (sq2_hi),y
+    tay
+    txa
+    clc
+    adc m_p+2
+    sta m_p+2
+    tya
+    adc m_p+3
+    tax
+    lda m_p+2
+    rts
+.endproc

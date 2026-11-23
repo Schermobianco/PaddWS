@@ -123,10 +123,6 @@ sh_brd:    .res 1               ; bordo con lo sfondo nero (border_game in parti
 sh_mode:   .res 1               ; MODE_TEXT, MODE_BITMAP o MODE_OFF (schermo del colore del bordo)
 .segment "BSS"
 sh_img:    .res 2 * IMG_BYTES   ; immagini delle due racchette
-pd_r0:     .res 1               ; righe della racchetta e dell'area boost
-pd_r1:     .res 1
-pd_b0:     .res 1
-pd_b1:     .res 1
 pd_draw_lo: .res 2              ; colonna disegnata delle racchette (scatto che scivola)
 pd_draw_hi: .res 2
 pd_snap:   .res 2               ; la racchetta va subito alla sua colonna
@@ -137,6 +133,8 @@ pd_var:    .res 2
 pd_cur_n:  .res 2               ; righe della racchetta in questo frame
 ; immagine in preparazione
 .segment "ZEROPAGE"
+pd_r0:     .res 1               ; righe della racchetta (pad_sprite)
+pd_r1:     .res 1
 pi_side:   .res 1
 .segment "BSS"
 .segment "ZEROPAGE"
@@ -493,8 +491,10 @@ next:
     sta sh_ptr+SPN_PAD+1
     lda #MODE_TEXT
     sta sh_mode
-    rts
+    rts                         ; (A = 0: compute_sprites)
 .endproc
+.assert MODE_TEXT = 0, error, "game_sprites: A = 0 all'uscita"
+.assert (HALF_PX - 1) & $FFFF00FF = $FF, error, "compute_sprites: HALF_PX - 1 con il byte 0 a $FF e i byte 2-3 a 0"
 
 ; Copia X pagine da (ptr2) a (ptr).
 .proc copy_pages
@@ -1202,8 +1202,7 @@ big:
 .proc compute_sprites
     lda #0
     sta pd_made
-    jsr game_sprites
-    lda #0
+    jsr game_sprites            ; (A = MODE_TEXT = 0)
     sta sh_enable
     sta sh_msb
     ; nel lampo del punto tutto lo schermo è bianco
@@ -1233,20 +1232,49 @@ big:
     lsr a
     jcs pads
 ball_on:
-    sub32 t0, ball_x, ball_r
-    add32 t0, t0, {#HALF_PX - 1}
-    clc
-    lda t0+2
+    ; colonna: byte 2 e 3 di x - r + HALF_PX - 1 ($7FFF: i byte 0 e 1 danno solo il riporto, che
+    ; entra nel byte 2 insieme a SPR_X0, una somma sola: al più un riporto nel byte 3)
+    sec
+    lda ball_x
+    sbc ball_r
+    tax
+    lda ball_x+1
+    sbc ball_r+1
+    tay
+    lda ball_x+2
+    sbc ball_r+2
+    sta m_lo
+    lda ball_x+3
+    sbc ball_r+3
+    sta m_t
+    cpx #1                      ; C = riporto di x0 + $FF
+    tya
+    adc #>(HALF_PX - 1)
+    lda m_lo
     adc #SPR_X0
     sta sh_x
-    lda t0+3
+    lda m_t
     adc #0
     and #1
     sta sh_msb
-    add32 t1, ball_y, ball_r
-    sub32 t1, {#P_HEIGHT - HALF_PX}, t1
+    ; riga: byte 2 di P_HEIGHT - HALF_PX - (y + r) (byte 0-2: il byte 0 dà solo il riporto)
     clc
-    lda t1+2
+    lda ball_y
+    adc ball_r
+    sta m_lo
+    lda ball_y+1
+    adc ball_r+1
+    sta m_t
+    lda ball_y+2
+    adc ball_r+2
+    sta t1+2
+    lda #<(P_HEIGHT - HALF_PX)
+    cmp m_lo
+    lda #>(P_HEIGHT - HALF_PX)
+    sbc m_t
+    lda #^(P_HEIGHT - HALF_PX)
+    sbc t1+2
+    clc
     adc #SPR_Y0 + 1
     sta sh_y
     ldx #SP_BALL4
@@ -1274,11 +1302,13 @@ fx:
     jsr ball_fx                 ; NEXT: scia, cometa, alone
 pads:
     ldx #0
+    ldy #0
     jsr pad_sprite
     lda m_players
     cmp #2
     bne :+
     ldx #4
+    ldy #1
     jsr pad_sprite
 :   lda m_next
     beq :+
@@ -1523,25 +1553,26 @@ snap:
     rts
 .endproc
 
-; Prima del tick: quali racchette sono a casa.
+; Prima del tick: quali racchette sono a casa (pad_x = pad_home, i 4 byte; prima il byte 2, che di
+; solito è quello diverso).
 .proc dash_before
-    ldy #0
+    .repeat 2, s
     ldx #0
-:   lda #0
-    sta pd_home,y
-    beq32 {pad_x,x}, {pad_home,x}, home
-    jmp next
-home:
-    lda #1
-    sta pd_home,y
-next:
+    lda pad_x+4*s+2
+    cmp pad_home+4*s+2
+    bne :+
+    lda pad_x+4*s
+    cmp pad_home+4*s
+    bne :+
+    lda pad_x+4*s+1
+    cmp pad_home+4*s+1
+    bne :+
+    lda pad_x+4*s+3
+    cmp pad_home+4*s+3
+    bne :+
     inx
-    inx
-    inx
-    inx
-    iny
-    cpy #2
-    bne :-
+:   stx pd_home+s
+    .endrepeat
     rts
 .endproc
 
@@ -1578,16 +1609,40 @@ done:
     rts
 .endproc
 
-; Racchetta X (0 o 4): posizione dello sprite 1 o 2 e la sua immagine.
+; Racchetta X (0 o 4) del lato Y (0 o 1): posizione dello sprite 1 o 2 e la sua immagine. X = side
+; alla fine.
+PS_K = HALF_PX - 1 - P_PAD_HALF_W  ; colonna della racchetta: x + PS_K, byte 2 e 3
+kind_side: .byte 0, 8           ; pad_dx: la racchetta destra dopo i tipi della sinistra
+
 .proc pad_sprite
     stx side
-    ; colonna: x - metà larghezza + HALF_PX - 1, in una somma
-    add32 t0, {pad_x,x}, {#HALF_PX - 1 - P_PAD_HALF_W}
-    txa
-    lsr a
-    lsr a
-    tay                         ; Y = lato
-    jsr slide_x                 ; colonna a schermo: lo scatto scivola in circa 5 frame
+    ; colonna in t0+2 e t0+3 (per slide_x): i byte 0 e 1 della somma danno solo il riporto
+  .if (::PS_K & $FF) = 0
+    clc
+  .else
+    lda pad_x,x
+    cmp #<(256 - (PS_K & $FF))  ; C = riporto di x0 + il byte 0 di PS_K
+  .endif
+    lda pad_x+1,x
+    adc #>PS_K
+    lda pad_x+2,x
+    adc #^PS_K
+    sta t0+2
+    lda pad_x+3,x
+    adc #<(PS_K >> 24)
+    sta t0+3
+    ; colonna a schermo: lo scatto scivola in circa 5 frame (slide_x, solo se la colonna disegnata
+    ; non è già quella o se deve arrivare subito)
+    cmp pd_draw_hi,y
+    bne slide
+    lda t0+2
+    cmp pd_draw_lo,y
+    bne slide
+    lda pd_snap,y
+    beq slid
+slide:
+    jsr slide_x
+slid:
     ; la banda EVO dalla colonna della racchetta, lo sprite della racchetta pad_dx pixel prima
     ; (per tipo e lato: dove sta la faccia dell'astronave nell'immagine)
     clc
@@ -1604,8 +1659,7 @@ done:
     ora sh_msb
     sta sh_msb
 :   ; colpo di una mossa (sm_kick, da sm_floor): la racchetta rincula verso il fondo di sm_kick / 4
-    ; pixel e torna, un frame alla volta (X = side, come prima)
-    ldx side
+    ; pixel e torna, un frame alla volta (X = side dall'inizio: slide_x non lo cambia)
     lda sm_kick,x
     beq kicked
     dec sm_kick,x
@@ -1626,15 +1680,15 @@ kick_right:
     bcc kicked
     inc v_col
 kicked:
+    ; tipo della racchetta in pi_kind (K_NONE fuori da NEXT)
     lda #K_NONE
     ldx m_next
     beq :+
     ldx side
     lda nx_kind,x
-:   cpy #0
-    beq :+
-    ora #8                      ; la racchetta destra
-:   tax
+:   sta pi_kind
+    ora kind_side,y
+    tax
     lda v_n
     sec
     sbc pad_dx,x
@@ -1661,6 +1715,14 @@ kicked:
     sbc pad_y+2,x
     sta t1+2
     lda t1
+    clc
+    adc pad_half,x
+    lda t1+1
+    adc pad_half+1,x
+    lda t1+2
+    adc pad_half+2,x
+    sta pd_r1
+    lda t1
     cmp pad_half,x
     lda t1+1
     sbc pad_half+1,x
@@ -1669,17 +1731,10 @@ kicked:
     clc
     adc #1
     sta pd_r0
-    lda t1
-    clc
-    adc pad_half,x
-    lda t1+1
-    adc pad_half+1,x
-    lda t1+2
-    adc pad_half+2,x
-    sta pd_r1
     ; area boost (EVO): metà altezza dell'area (byte 0-2 di pad_bh / 2)
-    lda m_evo
-    beq image
+    ldx m_evo
+    beq image_r0                ; (A = r0)
+    ldx side
     lda pad_bh+3,x
     lsr a
     lda pad_bh+2,x
@@ -1699,18 +1754,17 @@ kicked:
     sbc t2+2
     clc
     adc #1
-    sta pd_b0
+    sta m_t                     ; b0
     lda t1
     clc
     adc t2
     lda t1+1
     adc t2+1
     lda t1+2
-    adc t2+2
-    sta pd_b1
+    adc t2+2                    ; b1
     ; banda: sprite non espanso dalla riga b0, alto b1 - b0 + 1 righe (se ce ne sono)
     sec
-    sbc pd_b0
+    sbc m_t
     bcc image
     cmp #SPRITE_BANDS
     bcc :+
@@ -1718,7 +1772,7 @@ kicked:
 :   clc
     adc #SP_BAND1
     sta sh_ptr+SPN_BAND,y
-    lda pd_b0
+    lda m_t
     clc
     adc #SPR_Y0
     sta sh_y+SPN_BAND,y
@@ -1727,6 +1781,7 @@ kicked:
     sta sh_enable
 image:
     lda pd_r0
+image_r0:
     clc
     adc #SPR_Y0
     sta sh_y+SPN_PAD,y
@@ -1734,16 +1789,16 @@ image:
     ora sh_enable
     sta sh_enable
     ; righe dello sprite: ognuna copre le righe r0 + 2k e r0 + 2k + 1 ed è accesa se
-    ; r0 + 2k <= r1, cioè le prime (r1 - r0) / 2 + 1
+    ; r0 + 2k <= r1, cioè le prime (r1 - r0) / 2 + 1 = (r1 - r0 + 2) / 2 (9 bit)
     lda pd_r1
     sec
     sbc pd_r0
     bcs :+
     bit pd_r0                   ; r1 < r0: nessuna riga, tranne con r0 sopra il campo (negativo:
     bpl none                    ; OMEGA appena trasformato, più alto, vicino al bordo, finché il
-:   lsr a                       ; core non lo riporta dentro; come sul PC esce dal campo)
-    clc
-    adc #1
+    sec                         ; core non lo riporta dentro; come sul PC esce dal campo)
+:   adc #1                      ; (C = 1)
+    ror a
     cmp #PAD_ROWS + 1
     bcc :+
     lda #PAD_ROWS
@@ -1751,32 +1806,29 @@ image:
 none:
     lda #0
 :   sta pi_n
+    sta pd_cur_n,y              ; (l'immagine dipende da righe, tipo e variante)
+    sty pi_side
     lda pd_r0                   ; riga del centro (salto del TELEPORT)
     clc
     adc pd_r1
     ror a
     sta pd_cy,y
-    ; colore: grigio con il BULLET scattato dell'avversario, con STEER e, a tratti, con un bonus
-    ; armato o con il proprio BULLET armato e non ancora scattato
-    lda #COL_WHITE
     ldx m_next
-    beq color
+    jeq evo
+    ; NEXT. Colore: grigio con il BULLET scattato dell'avversario, con STEER e, a tratti, con un
+    ; bonus armato o con il proprio BULLET armato e non ancora scattato
     ldx side
     lda nx_btimer
-    beq :+
-    cpx nx_bside
-    bne gray
-:   lda nx_steer
-    beq :+
-    lda nx_steer_s
-    cmp side
+    bne bullet
+    lda nx_steer
+    beq armed
+    cpx nx_steer_s
     beq gray
-:   lda nx_armed,x
+armed:
+    lda nx_armed,x
     cmp #B_NONE
     bne blink
-    lda nx_btimer
-    bne white
-    cpx nx_bside
+    cpx nx_bside                ; (BULLET non scattato: il proprio, armato)
     bne white
 blink:
     lda tick
@@ -1785,6 +1837,16 @@ blink:
 gray:
     lda #COL_GRAY
     bne color
+bullet:
+    cpx nx_bside                ; BULLET scattato
+    bne gray
+    lda nx_steer
+    beq :+
+    cpx nx_steer_s
+    beq gray
+:   lda nx_armed,x
+    cmp #B_NONE
+    bne blink
 white:
     ; lampo giallo del colpo di una mossa: i primi 4 frame, e con la MAX (31) anche dal 16° al 19°
     lda sm_kick,x
@@ -1801,40 +1863,87 @@ white:
     beq :+
     lda #COL_GREEN
     bne color
-:
-    jsr om_white                ; colore dedicato del tipo (o viola per OMEGA, omega.s)
+:   cpx nx_morph                ; colore dedicato del tipo (OMEGA: om_white, omega.s)
+    bne kind_color
+    jsr om_white
+    bne color                   ; (sempre: bianco o viola)
+kind_color:
+    ldx pi_kind
+    lda kind_col,x
 color:
     sta sh_col+SPN_PAD,y
-    ; l'immagine dipende da righe, tipo e variante: si rifà (e apply_shadows la copia) solo
-    ; quando cambiano
-    sty pi_side
-    lda pi_n
-    sta pd_cur_n,y
-    jsr pad_variant
-    ldy pi_side
+    ; variante dell'immagine in pi_var: TWIST l'inclinazione + 3, BLASTER i colpi nel caricatore
+    ; * 32, GUARDIAN i settori persi (un bit per settore: 0 il muro intero, l'immagine preparata);
+    ; X = la variante tra le immagini preparate (TWIST pi_var, BLASTER pi_ammo, gli altri 0)
+    ldx side
+    lda pi_kind
+    cmp #K_BLASTER
+    beq blaster
+    cmp #K_TWIST
+    jeq twist
+    cmp #K_GUARDIAN
+    beq guardian
+    lda #0
+    sta pi_var
+    tax
+prep:
+    ; l'immagine preparata a inizio partita, se c'è: TWIST per inclinazione, BLASTER per colpi
+    ; nel caricatore, così il caricatore cala nel frame del colpo (Y = lato)
     lda #0                      ; (nessun muro intero del GUARDIAN da cui partire)
     sta pd_full,y
-    ; NEXT: l'immagine preparata a inizio partita, se c'è: TWIST per inclinazione, BLASTER per
-    ; colpi nel caricatore (pi_ammo da pad_variant), così il caricatore cala nel frame del colpo
-    lda m_next
-    beq dynamic
     lda pp_ready,y
-    beq dynamic
-    lda pi_kind
-    ldx #0
-    cmp #K_TWIST
-    bne :+
-    ldx pi_var
-:   cmp #K_BLASTER
-    bne :+
-    ldx pi_ammo
-:   lda pi_n
+    jeq dynamic
+    lda pi_n
     cmp pp_n,y                  ; (il lato di OMEGA ha pp_n = $FF: prep_slot)
     bne other
     txa
     clc
     adc prep_base,y
-    bcc found                   ; (sempre)
+put:
+    sta sh_ptr+SPN_PAD,y
+spin:
+    ; NEXT: SUPER armato con la rotazione (animazione 0): al posto della racchetta l'immagine
+    ; dell'angolo del frame, centrata sulla racchetta (sprite hires espanso)
+    ldx side
+    lda nx_armed,x
+    cmp #B_SUPER
+    bne no_spin1
+    cpx nx_morph                ; (OMEGA non ruota: nei suoi sprite della rotazione ci sono le
+    beq no_spin1                ; varianti delle forme, om_slot)
+    lda nx_anim,x
+    bne no_spin1
+    lda sp_k
+    cmp #16
+    jcs spin_on                 ; (prima le immagini pronte)
+no_spin1:
+    rts
+blaster:
+    ldy nx_ammo,x               ; livello del caricatore (mag_setup)
+    lda bl_vis,y
+    sta pi_ammo
+    tax
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a
+    sta pi_var
+    ldy pi_side
+    bcc prep                    ; (sempre: livello <= BLASTER_VIS)
+guardian:
+    lda nx_barrier,x
+    eor #(1 << G_SECTORS) - 1
+    sta pi_var
+    ldx #0
+    txa
+    sta pd_full,y
+    lda pp_ready,y
+    beq dynamic
+    lda pi_n
+    cmp pp_n,y
+    bne other
+    lda prep_base,y
+    bcs found                   ; (sempre: C = 1 da cmp)
 other:
     jsr prep_slot
     bcs dynamic
@@ -1847,9 +1956,13 @@ found:
     beq put
     sta pd_full,y
     bcs dynamic                 ; (sempre: C = 1 da cpx)
-put:
-    sta sh_ptr+SPN_PAD,y
-    jmp done
+evo:
+    ; le altre partite: racchetta bianca senza tipo, niente immagini preparate
+    lda #COL_WHITE
+    sta sh_col+SPN_PAD,y
+    lda #0
+    sta pi_var
+    sta pd_full,y
 dynamic:
     lda pi_n
     cmp pd_n,y
@@ -1903,10 +2016,12 @@ keep:
     inx
     bne done
     lda pd_full,y
-    bne put
+    jne put
 done:
-    jsr pad_spin
+    lda m_next
+    jne spin
     ldx side
+no_spin:
     rts
 guard:
     ; GUARDIAN con dei settori persi (pi_var): in sh_img l'immagine preparata del muro intero (lo
@@ -1920,37 +2035,25 @@ guard:
     ora #>$C000
     sta ptr+1                   ; (ptr) = $C000 + A * 64
     lda img_base,y
-    tax
-    ldy #0
-g_copy:
-    lda (ptr),y
-    sta sh_img,x
-    inx
-    iny
-    cpy #IMG_BYTES
-    bne g_copy
+    bne g_right
+    ldy #IMG_BYTES - 1
+:   lda (ptr),y
+    sta sh_img,y
+    dey
+    bpl :-
+    bmi g_gray                  ; (sempre)
+g_right:
+    ldy #IMG_BYTES - 1
+:   lda (ptr),y
+    sta sh_img + IMG_BYTES,y
+    dey
+    bpl :-
+g_gray:
     lda pi_var
     jsr guard_gray
     jmp done
-.endproc
-
-; SUPER armato con la rotazione (animazione 0): al posto della racchetta l'immagine dell'angolo
-; del frame, centrata sulla racchetta (sprite hires espanso).
-.proc pad_spin
-    lda m_next
-    jeq no
+spin_on:
     ldy pi_side
-    ldx side
-    cpx nx_morph                ; (OMEGA non ruota: nei suoi sprite della rotazione ci sono le
-    beq no                      ; varianti delle forme, om_slot)
-    lda nx_armed,x
-    cmp #B_SUPER
-    bne no
-    lda nx_anim,x
-    bne no
-    lda sp_k
-    cmp #16
-    bcc no                      ; immagini non ancora pronte
     tya
     asl a
     asl a
@@ -2000,43 +2103,7 @@ g_copy:
     clc
     adc #<(SPR_Y0 - 2 * SPIN_CY)
     sta sh_y+SPN_PAD,y
-no:
-    rts
-.endproc
-
-; Tipo della racchetta di pi_side (K_NONE fuori da NEXT) in pi_kind e variante dell'immagine in
-; pi_var: TWIST l'inclinazione + 3, BLASTER i colpi nel caricatore * 32, GUARDIAN i settori persi
-; (un bit per settore: 0 il muro intero, l'immagine preparata).
-.proc pad_variant
-    lda #0
-    sta pi_var
-    lda #K_NONE
-    sta pi_kind
-    lda m_next
-    bne :+
-    rts
-:   ldx side
-    lda nx_kind,x
-    sta pi_kind
-    cmp #K_TWIST
-    beq twist
-    cmp #K_BLASTER
-    beq blaster
-    cmp #K_GUARDIAN
-    bne :+
-    lda nx_barrier,x
-    eor #(1 << G_SECTORS) - 1
-    sta pi_var
-:   rts
-blaster:
-    lda nx_ammo,x
-    jsr mag_setup
-    asl a
-    asl a
-    asl a
-    asl a
-    asl a
-    sta pi_var
+    ldx side
     rts
 twist:
     ; inclinazione a gradini dalla velocità della racchetta (twist_tilt del MiSTer)
@@ -2061,7 +2128,9 @@ sign:
     clc
     adc #3
     sta pi_var
-    rts
+    tax
+    ldy pi_side
+    jmp prep
 .endproc
 
 TILT1 = P_PAD_MAX_SPEED / 6
@@ -2432,7 +2501,8 @@ bitmap:
 pointers_done:
     lda sh_enable
     sta $d015
-    ; immagini delle racchette cambiate (di rado: altezza, tipo, inclinazione, caricatore)
+    ; immagini delle racchette cambiate (di rado: altezza, tipo, inclinazione, caricatore; nel
+    ; salto del TELEPORT a ogni frame, pd_dirty = 2: solo le righe rifatte, wp_rows)
     lda pd_dirty
     ora pd_dirty+1
     beq done
@@ -2443,7 +2513,11 @@ pointers_done:
     sta $01
     lda pd_dirty
     beq right
-    ldx #IMG_BYTES - 1
+    cmp #2
+    bne :+
+    jsr warp_rows_l
+    bcc right                   ; (C = 0: fatto; C = 1: tutte le righe, la copia intera)
+:   ldx #IMG_BYTES - 1
 :   lda sh_img,x
     sta SPRITES + 2 * 64,x
     dex
@@ -2451,7 +2525,11 @@ pointers_done:
 right:
     lda pd_dirty+1
     beq copied
-    ldx #IMG_BYTES - 1
+    cmp #2
+    bne :+
+    jsr warp_rows_r
+    bcc copied                  ; (C = 0: fatto; C = 1: tutte le righe, la copia intera)
+:   ldx #IMG_BYTES - 1
 :   lda sh_img + IMG_BYTES,x
     sta SPRITES + 3 * 64,x
     dex
@@ -2463,8 +2541,51 @@ copied:
     lda #0
     sta pd_dirty
     sta pd_dirty+1
+    sta wp_rows
 done:
     rts
+.endproc
+
+; apply_shadows, immagine della partenza del salto del TELEPORT di una racchetta (warp_rows_l la
+; sinistra, warp_rows_r la destra): nella RAM degli sprite (I/O spento) solo le righe delle classi
+; rifatte da warp_image (wp_rows: la classe k ha le righe (k * 5) & 7, + 8, + 16). C = 0 fatto;
+; C = 1 con tutte le classi (prima immagine del salto): allora la copia intera, che costa meno.
+; Usa m_lo.
+.macro warp_rows_of img, spr
+    .local cls, row, next, all
+    lda wp_rows
+    cmp #$ff
+    beq all
+    sta m_lo
+    ldx #0
+cls:
+    lsr m_lo
+    bcc next
+    ldy wp_ylast,x              ; ultimo byte della classe, poi una riga ogni 8 (24 byte) indietro
+row:
+    lda img,y
+    sta spr,y
+    lda img+1,y
+    sta spr+1,y
+    lda img+2,y
+    sta spr+2,y
+    tya
+    sbc #3 * 8                  ; (C = 1 dal bit della classe, poi senza prestito)
+    tay
+    bcs row
+next:
+    inx
+    lda m_lo
+    bne cls
+    clc
+all:
+    rts
+.endmacro
+.proc warp_rows_l
+    warp_rows_of sh_img, SPRITES + 2 * 64
+.endproc
+.proc warp_rows_r
+    warp_rows_of sh_img + IMG_BYTES, SPRITES + 3 * 64
 .endproc
 
 ; $D011 e $D018 dei modi video: testo ($C000, caratteri $C800), bitmap ($E000, colori $C400),
@@ -2484,9 +2605,9 @@ SP_RING0  = SP_FX0 + TRAIL_BUFS ; alone di SLOW, palla 4 e 6
 
 ; Un'immagine degli effetti per frame, finché non ci sono tutte: gli aloni si disegnano dai
 ; quadrati di FX_SQUARES (x, y, lato in pixel; $FF chiude l'immagine), che fx_sp scorre.
-; Un'immagine si fa solo se il frame resta sotto circa 17.000 cicli.
+; Un'immagine si fa solo se il frame resta nel budget.
 FX_COST = 10500
-FX_LATE = (TV_BUDGET - (1000 + FX_COST)) / TV_LCYC
+FX_LATE = (TV_BUDGET - (500 + FX_COST)) / TV_LCYC
 .proc fx_copy
     lda fx_wait                 ; i primi frame della partita hanno già molto da fare
     beq :+
@@ -2741,19 +2862,18 @@ COMET_HEAD = 5
 TRAIL_KEY = 2 * (TRAIL_N + 1) + 1   ; firma: tr_qxk, tr_qyk, tr_s (di seguito in memoria)
 ; righe dopo l'inizio del vblank oltre le quali la coda aspetta il frame dopo: la ricerca nella
 ; cache costa al massimo circa 1.500 cicli (firma della cometa e quattro confronti), il disegno
-; circa 4.000 (misurati con paddws-c64 frames). Il disegno si fa solo se il frame resta sotto
-; circa 16.500 cicli: nei frame più carichi aspetta, intanto c'è la forma della cache più simile.
-; Sul PAL la ricerca si fa sempre (255: il massimo che frame_after conta, e i 18.000 cicli sono
-; quasi tutto il frame); sull'NTSC solo con 2.200 cicli ancora liberi (firma, confronti e lo sprite,
-; fino a circa 1.700), se no dopo sprite e HUD pesanti il frame passava il giro del raster
-.if (TV_BUDGET - 2200) / TV_LCYC > 255
+; fino a circa 7.100 con la firma (cicli veri, misurati con paddws-c64 frames). Il disegno si fa solo se il frame resta nel
+; budget: nei frame più carichi aspetta, intanto c'è la forma della cache più simile.
+; La ricerca si fa solo con il tempo per firma, confronti e sprite (fino a circa 2.300 cicli veri), se
+; no dopo sprite e HUD pesanti il frame passava il budget
+.if (TV_BUDGET - 2700) / TV_LCYC > 255
 TRAIL_LATE_FIND = 255
 .else
-TRAIL_LATE_FIND = (TV_BUDGET - 2200) / TV_LCYC
+TRAIL_LATE_FIND = (TV_BUDGET - 2700) / TV_LCYC
 .endif
-TRAIL_LATE = (TV_BUDGET - (5600)) / TV_LCYC
-; una metà del disegno in sospeso (trail_first o trail_rest con lo sprite: fino a circa 2.700)
-TRAIL_LATE_HALF = (TV_BUDGET - (3300)) / TV_LCYC
+TRAIL_LATE = (TV_BUDGET - (7600)) / TV_LCYC
+; una metà del disegno in sospeso (trail_first o trail_rest con lo sprite: fino a circa 2.900)
+TRAIL_LATE_HALF = (TV_BUDGET - (3100)) / TV_LCYC
 
 ; Posizione della palla sullo schermo (sh_x con il nono bit in sh_msb, sh_y) in testa alle passate.
 ; Nel bullet time la coda dura il doppio, come sul PC: nei tick dispari cambia solo la posizione di
@@ -2762,6 +2882,9 @@ TRAIL_LATE_HALF = (TV_BUDGET - (3300)) / TV_LCYC
 ; da allora (tr_nv; trail_layout toglie le altre). Se no restava piegata sul percorso d'arrivo, e
 ; con la CURVE presa al colpo non seguiva la traiettoria nuova. (Poco lavoro qui: il frame del colpo
 ; è il più pesante.)
+; Le passate (età da 1 a TRAIL_N) stanno nei posti da 1 a TRAIL_N di tr_x, tr_xh e tr_y in un anello:
+; l'età a nel posto 1 + (tr_rp + a - 1) mod TRAIL_N; la testa (età 0) sempre nel posto 0. A ogni
+; frame la testa di prima prende il posto della passata più vecchia, senza spostare le altre.
 .proc trail_push
     lda tr_lay                  ; la firma dell'ultimo frame vale per il prossimo solo se è di quello
     sta tr_prev_ok
@@ -2789,15 +2912,17 @@ TRAIL_LATE_HALF = (TV_BUDGET - (3300)) / TV_LCYC
     cmp #TRAIL_N
     bcs :+
     inc tr_nv
-:   ldx #TRAIL_N
-:   lda tr_x-1,x
-    sta tr_x,x
-    lda tr_xh-1,x
-    sta tr_xh,x
-    lda tr_y-1,x
-    sta tr_y,x
+:   ldx tr_rp                   ; la più vecchia (età TRAIL_N) diventa l'età 1
     dex
-    bne :-
+    bpl :+
+    ldx #TRAIL_N - 1
+:   stx tr_rp
+    lda tr_x
+    sta tr_x + 1,x
+    lda tr_xh
+    sta tr_xh + 1,x
+    lda tr_y
+    sta tr_y + 1,x
 head:
     lda sh_x
     sta tr_x
@@ -3078,11 +3203,12 @@ set_y:
     lda tr_ayo
     cmp tr_qyk
     bne full
-    lda tr_x+1                  ; x di un frame fa - x di adesso, tra -47 e 47
+    ldx tr_rp                   ; (posto della passata di un frame fa: X fino a dy)
+    lda tr_x + 1,x              ; x di un frame fa - x di adesso, tra -47 e 47
     sec
     sbc tr_x
     sta tr_bx
-    lda tr_xh+1
+    lda tr_xh + 1,x
     sbc tr_xh
     beq :+
     cmp #$ff
@@ -3095,7 +3221,7 @@ set_y:
     cmp #TRAIL_SPAN
     bcs full
 dy:
-    lda tr_y+1                  ; y di un frame fa - y di adesso
+    lda tr_y + 1,x              ; y di un frame fa - y di adesso
     sec
     sbc tr_y
     sta tr_by
@@ -3133,66 +3259,81 @@ gone:
     bne moved
     jmp done
 full:
-    ldx #TRAIL_N
+    lda tr_cm                   ; m_lo: la cometa nel bit 7 (bit, così Y resta il posto); nel
+                                ; ciclo la differenza in m_t e m_sign (pagina zero)
+    lsr a
+    ror a
+    sta m_lo
+    ldy tr_rp                   ; Y: posto dell'età X nell'anello di trail_push (TRAIL_N: tr_rp,
+    bne :+                      ; o TRAIL_N se è 0)
+    ldy #TRAIL_N
+:   ldx #TRAIL_N
 rel:
     cpx tr_nv                   ; (prima dell'ultimo colpo: via)
     beq :+
     bcs far
-:   lda tr_x,x
+:   lda tr_x,y
     sec
     sbc tr_x
-    sta tr_t
-    lda tr_xh,x
+    sta m_t
+    lda tr_xh,y
     sbc tr_xh
-    ldy tr_cm                   ; cometa: in pixel doppi, / 2 con il segno
-    beq :+
+    bit m_lo                    ; cometa: in pixel doppi, / 2 con il segno
+    bpl :+
     cmp #$80
     ror a
-    ror tr_t
-:   sta tr_t+1
-    lda tr_t
+    ror m_t
+:   sta m_sign
+    lda m_t
     clc
     adc tr_axo
-    sta tr_t
-    lda tr_t+1
+    sta m_t
+    lda m_sign
     adc #0
     bne far
-    lda tr_t
+    lda m_t
     cmp #TRAIL_SPAN
     bcs far
     sta tr_qxk,x
-    lda tr_y,x
+    lda tr_y,y
     sec
     sbc tr_y
-    sta tr_t
+    sta m_t
     lda #0
     sbc #0
-    ldy tr_cm
-    beq :+
+    bit m_lo
+    bpl :+
     cmp #$80
     ror a
-    ror tr_t
-:   sta tr_t+1
-    lda tr_t
+    ror m_t
+:   sta m_sign
+    lda m_t
     clc
     adc tr_ayo
-    sta tr_t
-    lda tr_t+1
+    sta m_t
+    lda m_sign
     adc #0
     bne far
-    lda tr_t
+    lda m_t
     cmp #TRAIL_SPAN
     bcs far
     sta tr_qyk,x
-    dex
-    bpl rel
-    bmi done
+    jmp next
 far:
     lda #$ff
     sta tr_qxk,x
     sta tr_qyk,x
+next:
+    ; l'età dopo: il posto prima nell'anello (da 1 si torna a TRAIL_N); all'età 0 la testa, posto 0
     dex
     bmi done
+    beq head
+    dey
+    jne rel
+    ldy #TRAIL_N
+    jmp rel
+head:
+    ldy #0
     jmp rel
 done:
     lda #1                      ; firma di questo frame (trail_push la passa a tr_prev_ok)
@@ -3596,7 +3737,7 @@ tr_keyof:     .repeat TRAIL_BUFS, b ; prima riga della firma di ogni sprite dell
               .byte b * TRAIL_KEY
               .endrepeat
 .segment "BSS"
-tr_x:    .res TRAIL_N + 1       ; posizioni della palla sullo schermo, la più recente prima
+tr_x:    .res TRAIL_N + 1       ; posizioni della palla sullo schermo: la testa, poi l'anello (trail_push)
 tr_xh:   .res TRAIL_N + 1
 tr_y:    .res TRAIL_N + 1
 tr_qxk:  .res TRAIL_N + 1       ; firma della coda di adesso, di seguito: le posizioni nello
@@ -3612,6 +3753,7 @@ tr_lay:  .res 1                 ; firma calcolata dopo l'ultimo trail_push
 tr_prev_ok: .res 1              ; firma del frame prima ancora buona
 tr_vxs:  .res 1                 ; segno di vx all'ultimo trail_push (bit 7)
 tr_nv:   .res 1                 ; passate dopo l'ultimo colpo (0 - TRAIL_N): le altre non valgono
+tr_rp:   .res 1                 ; anello delle passate: l'età 1 nel posto tr_rp + 1 (trail_push)
 tr_sp:   .res 1                 ; lato della palla della firma di prima
 tr_bx:   .res 1                 ; movimento della palla dal frame prima, al contrario
 tr_by:   .res 1
@@ -3786,7 +3928,9 @@ dst:
     ldx pi_side
     lda #$ff                    ; l'immagine dinamica, se servirà, si rifà: in sh_img ora c'è
     sta pd_n,x                  ; questa, che apply_shadows non deve copiare nello sprite che si
-    lsr pd_dirty,x              ; vede (pd_dirty 0 o 1: a 0)
+    sta wp_ls                   ; (e il salto del TELEPORT in corso rifà tutte le sue righe)
+    lda #0                      ; vede (pd_dirty a 0, anche le righe del salto, 2)
+    sta pd_dirty,x
     inc pp_var
     rts
 .endproc
@@ -3864,22 +4008,6 @@ no:
     rts
 .endproc
 
-; spin_prep: le immagini della rotazione del lato di OMEGA no (ci sono le sue varianti); C = 1 se
-; ha saltato al lato dopo.
-.proc om_spin_skip
-    lda sp_k
-    and #8
-    lsr a
-    cmp nx_morph
-    clc
-    bne :+
-    lda sp_k
-    ora #7
-    sta sp_k
-    inc sp_k
-    sec
-:   rts
-.endproc
 .assert BLASTER_VIS + 1 <= 7, error, "immagini del BLASTER: al massimo 7 per lato"
 
 .segment "NEXTBSS"
@@ -3890,20 +4018,26 @@ pp_n:     .res 2                ; righe con cui sono state fatte
 pp_dst:   .res 1                ; sprite in preparazione
 .segment "CODE"
 
-; C = 1 se il frame è già avanti: dall'interrupt della riga 250 sono passate più righe (circa 58
-; cicli utili ciascuna) di quelle che lasciano il tempo al lavoro rimandabile e a quello che resta
-; del frame (riserve, SID). Immagini delle racchette e scritte in partita (frame_late, fino a
-; 8.000 cicli) e posti delle riserve (frame_late_small, fino a 12.000) aspettano allora il frame
-; dopo.
-LATE_BIG   = (TV_BUDGET - (10000)) / TV_LCYC
-LATE_SMALL = (TV_BUDGET - (6000)) / TV_LCYC
+; C = 1 se il frame è già avanti: dall'interrupt della riga 250 sono passate più righe (TV_LCYC
+; cicli veri ciascuna) di quelle che lasciano il tempo al lavoro rimandabile e a quello che resta
+; del frame (riserve, coda). Immagini delle racchette e scritte in partita (frame_late: partono
+; entro circa 8.700 cicli) e posti delle riserve (frame_late_small, entro 13.000) aspettano
+; allora il frame dopo.
+LATE_BIG   = (TV_BUDGET - (9000)) / TV_LCYC
+LATE_SMALL = (TV_BUDGET - (4700)) / TV_LCYC
 .ifdef NTSC
-LATE_HUD   = (TV_BUDGET - (2000)) / TV_LCYC         ; NTSC: musica già a inizio frame, hud_slot costa ~350 cicli
+LATE_HUD   = (TV_BUDGET - (1400)) / TV_LCYC         ; NTSC: hud_slot costa ~550 cicli, e ne può seguire un altro
 .else
 LATE_HUD   = LATE_SMALL
 .endif
-LATE_SPIN  = (TV_BUDGET - (13000)) / TV_LCYC         ; un'immagine della rotazione del SUPER costa fino a circa 10.400
-LATE_GUARD = (TV_BUDGET - (5000)) / TV_LCYC          ; GUARDIAN dal muro intero (pad_sprite): circa 2.000 cicli
+LATE_SPIN  = (TV_BUDGET - (12300)) / TV_LCYC         ; un'immagine della rotazione del SUPER costa fino a circa 10.400
+; spin_prep: con il byte basso della riga del raster da SPIN_FAST a RASTER_LINE - 1 il frame è di
+; sicuro oltre LATE_SPIN (riga + TV_LINES - RASTER_LINE righe dall'interrupt), senza frame_after:
+; non può essere una riga dopo la 255 (quelle hanno il byte basso sotto TV_LINES - 256)
+SPIN_FAST_A = LATE_SPIN - (TV_LINES - RASTER_LINE)
+SPIN_FAST  = SPIN_FAST_A * (SPIN_FAST_A > TV_LINES - 256) + (TV_LINES - 256) * (SPIN_FAST_A <= TV_LINES - 256)
+.assert SPIN_FAST > 0 .and SPIN_FAST < RASTER_LINE, error, "spin_prep: soglia del raster"
+LATE_GUARD = (TV_BUDGET - (3600)) / TV_LCYC          ; GUARDIAN dal muro intero (pad_sprite): circa 2.000 cicli
 
 .proc frame_late
     lda #LATE_BIG
@@ -3965,9 +4099,24 @@ SPIN_CY  = 10
     lda sp_k
     cmp #16
     jcs done
-    jsr om_spin_skip
-    jcs done
-    lda #LATE_SPIN              ; frame già avanti (anche per un'immagine di racchetta): al prossimo
+    ; le immagini della rotazione del lato di OMEGA no (ci sono le sue varianti): al lato dopo
+    and #8
+    lsr a
+    cmp nx_morph
+    bne :+
+    lda sp_k
+    ora #7
+    sta sp_k
+    inc sp_k
+    rts
+:   ; frame già avanti (anche per un'immagine di racchetta): al prossimo. Quasi sempre lo dice già
+    ; la riga del raster da sola (SPIN_FAST, senza frame_after)
+    lda $d012
+    cmp #SPIN_FAST
+    bcc :+
+    cmp #RASTER_LINE
+    jcc done
+:   lda #LATE_SPIN
     jsr frame_after
     jcs done
     ; destinazione: $C000 + (SP_SPIN0 + k) * 64
@@ -4158,11 +4307,13 @@ WARP_SUNK = (P_WIDTH >> 16) / 2
 WARP_RISE = 3 * WARP_STEP
 SP_WARP   = SP_SPIN0 + 16       ; immagine del pezzo che esce
 ; Il salto si disegna dopo la scena, quando il frame è già oltre gli 8.000 cicli di frame_late (in
-; NEXT a circa 10.000-12.500: con frame_late non si disegnava mai). Le due immagini costano circa
-; WARP_COST cicli (warp_image fino a circa 1.900 l'una, con molte righe in luce) e si fanno se
-; dopo resta il tempo per HUD e controlli (circa 1.200); se no resta l'immagine di prima.
-WARP_COST = 3800
-WARP_LATE = (TV_BUDGET - (1200 + WARP_COST)) / TV_LCYC
+; NEXT a circa 10.000-12.500: con frame_late non si disegnava mai). Il salto (warp_fx con
+; l'immagine) costa fino a WARP_COST cicli veri, con la prima immagine di una fase tutta da fare
+; (warp_image: dal 2026-11-23 fino a circa 2.050 cicli la prima, in media circa 560 le altre, che
+; rifanno solo le righe cambiate; le due fasi non si sovrappongono), e si fa se dopo resta il tempo
+; per le riserve; se no resta l'immagine di prima. (La soglia è rimasta quella di prima.)
+WARP_COST = 3000
+WARP_LATE = (TV_BUDGET - (WARP_COST + 200)) / TV_LCYC
 
 ; Il salto rimasto da disegnare nel frame prima (wp_pend, frame già avanti): all'inizio di questo,
 ; che ha il tempo, sullo stato del tick prima (poi compute_sprites rimette sprite e posizioni). Solo
@@ -4170,23 +4321,20 @@ WARP_LATE = (TV_BUDGET - (1200 + WARP_COST)) / TV_LCYC
 .proc warp_early
     lda wp_pend
     beq done
-    ; chi salta (e riceve la palla) rifà in questo tick la previsione del TELEPORT, o sul PAL quella
-    ; della CPU (senza quella tenuta da parte: circa 1.000-2.800 cicli l'una): con il disegno del
-    ; salto il frame andava oltre il budget (sull'NTSC oltre lo sforamento ammesso). Il disegno
-    ; aspetta il frame dopo
+    ; chi salta (e riceve la palla) rifà in questo tick la previsione del TELEPORT, o quella della
+    ; CPU (senza quella tenuta da parte: circa 900-1.500 cicli l'una): con il disegno del salto il
+    ; frame andava oltre il budget. Il disegno aspetta il frame dopo
     lda wp_side
     asl a
     asl a
     tax
     lda tp_ok,x
     beq done
-.ifndef NTSC
     cpx cpu_side
     bne :+
     lda cpu_ok,x
     beq done
 :
-.endif
     lda #0
     sta wp_pend
     lda wp_on
@@ -4258,13 +4406,23 @@ going:
     inc wp_pend
     jmp place
 :
-    ; avanzamento: pixel affondati e usciti (0-32)
+    ; avanzamento: pixel affondati e usciti (0-32), clamp(fase - wp_d, 0, WARP_STEP); qui wp_d >
+    ; WARP_RISE - WARP_STEP, quindi l'uscita non arriva a WARP_STEP
     lda #WARP_SUNK
-    jsr warp_part
-    sta wp_sunk
+    sec
+    sbc wp_d
+    bcs :+
+    lda #0
+:   cmp #WARP_STEP
+    bcc :+
+    lda #WARP_STEP
+:   sta wp_sunk
     lda #WARP_RISE
-    jsr warp_part
-    sta wp_out
+    sec
+    sbc wp_d
+    bcs :+
+    lda #0
+:   sta wp_out
     ; righe in cima delle due astronavi: quella che sparisce dove era, quella che compare dove è
     lda wp_side
     asl a
@@ -4282,18 +4440,21 @@ going:
     sec
     sbc m_lo
     sta wp_ex_top
-    ; le immagini si rifanno solo quando cambiano l'avanzamento o il verso del tremolio: le due fasi
-    ; non si sovrappongono, quindi quasi sempre se ne rifà una sola
+    ; le immagini si rifanno solo quando cambiano l'avanzamento o il verso del tremolio (wp_tb: lo
+    ; legge anche l'arrivo, dopo warp_image): le due fasi non si sovrappongono, quindi quasi sempre
+    ; se ne rifà una sola
     lda tick
     lsr a
     lsr a
     and #1
-    sta m_t
+    sta wp_tb
     lda wp_sunk
     asl a
-    ora m_t
+    ora wp_tb
     cmp wp_ls
     beq arrival
+    ldy wp_ls
+    sty wp_prev
     sta wp_ls
     ; partenza nell'immagine dinamica della racchetta
     lda img_base,x
@@ -4307,8 +4468,11 @@ going:
     ldx #0
     jsr warp_image
     ldx wp_side
-    lda #1
+    lda pd_dirty,x              ; apply_shadows copia solo le righe rifatte (2, wp_rows), se non
+    bne :+                      ; c'è già da copiare tutta l'immagine (1)
+    lda #2
     sta pd_dirty,x
+:   lda #1
     sta wp_en
     lda #$ff
     sta pd_n,x
@@ -4318,16 +4482,12 @@ arrival:
     bne :+
     sta wp_ex
     jmp place
-:   lda tick
-    lsr a
-    lsr a
-    and #1
-    sta m_t
-    lda wp_out
-    asl a
-    ora m_t
+:   asl a
+    ora wp_tb
     cmp wp_lo
     beq place
+    ldy wp_lo
+    sty wp_prev
     sta wp_lo
     ; arrivo nell'immagine di SP_WARP
     lda #<(SP_WARP * 64 + $C000)
@@ -4340,8 +4500,15 @@ arrival:
     lda #1
     sta wp_ex
 place:
-    ; sprite: il pezzo che affonda nella racchetta (immagine dinamica), quello che esce nell'icona
+    ; sprite: il pezzo che affonda nella racchetta (immagine dinamica), quello che esce nell'icona,
+    ; tutti e due nel colore dedicato di chi salta (m_t; om_white lascia Y)
     ldy wp_side
+    tya
+    asl a
+    asl a
+    tax
+    jsr om_white
+    sta m_t
     lda wp_en
     beq :+
     lda bit_of+SPN_PAD,y
@@ -4353,11 +4520,7 @@ place:
     clc
     adc #SPR_Y0
     sta sh_y+SPN_PAD,y
-    tya
-    asl a
-    asl a
-    tax
-    jsr om_white
+    lda m_t
     sta sh_col+SPN_PAD,y
     jmp icon
 :   lda bit_of+SPN_PAD,y        ; affondata: niente racchetta
@@ -4369,11 +4532,7 @@ icon:
     beq no_icon
     lda #SP_WARP
     sta sh_ptr+SPN_ICON,y
-    tya
-    asl a
-    asl a
-    tax
-    jsr om_white
+    lda m_t
     sta sh_col+SPN_ICON,y
     lda wp_ex_top
     clc
@@ -4411,51 +4570,47 @@ remember:
     rts
 .endproc
 
-; A = distanza in pixel della palla dal bordo di chi salta (al massimo 255), accelerata verso la
-; metà campo quando la racchetta è in dash (2x a x >= 48, 4x a x >= 96 come sul MiSTer) così
-; l'animazione del TELEPORT si completa sempre prima che la palla arrivi alla racchetta.
+; A = distanza in pixel della palla dal bordo di chi salta, accelerata verso la metà campo quando
+; la racchetta è in dash (2x a x >= 48, 4x a x >= 96 come sul MiSTer) così l'animazione del
+; TELEPORT si completa sempre prima che la palla arrivi alla racchetta. Da WARP_SUNK in su (non ha
+; ancora passato la metà campo) $FF: per warp_fx ogni valore da lì in su dà lo stesso salto.
 .proc warp_d
-    lda ball_x+2
-    ldx ball_x+3
     ldy wp_side
-    beq left
-    ; destra: 320 - x
-    eor #$ff
-    sec
-    adc #<(P_WIDTH >> 16)
-    tay
-    txa
-    eor #$ff
-    adc #>(P_WIDTH >> 16)
-    tax
-    tya
-left:
-    cpx #0
-    beq :+
-    lda #$ff
-:   cmp #WARP_SUNK
-    bcs done                    ; non ha ancora passato la metà campo
+    bne right
+    lda ball_x+3                ; sinistra: x
+    bne far
+    lda ball_x+2
+    cmp #WARP_SUNK
+    bcs far
     sta m_lo                    ; d grezzo (0..159)
+    lda pad_x+2                 ; distanza della racchetta dal suo bordo (8 bit bastano: 20..110)
+    jmp scale
+right:
+    lda #<(P_WIDTH >> 16)       ; destra: 320 - x
+    sec
+    sbc ball_x+2
+    tay
+    lda #>(P_WIDTH >> 16)
+    sbc ball_x+3
+    bne far
+    tya
+    cmp #WARP_SUNK
+    bcs far
+    sta m_lo
+    lda #<(P_WIDTH >> 16)
+    sec
+    sbc pad_x+4+2
+scale:
+    cmp #48
+    bcc no_scale
+    tax
     lda #WARP_SUNK
     sec
     sbc m_lo
     sta m_t                     ; distanza percorsa oltre la metà campo (1..160)
-    lda wp_side
-    asl a
-    asl a
-    tax
-    lda pad_x+2,x               ; distanza della racchetta dal suo bordo (8 bit bastano: 20..110)
-    ldy wp_side
-    beq pd_ok
-    eor #$ff
-    sec
-    adc #<(P_WIDTH >> 16)
-pd_ok:
-    cmp #48
-    bcc no_scale
     asl m_t                     ; dash normale: 2x
     bcs sat
-    cmp #96
+    cpx #96
     bcc scale_done
     asl m_t                     ; dash lungo (RUSH): 4x
     bcs sat
@@ -4472,21 +4627,12 @@ sat:
     rts
 no_scale:
     lda m_lo
-done:
+    rts
+far:
+    lda #$ff
     rts
 .endproc
-
-; A = clamp(A - wp_d, 0, WARP_STEP): quanto è avanzata una fase che comincia con la palla a A pixel.
-.proc warp_part
-    sec
-    sbc wp_d
-    bcs :+
-    lda #0
-:   cmp #WARP_STEP
-    bcc :+
-    lda #WARP_STEP
-:   rts
-.endproc
+.assert WARP_SUNK < $ff, error, "warp_d: $FF oltre la metà campo"
 
 ; Un'astronave del salto in (ptr), dalle righe dell'immagine wp_src (sprite in $C000 + 64 * wp_src,
 ; 0 nessuna: vuota): ogni riga dello sprite (due dello schermo) piena, in luce o vuota secondo la
@@ -4494,6 +4640,22 @@ done:
 ; la riga è piena finché l'avanzamento non arriva alla soglia, poi in luce per 8 passi, poi vuota;
 ; all'arrivo (X = 1) il contrario, con le soglie rovesciate. In luce: i pixel accesi nel colore del
 ; personaggio (%10), spostati di un pixel doppio a sinistra o a destra, a righe e a tempi alterni.
+;
+; Si rifanno solo le righe cambiate dall'immagine di prima (wp_prev: la sua chiave, avanzamento * 2
+; + tremolio; $FF nessuna, tutte): le soglie sono 8 (WP_TH, una per classe (riga * 5) & 7, crescenti
+; con la classe), quindi le classi sotto wp_n1 sono vuote, quelle da wp_n1 a wp_n2 - 1 in luce, le
+; altre piene, alla partenza come all'arrivo; i confini di prima restano in wp_o1 e wp_o2 (per
+; immagine). Si ridisegnano le classi tra un confine di prima e quello di adesso (hanno cambiato
+; stato) e, se è cambiato il tremolio, quelle in luce: ogni classe al più una volta. Chi scrive in
+; sh_img (pad_prep) rimette wp_ls a $FF. Le classi rifatte si aggiungono a wp_rows (un bit per
+; classe, tutte senza immagine): alla partenza apply_shadows copia solo quelle.
+; Le righe stanno in wp_ord in ordine di classe: un tratto di classi è un tratto della lista, che
+; wp_span scorre in tre cicli (vuote, in luce, piene) senza chiamate per riga.
+; Temporanee di wp_span in pagina zero (definite prima dell'uso: ca65 sceglie lì l'indirizzamento),
+; nessuna chiamata dentro
+wp_stop = m_sign                ; fine delle righe nella lista
+wp_lim  = m_t                   ; fine del ciclo di adesso
+wp_i    = m_lo                  ; riga nella lista (le righe in luce usano X)
 .proc warp_image
     sta wp_lvl
     stx wp_arr
@@ -4502,134 +4664,301 @@ done:
     lsr a
     ora #$C0
     sta ptr2+1
-    lda wp_src
-    asl a
-    asl a
-    asl a
-    asl a
-    asl a
-    asl a
+    lda wp_src                  ; byte basso: (wp_src & 3) << 6
+    lsr a
+    ror a
+    ror a
+    and #$C0
     sta ptr2
-    ldx #0                      ; riga dello sprite
-    ldy #0                      ; suo primo byte
     lda wp_src
-    bne row
-    tya                         ; nessuna immagine: tutto vuoto
+    bne :++
+    tay                         ; nessuna immagine: tutto vuoto
 :   sta (ptr),y
     iny
     cpy #IMG_BYTES
     bne :-
+    lda #$ff
+    sta wp_rows
     rts
-row:
+:   ; confini di adesso, come posti nella lista wp_ord: partenza soglie <= avanzamento - 8 e
+    ; <= avanzamento, arrivo soglie < 22 - avanzamento e < 30 - avanzamento (wp_nle_pos)
+    ldy wp_lvl
     lda wp_arr
     bne arrive
-    lda wp_lvl                  ; partenza: avanzamento - soglia
-    sec
-    sbc wp_th,x
-    jcc full
-    cmp #8
-    bcc light
-    jcs empty
+    lda wp_nle_pos + 3,y
+    sta wp_n1
+    lda wp_nle_pos + 11,y
+    jmp bounds
 arrive:
-    lda wp_th,x                 ; arrivo: avanzamento + soglia - 22
-    clc
-    adc wp_lvl
+    lda #32
     sec
-    sbc #22
-    jcc empty
-    cmp #8
-    jcs full
-light:
-    ; i pixel accesi (doppi) nel colore del personaggio: (b | b >> 1) & %01010101, << 1
-    lda (ptr2),y
-    sta m_lo
-    lsr a
-    ora m_lo
-    and #%01010101
-    asl a
-    sta wp_b
-    iny
-    lda (ptr2),y
-    sta m_lo
-    lsr a
-    ora m_lo
-    and #%01010101
-    asl a
-    sta wp_b+1
-    iny
-    lda (ptr2),y
-    sta m_lo
-    lsr a
-    ora m_lo
-    and #%01010101
-    asl a
-    sta wp_b+2
-    dey
-    dey
-    lda tick                    ; verso: riga e tempo (6 volte al secondo)
+    sbc wp_lvl
+    tay
+    lda wp_nle_pos,y
+    sta wp_n1
+    lda wp_nle_pos + 8,y
+bounds:
+    sta wp_n2
+    ; tremolio di adesso (bit 0 del verso delle righe pari) e cambiato da prima
+    lda tick
     lsr a
     lsr a
-    sta m_t
-    txa
-    eor m_t
-    lsr a
-    bcs right
-    asl wp_b+2
-    rol wp_b+1
-    rol wp_b
-    asl wp_b+2
-    rol wp_b+1
-    rol wp_b
-    jmp put
-right:
-    lsr wp_b
-    ror wp_b+1
-    ror wp_b+2
-    lsr wp_b
-    ror wp_b+1
-    ror wp_b+2
-put:
-    lda wp_b
-    sta (ptr),y
-    iny
-    lda wp_b+1
-    sta (ptr),y
-    iny
-    lda wp_b+2
-    sta (ptr),y
-    iny
-    jmp next
-full:
-    lda (ptr2),y
-    sta (ptr),y
-    iny
-    lda (ptr2),y
-    sta (ptr),y
-    iny
-    lda (ptr2),y
-    sta (ptr),y
-    iny
-    jmp next
-empty:
-    lda #0
-    sta (ptr),y
-    iny
-    sta (ptr),y
-    iny
-    sta (ptr),y
-    iny
-next:
+    sta wp_ph
+    ldy wp_arr
+    ldx wp_prev
     inx
-    cpx #PAD_ROWS
-    jne row
+    bne :+
+    lda #0                      ; nessuna immagine di prima: tutte le righe
+    ldx #PAD_ROWS
+    jsr wp_span
+    jmp save
+:   eor wp_prev
+    and #1
+    beq steady
+    ; tremolio cambiato: tutte quelle in luce, più quelle che hanno cambiato stato, cioè dal più
+    ; basso dei confini delle vuote al più alto di quelli delle piene, una volta sola
+    lda wp_o2,y
+    cmp wp_n2
+    bcs :+
+    lda wp_n2
+:   tax
+    lda wp_o1,y
+    cmp wp_n1
+    bcc :+
+    lda wp_n1
+:   jsr wp_span
+    jmp save
+steady:
+    lda wp_o1,y                 ; le classi passate da in luce a vuote (o il contrario)
+    ldx wp_n1
+    cmp wp_n1
+    bne :+
+    stx wp_end                  ; (confine fermo: nessuna, wp_end come dopo wp_between)
+    beq :++
+:   jsr wp_between
+:   ldy wp_arr                  ; e da piene a in luce, da dove è arrivato il giro di prima
+    lda wp_o2,y                 ; (wp_end: con un salto lungo i due tratti si sovrappongono)
+    ldx wp_n2
+    cmp wp_n2
+    bcc :+
+    tax
+    lda wp_n2
+:   cmp wp_end
+    bcs :+
+    lda wp_end
+:   stx wp_end                  ; (tratto vuoto: niente da fare)
+    cmp wp_end
+    bcs save
+    jsr wp_span
+save:
+    ldy wp_arr
+    lda wp_n1
+    sta wp_o1,y
+    lda wp_n2
+    sta wp_o2,y
     rts
 .endproc
 
-; soglia di ogni riga dello sprite del salto, in ordine sparso (0-19): (((riga * 5) & 7) * 11) / 4
-wp_th:
-.repeat PAD_ROWS, I
-    .byte (((I * 5) & 7) * 11) >> 2
+; Ridisegna le righe tra i posti A e X della lista wp_ord (confini di classe), in un ordine o
+; nell'altro (wp_between), o da A a X - 1 (wp_span), nello stato di adesso: sotto wp_n1 vuote,
+; sotto wp_n2 in luce, le altre piene.
+.proc wp_between
+    stx wp_end
+    cmp wp_end
+    bcc wp_span
+    tay                         ; A >= X: da X a A - 1
+    txa
+    sty wp_end
+    ldx wp_end
+.endproc
+.proc wp_span
+    sta wp_k
+    stx wp_end
+    cmp wp_end
+    jcs done                    ; (nessuna riga)
+    stx wp_stop
+    lda wp_lomask,x             ; classi rifatte (apply_shadows): i bit delle classi da A a X - 1
+    ldx wp_k
+    eor wp_lomask,x
+    ora wp_rows
+    sta wp_rows
+    ; vuote: le righe delle classi sotto wp_n1
+    lda wp_n1
+    cmp wp_stop
+    bcc :+
+    lda wp_stop
+:   sta wp_lim
+    cpx wp_lim
+    bcs light
+    lda #0
+empty:
+    ldy wp_ord,x
+    sta (ptr),y
+    iny
+    sta (ptr),y
+    iny
+    sta (ptr),y
+    inx
+    cpx wp_lim
+    bcc empty
+light:
+    ; in luce: le righe delle classi sotto wp_n2. I pixel accesi (doppi) nel colore del
+    ; personaggio, spostati di un pixel doppio: g(b) = ((b | b >> 1) & %01010101) << 1 per byte e
+    ; i 24 bit della riga << 2 o >> 2. g lavora a coppie di bit, quindi va d'accordo con gli
+    ; spostamenti di 2 bit: g(b) << 2 = g(b & $3F) << 2, g(b) >> 2 = g(b >> 2); dal byte
+    ; accanto entra un solo bit, la coppia alta (b >= $40) a sinistra, la bassa (b & 3) a destra.
+    ; wp_g ha g(c) << 1 per c < 64 (bit 6, 4, 2: il bit 0 e il 7 liberi per quel bit)
+    lda wp_n2
+    cmp wp_stop
+    bcc :+
+    lda wp_stop
+:   sta wp_lim
+    cpx wp_lim
+    bcs full
+lrow:
+    stx wp_i
+    ldy wp_ord,x
+    tya                         ; verso: riga (pari come il suo primo byte, 3 * riga) e tempo
+    eor wp_ph                   ; (6 volte al secondo)
+    lsr a
+    bcs right
+    ; verso sinistra, dal byte 2: (wp_g(b & $3F) | coppia alta del byte dopo) << 1
+    iny
+    iny
+    lda (ptr2),y
+    and #$3F
+    tax
+    lda wp_g,x
+    asl a
+    sta (ptr),y
+    lda (ptr2),y
+    cmp #$40                    ; C = coppia alta accesa
+    dey
+    lda (ptr2),y
+    and #$3F
+    tax
+    lda wp_g,x
+    adc #0                      ; (bit 0 libero: | C)
+    asl a
+    sta (ptr),y
+    lda (ptr2),y
+    cmp #$40
+    dey
+    lda (ptr2),y
+    and #$3F
+    tax
+    lda wp_g,x
+    adc #0
+    asl a
+    sta (ptr),y
+    jmp lnext
+right:
+    ; verso destra: wp_g(b >> 2) con la coppia bassa del byte prima nel bit 7 (ror; bit 0 a 0)
+    lda (ptr2),y
+    lsr a
+    lsr a
+    tax
+    lda wp_g,x
+    lsr a
+    sta (ptr),y
+    iny
+    lda (ptr2),y
+    lsr a
+    lsr a
+    tax
+    dey
+    lda (ptr2),y
+    and #3
+    cmp #1                      ; C = coppia bassa accesa
+    lda wp_g,x
+    ror a
+    iny
+    sta (ptr),y
+    iny
+    lda (ptr2),y
+    lsr a
+    lsr a
+    tax
+    dey
+    lda (ptr2),y
+    and #3
+    cmp #1
+    lda wp_g,x
+    ror a
+    iny
+    sta (ptr),y
+lnext:
+    ldx wp_i
+    inx
+    cpx wp_lim
+    bcc lrow
+full:
+    ; piene: le righe dell'immagine
+    cpx wp_stop
+    bcs done
+frow:
+    ldy wp_ord,x
+    lda (ptr2),y
+    sta (ptr),y
+    iny
+    lda (ptr2),y
+    sta (ptr),y
+    iny
+    lda (ptr2),y
+    sta (ptr),y
+    inx
+    cpx wp_stop
+    bcc frow
+done:
+    rts
+.endproc
+
+; soglia della classe k (WP_TH: (k * 11) / 4, da 0 a 19, crescente); la riga r ha la classe
+; (r * 5) & 7, cioè la classe k ha le righe (k * 5) & 7, + 8, + 16 (le classi con (k * 5) & 7 > 4,
+; cioè 1, 3 e 6, ne hanno due). wp_ord: il primo byte delle righe in ordine di classe; la classe k
+; comincia al posto WP_CLS(k) = 3k - (k > 1) - (k > 3) - (k > 6) (WP_CLS(8) = 21).
+; wp_nle_pos: il posto della prima classe con la soglia > i - 11 (cioè WP_CLS del numero di
+; soglie <= i - 11), per i da 0 a 43: avanzamento da 0 a 32 e i quattro confini di warp_image;
+; wp_lomask: per il posto p, (1 << classi prima di p) - 1; wp_ylast: primo byte dell'ultima
+; riga della classe (apply_shadows); wp_g: le righe in luce (wp_span)
+wp_nle_pos:
+.repeat 44, I
+WP_N .set ((I - 11) >= 0) + ((I - 11) >= 2) + ((I - 11) >= 5) + ((I - 11) >= 8) + ((I - 11) >= 11) + ((I - 11) >= 13) + ((I - 11) >= 16) + ((I - 11) >= 19)
+    .byte 3 * WP_N - (WP_N > 1) - (WP_N > 3) - (WP_N > 6)
 .endrepeat
+wp_lomask:
+.repeat PAD_ROWS + 1, P
+WP_N .set 0
+  .repeat 8, K
+WP_C .set K + 1
+    .if 3 * WP_C - (WP_C > 1) - (WP_C > 3) - (WP_C > 6) <= P
+WP_N .set WP_N + 1
+    .endif
+  .endrepeat
+    .byte (1 << WP_N) - 1
+.endrepeat
+wp_ylast:
+.repeat 8, K
+    .byte 3 * (((K * 5) & 7) + 8 + 8 * (((K * 5) & 7) + 16 < PAD_ROWS))
+.endrepeat
+wp_ord:
+.repeat 8, K
+  .repeat 3, J
+    .if ((K * 5) & 7) + 8 * J < PAD_ROWS
+    .byte 3 * (((K * 5) & 7) + 8 * J)
+    .endif
+  .endrepeat
+WP_C .set K + 1
+  .assert wp_ord + 3 * WP_C - (WP_C > 1) - (WP_C > 3) - (WP_C > 6) = *, error, "salto del TELEPORT: WP_CLS diverso dalle righe delle classi"
+.endrepeat
+wp_g:
+.repeat 64, C
+    .byte ((C | (C >> 1)) & $15) << 2
+.endrepeat
+.repeat 8, K
+    .assert (K * 11) >> 2 = (K >= 1) * 2 + (K >= 2) * 3 + (K >= 3) * 3 + (K >= 4) * 3 + (K >= 5) * 2 + (K >= 6) * 3 + (K >= 7) * 3, error, "soglie del salto del TELEPORT diverse da wp_nle_pos"
+.endrepeat
+.assert PAD_ROWS = 21, error, "salto del TELEPORT: tre righe per classe fino alla 20"
 
 pad_slot: .byte SP_PAD0, SP_PAD1
 
@@ -4653,7 +4982,17 @@ wp_lvl:    .res 1               ; warp_image: avanzamento
 .segment "ZEROPAGE"
 wp_arr:    .res 1               ; warp_image: 1 all'arrivo
 .segment "BSS"
-wp_b:      .res 3               ; warp_image: la riga in luce
+wp_o1:     .res 2               ; warp_image: confini delle classi vuote e in luce (posti in wp_ord)
+wp_o2:     .res 2               ; nelle immagini fatte (partenza e arrivo)
+wp_rows:   .res 1               ; classi rifatte dall'ultima copia nella RAM degli sprite (apply_shadows)
+; temporanee di warp_image, nelle variabili del disegno della coda (trail_end viene dopo)
+wp_prev = tr_r0                 ; chiave dell'immagine di prima ($ff nessuna)
+wp_n1   = tr_lm                 ; confini di adesso
+wp_n2   = tr_rm
+wp_k    = tr_k
+wp_end  = tr_n                  ; wp_span: prima classe esclusa
+wp_ph   = tr_br                 ; tick / 4
+wp_tb   = tr_bl                 ; warp_fx: tremolio (bit 1 di tick)
 wp_en_top: .res 1
 wp_ex_top: .res 1
 pd_cy:     .res 2               ; riga del centro delle racchette in questo frame

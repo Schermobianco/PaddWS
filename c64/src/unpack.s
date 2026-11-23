@@ -33,6 +33,10 @@ BOOT_RAM    = $F800
 .assert __FTCODE_SIZE__ > 0 .and __FTCODE_SIZE__ < 256, lderror, "FTCODE: la copia conta in un byte"
 .endif
 .assert __LOWCODE_SIZE__ > 0 .and __LOWCODE_SIZE__ < 256, lderror, "LOWCODE: la copia conta in un byte"
+.import __FZCODE_LOAD__, __FZCODE_RUN__, __FZCODE_SIZE__
+.assert __FZCODE_SIZE__ > 0 .and __FZCODE_SIZE__ < 256, lderror, "FZCODE: la copia conta in un byte"
+.import __STKCODE_LOAD__, __STKCODE_RUN__, __STKCODE_SIZE__
+.assert __STKCODE_SIZE__ > 0 .and __STKCODE_SIZE__ < 256, lderror, "STKCODE: la copia conta in un byte"
 
 .segment "INIT"
 
@@ -43,6 +47,18 @@ BOOT_RAM    = $F800
     ldx #<__LOWCODE_SIZE__
 :   lda __LOWCODE_LOAD__ - 1,x
     sta __LOWCODE_RUN__ - 1,x
+    dex
+    bne :-
+    ; carattere fuso dei laser del BLASTER (segmento FZCODE, src/pick.s): in fondo alla RAM bassa
+    ldx #<__FZCODE_SIZE__
+:   lda __FZCODE_LOAD__ - 1,x
+    sta __FZCODE_RUN__ - 1,x
+    dex
+    bne :-
+    ; e i puntatori dei suoi fasci (segmento STKCODE) sotto lo stack
+    ldx #<__STKCODE_SIZE__
+:   lda __STKCODE_LOAD__ - 1,x
+    sta __STKCODE_RUN__ - 1,x
     dex
     bne :-
 .ifdef FRAMETEST

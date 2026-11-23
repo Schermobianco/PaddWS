@@ -44,7 +44,7 @@ SC_W      = 96
 SC_PART   = SC_W / 3            ; colonne disegnate per frame (un terzo di voce)
 JB_ROWS   = 19                  ; righe di celle a schermo (da pulire)
 JB_RAM    = JB_BITMAP + 13 * 320 ; riga di celle 13 (nera): tabelle del disegno e copie dei registri
-JB_LATE   = (TV_BUDGET - (14000)) / TV_LCYC          ; un terzo di voce (al più circa 9.000 cicli) solo prima di qui
+JB_LATE   = (TV_BUDGET - (13400)) / TV_LCYC          ; un terzo di voce (al più circa 9.000 cicli) solo prima di qui
 JB_MAX_PER = 4                  ; periodi al più nella finestra (gli acuti oltre circa 200 Hz)
 JB_MAXSTEP = JB_MAX_PER * 65536 / SC_W
 .import __JBCODE_SIZE__, __JBCODE2_SIZE__, __JBCODE_RUN__, __JBCODE2_RUN__, __JBCODE3_SIZE__, __JBCODE3_RUN__

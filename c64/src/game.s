@@ -38,11 +38,9 @@ scorer: .res 1
 t0:     .res 4
 t1:     .res 4
 t2:     .res 4
-t_refl: .res 4
-t_speed: .res 4
 t_start: .res 4
 t_rel:  .res 4
-prev_x: .res 4
+prev_x: .res 4          ; x prima dello spostamento (contact la rifà da ball_dx)
 prev_y: .res 4
 cy:     .res 4          ; y del contatto
 old_x:  .res 4
@@ -84,6 +82,10 @@ max_ball:    .res 4     ; velocità massima della palla e accelerazione a ogni c
 kspeed:      .res 4
 
 ball_dx:    .res 4
+; prodotto di |vx| per kspeed - ONE tenuto da parte per il prossimo colpo (kc_fill, kspeed_mul)
+kc_v:       .res 4      ; |vx| del prodotto (byte 3 = $FF: nessuno)
+kc_p:       .res 4      ; (|vx| * (kspeed - ONE)) >> 16
+kc_wait:    .res 1      ; tick che mancano a kc_fill (0: niente)
 
 pad_h:      .res 8
 pad_home:   .res 8
@@ -101,7 +103,7 @@ pad_fwacc:  .res 8
 pad_fwfacc: .res 8
 pad_motion: .res 8
 pad_step:   .res 8      ; spostamento massimo per tick con l'encoder (0 = nessun limite)
-pad_before: .res 8      ; y all'inizio del tick
+pad_before: .res 8      ; y all'inizio del tick + motion (update_motion)
 
 .segment "CODE"
 
@@ -153,37 +155,43 @@ _two:
 :   mov32 max_ball, {max2_tab,y}
     mov32 kspeed, {kspeed2_tab,y}
 _pads:
+    lda #$FF                    ; kspeed nuovo: il prodotto tenuto da parte non vale più
+    sta kc_v+3
+    ; racchette: da pad_h a pad_step i valori di pad_init, uguali per i due lati (casa, avanzata e
+    ; area boost si scrivono dopo)
     ldx #0
-_pad:
-    mov32 {pad_y,x}, {#P_HEIGHT / 2}
-    mov32 {pad_h,x}, {#P_PAD_H}
-    mov32 {pad_inv,x}, {#P_PAD_INV_HALF}
-    mov32 {pad_bh,x}, boost_h_tab
-    mov32 {pad_max,x}, {#P_PAD_MAX}
-    mov32 {pad_acc,x}, {#P_PAD_ACC}
-    mov32 {pad_facc,x}, {#P_PAD_FACC}
-    mov32 {pad_fmax,x}, {#P_PAD_MAX}
-    mov32 {pad_fwacc,x}, {#P_PAD_ACC}
-    mov32 {pad_fwfacc,x}, {#P_PAD_FACC}
-    lda #0
-    ldy #4
-:   sta pad_speed,x
-    sta pad_motion,x
-    sta pad_step,x
-    sta pad_level,x
-    sta pad_dir,x
-    sta pad_fast,x
+    ldy #0
+:   lda pad_init,y
+    sta pad_h,x
+    sta pad_h+4,x
     inx
-    dey
+    iny
+    tya
+    and #3
     bne :-
-    cpx #8
-    jne _pad
-    mov32 pad_x, {#P_PAD_START}
-    mov32 pad_home, {#P_PAD_START}
-    mov32 pad_fwd, {#P_PAD_FWD}
-    mov32 pad_x+4, {#P_WIDTH - P_PAD_START}
-    mov32 pad_home+4, {#P_WIDTH - P_PAD_START}
-    mov32 pad_fwd+4, {#P_WIDTH - P_PAD_FWD}
+    txa
+    clc
+    adc #4
+    tax
+    cpy #PAD_INIT_END - pad_init
+    bne :-
+    jsr boost_reset
+    ; ferme a metà campo, a casa
+    lda #0
+    ldx #7
+:   sta pad_speed,x
+    sta pad_y,x
+    lda pad_home_init,x
+    sta pad_home,x
+    sta pad_x,x
+    lda pad_fwd_init,x
+    sta pad_fwd,x
+    lda #0
+    dex
+    bpl :-
+    lda #^(P_HEIGHT / 2)
+    sta pad_y+2
+    sta pad_y+4+2
     ; in singolo la racchetta destra è un muro alto quanto il campo
     lda m_players
     cmp #1
@@ -194,18 +202,10 @@ _pad:
     jsr half_height
     ldx #4
     jsr half_height
-    ; palla al centro, ferma
-    mov32 ball_x, {#P_WIDTH / 2}
-    mov32 ball_y, {#P_HEIGHT / 2}
-    mov32 ball_r, {#P_BALL_R}
-    mov32 ball_boost, {#ONE}
+    ; la palla la mette serve (sotto)
     lda #0
     ldx #3
-:   sta ball_vx,x
-    sta ball_vy,x
-    sta ball_dx,x
-    sta serve_timer,x
-    sta tick,x
+:   sta tick,x
     dex
     bpl :-
     ldx #7
@@ -236,6 +236,33 @@ _pad:
     bne :+
     rts
 :   jmp next_init
+.endproc
+
+.segment "RODATA"
+; valori iniziali delle racchette, un elemento per vettore da pad_h a pad_step
+pad_init:
+    .dword P_PAD_H, 0, 0, P_PAD_INV_HALF, 0, 0, 0, 0
+    .dword P_PAD_MAX, P_PAD_ACC, P_PAD_FACC, P_PAD_MAX, P_PAD_ACC, P_PAD_FACC, 0, 0
+PAD_INIT_END:
+pad_home_init: .dword P_PAD_START, P_WIDTH - P_PAD_START
+pad_fwd_init:  .dword P_PAD_FWD, P_WIDTH - P_PAD_FWD
+.segment "CODE"
+.assert pad_step = pad_h + 15 * 8, error, "pad_init: un elemento per vettore da pad_h a pad_step"
+.assert pad_inv = pad_h + 3 * 8 .and pad_max = pad_h + 8 * 8 .and pad_fwfacc = pad_h + 13 * 8, error, "pad_init: ordine dei vettori"
+.assert (P_HEIGHT / 2) & $FF00FFFF = 0, error, "match_new: metà altezza in un byte"
+
+; Area boost intera (livello 0) per le due racchette: a inizio partita e a ogni punto in due.
+.proc boost_reset
+    lda #0
+    sta pad_level
+    sta pad_level+4
+    ldx #3
+:   lda boost_h_tab,x
+    sta pad_bh,x
+    sta pad_bh+4,x
+    dex
+    bpl :-
+    rts
 .endproc
 
 ; pad_half = pad_h / 2 (altezze positive)
@@ -285,6 +312,8 @@ _vy:
     mov32 ball_boost, {#ONE}
     mov32 ball_dx, {#0}
     mov32 serve_timer, {#P_SERVE_TICKS}
+    lda #KC_WAIT                ; vx nuovo: il suo prodotto per il primo colpo (kc_fill)
+    sta kc_wait
     rts
 .endproc
 
@@ -323,15 +352,14 @@ _vy:
 :   ; BULLET: scatta, scende la rampa o finisce all'inizio del tick (non durante il fermo)
     jsr bullet_step
 _go:
-    mov32 pad_before, pad_y
-    mov32 pad_before+4, pad_y+4
+    ; y + motion all'inizio del tick, per update_motion
+    add32 pad_before, pad_y, pad_motion
+    add32 pad_before+4, pad_y+4, pad_motion+4
     jsr apply_input
     ldx #0
-    jsr pad_update
-    jsr update_motion
+    jsr pad_update              ; (con update_motion)
     ldx #4
     jsr pad_update
-    jsr update_motion
     lda m_next
     beq :+
     jsr next_tick
@@ -343,105 +371,211 @@ _play:
     jmp ball_tick
 .endproc
 
-; Paddle::motion += (y - y all'inizio del tick - motion) >> 2
-.proc update_motion
-    sub32 t0, {pad_y,x}, {pad_before,x}
-    sub32 t0, t0, {pad_motion,x}
-    asr32 t0
-    asr32 t0
-    add32 {pad_motion,x}, {pad_motion,x}, t0
-    rts
-.endproc
-
 ; Paddle::update: accelerazione o frenata, poi il movimento entro il campo. Con il BULLET
-; dell'avversario il passo è rallentato (la velocità no).
+; dell'avversario il passo è rallentato (la velocità no). Prosegue in update_motion.
+;
+; Velocità massime e accelerazioni stanno in vettori consecutivi (pad_max, pad_acc, pad_facc, poi
+; gli stessi con la racchetta avanzata): Y = X, + PAD_FWD_OFS se avanzata, + 8 con il rapido.
+PAD_FWD_OFS = pad_fmax - pad_max
+.assert pad_acc = pad_max + 8 .and pad_facc = pad_acc + 8, error, "pad_update: vettori consecutivi"
+.assert pad_fwacc = pad_fmax + 8 .and pad_fwfacc = pad_fwacc + 8, error, "pad_update: vettori consecutivi"
+.assert P_HEIGHT & $FFFF = 0, error, "pad_update: altezza del campo intera"
+
 .proc pad_update
-    stx side
     lda pad_dir,x
-    bne :+
-    jmp _nodir
-    ; a casa o avanzata: valori diversi (RUSH)
-:   beq32 {pad_x,x}, {pad_home,x}, _home
-    mov32 t1, {pad_fmax,x}
-    lda pad_fast,x
+    jeq _nodir
+    ; a casa o avanzata: valori diversi (RUSH). Prima la parte intera, quella che cambia
+    lda pad_x+2,x
+    cmp pad_home+2,x
+    bne _fwd
+    lda pad_x+3,x
+    cmp pad_home+3,x
+    bne _fwd
+    lda pad_x+1,x
+    cmp pad_home+1,x
+    bne _fwd
+    lda pad_x,x
+    cmp pad_home,x
+    bne _fwd
+    txa
+    bcs _sel                    ; (uguali: C = 1)
+_fwd:
+    txa
+    clc
+    adc #PAD_FWD_OFS
+_sel:
+    sta t1                      ; Y del massimo
+    ldy pad_fast,x
     beq :+
-    mov32 t0, {pad_fwfacc,x}
-    jmp _acc
-:   mov32 t0, {pad_fwacc,x}
-    jmp _acc
-_home:
-    mov32 t1, {pad_max,x}
-    lda pad_fast,x
-    beq :+
-    mov32 t0, {pad_facc,x}
-    jmp _acc
-:   mov32 t0, {pad_acc,x}
-_acc:
+    clc
+    adc #pad_facc - pad_acc
+:   tay
+    ; velocità +/- accelerazione
     lda pad_dir,x
-    bpl :+
-    neg32 t0, t0
-:   add32 {pad_speed,x}, {pad_speed,x}, t0
-    ; clamp(-max, max)
-    cmp32 t1, {pad_speed,x}
-    bpl :+
-    mov32 {pad_speed,x}, t1
+    bmi _down
+    clc
+    .repeat 4, k
+    lda pad_speed+k,x
+    adc pad_acc+k,y
+    sta pad_speed+k,x
+    .endrepeat
+    jmp _clamp
+_down:
+    sec
+    .repeat 4, k
+    lda pad_speed+k,x
+    sbc pad_acc+k,y
+    sta pad_speed+k,x
+    .endrepeat
+_clamp:
+    ; clamp(-max, max) con max >= 0 (il core lo richiede): una velocità >= 0 non è sotto -max e una
+    ; negativa non è sopra max, e le due differenze qui sotto non traboccano. N dal byte alto.
+    bmi _below
+    ldy t1
+    sec
+    .repeat 4, k
+    lda pad_max+k,y
+    sbc pad_speed+k,x
+    .endrepeat
+    bpl _move                   ; max - v >= 0
+    .repeat 4, k
+    lda pad_max+k,y
+    sta pad_speed+k,x
+    .endrepeat
     jmp _move
-:   neg32 t1, t1
-    cmp32 {pad_speed,x}, t1
-    jpl _move
-    mov32 {pad_speed,x}, t1
-    jmp _move
-_nodir:
-    ; senza comando frena, e sotto la soglia si ferma
-    abs32 t0, {pad_speed,x}
-    cmp32 {#P_PAD_STOP}, t0
-    bpl _zero
-    lda pad_speed+3,x
-    bmi _neg
-    sub32 {pad_speed,x}, {pad_speed,x}, {#P_PAD_DECEL}
-    lda pad_speed+3,x
-    bpl _move
-    jmp _zero
-_neg:
-    add32 {pad_speed,x}, {pad_speed,x}, {#P_PAD_DECEL}
-    lda pad_speed+3,x
-    bmi _move
-_zero:
+_below:
+    ldy t1
+    clc
+    .repeat 4, k
+    lda pad_speed+k,x
+    adc pad_max+k,y
+    .endrepeat
+    bpl _move                   ; v + max >= 0
+    sec
+    .repeat 4, k
     lda #0
-    sta pad_speed,x
-    sta pad_speed+1,x
-    sta pad_speed+2,x
-    sta pad_speed+3,x
+    sbc pad_max+k,y
+    sta pad_speed+k,x
+    .endrepeat
 _move:
     lda nx_btimer
     ora nx_lslow,x
     jne _slow
-    add32 t0, {pad_y,x}, {pad_speed,x}
+    add32 {pad_y,x}, {pad_y,x}, {pad_speed,x}   ; la y nuova (fuori dal campo si corregge sotto)
 _moved:
-    cmp32 t0, {pad_half,x}
+    ; scarto veloce sulle parti intere (con segno, 16 bit): se y_int > metà_int la y non è sotto
+    ; metà, e se y_int + metà_int + 2 <= H_int non è oltre H - metà; se no il confronto intero
+    lda pad_half+2,x
+    cmp pad_y+2,x
+    lda pad_half+3,x
+    sbc pad_y+3,x
+    bvc :+
+    eor #$80
+:   bpl _full
+    clc
+    lda pad_y+2,x
+    adc pad_half+2,x
+    tay
+    lda pad_y+3,x
+    adc pad_half+3,x
+    bvs _full
+    cpy #<((P_HEIGHT >> 16) - 1)
+    sbc #>((P_HEIGHT >> 16) - 1)
+    bvc :+
+    eor #$80
+:   bpl _full
+    jmp update_motion
+_full:
+    cmp32 {pad_y,x}, {pad_half,x}
     bpl :+
     mov32 {pad_y,x}, {pad_half,x}
     jmp _stop
 :   sub32 t1, {#P_HEIGHT}, {pad_half,x}
-    cmp32 t1, t0
-    bpl :+
+    cmp32 t1, {pad_y,x}
+    jpl update_motion
     mov32 {pad_y,x}, t1
-    jmp _stop
-:   mov32 {pad_y,x}, t0
-    rts
 _stop:
     lda #0
     sta pad_speed,x
     sta pad_speed+1,x
     sta pad_speed+2,x
     sta pad_speed+3,x
-    rts
+    jmp update_motion
 _slow:
     mov32 s_v, {pad_speed,x}
     jsr pad_slow_shift_x
     jsr slow_v
-    add32 t0, {pad_y,x}, s_v
+    add32 {pad_y,x}, {pad_y,x}, s_v
     jmp _moved
+_nodir:
+    ; senza comando frena, e sotto la soglia si ferma. |v| <= max: v non è mai i32::MIN, e le
+    ; differenze con la soglia non traboccano
+    lda pad_speed+3,x
+    bmi _neg
+    sec                         ; v >= 0: si ferma se soglia - v >= 0
+    .repeat 4, k
+    lda #<(P_PAD_STOP >> (8 * k))
+    sbc pad_speed+k,x
+    .endrepeat
+    bpl _zero
+    sec
+    .repeat 4, k
+    lda pad_speed+k,x
+    sbc #<(P_PAD_DECEL >> (8 * k))
+    sta pad_speed+k,x
+    .endrepeat
+    bmi _zero
+    jmp _move
+_neg:
+    clc                         ; v < 0: si ferma se v + soglia >= 0
+    .repeat 4, k
+    lda pad_speed+k,x
+    adc #<(P_PAD_STOP >> (8 * k))
+    .endrepeat
+    bpl _zero
+    clc
+    .repeat 4, k
+    lda pad_speed+k,x
+    adc #<(P_PAD_DECEL >> (8 * k))
+    sta pad_speed+k,x
+    .endrepeat
+    bpl _zero
+    jmp _move
+_zero:
+    lda #0
+    sta pad_speed,x
+    sta pad_speed+1,x
+    sta pad_speed+2,x
+    sta pad_speed+3,x
+    jmp _move
+.endproc
+
+; Paddle::motion += (y - y all'inizio del tick - motion) >> 2 (da pad_update, X = lato * 4). La
+; somma di y all'inizio del tick e motion è già in pad_before (match_step).
+.proc update_motion
+    sec
+    .repeat 3, k
+    lda pad_y+k,x
+    sbc pad_before+k,x
+    sta t0+k
+    .endrepeat
+    lda pad_y+3,x
+    sbc pad_before+3,x
+    ; >> 2 con il segno, il byte alto in A
+    .repeat 2
+    cmp #$80
+    ror a
+    ror t0+2
+    ror t0+1
+    ror t0
+    .endrepeat
+    sta t0+3
+    ora t0+2                    ; zero (racchetta ferma con motion tra -3 e 0): niente da sommare
+    ora t0+1
+    ora t0
+    beq :+
+    add32 {pad_motion,x}, {pad_motion,x}, t0
+:   rts
 .endproc
 
 ; Match::apply_input: comandi dei due giocatori (in singolo il muro non si muove).
@@ -473,18 +607,21 @@ _normal:
     lda in_dir,x
     cmp pad_dir,x
     bne _set
-    lda in_dir,x
+    tay
     beq _offset
     lda in_flags,x
     and #IN_FAST
     cmp pad_fast,x
     beq _offset
 _set:
-    jsr set_direction
+    jsr set_direction           ; (X resta)
 _offset:
-    ldx side
+    ; senza altri comandi che il rapido il resto non fa niente
     lda in_flags,x
-    bpl _blaster
+    and #<~IN_FAST
+    beq _done
+    asl a                       ; IN_OFFSET
+    bcc _blaster
     jsr set_paddle_top
 _blaster:
     ; il BLASTER non ha lo scatto: spara con quel tasto (o con il comando di sparo)
@@ -501,7 +638,6 @@ _blaster:
     jsr next_fire
     jmp _command
 _forward:
-    ldx side
     lda in_flags,x
     and #IN_FORWARD
     beq _command
@@ -510,12 +646,13 @@ _command:
     ; NEXT: seleziona e attiva i bonus
     ldx side
     lda m_next
-    beq :+
+    beq _done
     lda in_flags,x
     and #IN_SELECT | IN_ACTIVATE
-    beq :+
+    beq _done
     jsr next_command
-:   rts
+_done:
+    rts
 .endproc
 
 ; Paddle::set_direction: invertendo la direzione resta un po' di slancio.
@@ -526,7 +663,7 @@ _command:
     beq _store
     eor pad_speed+3,x
     bpl _store
-    mulq16 {pad_speed,x}, {#REVERSE_KEEP}
+    mulq16 {#REVERSE_KEEP}, {pad_speed,x}   ; la costante (2 byte) come primo fattore
     ldx side
     mov32 {pad_speed,x}, m_a
 _store:
@@ -542,14 +679,18 @@ _store:
 ; dell'avversario la racchetta segue la manopola rallentata, al massimo al passo del suo tipo o a
 ; quello di una mano veloce (P_ENC_HAND_STEP).
 .proc set_paddle_top
+    ; goal = (H - offset - metà altezza).clamp(metà, H - metà); H - offset tocca solo la parte
+    ; intera (H è intera)
+    sec
+    lda #<(P_HEIGHT >> 16)
+    sbc in_offset,x
+    sta t0+2
+    lda #>(P_HEIGHT >> 16)
+    sbc #0
+    sta t0+3
     lda #0
     sta t0
     sta t0+1
-    sta t0+3
-    lda in_offset,x
-    sta t0+2
-    ; goal = (H - offset - metà altezza).clamp(metà, H - metà)
-    sub32 t0, {#P_HEIGHT}, t0
     sub32 t0, t0, {pad_half,x}
     cmp32 t0, {pad_half,x}
     bpl :+
@@ -628,6 +769,7 @@ _home:
 ; tra la faccia di casa e quella avanzata e, nel tratto fino al retro della racchetta di casa
 ; percorso un tick alla volta (al massimo 64 passi, senza rimbalzi), passa all'altezza della
 ; racchetta: lo scatto non fa perdere le palle che la racchetta ferma avrebbe preso.
+BIF_STEPS = 6                   ; passi del ciclo prima della forma chiusa
 .proc ball_in_forward_area
     cpx #0
     jne _right
@@ -693,10 +835,14 @@ _path:
 _loop:
     lda t1+3
     bmi _next
+_band:
     sub32 t1, t_start, t1
     lda t1+3
     bmi _no
     sec
+    rts
+_no:
+    clc
     rts
 _next:
     lda t0+3                    ; tratto finito (<= 0)
@@ -708,10 +854,11 @@ _next:
     sub32 t0, t0, t2
     add32 t1, t1, cy
     dec t_rel
+    beq _no
+    lda t_rel
+    cmp #64 - BIF_STEPS
     bne _loop
-_no:
-    clc
-    rts
+    jmp bif_closed              ; (cpu.s, accanto a div8)
 .endproc
 
 ; Match::forward_boost: lo scatto rilancia la palla più veloce (o annulla un boost più forte).
@@ -727,71 +874,202 @@ _cancel:
     mov32 ball_r, {#P_BALL_R}
     event EV_HIT
 _push:
-    abs32 t0, ball_vx
-    mulq16 t0, {#FWD_PUSH}
+    ; mul(|vx|, 6/5) = |vx| + (|vx| * (6/5 - ONE)) >> 16 (|vx| >= 0, il prodotto per ONE è esatto):
+    ; un prodotto senza segno con il fattore di due byte, |vx| sulle righe (umul32 lascia m_b)
+    abs32 m_b, ball_vx
+    lda #<(FWD_PUSH - ONE)
+    sta m_a
+    lda #>(FWD_PUSH - ONE)
+    sta m_a+1
+    lda #0
+    sta m_a+2
+    sta m_a+3
+    jsr umul32
+    clc
+    .repeat 4, k
+    lda m_b+k
+    adc m_p+2+k
+    sta ball_vx+k
+    .endrepeat
+    lda #KC_WAIT                ; vx nuovo: il suo prodotto per il prossimo colpo (kc_fill)
+    sta kc_wait
     ldx side
-    bne :+
-    mov32 ball_vx, m_a
-    jmp _vy
-:   neg32 ball_vx, m_a
+    beq _vy
+    neg32 ball_vx, ball_vx
     ; vy += mul(rng.unit(), serve_unit)
+    ; unit = u - (0 o ONE), u = i 16 bit bassi di t0; serve_unit < ONE. P = serve_unit * u (32 bit,
+    ; in t1). Con unit >= 0 il prodotto è P >> 16; con unit < 0 è -((serve_unit * (ONE - u)) >> 16)
+    ; = ceil(P / ONE) - serve_unit (tra -serve_unit e 0)
 _vy:
     jsr rng_unit
-    mulq16 t0, {#P_SERVE_UNIT}
-    add32 ball_vy, ball_vy, m_a
+    lda #<P_SERVE_UNIT          ; tabelle sul byte basso di serve_unit
+    sta sq1_lo
+    sta sq1_hi
+    eor #$ff
+    sta sq2_lo
+    sta sq2_hi
+    ldy t0                      ; s0 * u0: byte 0 e 1
+    sec
+    lda (sq1_lo),y
+    sbc (sq2_lo),y
+    sta t1
+    lda (sq1_hi),y
+    sbc (sq2_hi),y
+    sta t1+1
+    ldy t0+1                    ; s0 * u1: byte 1 e 2
+    sec
+    lda (sq1_lo),y
+    sbc (sq2_lo),y
+    tax
+    lda (sq1_hi),y
+    sbc (sq2_hi),y
+    sta t1+2
+    txa
+    clc
+    adc t1+1
+    sta t1+1
+    bcc :+
+    inc t1+2                    ; (alto al più $FE)
+:   lda #>P_SERVE_UNIT          ; tabelle sul byte alto
+    sta sq1_lo
+    sta sq1_hi
+    eor #$ff
+    sta sq2_lo
+    sta sq2_hi
+    ldy t0                      ; s1 * u0: byte 1 e 2 (riporto nel 3)
+    sec
+    lda (sq1_lo),y
+    sbc (sq2_lo),y
+    tax
+    lda (sq1_hi),y
+    sbc (sq2_hi),y
+    sta t1+3
+    txa
+    clc
+    adc t1+1
+    sta t1+1
+    lda t1+3
+    adc t1+2
+    sta t1+2
+    lda #0
+    rol a
+    sta t1+3
+    ldy t0+1                    ; s1 * u1: byte 2 e 3
+    sec
+    lda (sq1_lo),y
+    sbc (sq2_lo),y
+    tax
+    lda (sq1_hi),y
+    sbc (sq2_hi),y
+    tay
+    txa
+    clc
+    adc t1+2
+    sta t1+2
+    tya
+    adc t1+3
+    sta t1+3
+    lda t0+3
+    bmi _neg
+    clc                         ; vy += P >> 16
+    lda ball_vy
+    adc t1+2
+    sta ball_vy
+    lda ball_vy+1
+    adc t1+3
+    sta ball_vy+1
+    lda #0
+    tay                         ; (estensione: 0)
+    beq _hi
+_neg:
+    lda t1                      ; C = 1 se P non è multiplo di ONE
+    ora t1+1
+    cmp #1
+    lda t1+2                    ; + ceil(P / ONE) + (ONE - serve_unit), a 16 bit
+    adc #<(ONE - P_SERVE_UNIT)
+    tax
+    lda t1+3
+    adc #>(ONE - P_SERVE_UNIT)
+    tay
+    lda #0                      ; riporto: valore 0, altrimenti negativo ($FF)
+    sbc #0
+    pha
+    clc
+    txa
+    adc ball_vy
+    sta ball_vy
+    tya
+    adc ball_vy+1
+    sta ball_vy+1
+    pla
+    tay
+_hi:
+    tya
+    adc ball_vy+2
+    sta ball_vy+2
+    tya
+    adc ball_vy+3
+    sta ball_vy+3
     ; la palla presa tra la posizione di casa e quella avanzata riparte dalla faccia della
     ; racchetta (già avanzata), non da dietro: a sinistra x = max(x, destra + r), a destra
-    ; x = min(x, sinistra - r). Cicli sui 4 byte: tya e and non toccano il riporto.
-    ldy #0                      ; t1 = r + w/2
+    ; x = min(x, sinistra - r). Racchetta, metà larghezza e raggio sono interi: il bordo F (in
+    ; t1+2, t1+3) è un pixel intero e il confronto con x si fa sulla parte intera (a destra con la
+    ; frazione: x > F)
+    lda ball_r+2
     clc
-:   lda ball_r,y
-    adc half_w,y
-    sta t1,y
-    iny
-    tya
-    and #3
-    bne :-
-    lda #$79                    ; adc abs,y: a sinistra t0 = racchetta + t1
+    adc #<(P_PAD_HALF_W >> 16)
+    sta m_t                     ; r + w/2
     ldx side
+    bne _right
     clc
-    beq :+
-    lda #$f9                    ; sbc abs,y: a destra racchetta - t1
-    sec
-:   sta _op
-    ldy #0
-:   lda pad_x,x
-_op:
-    adc t1,y
-    sta t0,y
-    inx
-    iny
-    tya
-    and #3
-    bne :-
-    ldy #0                      ; x - t0: a sinistra vale t0 se è negativo, a destra se no
-    sec
-:   lda ball_x,y
-    sbc t0,y
-    sta t1,y
-    iny
-    tya
-    and #3
-    bne :-
-    lda side                    ; segno di x - t0, rovesciato a destra
-    beq :+
-    lda #$80
-:   eor t1+3
-    bpl _done
-    ldy #3
-:   lda t0,y
-    sta ball_x,y
-    dey
-    bpl :-
-_done:
-    ldx side
+    lda pad_x+2
+    adc m_t
+    sta t1+2
+    lda pad_x+3
+    adc #0
+    sta t1+3
+    sec                         ; int(x) < F: x = F
+    lda ball_x+2
+    sbc t1+2
+    lda ball_x+3
+    sbc t1+3
+    bvc :+
+    eor #$80
+:   bmi _face
     rts
-half_w: .dword P_PAD_HALF_W
+_right:
+    sec
+    lda pad_x+4+2
+    sbc m_t
+    sta t1+2
+    lda pad_x+4+3
+    sbc #0
+    sta t1+3
+    sec                         ; F - x < 0: x = F
+    lda #0
+    sbc ball_x
+    lda #0
+    sbc ball_x+1
+    lda t1+2
+    sbc ball_x+2
+    lda t1+3
+    sbc ball_x+3
+    bvc :+
+    eor #$80
+:   bpl _done
+_face:
+    lda #0
+    sta ball_x
+    sta ball_x+1
+    lda t1+2
+    sta ball_x+2
+    lda t1+3
+    sta ball_x+3
+_done:
+    rts
 .endproc
+.assert FWD_PUSH > ONE .and FWD_PUSH - ONE < $10000, error, "forward_boost: 6/5 - ONE in due byte"
+.assert P_SERVE_UNIT > 0 .and P_SERVE_UNIT < ONE, error, "forward_boost: serve_unit in due byte"
 
 ; t0 = Rng::unit(): (x >> 15) - ONE, valore in [-1, 1)
 .proc rng_unit
@@ -805,23 +1083,36 @@ half_w: .dword P_PAD_HALF_W
     rol a
     sta t0+1
     lda #0
-    rol a
+    rol a                       ; bit 31 (C = 0)
+    sbc #0                      ; - ONE: bit - 1, cioè 0 o $FF, anche nel byte alto
     sta t0+2
-    lda #0
     sta t0+3
-    sub32 t0, t0, {#ONE}
     rts
 .endproc
 
 ; ------------------------------------------------------------------------------------ palla
 
+; Scarti veloci di ball_tick sulle parti intere: con la parte intera della y tra Y_LOW e Y_HIGH la
+; palla (raggio al più BALL_R_MAX) non tocca i bordi alto e basso, con quella della x tra X_LOW e
+; X_HIGH non è oltre i bordi sinistro e destro.
+Y_LOW  = ((ONE + BALL_R_MAX) >> 16) + 1
+Y_HIGH = ((P_HEIGHT - ONE - BALL_R_MAX) >> 16) - 1
+X_LOW  = (BALL_R_MAX >> 16) + 1
+X_HIGH = ((P_WIDTH - BALL_R_MAX) >> 16) - 1
+.assert Y_LOW <= Y_HIGH .and Y_HIGH < 255 .and X_LOW < 256 .and X_HIGH >= 256 .and X_HIGH < $7FFF, error, "ball_tick: soglie"
+
 ; Parte del tick dopo l'attesa della battuta: movimento, bordi, contatto o punto.
 .proc ball_tick
-    mov32 prev_x, ball_x
-    mov32 prev_y, ball_y
-    ; dx = mul(vx, boost): con boost 1 è vx
+    ; il prodotto di vx per il prossimo colpo, KC_WAIT tick dopo il colpo o la battuta (kc_fill)
+    lda kc_wait
+    beq :+
+    dec kc_wait
+    bne :+
+    jsr kc_fill
+:   ; dx = mul(vx, boost): con boost 1 è vx; altrimenti il prodotto tenuto da parte se vx e boost
+    ; sono quelli dell'ultima volta (vx_boost)
     beq32 ball_boost, {#ONE}, _unit
-    mulq16 ball_vx, ball_boost
+    jsr vx_boost_mul
     mov32 t0, m_a
     jmp _move
 _unit:
@@ -832,14 +1123,34 @@ _move:
     jsr next_ball_motion
     lda nx_btimer
     beq _plain
+    mov32 prev_y, ball_y
     jsr ball_slowed             ; BULLET: passo rallentato
     jmp _x
 _plain:
-    add32 ball_y, ball_y, ball_vy
+    clc                         ; y += vy, con la y di prima in prev_y
+    .repeat 4, k
+    lda ball_y+k
+    sta prev_y+k
+    adc ball_vy+k
+    sta ball_y+k
+    .endrepeat
 _x:
-    add32 ball_x, ball_x, t0
-    mov32 ball_dx, t0
-    ; bordo alto e basso
+    clc                         ; x += dx, e ball_dx = dx
+    .repeat 4, k
+    lda t0+k
+    sta ball_dx+k
+    adc ball_x+k
+    sta ball_x+k
+    .endrepeat
+    ; bordo alto e basso: lontano da tutti e due niente rimbalzo (né curva da invertire)
+    lda ball_y+3
+    bne _walls
+    lda ball_y+2
+    cmp #Y_LOW
+    bcc _walls
+    cmp #Y_HIGH + 1
+    jcc _pick
+_walls:
     add32 t1, ball_y, ball_r
     cmp32 t1, {#P_HEIGHT - ONE}
     bmi _bottom
@@ -863,7 +1174,9 @@ _side:
     and #EV_WALL
     beq :+
     neg32 nx_curve, nx_curve
-:   ; racchetta verso cui va la palla
+:
+_pick:
+    ; racchetta verso cui va la palla
     ldx #0
     lda ball_vx+3
     bmi :+
@@ -889,7 +1202,20 @@ _miss:
     event_hi EV_BARRIER_HI
     rts
 _points:
-    ; palla oltre il bordo sinistro o destro: punto
+    ; palla oltre il bordo sinistro o destro: punto. Prima lo scarto veloce sulla parte intera
+    lda ball_x+3
+    bmi _edge
+    bne :+
+    lda ball_x+2
+    cmp #X_LOW
+    bcs _none                   ; (X_HIGH oltre 255)
+    bcc _edge
+:   lda ball_x+2
+    cmp #<(X_HIGH + 1)
+    lda ball_x+3
+    sbc #>(X_HIGH + 1)
+    bcc _none
+_edge:
     sub32 t0, ball_x, ball_r
     lda t0+3
     bmi _right_scores
@@ -903,85 +1229,204 @@ _points:
 _right_scores:
     lda #4
     jmp point
-:   rts
+:
+_none:
+    rts
 .endproc
+
+; Raggio massimo della palla: ball_r prende solo questi valori.
+BALL_R_MAX = .max(.max(P_BALL_R, P_BALL_R_BOOST), P_BALL_R_FWD)
+; Scarto veloce di contact: con parti intere (x della palla, x della racchetta) che distano almeno
+; C_FAR, la distanza vera supera (C_FAR - 1) * ONE >= BALL_R_MAX + P_PAD_HALF_W e la palla sta
+; tutta davanti alla faccia: né attraversata né sovrapposta.
+C_FAR = ((BALL_R_MAX + P_PAD_HALF_W + ONE - 1) >> 16) + 1
+.assert C_FAR < 256, error, "contact: C_FAR in un byte"
+
+; N = 1 se a < b, con a e b a 16 bit con il segno (byte basso e alto)
+.macro cmp16 alo, ahi, blo, bhi
+    .local ok
+    lda alo
+    cmp blo
+    lda ahi
+    sbc bhi
+    bvc ok
+    eor #$80
+ok:
+.endmacro
+
+; N = 1 se K < v, con K un numero intero di pixel (16 bit con il segno) e v a 32 bit: il segno di
+; K * ONE - v, dove la frazione di v dà solo il prestito
+.macro cmpk16 klo, khi, v
+    .local ok
+    sec
+    lda #0
+    sbc v
+    lda #0
+    sbc v+1
+    lda klo
+    sbc v+2
+    lda khi
+    sbc v+3
+    bvc ok
+    eor #$80
+ok:
+.endmacro
 
 ; Match::contact: C = 1 se la palla tocca la racchetta X nell'ultimo spostamento, con la y del
 ; contatto in cy (punto medio dello spostamento se il bordo della palla ha attraversato la
-; faccia, altrimenti la y della palla).
+; faccia, altrimenti la y della palla). Con C = 0 non lascia niente che altri leggano.
+; Racchetta (x), metà larghezza e raggio sono pixel interi: i confronti sulla x si fanno sulle
+; parti intere (16 bit), con la frazione solo dove decide (v > K: K - v < 0).
 .proc contact
     cpx #0
     jne _right
-    ; sinistra: se la palla era già dietro la racchetta niente
-    cmp32 prev_x, {pad_x,x}
-    bpl :+
-    clc
+    ; sinistra: palla lontana davanti alla faccia (parti intere, 16 bit con segno)
+    sec
+    lda ball_x+2
+    sbc pad_x+2
+    tay
+    lda ball_x+3
+    sbc pad_x+3
+    bvs :++
+    bmi :++
+    bne :+
+    cpy #C_FAR
+    bcc :++
+:   clc
     rts
-:   add32 t2, {pad_x,x}, {#P_PAD_HALF_W}     ; faccia
-    sub32 t0, prev_x, ball_r
-    cmp32 t0, t2
-    jmi _overlap
-    sub32 t0, ball_x, ball_r
-    cmp32 t0, t2
-    jpl _overlap
+:   ; se la palla era già dietro la racchetta niente
+    sub32 prev_x, ball_x, ball_dx           ; x prima dello spostamento
+    cmp16 prev_x+2, prev_x+3, pad_x+2, pad_x+3
+    jmi _no                                 ; (la racchetta è intera)
+    jsr reach                               ; K = faccia + r
+    cmpk16 t2, t2+1, ball_x
+    jmi _no                                 ; tutta davanti (x > K): né attraversata né sovrapposta
+    cmp16 prev_x+2, prev_x+3, t2, t2+1
+    jmi _overlap                            ; prima era già oltre la faccia (x di prima < K)
+    cmp16 ball_x+2, ball_x+3, t2, t2+1
+    jpl _overlap                            ; bordo sulla faccia (x >= K): non attraversata
     jmp _crossed
 _right:
-    cmp32 {pad_x,x}, prev_x
-    bpl :+
-    clc
+    sec
+    lda pad_x+4+2
+    sbc ball_x+2
+    tay
+    lda pad_x+4+3
+    sbc ball_x+3
+    bvs :++
+    bmi :++
+    bne :+
+    cpy #C_FAR
+    bcc :++
+:   clc
     rts
-:   sub32 t2, {pad_x,x}, {#P_PAD_HALF_W}
-    add32 t0, prev_x, ball_r
-    cmp32 t2, t0
-    jmi _overlap
-    add32 t0, ball_x, ball_r
-    cmp32 t2, t0
-    jpl _overlap
+:   sub32 prev_x, ball_x, ball_dx
+    cmpk16 pad_x+4+2, pad_x+4+3, prev_x
+    jmi _no                                 ; x di prima oltre la racchetta
+    jsr reach                               ; K = faccia - r
+    cmp16 ball_x+2, ball_x+3, t2, t2+1
+    jmi _no                                 ; x < K
+    cmpk16 t2, t2+1, prev_x
+    jmi _overlap                            ; x di prima > K
+    cmpk16 t2, t2+1, ball_x
+    jpl _overlap                            ; x <= K
 _crossed:
     add32 cy, prev_y, ball_y
     asr32 cy
-    sub32 t0, cy, ball_r
-    add32 t1, {pad_y,x}, {pad_half,x}
-    cmp32 t1, t0
-    bmi _overlap
-    add32 t0, cy, ball_r
-    sub32 t1, {pad_y,x}, {pad_half,x}
-    cmp32 t0, t1
-    bmi _overlap
+    ; alto e basso della racchetta allargati del raggio, una volta per i due controlli:
+    ; y - r <= alto e y + r >= basso sono y <= alto + r e y >= basso - r
+    jsr band
+    cmp32 t_start, cy
+    bmi _side
+    cmp32 cy, t_rel
+    bmi _side
     sec
     rts
 _overlap:
-    ; sovrapposizione semplice
-    sub32 t0, ball_x, ball_r
-    add32 t1, {pad_x,x}, {#P_PAD_HALF_W}
-    cmp32 t1, t0
+    ; sovrapposizione semplice: il bordo verso la faccia non la supera
+    jsr band
+_side:
+    ; l'altro bordo della palla e l'altro lato della racchetta: a sinistra x + r < racchetta - w/2,
+    ; cioè int(x) < racchetta - (w/2 + r); a destra x > racchetta + w/2 + r
+    cpx #0
+    bne :+
+    sec
+    lda pad_x+2
+    sbc m_t
+    sta t2
+    lda pad_x+3
+    sbc #0
+    sta t2+1
+    cmp16 ball_x+2, ball_x+3, t2, t2+1
     jmi _no
-    add32 t0, ball_x, ball_r
-    sub32 t1, {pad_x,x}, {#P_PAD_HALF_W}
-    cmp32 t0, t1
+    jmp _y
+:   clc
+    lda pad_x+4+2
+    adc m_t
+    sta t2
+    lda pad_x+4+3
+    adc #0
+    sta t2+1
+    cmpk16 t2, t2+1, ball_x
     jmi _no
-    sub32 t0, ball_y, ball_r
-    add32 t1, {pad_y,x}, {pad_half,x}
-    cmp32 t1, t0
-    bmi _no
-    add32 t0, ball_y, ball_r
-    sub32 t1, {pad_y,x}, {pad_half,x}
-    cmp32 t0, t1
-    bmi _no
+_y:
+    cmp32 t_start, ball_y
+    jmi _no
+    cmp32 ball_y, t_rel
+    jmi _no
     mov32 cy, ball_y
     sec
+    rts
+reach:
+    ; m_t = w/2 + r; K (t2, 16 bit) = racchetta + m_t a sinistra, - m_t a destra (pixel interi)
+    lda ball_r+2
+    clc
+    adc #<(P_PAD_HALF_W >> 16)
+    sta m_t
+    cpx #0
+    bne :+
+    clc
+    lda pad_x+2
+    adc m_t
+    sta t2
+    lda pad_x+3
+    adc #0
+    sta t2+1
+    rts
+:   sec
+    lda pad_x+4+2
+    sbc m_t
+    sta t2
+    lda pad_x+4+3
+    sbc #0
+    sta t2+1
+    rts
+band:
+    ; t_start = y racchetta + (metà + r), t_rel = y racchetta - (metà + r) (r intero: byte 2 e 3)
+    clc
+    lda pad_half+2,x
+    adc ball_r+2
+    sta t0+2
+    lda pad_half+3,x
+    adc #0
+    sta t0+3
+    lda pad_half,x
+    sta t0
+    lda pad_half+1,x
+    sta t0+1
+    add32 t_start, {pad_y,x}, t0
+    sub32 t_rel, {pad_y,x}, t0
     rts
 _no:
     clc
     rts
 .endproc
 
-; Match::reflection: velocità verticale data dalla racchetta X, in t_refl; in_area = 1 se la palla
-; è dentro l'area boost EVO.
+; Match::reflection: velocità verticale data dalla racchetta X, sommata subito a vy (b.vy +=
+; reflection: solo bounce la chiama); in_area = 1 se la palla è dentro l'area boost EVO.
 .proc reflection
     lda #0
     sta in_area
-    abs32 t_speed, ball_vx
     lda m_evo
     bne :+
     jmp _plain
@@ -1009,7 +1454,7 @@ _no:
     asr32 t0
     floor32 t0, t0
     add32 t0, t_start, t0
-    sub32 t0, t_rel, t0
+    sub32 m_b, t_rel, t0        ; fattori del prodotto direttamente in m_a e m_b
     lda pad_level,x
     asl a
     asl a
@@ -1017,26 +1462,48 @@ _no:
     mov32 t1, {boost_inv_tab,y}
     lda #1
     sta in_area
-    mulq16 t_speed, t0
-    mulq24 m_a, t1
-    mulq16 m_a, {#DAMP_BOOST}
-    mov32 t_refl, m_a
+    abs32 m_a, ball_vx          ; velocità
+    jsr mul_q16
+    mov32 m_b, t1
+    jsr mul_q24
+    ; * ONE / 5: la costante (2 byte) come primo fattore, il prodotto salta due righe
+    mov32 m_b, m_a
+    mov32 m_a, {#DAMP_BOOST}
+    jsr mul_q16
+    add32 ball_vy, ball_vy, m_a
     ldx side
     rts
 _plain:
-    sub32 t0, ball_y, {pad_y,x}
-    mulq16 t_speed, t0
+    ; mul_recip(mul(|vx|, dy), inv) con un solo segno, quello di dy: |vx| e inv sono positivi, e
+    ; con il troncamento verso lo zero il valore assoluto del primo prodotto è (|vx| |dy|) >> 16
+    ; (se è zero anche il risultato lo è, con qualunque segno)
+    abs32 m_a, ball_vx          ; velocità
+    sec
+    .repeat 4, k
+    lda ball_y+k
+    sbc pad_y+k,x
+    sta m_b+k
+    .endrepeat
+    sta m_sign
+    bpl :+
+    neg32 m_b, m_b
+:   jsr umul32
+    mov32 m_a, {m_p+2}
     ldx side
-    mulq24 m_a, {pad_inv,x}
-    mov32 t_refl, m_a
+    mov32 m_b, {pad_inv,x}
+    jsr umul32
     ldx side
+    lda m_sign                  ; vy + reflection: + o - (|vx| |dy| >> 16) * inv >> 24
+    bmi :+
+    add32 ball_vy, ball_vy, {m_p+3}
+    rts
+:   sub32 ball_vy, ball_vy, {m_p+3}
     rts
 .endproc
 
 ; Match::bounce: la racchetta X respinge la palla.
 .proc bounce
-    jsr reflection
-    add32 ball_vy, ball_vy, t_refl
+    jsr reflection              ; (vy += reflection)
     ; mai più ripida di 45 gradi
     abs32 t0, ball_vx
     abs32 t1, ball_vy
@@ -1076,13 +1543,32 @@ _hit:
     mov32 ball_r, {#P_BALL_R}
     event EV_HIT
 _place:
+    ; (t0 resta |vx|, che il cambio di segno non tocca: serve sotto). Racchetta, metà larghezza e
+    ; raggio (appena scritto) sono interi: la x nuova è un pixel intero
+    lda ball_r+2
+    clc
+    adc #<(P_PAD_HALF_W >> 16)
+    sta m_t
+    lda #0
+    sta ball_x
+    sta ball_x+1
     cpx #0
     bne :+
-    add32 t0, {pad_x,x}, {#P_PAD_HALF_W}
-    add32 ball_x, t0, ball_r
+    clc
+    lda pad_x+2
+    adc m_t
+    sta ball_x+2
+    lda pad_x+3
+    adc #0
+    sta ball_x+3
     jmp _flip
-:   sub32 t0, {pad_x,x}, {#P_PAD_HALF_W}
-    sub32 ball_x, t0, ball_r
+:   sec
+    lda pad_x+4+2
+    sbc m_t
+    sta ball_x+2
+    lda pad_x+4+3
+    sbc #0
+    sta ball_x+3
 _flip:
     neg32 ball_vx, ball_vx
     ; in singolo il muro rimanda la palla senza accelerarla e vale un punto
@@ -1100,16 +1586,143 @@ _flip:
     inc score+1
 :   rts
 _speed:
-    abs32 t0, ball_vx
-    cmp32 t0, max_ball
+    cmp32 t0, max_ball          ; |vx|
     bpl :+
-    mulq16 ball_vx, kspeed
-    mov32 ball_vx, m_a
-    mulq16 ball_vy, kspeed
-    mov32 ball_vy, m_a
+    jsr kspeed_mul              ; vx e vy
+    lda #KC_WAIT                ; vx nuovo: il suo prodotto per il prossimo colpo (kc_fill)
+    sta kc_wait
 :   ldx side
     rts
 .endproc
+
+; v = mul(v, kspeed) per v = ball_vx e ball_vy (X = 0 e 4 in one). kspeed è tra ONE e 2 ONE (tabelle
+; sotto), e con il troncamento verso lo zero mul(v, k) = v + mul(v, k - ONE) = v +/- (|v| * (k - ONE))
+; >> 16 (come mul_q16: i 32 bit bassi del valore assoluto, col segno di v). Il fattore k - ONE ha due
+; byte e, primo fattore di umul32 (che lo lascia: si mette una volta), fa saltare due righe del
+; prodotto.
+;
+; Nel colpo (bounce) |vx| è in t0 e il prodotto di vx è quasi sempre già pronto: kc_fill lo fa
+; KC_WAIT tick dopo il colpo di prima o la battuta, in un tick leggero (nel primo dopo il colpo la
+; CPU che riceve rifà velocità e soglia della mancata, nel secondo l'errore di mira), e lo tiene
+; con il suo |vx| (kc_v; match_new lo annulla, perché cambia kspeed). Con un altro |vx| (un bonus
+; ha cambiato la palla) si calcola qui. Lo stesso prodotto, lo stesso risultato: il tick del colpo
+; risparmia una moltiplicazione.
+KC_WAIT = 3
+.proc kspeed_mul
+    lda kspeed
+    sta m_a
+    lda kspeed+1
+    sta m_a+1
+    lda #0
+    sta m_a+2
+    sta m_a+3
+    .repeat 4, k
+    lda t0+k                    ; |vx|
+    cmp kc_v+k
+    bne calc
+    .endrepeat
+    lda ball_vx+3
+    bmi :+
+    clc
+    .repeat 4, k
+    lda ball_vx+k
+    adc kc_p+k
+    sta ball_vx+k
+    .endrepeat
+    jmp vy
+:   sec
+    .repeat 4, k
+    lda ball_vx+k
+    sbc kc_p+k
+    sta ball_vx+k
+    .endrepeat
+    jmp vy
+calc:
+    ldx #0                      ; vx
+    jsr one
+vy:
+    ldx #4                      ; vy
+one:
+    stx t2
+    lda ball_vx+3,x
+    bmi _neg
+    .repeat 4, k
+    lda ball_vx+k,x
+    sta m_b+k
+    .endrepeat
+    jsr umul32
+    ldx t2
+    clc
+    .repeat 4, k
+    lda ball_vx+k,x
+    adc m_p+2+k
+    sta ball_vx+k,x
+    .endrepeat
+    rts
+_neg:
+    sec
+    .repeat 4, k
+    lda #0
+    sbc ball_vx+k,x
+    sta m_b+k
+    .endrepeat
+    jsr umul32
+    ldx t2
+    sec
+    .repeat 4, k
+    lda ball_vx+k,x
+    sbc m_p+2+k
+    sta ball_vx+k,x
+    .endrepeat
+    rts
+.endproc
+.assert ball_vy = ball_vx + 4, error, "kspeed_mul: vx e vy consecutive"
+
+; Il prodotto di vx per il prossimo colpo: kc_p = (|vx| * (kspeed - ONE)) >> 16 (i byte 2-5, come
+; one in kspeed_mul) e kc_v = |vx| (wrapping, come abs32 di bounce). Usa m_a, m_b, m_p, m_t
+; (ball_tick, all'inizio, dove non servono a nessuno). Codice corto: gira una volta per colpo.
+.proc kc_fill
+    lda kspeed
+    sta m_a
+    lda kspeed+1
+    sta m_a+1
+    lda #0
+    sta m_a+2
+    sta m_a+3
+    ; m_b = |vx| = (vx eor s) - s, s = $FF con vx < 0 (il -s entra come riporto): X da $FC a $FF,
+    ; gli indirizzi in pagina zero + 4 + X tornano su ball_vx e m_b (zp,x resta in pagina zero)
+    lda ball_vx+3
+    asl a                       ; C = segno
+    lda #0
+    adc #$FF
+    eor #$FF
+    sta m_t                     ; s
+    asl a                       ; C = segno
+    ldx #$FC
+:   lda ball_vx+4,x
+    eor m_t
+    adc #0
+    sta m_b+4,x
+    inx
+    bne :-
+    jsr umul32                  ; (m_b resta)
+    ldx #3
+:   lda m_b,x
+    sta kc_v,x
+    lda m_p+2,x
+    sta kc_p,x
+    dex
+    bpl :-
+    rts
+.endproc
+.assert ball_vx + 4 < $100 .and m_b + 4 < $100, error, "kc_fill: ball_vx e m_b in pagina zero"
+.macro kspeed_check k0, k1, k2, k3
+    .assert k0 >= ONE .and k0 < 2 * ONE .and k1 >= ONE .and k1 < 2 * ONE, error, "kspeed fuori da [ONE, 2 ONE)"
+    .assert k2 >= ONE .and k2 < 2 * ONE .and k3 >= ONE .and k3 < 2 * ONE, error, "kspeed fuori da [ONE, 2 ONE)"
+.endmacro
+kspeed_check T_KSPEED_1P
+kspeed_check T_KSPEED_2P
+kspeed_check T_KSPEED_NEXT
 
 ; Match::point: punto del lato A (0 sinistra, 4 destra), poi la battuta verso chi l'ha subito.
 .proc point
@@ -1126,11 +1739,7 @@ _speed:
     bne :+
     inc score+1,x
     ; l'area boost torna intera
-:   lda #0
-    sta pad_level
-    sta pad_level+4
-    mov32 pad_bh, boost_h_tab
-    mov32 pad_bh+4, boost_h_tab
+:   jsr boost_reset
     jmp _serve
 _single:
     ; record e punteggio azzerato

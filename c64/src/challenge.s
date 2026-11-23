@@ -313,12 +313,9 @@ go_page:
 .endproc
 
 ; Dopo il tick: punti arcade (Score::on_tick) di chi gioca, dal lato ch_side; non nella sfida.
+; Solo nella scala (cg_active = CG_LADDER: lo guarda play_scene).
 .proc ch_tick
-    lda cg_active
-    cmp #CG_LADDER
-    beq :+
-    rts
-:   lda events
+    lda events
     and #EV_HIT | EV_BOOST | EV_SUPER
     beq points
     inc ch_rally
@@ -1056,7 +1053,7 @@ CL_PAGES = 3
     cmp #MAX_CREDITS
     bcs start
     inc credits
-    lda state                   ; in partita l'effetto passa da fx_pend (il frame può essere avanti)
+    lda state                   ; in partita l'effetto passa da fx_pend (con quelli del tick: frame_music)
     cmp #ST_PLAY
     bne :+
     lda fx_pend
@@ -2432,13 +2429,10 @@ done:
 
 ; Punti arcade in basso dalla parte dell'avversario (a destra, a sinistra se chi gioca è a destra,
 ; come sul PC e sul MiSTer) e moltiplicatore (x2-x8) a fianco, verso il bordo, a un carattere dalle
-; cifre come sul PC (scenes.rs), quando cambiano; nella sfida niente.
+; cifre come sul PC (scenes.rs), quando cambiano; nella sfida niente. Solo nella scala
+; (cg_active = CG_LADDER: lo guarda play_scene).
 .proc ch_hud
-    lda cg_active
-    cmp #CG_LADDER
-    beq :+
-    rts
-:   ; moltiplicatore (poco lavoro), poi i punti (le cifre costano: solo con il frame indietro)
+    ; moltiplicatore (poco lavoro), poi i punti (le cifre costano: solo con il frame indietro)
     jsr mult
     cmp ch_mshown
     beq digits

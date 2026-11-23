@@ -51,7 +51,7 @@ PR_LINE_OFF1 = 51 + 23 * 8
 ; una pagina dalla cartuccia (circa 3.800 cicli, interrupt spenti) tra due cambi dello split
 ; (pr_copy_time): partita entro PR_COPY_EARLY dopo il giro del raster finisce prima di quello in alto,
 ; tra PR_LINE_ON0 + 1 e PR_COPY_MID prima del secondo
-PR_COPY_LINES = 3900 / TV_LCYC + 1
+PR_COPY_LINES = 3900 / TV_UCYC + 1
 PR_COPY_EARLY = PR_LINE_ON0 - 1 - PR_COPY_LINES
 PR_COPY_MID   = PR_LINE_OFF0 - 1 - PR_COPY_LINES
 .assert PR_COPY_EARLY > 0 .and PR_COPY_MID > PR_LINE_ON0 + 1, error, "sfilata: la copia tra due cambi"

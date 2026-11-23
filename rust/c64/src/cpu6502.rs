@@ -383,6 +383,33 @@ pub fn fake_char_rom() -> Box<[u8; 0x1000]> {
     rom
 }
 
+/// Cicli che il VIC-II ruba al 6502 in un frame (`Cpu::frame_start`): le badline (riga dei
+/// caratteri: BA basso dai cicli 12 a 54) e il DMA degli sprite (due cicli per sprite acceso su
+/// quella riga, con BA basso dai tre cicli prima). Con BA basso il processore si ferma al primo
+/// ciclo di lettura; nei primi tre cicli quelli di scrittura passano ancora. Lo stato segue i
+/// registri che il programma scrive in `mem` ($D011, $D015, $D017, Y degli sprite). Tarato contro
+/// VICE (x64sc) con `tools/c64_vice_frames.py` e il comando `vice` del banco.
+#[derive(Clone, Default)]
+pub struct Vic {
+    /// `frame_start` a cui lo stato è agganciato
+    anchor: Option<u64>,
+    /// ciclo in cui comincia la riga corrente, e la riga
+    line_start: u64,
+    line: u32,
+    /// cicli della riga con BA basso (bit n = ciclo n, da 1); `carry` quelli già decisi per la
+    /// riga dopo (sprite 3-7, che si leggono all'inizio della riga)
+    mask: u128,
+    carry: u128,
+    /// righe di DMA rimaste per sprite
+    dma: [u8; 8],
+    /// DEN visto alla riga $30: le badline del frame
+    den: bool,
+    /// cicli di fila con BA basso
+    low: u8,
+    /// cicli rubati dall'accensione
+    pub stolen: u64,
+}
+
 /// (Clone: il banco di prova rigioca un tratto da una copia, es. con e senza l'easter egg)
 #[derive(Clone)]
 pub struct Cpu {
@@ -390,6 +417,8 @@ pub struct Cpu {
     pub x: u8,
     pub y: u8,
     pub sp: u8,
+    /// il valore più basso toccato dal puntatore dello stack: sotto lo stack c'è del codice
+    pub sp_min: u8,
     pub pc: u16,
     pub p: u8,
     pub mem: Box<[u8; 0x10000]>,
@@ -417,6 +446,9 @@ pub struct Cpu {
     /// il primo ciclo in cui il PC arriva a `mark_at`, durante `call` (in `mark`)
     pub mark_at: Option<u16>,
     pub mark: Option<u64>,
+    /// lo stesso per un secondo indirizzo (l'avvio di un effetto sonoro, sid_fx_start)
+    pub mark_fx_at: Option<u16>,
+    pub mark_fx: Option<u64>,
     /// linee dei joystick, bit a 0 = premuto come sul C64: porta 2 in $DC00, porta 1 in $DC01
     /// (si sommano, in AND, a quello che il programma scrive nel registro)
     pub joy_port2: u8,
@@ -430,6 +462,8 @@ pub struct Cpu {
     /// almeno 1, come se l'interrupt del frame dopo l'avesse alzato (un frame oltre il suo tempo
     /// non accetta altro lavoro: frame_after, sid_time)
     pub frame_flag_at: Option<u16>,
+    /// cicli rubati dal VIC-II, con `frame_start`
+    pub vic: Vic,
     pub cia2: Cia2,
     /// fronte della linea dell'NMI da servire prima della prossima istruzione
     nmi_pending: bool,
@@ -473,6 +507,7 @@ impl Cpu {
             x: 0,
             y: 0,
             sp: 0xFF,
+            sp_min: 0xFF,
             pc: 0,
             p: U | I,
             mem: Box::new([0; 0x10000]),
@@ -487,10 +522,13 @@ impl Cpu {
             inclusive: None,
             mark_at: None,
             mark: None,
+            mark_fx_at: None,
+            mark_fx: None,
             joy_port2: 0xFF,
             joy_port1: 0xFF,
             frame_start: None,
             frame_flag_at: None,
+            vic: Vic::default(),
             cia2: Cia2::default(),
             nmi_pending: false,
             nmis: 0,
@@ -509,6 +547,107 @@ impl Cpu {
     /// scritture vanno nella RAM sotto.
     fn char_rom_on(&self, addr: u16) -> bool {
         (0xD000..0xE000).contains(&addr) && self.mem[1] & 3 != 0 && self.mem[1] & 4 == 0
+    }
+
+    /// Riga del raster al ciclo corrente (con `frame_start`: lì comincia la riga 250).
+    pub fn raster_line(&self) -> u64 {
+        // (durante un'istruzione `cycles` è già alla sua fine: la lettura è nell'ultimo ciclo)
+        let pos = self.cycles.saturating_sub(self.frame_start.unwrap_or(0) + 1);
+        (250 + pos / crate::line_cycles()) % crate::raster_lines()
+    }
+
+    /// Stato del VIC-II per la riga che comincia: badline e sprite accesi su quella riga.
+    fn vic_line(&mut self) {
+        let cpl = crate::line_cycles() as u32;
+        let (line, d011) = (self.vic.line, self.mem[0xD011]);
+        if line == 0x30 {
+            self.vic.den = d011 & 0x10 != 0;
+        }
+        let mut mask = std::mem::take(&mut self.vic.carry);
+        if self.vic.den && (0x30..=0xF7).contains(&line) && line & 7 == (d011 & 7) as u32 {
+            mask |= ((1u128 << 43) - 1) << 12; // cicli 12-54
+        }
+        let (on, tall) = (self.mem[0xD015], self.mem[0xD017]);
+        for n in 0..8 {
+            let bit = 1u8 << n;
+            if self.vic.dma[n] == 0 && on & bit != 0 && self.mem[0xD001 + 2 * n] as u32 == line & 0xFF {
+                self.vic.dma[n] = if tall & bit != 0 { 42 } else { 21 };
+            }
+            if self.vic.dma[n] > 0 {
+                self.vic.dma[n] -= 1;
+                // puntatore dello sprite n al ciclo 58 + 2n sul PAL (dal 3 nella riga dopo), 59 + 2n
+                // sull'NTSC (6567R8, righe di 65 cicli); BA basso dai tre cicli prima a quello dopo
+                let p = if crate::ntsc() { 59 } else { 58 } + 2 * n as u32;
+                mask |= 0b11111u128 << (p - 3);
+            }
+        }
+        self.vic.carry = mask >> cpl;
+        self.vic.mask = mask & ((1u128 << (cpl + 1)) - 1);
+    }
+
+    /// Porta lo stato del VIC-II alla riga del ciclo corrente.
+    fn vic_sync(&mut self) {
+        let cpl = crate::line_cycles();
+        if self.vic.anchor != self.frame_start {
+            let start = self.frame_start.unwrap_or(0);
+            // frame di seguito: lo stato continua; se no riparte dalla riga 250
+            let next = self.vic.line_start + cpl;
+            if self.vic.anchor.is_none() || start < self.vic.line_start || start > next {
+                self.vic.line_start = start;
+                self.vic.line = 250;
+                self.vic.carry = 0;
+                self.vic.low = 0;
+                // sprite ancora in lettura alla riga 250 (i registri sono quelli del frame prima)
+                let (on, tall) = (self.mem[0xD015], self.mem[0xD017]);
+                for n in 0..8 {
+                    let rows = if tall >> n & 1 != 0 { 42 } else { 21 };
+                    let done = 250u8.wrapping_sub(self.mem[0xD001 + 2 * n]);
+                    self.vic.dma[n] = if on >> n & 1 != 0 && done < rows { rows - done } else { 0 };
+                }
+                self.vic_line();
+            }
+            self.vic.anchor = self.frame_start;
+        }
+        while self.cycles >= self.vic.line_start + cpl {
+            self.vic.line_start += cpl;
+            self.vic.line = (self.vic.line + 1) % crate::raster_lines() as u32;
+            self.vic_line();
+        }
+    }
+
+    /// Un ciclo del processore (di scrittura o no): con il VIC-II del frame, prima i cicli in cui
+    /// BA lo tiene fermo.
+    fn bus(&mut self, write: bool) {
+        if self.frame_start.is_some_and(|s| self.cycles >= s) {
+            loop {
+                self.vic_sync();
+                let c = (self.cycles - self.vic.line_start) as u32 + 1;
+                if self.vic.mask >> c & 1 == 0 {
+                    self.vic.low = 0;
+                    break;
+                }
+                self.vic.low = self.vic.low.saturating_add(1);
+                if write && self.vic.low <= 3 {
+                    break;
+                }
+                self.cycles += 1;
+                self.vic.stolen += 1;
+            }
+        }
+        self.cycles += 1;
+    }
+
+    /// Rifà i cicli dell'istruzione appena eseguita (da `before`) uno per uno sul bus, con quelli
+    /// di scrittura in `writes` (bit k = ciclo k, da 0): aggiunge i cicli rubati dal VIC-II.
+    fn bus_replay(&mut self, before: u64, writes: u8) {
+        if self.frame_start.is_none() {
+            return;
+        }
+        let n = self.cycles - before;
+        self.cycles = before;
+        for k in 0..n {
+            self.bus(writes >> k & 1 != 0);
+        }
     }
 
     pub fn read(&self, addr: u16) -> u8 {
@@ -533,7 +672,7 @@ impl Cpu {
                 v
             }
             0xD011 | 0xD012 if self.frame_start.is_some() => {
-                let line = (250 + (self.cycles - self.frame_start.unwrap_or(0)) / crate::raster_cycles()) % crate::raster_lines();
+                let line = self.raster_line();
                 if addr == 0xD012 {
                     line as u8
                 } else {
@@ -541,8 +680,9 @@ impl Cpu {
                 }
             }
             a if self.frame_flag_at == Some(a) && self.frame_start.is_some() => {
-                let full = crate::raster_lines() * crate::raster_cycles();
-                let irq = self.cycles - self.frame_start.unwrap_or(0) >= full;
+                // l'interrupt del frame dopo alza frame_flag appena comincia la riga 250: il programma
+                // non può leggere quella riga in $D012 e poi frame_flag ancora a zero
+                let irq = self.cycles.saturating_sub(self.frame_start.unwrap_or(0)) >= crate::frame_cycles();
                 self.mem[addr as usize] | irq as u8
             }
             _ => self.mem[addr as usize],
@@ -628,6 +768,7 @@ impl Cpu {
     fn push(&mut self, v: u8) {
         self.write(0x100 | self.sp as u16, v);
         self.sp = self.sp.wrapping_sub(1);
+        self.sp_min = self.sp_min.min(self.sp);
     }
 
     fn pull(&mut self) -> u8 {
@@ -664,6 +805,9 @@ impl Cpu {
             let jsr = self.inclusive.is_some() && self.mem[pc as usize] == 0x20;
             if self.mark_at == Some(pc) && self.mark.is_none() {
                 self.mark = Some(self.cycles);
+            }
+            if self.mark_fx_at == Some(pc) && self.mark_fx.is_none() {
+                self.mark_fx = Some(self.cycles);
             }
             self.step()?;
             if let Some(p) = &mut self.profile {
@@ -766,14 +910,37 @@ impl Cpu {
             self.pc = self.read16(0xFFFA);
             self.cycles += 7;
             self.nmis += 1;
+            self.bus_replay(before, 0b001_1100); // tre scritture nello stack
         }
-        self.exec()?;
+        let at = self.cycles;
+        // lettura della riga del raster ($D011, $D012 assoluti): i cicli rubati prima, così la
+        // lettura cade nel suo ciclo vero (una soglia può stare a cavallo di due righe)
+        let pc = self.pc as usize;
+        if self.frame_start.is_some()
+            && pc < 0xFFFE
+            && self.mem[pc + 2] == 0xD0
+            && matches!(self.mem[pc + 1], 0x11 | 0x12)
+            && let Some((_, Mode::Abs, n, _)) = TABLE[self.mem[pc] as usize]
+        {
+            for _ in 0..n {
+                self.bus(false);
+            }
+            let end = self.cycles;
+            self.cycles = end - n as u64;
+            self.exec()?;
+            self.cycles = end;
+        } else {
+            let writes = self.exec()?;
+            self.bus_replay(at, writes);
+        }
         self.cia2_tick(self.cycles - before);
         Ok(())
     }
 
-    fn exec(&mut self) -> Result<(), String> {
+    /// Esegue un'istruzione; restituisce i suoi cicli di scrittura (bit k = ciclo k, da 0).
+    fn exec(&mut self) -> Result<u8, String> {
         let at = self.pc;
+        let begin = self.cycles;
         let opcode = self.fetch();
         let Some((op, mode, cycles, page_penalty)) = TABLE[opcode as usize] else {
             return Err(format!("opcode non documentato ${opcode:02X} a ${at:04X}"));
@@ -1005,7 +1172,17 @@ impl Cpu {
                 }
             }
         }
-        Ok(())
+        // cicli di scrittura: l'ultimo di STA/STX/STY, gli ultimi due delle istruzioni che leggono
+        // e riscrivono la memoria, i push
+        let n = (self.cycles - begin) as u8;
+        Ok(match op {
+            Op::Sta | Op::Stx | Op::Sty => 1 << (n - 1),
+            Op::Asl | Op::Lsr | Op::Rol | Op::Ror | Op::Inc | Op::Dec if mode != Mode::Acc => 0b11 << (n - 2),
+            Op::Pha | Op::Php => 0b100,
+            Op::Jsr => 0b1_1000,
+            Op::Brk => 0b1_1100,
+            _ => 0,
+        })
     }
 
     fn compare(&mut self, r: u8, m: u8) {

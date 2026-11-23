@@ -24,7 +24,7 @@ B_STEER    = 6
 B_BULLET   = 7
 B_NONE     = 8
 
-K_ARCADE   = 0
+K_ARCADE   = 0                  ; (zero: i confronti con l'ARCADE sono lda/beq)
 K_TITAN    = 1
 K_HAMMER   = 2
 K_TWIST    = 3
@@ -54,6 +54,20 @@ IN_ACTIVATE = $08
 IN_FIRE     = $10
 IN_STRAIGHT = $20               ; mosse speciali (PlayerInput::special)
 IN_RISE     = $40
+
+; salto corto a `target` se il byte k di a e quello di b sono diversi
+.macro ne8_to pa, pb, k, target
+    op8 lda, {pa}, k
+    op8 cmp, {pb}, k
+    bne target
+.endmacro
+
+; salto corto a `target` se a != b (32 bit)
+.macro ne32_to pa, pb, target
+    .repeat 4, k
+    ne8_to {pa}, {pb}, k, target
+    .endrepeat
+.endmacro
 
 CAP_LOW  = P_CAP_HALF + ONE                         ; capsule tra il basso e la fascia delle riserve
 CAP_HIGH = P_HEIGHT - P_CAP_MARGIN - P_CAP_HALF
@@ -138,6 +152,7 @@ n_side: .res 1
 n_t:    .res 4
 m_next:      .res 1
 n_u:    .res 4
+bm_kx:  .res 1                  ; s_k + 4 * s_ex del passo orizzontale in bm_dx (ball_slowed)
 
 .segment "CODE"
 
@@ -350,11 +365,9 @@ done:
 ; STEER del giocatore X: il verso (su/giù, o la manopola lontana dalla racchetta) e la racchetta ferma.
 .proc steer_store
     ; il verso: in_dir, oppure dalla manopola
-    lda in_flags,x
-    bmi knob
     lda in_dir,x
-    jmp set
-knob:
+    ldy in_flags,x
+    bpl set
     jsr steer_knob
 set:
     sta nx_steer_dir
@@ -377,20 +390,16 @@ set:
     sta n_t+2
     sub32 n_t, {#P_HEIGHT}, n_t
     sub32 n_t, n_t, {pad_half,x}    ; goal
-    mov32 n_u, {pad_h,x}
-    asr32 n_u
+    mov32 n_u, {pad_half,x}         ; (pad_half = pad_h >> 1)
     asr32 n_u
     asr32 n_u                       ; dead = altezza / 8
+    mov32 s_w, n_u                  ; (temporanea: nessuna moltiplicazione qui)
     add32 n_u, {pad_y,x}, n_u
     cmp32 n_u, n_t                  ; y + dead < goal: su
     bpl :+
     lda #1
     rts
-:   mov32 n_u, {pad_h,x}
-    asr32 n_u
-    asr32 n_u
-    asr32 n_u
-    sub32 n_u, {pad_y,x}, n_u
+:   sub32 n_u, {pad_y,x}, s_w
     cmp32 n_t, n_u                  ; goal < y - dead: giù
     bpl :+
     lda #$ff
@@ -434,8 +443,7 @@ activate:
     ; toglie il selezionato dalla riserva, compattando gli altri; se vuota e ARCADE, doppio clic chiama un bonus
     jsr res_count
     bne has_bonus
-    lda nx_kind,x
-    cmp #K_ARCADE
+    lda nx_kind,x               ; (K_ARCADE = 0)
     jne done
     lda nx_atap,x
     bne arcade_call
@@ -446,28 +454,30 @@ arcade_call:
     lda #0
     sta nx_atap,x
     stx n_side
-    ; nessuna capsula già in arrivo verso questo lato
-    sta n_i
-chk_c:
-    ldx n_i
-    lda cap_on,x
-    beq next_c
+    ; nessuna capsula già in arrivo verso questo lato: verso sinistra vx < 0, verso destra
+    ; vx >= 0, cioè il segno di vx xor  a destra (n_j = lato << 5)
     txa
     asl a
     asl a
-    tax
-    ldy n_side
-    beq chk_l
+    asl a
+    asl a
+    asl a
+    sta n_j
+    ldy #0                      ; posto
+    ldx #0                      ; posto * 4
+chk_c:
+    lda cap_on,y
+    beq next_c
     lda cap_vx+3,x
-    jpl done
-    bmi next_c
-chk_l:
-    lda cap_vx+3,x
+    eor n_j
     jmi done
 next_c:
-    inc n_i
-    lda n_i
-    cmp #4
+    inx
+    inx
+    inx
+    inx
+    iny
+    cpy #4
     bne chk_c
     lda n_side
     jsr spawn_to_side
@@ -481,10 +491,9 @@ next_c:
     rts
 has_bonus:
     sta n_t                     ; n
+    tay
     lda #0
     sta nx_atap,x
-    lda n_t
-    tay
     dey                         ; n - 1
     sty n_t+1
     lda nx_sel,x
@@ -514,23 +523,15 @@ has_bonus:
     jmp :-
 :   lda #B_NONE
     sta nx_res,y
-    ; selezionato: se era l'ultimo, uno indietro
-    lda nx_sel,x
-    cmp n_t+1
-    bcc :+
-    beq :+
-    jmp dec_sel
-:   lda nx_sel,x
-    cmp n_t+1
-    bne pause
-dec_sel:
+    ; selezionato: se era l'ultimo (o oltre), uno indietro
     lda nx_sel,x
     beq pause
+    cmp n_t+1
+    bcc pause
     dec nx_sel,x
 pause:
     ; pausa prima del bonus successivo (più breve con l'ARCADE)
     lda nx_kind,x
-    cmp #K_ARCADE
     bne :+
     lda #<P_ARCADE_COOLDOWN
     sta nx_cool,x
@@ -551,11 +552,7 @@ pause:
     bne arm
     ; SUPER: animazione a caso
     stx n_side
-    lda #3
-    sta m_b
-    lda #0
-    sta m_b+1
-    jsr rng_below
+    jsr rng_below3
     ldx n_side
     sta nx_anim,x
     lda n_j
@@ -570,10 +567,10 @@ slow:
     stx nx_slow_s
     mulq16 ball_vx, {#P_SLOW_MUL}
     mov32 ball_vx, m_a
-    abs32 n_t, ball_vx
-    blt32 n_t, {#2 * P_SERVE_UNIT}, :+
-    jmp vy
-:   lda ball_vx+3
+    jsr abs_vx_t
+    cmp32 n_t, {#2 * P_SERVE_UNIT}
+    bpl vy
+    lda ball_vx+3
     bmi :+
     mov32 ball_vx, {#2 * P_SERVE_UNIT}
     jmp vy
@@ -728,6 +725,8 @@ free:
     ldx n_side_x
     lda #1
     sta shot_on,y
+    lsr a
+    sta shot_safe,y             ; le capsule si guardano dal primo passo (move_shots)
     tya
     asl a
     asl a
@@ -765,8 +764,9 @@ n_side_x: .res 1
 ; ------------------------------------------------------------------------------------ tick
 
 .segment "NEXTBSS"
-; previsione del TELEPORT tenuta da parte, per giocatore (passo 4): y, x della racchetta, palla
-; (spostamento, vy, raggio, x all'ultima chiamata), passi rimasti, valida
+; previsione del TELEPORT tenuta da parte, per giocatore (passo 4): y già nei limiti della
+; racchetta (la scrive teleport), x della racchetta (parte intera), palla (spostamento, vy, raggio
+; intero, x all'ultima chiamata), passi rimasti, valida
 tp_y:   .res 8
 tp_cx:  .res 8
 tp_dx:  .res 8
@@ -777,53 +777,88 @@ tp_n:   .res 8
 tp_ok:  .res 8
 .segment "CODE"
 
-; arrival_y per il TELEPORT del giocatore c_side, in c_y. Il core la rifà a ogni tick; su un tratto
-; rettilineo il risultato non cambia: si tiene finché la palla avanza di ball_dx a ogni tick con
-; la stessa velocità e lo stesso raggio, la racchetta non cambia x e restano passi da fare. Se il
-; BULLET ha rallentato l'ultimo passo della palla (s_k dell'ultimo next_ball_motion, che nessuno
-; cambia prima del TELEPORT) la y non è avanzata di ball_vy ma di ball_dy: un passo in meno, la y
-; senza bordi prende ball_dy - vy e si rifanno solo i bordi.
+; x delle racchette in pixel interi (casa e avanzata, anche quelle dei tipi): la chiave del
+; TELEPORT ne guarda solo la parte intera
+.macro kfwd_check k0, k1, k2, k3, k4, k5, k6, k7
+    .assert (k0 | k1 | k2 | k3 | k4 | k5 | k6 | k7) & $FFFF = 0, error, "kind_fwd: x intere"
+.endmacro
+kfwd_check T_KIND_FWD
+.assert (P_PAD_START | P_PAD_FWD | P_WIDTH) & $FFFF = 0, error, "racchette: x intere"
+
+; arrival_y per il TELEPORT del giocatore c_side (X = c_side all'uscita). Il core la rifà a ogni
+; tick; su un tratto rettilineo il risultato non cambia: si tiene finché la palla avanza di ball_dx
+; a ogni tick con la stessa velocità e lo stesso raggio, la racchetta non cambia x e restano passi
+; da fare. Se il BULLET ha rallentato l'ultimo passo della palla (s_k dell'ultimo
+; next_ball_motion, che nessuno cambia prima del TELEPORT) la y non è avanzata di ball_vy ma di
+; ball_dy: un passo in meno, la y senza bordi prende ball_dy - vy e si rifanno solo i bordi (come
+; pred_advance di cpu.s, qui dentro).
+; C = 1: vale quella tenuta da parte (tp_y, già nei limiti; c_y non è scritta); C = 0: c_y nuova
+; (rifatta o aggiornata), da portare nei limiti.
 .proc tp_arrival
     ldx c_side
     lda tp_ok,x
-    jeq compute
-    beq32 {tp_cx,x}, {pad_x,x}, :+
+    beq miss
+    ne32_to {tp_vy,x}, ball_vy, miss    ; (prima la chiave che cambia più spesso)
+    ne8_to {tp_cx,x}, {pad_x,x}, 2, miss
+    ne8_to {tp_cx,x}, {pad_x,x}, 3, miss
+    lda tp_r,x                  ; (il raggio è intero: conta il byte 2)
+    cmp ball_r+2
+    beq same
+miss:
     jmp compute
-:   beq32 {tp_dx,x}, ball_dx, :+
-    jmp compute
-:   beq32 {tp_vy,x}, ball_vy, :+
-    jmp compute
-:   beq32 {tp_r,x}, ball_r, :+
-    jmp compute
-:   add32 n_t, {tp_bx,x}, ball_dx
-    beq32 n_t, ball_x, :+
-    jmp compute
-:   dec tp_n,x                  ; un passo in meno; all'arrivo si rifà
+same:
+    ; un passo di ball_dx dall'ultima chiamata: lo stesso passo (tp_dx) e la x di allora (tp_bx)
+    ; più il passo è quella di adesso, cioè x - dx è la x di allora
+    ne32_to {tp_dx,x}, ball_dx, miss
+    sec
+    .repeat 4, k
+    lda ball_x+k
+    sbc ball_dx+k
+    eor tp_bx+k,x               ; (eor: il prestito resta)
+    bne miss
+    .endrepeat
+    dec tp_n,x                  ; un passo in meno; all'arrivo si rifà
     beq compute
-    mov32 {tp_bx,x}, ball_x
+    jsr keep_x
     lda s_k
     bne slowed
-    mov32 c_y, {tp_y,x}
+    sec
     rts
 slowed:
+    ; y senza bordi (pred_y) + ball_dy - vy, poi i bordi (fold_y)
     txa
     ora #8
     tay
-    sec                         ; un passo in meno
-    jsr pred_advance
-    mov32 {tp_y,x}, c_y
+    clc
+    .repeat 4, k
+    lda pred_y+k,y
+    adc ball_dy+k
+    sta c_y+k
+    .endrepeat
+    sec
+    .repeat 4, k
+    lda c_y+k
+    sbc ball_vy+k
+    sta c_y+k
+    sta pred_y+k,y
+    .endrepeat
+    jsr fold_y                  ; (X = c_side)
+    clc
     rts
 compute:
     lda #8
     sta c_tp
     jsr arrival_y
     ldx c_side
-    mov32 {tp_y,x}, c_y
-    mov32 {tp_cx,x}, {pad_x,x}
+    lda pad_x+2,x
+    sta tp_cx+2,x
+    lda pad_x+3,x
+    sta tp_cx+3,x
     mov32 {tp_dx,x}, ball_dx
     mov32 {tp_vy,x}, ball_vy
-    mov32 {tp_r,x}, ball_r
-    mov32 {tp_bx,x}, ball_x
+    lda ball_r+2
+    sta tp_r,x
+    jsr keep_x
     ; si tiene se ci sono passi da fare e la previsione non è troncata all'orizzonte
     ldy #0
     lda c_n
@@ -834,14 +869,23 @@ compute:
     iny
 :   tya
     sta tp_ok,x
+    clc
+    rts
+keep_x:
+    ; la x di adesso, per il tick dopo
+    .repeat 4, k
+    lda ball_x+k
+    sta tp_bx+k,x
+    .endrepeat
     rts
 .endproc
 
 ; Match::next_tick: pause, caricatore, TELEPORT, capsule, colpi del BLASTER e, per ultime, le
 ; mosse speciali (sm_tick).
 .proc next_tick
-    ; pause tra due bonus e due colpi, rallentamento da laser, ricarica del caricatore
-    ldx #0
+    ; pause tra due bonus e due colpi, rallentamento da laser, ricarica del caricatore (prima il
+    ; destro: i due giocatori non dipendono l'uno dall'altro)
+    ldx #4
 loop:
     dec16_sat {nx_cool,x}
     dec16_sat {nx_gap,x}
@@ -858,62 +902,160 @@ loop:
     bne :+
     dec nx_reload+1,x
 :   dec nx_reload,x
-    lda nx_reload,x
-    ora nx_reload+1,x
+    bne next
+    lda nx_reload+1,x
     bne next
     lda #P_BLASTER_SHOTS
     sta nx_ammo,x
 next:
-    inx
-    inx
-    inx
-    inx
-    cpx #8
-    jne loop
-    ; TELEPORT (non durante l'attesa della battuta)
+    dex
+    dex
+    dex
+    dex
+    bpl loop
+    ; TELEPORT (non durante l'attesa della battuta), per chi l'ha armato
     or32 serve_timer
+    bne caps
+    .assert B_TELEPORT = 0, error, "next_tick: TELEPORT armato con lda/bne"
+    lda nx_armed
     bne :+
     ldx #0
     jsr teleport
+:   lda nx_armed+4
+    bne caps
     ldx #4
     jsr teleport
-:   jsr spawn_capsule
+caps:
+    ; una capsula ogni tanto: alla fine dell'attesa (nx_spawn, che non scende sotto zero)
+    lda nx_spawn
+    ora nx_spawn+1
+    beq spawn
+    lda nx_spawn
+    bne :+
+    dec nx_spawn+1
+:   dec nx_spawn
+    bne move
+    lda nx_spawn+1
+    bne move
+spawn:
+    jsr spawn_capsule
+move:
     jsr move_capsules
     jsr move_shots
     jmp sm_tick
 .endproc
 
-; TELEPORT del giocatore X: passata la metà campo, la racchetta salta dove arriverà la palla e
-; resta sul punto previsto (rifatto a ogni tick) fino al colpo.
+; TELEPORT del giocatore X, che l'ha armato (next_tick): passata la metà campo, la racchetta salta
+; dove arriverà la palla e resta sul punto previsto (rifatto a ogni tick) fino al colpo.
+.assert P_HEIGHT < $01000000, error, "teleport: altezze in 24 bit"
 .proc teleport
-    lda nx_armed,x
-    cmp #B_TELEPORT
-    jne no
     ; la palla viene verso di sé ed è oltre la metà campo
     ldy #ZONE_HALF
     jsr ball_in_zone
     jcc no
     stx c_side
-    jsr tp_arrival              ; c_y
-    ldx c_side
-    ; tra metà altezza e H - metà altezza
-    cmp32 c_y, {pad_half,x}
-    bpl :+
+    jsr tp_arrival              ; c_y, o C = 1 (X = c_side)
+    bcc fresh
+    ; il punto tenuto da parte (già nei limiti) è quello del tick prima, dove la racchetta è stata
+    ; messa: se è ancora lì ferma, il salto è nullo e le scritture non cambiano niente
+    ne32_to {pad_y,x}, {tp_y,x}, moved
+    lda pad_speed,x
+    ora pad_speed+1,x
+    ora pad_speed+2,x
+    ora pad_speed+3,x
+    bne moved
+    rts
+moved:
+    mov32 c_y, {tp_y,x}
+    jmp jump
+fresh:
+    ; tra metà altezza e H - metà altezza. c_y (tra r + 1 e H - 1 - r, come la danno arrival_y
+    ; e fold_y), la metà altezza e H - metà sono positive e sotto 2^24: il byte alto è 0, si
+    ; confrontano senza segno dal byte 2
+    lda c_y+2
+    cmp pad_half+2,x
+    bne :+
+    lda c_y+1
+    cmp pad_half+1,x
+    bne :+
+    lda c_y
+    cmp pad_half,x
+:   bcs :+
     mov32 c_y, {pad_half,x}
-:   sub32 n_t, {#P_HEIGHT}, {pad_half,x}
-    cmp32 n_t, c_y
-    bpl :+
-    mov32 c_y, n_t
-:   ; il salto vero (oltre un quarto di racchetta) ha la sua animazione
-    sub32 n_t, c_y, {pad_y,x}
-    abs32 n_t, n_t
-    mov32 n_u, {pad_h,x}
-    asr32 n_u
-    asr32 n_u
-    cmp32 n_u, n_t
-    bpl :+
+:   sec
+    lda #<P_HEIGHT
+    sbc pad_half,x
+    sta n_t
+    lda #>P_HEIGHT
+    sbc pad_half+1,x
+    sta n_t+1
+    lda #^P_HEIGHT
+    sbc pad_half+2,x
+    sta n_t+2                   ; (byte alto 0)
+    cmp c_y+2
+    bne :+
+    lda n_t+1
+    cmp c_y+1
+    bne :+
+    lda n_t
+    cmp c_y
+:   bcs :+
+    lda n_t                     ; c_y = H - metà (il byte alto resta 0)
+    sta c_y
+    lda n_t+1
+    sta c_y+1
+    lda n_t+2
+    sta c_y+2
+:
+jump:
+    ; il salto vero (oltre un quarto di racchetta) ha la sua animazione; pad_half è pad_h >> 1
+    ; (half_height), quindi pad_h >> 2 = pad_half >> 1. Anche pad_y sta nel campo: tutto in 3
+    ; byte, |c_y - pad_y| < 2^24 (C = 0 dopo la sottrazione: differenza negativa)
+    sec
+    lda c_y
+    sbc pad_y,x
+    sta n_t
+    lda c_y+1
+    sbc pad_y+1,x
+    sta n_t+1
+    lda c_y+2
+    sbc pad_y+2,x
+    sta n_t+2
+    bcs :+
+    sec
+    lda #0
+    sbc n_t
+    sta n_t
+    lda #0
+    sbc n_t+1
+    sta n_t+1
+    lda #0
+    sbc n_t+2
+    sta n_t+2
+:   ; |d| > pad_half >> 1, cioè (interi) 2 |d| > pad_half: |d| > m = floor(h / 2) vuol dire
+    ; |d| >= m + 1, 2 |d| >= 2 m + 2 > h; e 2 |d| > h >= 2 m vuol dire |d| > m
+    asl n_t
+    rol n_t+1
+    rol n_t+2
+    bcs jumped                  ; (2 |d| >= 2^24 > pad_half)
+    lda pad_half+2,x
+    cmp n_t+2
+    bne :+
+    lda pad_half+1,x
+    cmp n_t+1
+    bne :+
+    lda pad_half,x
+    cmp n_t
+:   bcs :+
+jumped:
     event EV_TELEPORT
-:   mov32 {pad_y,x}, c_y
+:   ; la racchetta sul punto, e il punto (nei limiti) per i tick dopo: con quello tenuto da parte
+    ; (moved) tp_y non cambia
+    .repeat 4, k
+    lda c_y+k
+    sta pad_y+k,x
+    sta tp_y+k,x
+    .endrepeat
     lda #0
     sta pad_speed,x
     sta pad_speed+1,x
@@ -923,19 +1065,22 @@ no:
     rts
 .endproc
 
+; A = numero a caso sotto 3 (Rng::below(3)).
+.proc rng_below3
+    lda #3
+    sta m_b
+    lda #0
+    sta m_b+1
+    jmp rng_below
+.endproc
+
 ; Una capsula ogni tanto dalla mezzeria, verso un giocatore, con uno dei suoi bonus, il SUPER o
-; il BULLET.
+; il BULLET: next_tick la chiama alla fine dell'attesa (nx_spawn a zero).
 .proc spawn_capsule
-    dec16_sat nx_spawn
-    lda nx_spawn
-    ora nx_spawn+1
-    jne done
     ; prossima: con un ARCADE in campo più spesso
-    lda nx_kind
-    cmp #K_ARCADE
+    lda nx_kind                 ; (K_ARCADE = 0)
     beq arcade
     lda nx_kind+4
-    cmp #K_ARCADE
     beq arcade
     lda #<P_SPAWN_TICKS
     sta n_t
@@ -973,11 +1118,9 @@ free:
     lda #0
     sta n_t
     lda nx_kind
-    cmp #K_ARCADE
     bne :+
     inc n_t
 :   lda nx_kind+4
-    cmp #K_ARCADE
     bne :+
     lda n_t
     eor #2
@@ -987,11 +1130,7 @@ free:
     cmp #3
     beq coin
     ; n_t = 1: ARCADE a sinistra, 2: a destra
-    lda #3
-    sta m_b
-    lda #0
-    sta m_b+1
-    jsr rng_below
+    jsr rng_below3
     cmp #P_ARCADE_SHARE
     lda n_t
     bcc :+
@@ -1028,11 +1167,7 @@ side:
     lda #B_BULLET
     jmp bonus
 pick:
-    lda #3
-    sta m_b
-    lda #0
-    sta m_b+1
-    jsr rng_below
+    jsr rng_below3
     clc
     adc n_side
     tax
@@ -1046,19 +1181,43 @@ bonus:
     asl a
     asl a
     sta n_j                     ; posto * 4
-    ; y a caso tra il basso e la fascia delle riserve: low + mul(high - low, frac)
+    ; y a caso tra il basso e la fascia delle riserve: low + mul(high - low, frac). L'ampiezza è un
+    ; numero intero R di pixel: mul(R * ONE, frac) = R * frac, un prodotto 8 x 16 (tabelle su R)
     jsr rng_next
-    lda rng+2
-    sta m_b
-    lda rng+3
-    sta m_b+1
+    lda #<((CAP_HIGH - CAP_LOW) >> 16)
+    sta sq1_lo
+    sta sq1_hi
+    eor #$ff
+    sta sq2_lo
+    sta sq2_hi
+    ldx n_j
+    ldy rng+2                   ; R * frac0: byte 0 e 1
+    sec
+    lda (sq1_lo),y
+    sbc (sq2_lo),y
+    sta cap_y,x
+    lda (sq1_hi),y
+    sbc (sq2_hi),y
+    sta cap_y+1,x
+    ldy rng+3                   ; R * frac1: byte 1 e 2
+    sec
+    lda (sq1_lo),y
+    sbc (sq2_lo),y
+    sta m_t
+    lda (sq1_hi),y
+    sbc (sq2_hi),y
+    tay
+    clc
+    lda cap_y+1,x
+    adc m_t
+    sta cap_y+1,x
+    tya                         ; + low (intero)
+    adc #<(CAP_LOW >> 16)
+    sta cap_y+2,x
     lda #0
-    sta m_b+2
-    sta m_b+3
-    mov32 m_a, {#CAP_HIGH - CAP_LOW}
-    jsr mul_q16
+    adc #0
+    sta cap_y+3,x
     ldy n_j
-    add32 {cap_y,y}, m_a, {#CAP_LOW}
     mov32 {cap_x,y}, {#P_WIDTH / 2}
     lda n_side
     bne :+
@@ -1073,7 +1232,11 @@ drift:
     mov32 {cap_vy,y}, {#P_CAP_DRIFT}
     jmp :++
 :   mov32 {cap_vy,y}, {#-P_CAP_DRIFT}
-:   inc nx_spawned
+:   lda #0                      ; capsula nuova: i colpi tornano a guardare le capsule (move_shots)
+    .repeat 2 * ::MAX_SHOTS, k
+    sta shot_safe+k
+    .endrepeat
+    inc nx_spawned
     bne :+
     inc nx_spawned+1
 :   sec                         ; capsula generata (spawn_to_side)
@@ -1110,7 +1273,7 @@ SW_REACH = (P_CAP_HALF + P_PAD_HALF_W) >> 16
 ; (|cy - py| <= metà capsula + metà altezza) e ha un posto libero nella riserva.
 .proc cap_take
     sub32 n_t, {cap_y,y}, {pad_y,x}
-    abs32 n_t, n_t
+    jsr abs_nt
     add32 n_u, {pad_half,x}, {#P_CAP_HALF}
     cmp32 n_u, n_t
     bmi done
@@ -1132,16 +1295,35 @@ done:
 ; Capsule in volo: rimbalzano tra il basso e la fascia delle riserve; chi le tocca con la
 ; racchetta (con un posto libero nella riserva) le prende; fuori dal campo spariscono. Con il
 ; BULLET rallentano tutte.
+; La capsula nasce tra CAP_LOW e CAP_HIGH e ci resta dopo ogni passo; vx non cambia mai e vy cambia
+; solo di segno (il passo, rallentato o no, ha il segno della velocità). Così basta guardare il
+; bordo verso cui va: salendo y non scende sotto CAP_LOW, scendendo non supera CAP_HIGH, e y resta
+; positiva (P_CAP_DRIFT < CAP_LOW). Anche x va sempre dalla mezzeria verso il suo lato: verso
+; sinistra non supera W, verso destra resta positiva.
+.assert P_CAP_DRIFT < CAP_LOW .and CAP_HIGH < $01000000, error, "capsule: y positiva e sotto 256 pixel"
+.assert (CAP_LOW | P_CAP_HALF) & $FFFF = 0, error, "capsule: CAP_LOW e metà capsula in pixel interi"
+.assert (CAP_HIGH - CAP_LOW) & $FF00FFFF = 0 .and CAP_LOW < $01000000, error, "spawn_capsule: ampiezza intera sotto 256 pixel"
+.assert SW_REACH + 2 < 128, error, "capsule: portata della racchetta in un byte"
 .proc move_capsules
+    lda nx_btimer               ; shift 0 senza il BULLET scattato
+    beq :+
     jsr bullet_shift
-    sta s_k
-    jsr set_ki
-    lda #0
-    sta n_i
+    jsr set_ki                  ; s_ki serve solo ai passi rallentati (A resta)
+:   sta s_k
+    ldx #0
 cap:
-    ldx n_i
     lda cap_on,x
-    jeq next
+    bne live
+next:
+    inx
+    cpx #4
+    bne cap
+    lda #0
+    sta nx_dash
+    sta nx_dash+4
+    rts
+live:
+    stx n_i
     txa
     asl a
     asl a
@@ -1149,19 +1331,56 @@ cap:
     lda s_k
     jne slowed
     add32 {cap_x,y}, {cap_x,y}, {cap_vx,y}
-    add32 {cap_y,y}, {cap_y,y}, {cap_vy,y}
+    clc
+    lda cap_y,y
+    adc cap_vy,y
+    sta cap_y,y
+    lda cap_y+1,y
+    adc cap_vy+1,y
+    sta cap_y+1,y
 moved:
-    blt32 {cap_y,y}, {#CAP_LOW}, low
-    blt32 {#CAP_HIGH}, {cap_y,y}, high
-    jmp toward
-low:
-    mov32 {cap_y,y}, {#CAP_LOW}
-    abs32 {cap_vy,y}, {cap_vy,y}
-    jmp toward
-high:
+    ; il passo verticale sta in 16 bit con il segno (P_CAP_DRIFT < $10000): i due byte bassi sono
+    ; già sommati, C è il riporto; i byte alti del passo sono 0 (sale) o $FFFF (scende)
+    lda cap_vy+3,y
+    bmi down
+    bcc up
+    lda cap_y+2,y
+    adc #0
+    sta cap_y+2,y
+    lda cap_y+3,y
+    adc #0
+    sta cap_y+3,y
+up:
+    ; sale: CAP_HIGH < y, cioè y >= CAP_HIGH + 1 (positive: confronto senza segno)
+    lda cap_y,y
+    cmp #<(CAP_HIGH + 1)
+    lda cap_y+1,y
+    sbc #>(CAP_HIGH + 1)
+    lda cap_y+2,y
+    sbc #^(CAP_HIGH + 1)
+    lda cap_y+3,y
+    sbc #<((CAP_HIGH + 1) >> 24)
+    bcc toward
     mov32 {cap_y,y}, {#CAP_HIGH}
-    abs32 n_t, {cap_vy,y}
-    neg32 {cap_vy,y}, n_t
+    jmp flip                    ; vy = -|vy| = -vy
+down:
+    bcs dn                      ; + $FFFF + C: con il riporto i byte alti non cambiano
+    lda cap_y+2,y
+    sbc #0                      ; C = 0: meno uno
+    sta cap_y+2,y
+    lda cap_y+3,y
+    sbc #0
+    sta cap_y+3,y
+dn:
+    ; scende: y < CAP_LOW, dalla parte intera (CAP_LOW intero, y positiva)
+    lda cap_y+2,y
+    cmp #<(CAP_LOW >> 16)
+    lda cap_y+3,y
+    sbc #>(CAP_LOW >> 16)
+    bcs toward
+    mov32 {cap_y,y}, {#CAP_LOW}
+flip:
+    neg32 {cap_vy,y}, {cap_vy,y}    ; in basso vy = |vy| = -vy
 toward:
     ; il giocatore verso cui va (vx < 0: sinistra)
     ldx #0
@@ -1169,13 +1388,37 @@ toward:
     bmi :+
     ldx #4
 :   stx n_side
-    ; tocca la racchetta: |cx - px| <= metà capsula + metà larghezza, poi l'altezza (cap_take);
-    ; presa, la prova del campo qui sotto non cambia niente
+    ; tocca la racchetta: |cx - px| <= metà capsula + metà larghezza, poi l'altezza (cap_take).
+    ; Prima le parti intere: e = int(cx) - int(px) vale floor(cx - px) o uno in più; con
+    ; e >= SW_REACH + 2 o e <= -(SW_REACH + 2) la distanza è già oltre SW_REACH
+    sec
+    lda cap_x+2,y
+    sbc pad_x+2,x
+    sta n_t
+    lda cap_x+3,y
+    sbc pad_x+3,x
+    beq e_pos
+    cmp #$FF
+    bne dash
+    lda n_t
+    cmp #<-(SW_REACH + 1)
+    bcc dash
+    bcs exact
+e_pos:
+    lda n_t
+    cmp #SW_REACH + 2
+    bcs dash
+exact:
     sub32 n_t, {cap_x,y}, {pad_x,x}
-    abs32 n_t, n_t
+    jsr abs_nt
     blt32 {#P_CAP_HALF + P_PAD_HALF_W}, n_t, dash
 take:
+    ; presa, la prova del campo qui sotto non cambia niente
     jsr cap_take
+    lda n_i
+    asl a
+    asl a
+    tay
     jmp out
 dash:
     ; nel tick dello scatto anche il tratto saltato: cx + SW_REACH - basso >= 0, alto + SW_REACH - cx >= 0
@@ -1217,31 +1460,36 @@ dash:
     ldx n_side
     jmp take
 out:
-    ; fuori dal campo: cx + metà < 0 o cx - metà > W
+    ; fuori dal campo, dal lato verso cui va (Y = posto * 4)
     ldx n_i
-    txa
-    asl a
-    asl a
-    tay
-    add32 n_t, {cap_x,y}, {#P_CAP_HALF}
-    lda n_t+3
+    lda cap_vx+3,y
+    bpl right
+    ; verso sinistra: cx + metà < 0; la metà è intera, bastano i due byte alti della somma
+    clc
+    lda cap_x+2,y
+    adc #<(P_CAP_HALF >> 16)
+    lda cap_x+3,y
+    adc #>(P_CAP_HALF >> 16)
     bmi gone
-    sub32 n_t, {cap_x,y}, {#P_CAP_HALF}
-    blt32 {#P_WIDTH}, n_t, gone
     jmp next
+right:
+    ; verso destra: cx - metà > W, cioè cx >= W + metà + 1 (x positiva: senza segno; sotto i
+    ; 256 pixel il byte alto è 0)
+    lda cap_x+3,y
+    jeq next
+    lda cap_x,y
+    cmp #<(P_WIDTH + P_CAP_HALF + 1)
+    lda cap_x+1,y
+    sbc #>(P_WIDTH + P_CAP_HALF + 1)
+    lda cap_x+2,y
+    sbc #^(P_WIDTH + P_CAP_HALF + 1)
+    lda cap_x+3,y
+    sbc #<((P_WIDTH + P_CAP_HALF + 1) >> 24)
+    jcc next
 gone:
-    ldx n_i
     lda #0
     sta cap_on,x
-next:
-    inc n_i
-    lda n_i
-    cmp #4
-    jne cap
-    lda #0
-    sta nx_dash
-    sta nx_dash+4
-    rts
+    jmp next
 slowed:
     ; BULLET: le velocità sono sempre +/- P_CAP_SPEED e P_CAP_DRIFT, i passi rallentati costanti
     ldx s_ki
@@ -1259,9 +1507,16 @@ slowed:
     inx
     inx
     inx
-:   add32 {cap_y,y}, {cap_y,y}, {cap_sy,x}
+:   clc                         ; due byte bassi, poi i byte alti dal segno (moved)
+    lda cap_y,y
+    adc cap_sy,x
+    sta cap_y,y
+    lda cap_y+1,y
+    adc cap_sy+1,x
+    sta cap_y+1,y
     jmp moved
 .endproc
+.assert P_CAP_DRIFT < $10000, error, "capsule: passo verticale in 16 bit con il segno"
 
 ; A = shift del BULLET (non zero): s_ki = 0 per P_BULLET_SHIFT, 8 per P_BULLET_RSHIFT. Distrugge Y.
 .proc set_ki
@@ -1286,23 +1541,59 @@ slowed:
 .endmacro
 cap_sx:  slow_consts P_CAP_SPEED
 cap_sy:  slow_consts P_CAP_DRIFT
-shot_sx: slow_consts P_SHOT_SPEED
+; colpi del BLASTER (move_shots), indice passo * 8 + lato: 0 piena velocità, 1 P_BULLET_SHIFT, 2
+; P_BULLET_RSHIFT; il passo (+ a sinistra, - a destra) e la portata |passo| + metà capsula
+shot_step: .dword P_SHOT_SPEED, (-P_SHOT_SPEED) & $FFFFFFFF
+shot_sx:   slow_consts P_SHOT_SPEED
+SHOT_P1 = P_SHOT_SPEED - (P_SHOT_SPEED >> P_BULLET_SHIFT)     ; |passo| rallentato, a sinistra
+SHOT_N1 = P_SHOT_SPEED - ((P_SHOT_SPEED + (1 << P_BULLET_SHIFT) - 1) >> P_BULLET_SHIFT)  ; e a destra
+SHOT_P2 = P_SHOT_SPEED - (P_SHOT_SPEED >> P_BULLET_RSHIFT)
+SHOT_N2 = P_SHOT_SPEED - ((P_SHOT_SPEED + (1 << P_BULLET_RSHIFT) - 1) >> P_BULLET_RSHIFT)
+shot_reach: .dword P_SHOT_SPEED + P_CAP_HALF, P_SHOT_SPEED + P_CAP_HALF
+            .dword SHOT_P1 + P_CAP_HALF, SHOT_N1 + P_CAP_HALF
+            .dword SHOT_P2 + P_CAP_HALF, SHOT_N2 + P_CAP_HALF
+.assert shot_sx = shot_step + 8, error, "shot_step: i passi rallentati subito dopo quelli pieni"
 .segment "CODE"
 
 ; Colpi del BLASTER: attraversano la palla, raccolgono la prima capsula che toccano (con la
 ; riserva piena la distruggono) e si fermano sulla racchetta avversaria o fuori dal campo.
 ; I colpi di un giocatore vanno tutti alla stessa velocità (+/- P_SHOT_SPEED, rallentata dal
-; BULLET con lo stesso shift): passo, portata e faccia della racchetta avversaria si contano una
-; volta per giocatore, e le capsule in campo una volta per tick (con 8 colpi in volo, BULLET e
-; TELEPORT il tick è il più pesante dell'NTSC).
-ms_v    = m_p                   ; passo dei colpi del giocatore (s_v)
-ms_face = m_p + 4               ; faccia della racchetta avversaria
-ms_rlim = m_p + 8               ; parte intera della portata + 2 (scarto veloce delle capsule)
-ms_y    = m_p + 9               ; posto del colpo * 4
-ms_slot = m_p + 10              ; posto della capsula presa
-ms_band = m_a                   ; metà altezza della racchetta avversaria + metà fascia dei colpi
+; BULLET con lo stesso shift): passo e portata vengono da shot_step e shot_reach, la faccia della
+; racchetta avversaria si conta una volta per giocatore (la fascia solo per il colpo arrivato alla
+; faccia), e le capsule in campo una volta per tick.
+;
+; Capsule lontane (shot_safe): guardate le capsule, un colpo sa per quanti tick nessuna può
+; arrivargli vicino (alla portata: lo scarto veloce qui sotto non passa, e il confronto vero non
+; si fa), e per quei tick non le guarda. Con le parti intere d = int(cx) - int(sx): in un tick d
+; cambia al più di MS_CLOSE (passo pieno del colpo più quello della capsula, più 2 per le parti
+; intere), e lo scarto veloce passa solo con |d| sotto MS_RLIM (la portata più grande, quella del
+; passo pieno). Una capsula davanti al colpo a distanza e >= MS_RLIM resta lontana per almeno
+; (e - MS_RLIM) / MS_CLOSE tick: shot_safe = (e - MS_RLIM) >> 4 (MS_CLOSE <= 16). Una capsula
+; dietro al colpo non torna mai avanti: il colpo più lento va più veloce della capsula più veloce
+; di almeno un pixel a tick (MS_GAIN), quindi d non cala (colpo del destro) o non cresce (colpo
+; del sinistro); dietro di almeno MS_RLIM non passa più lo scarto veloce. Una capsula nuova azzera
+; tutti i shot_safe (spawn_capsule), un colpo nuovo il suo (next_fire); le capsule che spariscono
+; non contano. Il BULLET cambia i passi ma non i limiti: valgono per tutti i passi.
+MS_RLIM  = ((P_SHOT_SPEED + P_CAP_HALF) >> 16) + 2
+MS_CLOSE = ((P_SHOT_SPEED + P_CAP_SPEED) >> 16) + 2
+.assert MS_CLOSE <= 16, error, "move_shots: shot_safe con lo shift di 4"
+.assert SHOT_P1 <= P_SHOT_SPEED .and SHOT_P2 <= P_SHOT_SPEED, error, "move_shots: portata più grande con il passo pieno"
+.assert SHOT_N1 >= P_CAP_SPEED + ONE .and SHOT_N2 >= P_CAP_SPEED + ONE .and SHOT_N1 <= SHOT_P1 .and SHOT_N2 <= SHOT_P2, error, "move_shots: colpi più veloci delle capsule di un pixel (MS_GAIN)"
+ms_v    = m_p                   ; passo dei colpi del giocatore
+ms_face = m_p + 4               ; parte intera della faccia della racchetta avversaria (2 byte)
+ms_rlim = m_p + 6               ; parte intera della portata + 2 (scarto veloce delle capsule)
+ms_y    = m_p + 7               ; posto del colpo * 4
+ms_mask = m_p + 8               ; posti del giocatore con un colpo, ancora da muovere (bit 0 il prossimo)
+ms_k    = m_p + 9               ; indice in shot_step e shot_reach
+ms_min  = m_p + 10              ; distanza delle capsule vicine (shot_safe)
+ms_cap  = m_a                   ; capsule in campo (posto * 4; $FF presa da un colpo)
+ms_band = n_u                   ; metà altezza della racchetta avversaria + metà fascia dei colpi
 ms_opp  = m_b                   ; avversario (0 o 4)
+ms_sxl  = m_b + 1               ; parte intera della x del colpo in esame
+ms_sxh  = m_b + 2
+ms_ncap = m_b + 3               ; capsule in ms_cap (0 nessuna; $80 ci sono, ms_cap da fare)
 .assert P_CAP_HALF + P_SHOT_SPEED < $00FD0000, error, "move_shots: portata in meno di 253 pixel"
+.assert (P_PAD_HALF_W & $FFFF) = 0, error, "move_shots: faccia dalla parte intera della x"
 .proc move_shots
     ; uscita rapida se non c'è nessun colpo in volo
     lda shot_on
@@ -1315,7 +1606,113 @@ ms_opp  = m_b                   ; avversario (0 o 4)
     ora shot_on+7
     bne :+
     rts
-:   ; capsule in campo (posto * 4), nell'ordine dei posti
+:   ; capsule in campo: la lista (ms_cap) si fa solo se un colpo le guarda (look)
+    lda cap_on
+    ora cap_on+1
+    ora cap_on+2
+    ora cap_on+3
+    beq :+
+    lda #$80
+:   sta ms_ncap
+    lda #0
+    sta n_side
+side:
+    ; posti con un colpo (bit k: posto k del giocatore)
+    ldx n_side
+    lda shot_on+3,x
+    asl a
+    ora shot_on+2,x
+    asl a
+    ora shot_on+1,x
+    asl a
+    ora shot_on,x
+    jeq next_side
+    sta ms_mask
+    ; passo: indice in shot_step dallo shift del BULLET per i colpi del giocatore
+    ; (Next::bullet_shift_for: 0 senza BULLET scattato o se l'ha attivato lui, P_BULLET_RSHIFT
+    ; nella rampa, P_BULLET_SHIFT dopo)
+    txa
+    ldy nx_btimer
+    beq got
+    cpx nx_bside
+    beq got
+    ora #8                      ; P_BULLET_SHIFT
+    cpy #2
+    bcc got
+    eor #8 ^ 16                 ; P_BULLET_RSHIFT
+got:
+    tay
+    sty ms_k
+    .repeat 4, k
+    lda shot_step+k,y
+    sta ms_v+k
+    .endrepeat
+    lda shot_reach+2,y          ; scarto veloce oltre parte intera della portata + 2 pixel
+    clc
+    adc #2
+    sta ms_rlim
+    ; racchetta avversaria: faccia (la parte intera; la fascia serve solo alla faccia, in height)
+    lda n_side
+    eor #4
+    sta ms_opp
+    tax
+    beq left_pad
+    sec
+    lda pad_x+2,x
+    sbc #<(P_PAD_HALF_W >> 16)
+    sta ms_face
+    lda pad_x+3,x
+    sbc #>(P_PAD_HALF_W >> 16)
+    jmp faced
+left_pad:
+    clc
+    lda pad_x+2,x
+    adc #<(P_PAD_HALF_W >> 16)
+    sta ms_face
+    lda pad_x+3,x
+    adc #>(P_PAD_HALF_W >> 16)
+faced:
+    sta ms_face+1
+    ldx n_side
+    dex
+    stx n_i                     ; posto 0-7 (0-3 sinistro, 4-7 destro), qui quello prima
+skip:
+    inc n_i
+shot:
+    lsr ms_mask                 ; il posto ha un colpo?
+    bcc skip
+    ldx n_i
+    txa
+    asl a
+    asl a
+    sta ms_y
+    tay
+    clc
+    lda shot_x,y
+    adc ms_v
+    sta shot_x,y
+    lda shot_x+1,y
+    adc ms_v+1
+    sta shot_x+1,y
+    lda shot_x+2,y
+    adc ms_v+2
+    sta shot_x+2,y
+    sta ms_sxl                  ; parte intera della x del colpo
+    lda shot_x+3,y
+    adc ms_v+3
+    sta shot_x+3,y
+    sta ms_sxh
+    lda ms_ncap
+    beq to_pad
+    lda shot_safe,x             ; capsule lontane ancora per qualche tick
+    beq look
+    dec shot_safe,x
+to_pad:
+    jmp pad
+look:
+    bit ms_ncap
+    bpl listed
+    ; capsule in campo (posto * 4), nell'ordine dei posti
     ldx #0
     ldy #0
 :   lda cap_on,x
@@ -1329,148 +1726,110 @@ ms_opp  = m_b                   ; avversario (0 o 4)
     cpx #4
     bne :--
     sty ms_ncap
-    lda #0
-    sta n_side
-side:
-    ldx n_side
-    lda shot_on,x
-    ora shot_on+1,x
-    ora shot_on+2,x
-    ora shot_on+3,x
-    jeq next_side
-    ; passo: +P_SHOT_SPEED a sinistra, -P_SHOT_SPEED a destra, rallentato dal BULLET
-    ; dell'avversario (passi rallentati costanti)
-    lda nx_btimer
-    beq plain
-    jsr bullet_shift_x          ; X = n_side
-    beq plain
-    jsr set_ki
-    ldx s_ki
-    lda n_side
-    beq :+
-    inx
-    inx
-    inx
-    inx
-:   mov32 ms_v, {shot_sx,x}
-    jmp reach
-plain:
-    lda n_side
-    bne :+
-    mov32 ms_v, {#P_SHOT_SPEED}
-    jmp reach
-:   mov32 ms_v, {#-P_SHOT_SPEED}
-reach:
-    ; portata: metà capsula + |passo|; scarto veloce oltre parte intera + 2 pixel
-    abs32 n_u, ms_v
-    add32 n_u, n_u, {#P_CAP_HALF}
-    lda n_u+2
-    clc
-    adc #2
-    sta ms_rlim
-    ; racchetta avversaria: faccia e fascia
-    lda n_side
-    eor #4
-    sta ms_opp
-    tax
-    beq left_pad
-    sub32 ms_face, {pad_x,x}, {#P_PAD_HALF_W}
-    jmp band
-left_pad:
-    add32 ms_face, {pad_x,x}, {#P_PAD_HALF_W}
-band:
-    add32 ms_band, {pad_half,x}, {#P_BLASTER_BAND}
-    lda n_side
-    sta n_i                     ; posto 0-7 (0-3 sinistro, 4-7 destro)
-shot:
-    ldx n_i
-    lda shot_on,x
-    jeq next
-    txa
-    asl a
-    asl a
-    sta ms_y
-    tay
-    add32 {shot_x,y}, {shot_x,y}, ms_v
-    lda ms_ncap
-    jeq pad
-    lda #0
-    sta n_j
+    tya
+    beq to_pad                  ; prese tutte dai colpi prima
+listed:
+    lda #$FF
+    sta ms_min
+    ldy #0                      ; Y = indice in ms_cap
 cap:
-    ldy n_j
-    lda ms_cap,y
-    tax                         ; X = posto della capsula * 4
-    lsr a
-    lsr a
-    tay
-    lda cap_on,y                ; (presa da un colpo prima)
-    jeq next_cap
-    ldy ms_y
+    ldx ms_cap,y                ; X = posto della capsula * 4 (bit 7: presa da un colpo prima)
+    bmi next_cap
     ; parti intere lontane (|d| >= portata intera + 2: d - 1 pixel è già oltre la portata);
-    ; per d < 0 si prende ~d = |d| - 1, che scarta al più qualcosa di meno
+    ; per d < 0 si prende e = ~d = |d| - 1, che scarta al più qualcosa di meno
     lda cap_x+2,x
     sec
-    sbc shot_x+2,y
+    sbc ms_sxl
     sta n_t
     lda cap_x+3,x
-    sbc shot_x+3,y
+    sbc ms_sxh
     bpl pos
     eor #$FF
-    jne next_cap
+    bne next_cap                ; oltre 256 pixel (davanti o dietro: lontana)
     lda n_t
     eor #$FF
-    jmp near
-pos:
-    jne next_cap
-    lda n_t
-near:
     cmp ms_rlim
-    jcs next_cap
-    sub32 n_t, {cap_x,x}, {shot_x,y}
-    abs32 n_t, n_t
-    cmp32 n_u, n_t
-    jmi next_cap
-    sub32 n_t, {cap_y,x}, {shot_y,y}
-    abs32 n_t, n_t
-    blt32 {#P_CAP_HALF + P_BLASTER_BAND}, n_t, next_cap
-    ; preso: nella riserva se c'è posto
-    txa
-    lsr a
-    lsr a
-    tax
-    stx ms_slot
-    lda #0
-    sta cap_on,x
-    ldx n_side
-    jsr res_count
-    cmp #3
-    beq :+
-    ldy ms_slot
-    lda cap_bonus,y
-    jsr res_push
-:   event EV_COLLECT
-    jmp stop
+    jcc exact
+    ldx n_side                  ; d < 0: davanti al colpo del destro, dietro a quello del sinistro
+    bne ahead
+behind:
+    cmp #MS_RLIM
+    bcs next_cap                ; dietro per sempre
+    lda #0                      ; dietro ma vicina: si guarda al prossimo tick
+ahead:
+    cmp ms_min
+    bcs next_cap
+    sta ms_min
 next_cap:
-    inc n_j
-    lda n_j
-    cmp ms_ncap
-    jne cap
+    iny
+    cpy ms_ncap
+    bne cap
+    ; tick per cui le capsule restano lontane
+    ldx n_i
+    lda ms_min
+    sec
+    sbc #MS_RLIM
+    bcs :+
+    lda #0
+:   lsr a
+    lsr a
+    lsr a
+    lsr a
+    sta shot_safe,x
+    jmp pad
+pos:
+    bne next_cap                ; oltre 256 pixel
+    lda n_t
+    cmp ms_rlim
+    jcc exact
+    ldx n_side                  ; d >= 0: davanti al colpo del sinistro, dietro a quello del destro
+    bne behind
+    beq ahead
 pad:
-    ; racchetta avversaria o fuori dal campo
-    ldy ms_y
+    ; racchetta avversaria o fuori dal campo. Prima della faccia il colpo è ancora in campo: parte
+    ; dalla sua racchetta e va verso l'altra, quindi tra 0 e W. La faccia è un pixel intero: a
+    ; sinistra decide la parte intera, a destra anche la frazione se le parti intere sono uguali
     lda n_side
     bne hit_left
-    ; colpo del sinistro: x >= faccia della racchetta destra
-    cmp32 {shot_x,y}, ms_face
-    bmi edge
-    jmp height
+    ; colpo del sinistro: x >= faccia della racchetta destra (positive: senza segno)
+    lda ms_sxl
+    cmp ms_face
+    lda ms_sxh
+    sbc ms_face+1
+    bcc next
+    bcs height
 hit_left:
-    cmp32 ms_face, {shot_x,y}
-    bmi edge
+    sec                         ; faccia - int(x): x e faccia tra 0 e W, nessun traboccamento
+    lda ms_face
+    sbc ms_sxl
+    tax
+    lda ms_face+1
+    sbc ms_sxh
+    bmi next
+    bne height
+    txa
+    bne height
+    ldy ms_y                    ; parti intere uguali: x <= faccia senza frazione
+    lda shot_x,y
+    ora shot_x+1,y
+    beq height
+next:
+    lda ms_mask                 ; altri colpi del giocatore?
+    beq next_side
+    inc n_i
+    jmp shot
+next_side:
+    lda n_side
+    eor #4
+    sta n_side
+    jne side
+    rts
 height:
+    ldy ms_y
     ldx ms_opp
+    add32 ms_band, {pad_half,x}, {#P_BLASTER_BAND}
     sub32 n_t, {shot_y,y}, {pad_y,x}
-    abs32 n_t, n_t
+    jsr abs_nt
     cmp32 ms_band, n_t
     bmi edge
     ; colpito l'avversario: rallentamento lieve della sua racchetta
@@ -1486,21 +1845,49 @@ stop:
     ldx n_i
     lda #0
     sta shot_on,x
-next:
-    inc n_i
-    lda n_i
-    and #MAX_SHOTS - 1
-    jne shot
-next_side:
-    lda n_side
-    eor #4
-    sta n_side
-    jne side
-    rts
+    jmp next
+exact:
+    ; candidata: il confronto vero (Y = colpo * 4), con la portata di questo passo
+    sty n_j
+    ldy ms_k
+    mov32 n_u, {shot_reach,y}
+    ldy ms_y
+    sub32 n_t, {cap_x,x}, {shot_x,y}
+    jsr abs_nt
+    cmp32 n_u, n_t
+    jmi miss
+    sub32 n_t, {cap_y,x}, {shot_y,y}
+    jsr abs_nt
+    cmp32 {#P_CAP_HALF + P_BLASTER_BAND}, n_t
+    bmi miss
+    ; preso: nella riserva se c'è posto
+    ldy n_j
+    lda #$FF
+    sta ms_cap,y                ; per i colpi dopo
+    txa
+    lsr a
+    lsr a
+    tax
+    lda #0
+    sta cap_on,x
+    lda cap_bonus,x
+    pha
+    ldx n_side
+    jsr res_count
+    cmp #3
+    pla
+    bcs :+                      ; (riserva piena: C = 1 dal confronto)
+    jsr res_push
+:   event EV_COLLECT
+    jmp stop
+miss:
+    lda #0                      ; vicina: si guarda al prossimo tick
+    sta ms_min
+    ldy n_j
+    jmp next_cap
 .endproc
 .segment "NEXTBSS"
-ms_cap:  .res 4                 ; capsule in campo (posto * 4)
-ms_ncap: .res 1
+shot_safe: .res 2 * MAX_SHOTS   ; tick in cui le capsule restano lontane dal colpo (move_shots)
 .segment "CODE"
 .assert MAX_SHOTS = 4, error, "posti dei colpi: lato * 4 + k (X del giocatore + k)"
 
@@ -1510,8 +1897,18 @@ ms_ncap: .res 1
 ; (STEER), prima dello spostamento. Con il BULLET rallentano anche le accelerazioni con lo
 ; stesso fattore adattivo del passo (calcolato da |dx| in t0; il passo lo rallenta ball_slowed).
 .proc next_ball_motion
-    jsr bullet_shift
-    jsr bullet_ball_set
+    lda nx_btimer
+    bne bullet
+    sta s_k                     ; nessun BULLET scattato: piena velocità
+    sta s_ex
+    beq rise
+bullet:
+    cmp #2                      ; bullet_shift, qui dentro (nx_btimer in A)
+    lda #P_BULLET_SHIFT
+    bcc :+
+    lda #P_BULLET_RSHIFT
+:   jsr bullet_ball_set
+rise:
     lda sm_rise
     beq :+
     jsr abs_vx                  ; mai più ripida di 45 gradi
@@ -1562,38 +1959,37 @@ slow:
 .endproc
 
 ; Next::bullet_ball_slow: dato A = bullet_shift e t0 = dx, imposta (s_k, s_ex) in base a |dx|
-; rispetto a 4, 8 e 16 volte P_SERVE_UNIT. Lascia t0 intatto. Confronto alto-prima per restare
-; veloce anche nei tick BULLET più pesanti sull'NTSC.
+; rispetto a 4, 8 e 16 volte P_SERVE_UNIT. Lascia t0 intatto, distrugge X. Confronto alto-prima
+; per restare veloce anche nei tick BULLET più pesanti sull'NTSC.
 .proc bullet_ball_set
     sta s_k
     ldy #0
     sty s_ex
     ora #0
     beq done
-    ; n_t = |t0|
+    ; |t0|: t0 stesso se positivo, altrimenti n_t = -t0 (X = indirizzo in pagina zero)
+    ldx #t0
     lda t0+3
-    bmi neg
-    mov32 n_t, t0
-    jmp cmp_go
-neg:
+    bpl cmp_go
     neg32 n_t, t0
+    ldx #n_t
 cmp_go:
     ldy #3
-    lda n_t+3
+    lda 3,x
     bne hit
     ldy #0
     ; Y = 0: <= 4x -> s_k=2; Y = 1: <= 8x -> s_ex=0; Y = 2: <= 16x -> s_ex=1; > 16x -> s_ex=2
 loop:
     lda b_cap_hi,y
-    cmp n_t+2
+    cmp 2,x
     bcc next
     bne hit
     lda b_cap_md,y
-    cmp n_t+1
+    cmp 1,x
     bcc next
     bne hit
     lda b_cap_lo,y
-    cmp n_t
+    cmp 0,x
     bcs hit
 next:
     iny
@@ -1622,10 +2018,11 @@ b_cap_md: .byte >B_CAP0, >B_CAP1, >B_CAP2
 b_cap_lo: .byte <B_CAP0, <B_CAP1, <B_CAP2
 .segment "CODE"
 
-; s_v = slowed_extra(s_v, s_k, s_ex) = slowed(s_v, s_k) >> s_ex. X resta.
-.proc slow_ball_v
+; s_v = slowed_extra(v, s_k, s_ex), v nei 4 byte di pagina zero da Y. X resta.
+.proc slow_ball_at
     lda s_k
-    jsr slow_v
+    jsr slow_at
+extra:
     ldy s_ex
     beq done
 :   asr32 s_v
@@ -1635,43 +2032,141 @@ done:
     rts
 .endproc
 
-; BULLET (s_k e s_ex da next_ball_motion): spostamento rallentato, dx in t0 e la y.
+; s_v = slowed_extra(s_v, s_k, s_ex) = slowed(s_v, s_k) >> s_ex (con s_k = 0 anche s_ex è 0:
+; invariato). X resta.
+.proc slow_ball_v
+    lda s_k
+    beq done
+    ldy #s_v
+    jsr slow_at
+    jmp slow_ball_at::extra
+done:
+    rts
+.endproc
+
+; BULLET (s_k e s_ex da next_ball_motion): spostamento rallentato, dx in t0 e la y (passo anche
+; in ball_dy). Il passo verticale cambia di rado (rimbalzi, CURVE, STEER, fine della rampa): se
+; vy, s_k e s_ex sono quelli dell'ultimo calcolo (bs_key) ball_dy è già il passo, che solo questa
+; routine scrive. La chiave tiene i 3 byte bassi di vy e, nell'ultimo, s_k + 4 * s_ex + $10 se vy
+; è negativa: vale solo con il byte alto di vy uguale al segno del byte 2 (vy in 24 bit con il
+; segno), altrimenti l'ultimo byte è $FF e non coincide mai (s_k < 4, s_ex < 4).
+; Anche il passo orizzontale si tiene da parte: con t0, s_k e s_ex dell'ultimo calcolo (bm_t0,
+; bm_kx; s_k non è mai 0 qui, quindi bm_kx = 0 dall'avvio non coincide) vale bm_dx.
 .proc ball_slowed
-    mov32 s_v, t0
-    jsr slow_ball_v
-    mov32 t0, s_v
-    mov32 s_v, ball_vy
-    jsr slow_ball_v
-    mov32 ball_dy, s_v
-    add32 ball_y, ball_y, s_v
+    lda s_ex
+    asl a
+    asl a
+    ora s_k
+    tax                         ; X = s_k + 4 * s_ex
+    cpx bm_kx
+    bne slow_dx
+    .repeat 4, k
+    lda t0+k
+    cmp bm_t0+k
+    bne slow_dx
+    .endrepeat
+    .repeat 4, k
+    lda bm_dx+k                 ; stesso passo dell'ultima volta
+    sta t0+k
+    .endrepeat
+    jmp dy
+slow_dx:
+    stx bm_kx
+    ldy #3
+:   lda t0,y
+    sta bm_t0,y
+    dey
+    bpl :-
+    ldy #t0
+    jsr slow_ball_at            ; (X resta)
+    ldy #3
+:   lda s_v,y
+    sta t0,y
+    sta bm_dx,y
+    dey
+    bpl :-
+dy:
+    lda ball_vy+3
+    beq pos
+    cmp #$FF
+    beq neg
+    ldx #$FF                    ; fuori dai 24 bit: nessuna chiave
+    bne new
+neg:
+    txa
+    ora #$10
+    tax
+pos:
+    lda ball_vy+2               ; con il segno del byte 2
+    eor ball_vy+3
+    bmi wide
+    cpx bs_key+3
+    bne new
+    lda ball_vy
+    cmp bs_key
+    bne new
+    lda ball_vy+1
+    cmp bs_key+1
+    bne new
+    lda ball_vy+2
+    cmp bs_key+2
+    bne new
+    add32 ball_y, ball_y, ball_dy   ; stesso passo dell'ultima volta
+    jmp done
+wide:
+    ldx #$FF
+new:
+    stx bs_key+3
+    lda ball_vy
+    sta bs_key
+    lda ball_vy+1
+    sta bs_key+1
+    lda ball_vy+2
+    sta bs_key+2
+    ldy #ball_vy
+    jsr slow_ball_at
+    clc
+    .repeat 4, k
+    lda s_v+k
+    sta ball_dy+k
+    adc ball_y+k
+    sta ball_y+k
+    .endrepeat
+done:
     lda #1
     sta nx_bmoved
     rts
 .endproc
+.segment "BSS"
+bs_key: .res 4                  ; chiave del passo verticale in ball_dy (ball_slowed)
+bm_t0:  .res 4                  ; t0 dell'ultimo passo orizzontale rallentato
+bm_dx:  .res 4                  ; e il passo (con s_k + 4 * s_ex di allora in bm_kx)
+.segment "CODE"
+.assert P_BULLET_SHIFT < 4 .and P_BULLET_RSHIFT < 4, error, "ball_slowed: s_k in due bit"
 
 ; Next::paddle_slow_shift: shift di rallentamento della racchetta X (BULLET avversario oppure
 ; shift 1 = -50% quando è stata colpita dal laser del BLASTER). X resta, Z = (A == 0).
 .proc pad_slow_shift_x
-    jsr bullet_shift_x
-    cmp #1
+    lda nx_btimer               ; Next::bullet_shift_for, qui dentro: chi ha attivato il BULLET
+                                ; resta a piena velocità
+    beq laser
+    cpx nx_bside
+    beq own
+    cmp #2
+    lda #P_BULLET_SHIFT
+    bcc :+
+    lda #P_BULLET_RSHIFT
+:   cmp #1
     beq done
+    bne laser
+own:
+    lda #0
+laser:
     ldy nx_lslow,x
     beq done
     lda #1
 done:
     ora #0
-    rts
-.endproc
-
-; Next::bullet_shift_for: come bullet_shift, per ciò che appartiene al giocatore X (racchetta,
-; colpi): chi ha attivato il BULLET resta a piena velocità. X resta.
-.proc bullet_shift_x
-    lda nx_btimer
-    beq done
-    cpx nx_bside
-    bne bullet_shift
-    lda #0
-done:
     rts
 .endproc
 
@@ -1689,29 +2184,78 @@ done:
     rts
 .endproc
 
-; s_v = slowed(s_v, A) = s_v - (s_v >> A), shift con il segno (A = 0: invariato). X e Y restano.
+; s_v = slowed(s_v, A) = s_v - (s_v >> A), shift con il segno (A = 0: invariato). X resta.
 .proc slow_v
+    ldy #s_v
+    cmp #0
+    bne slow_at
+    rts
+.endproc
+
+; s_v = slowed(v, A), v nei 4 byte di pagina zero da Y (anche s_v stesso). X e Y restano.
+; Con A = 1: v - (v >> 1) = ceil(v / 2) = (v + 1) >> 1, con il segno vero della somma a 33 bit
+; (V = 1 solo per v = $7FFFFFFF: somma positiva).
+.proc slow_at
+    cmp #1
+    beq one
+    bcc zero
     sta s_n
-    ora #0
-    beq done
-    lda s_v
-    sta s_w
-    lda s_v+1
-    sta s_w+1
-    lda s_v+2
-    sta s_w+2
-    lda s_v+3
+    ; w = v >> A: copia e primo shift insieme
+    lda 3,y
+    cmp #$80
+    ror a
     sta s_w+3
-:   cmp #$80
+    lda 2,y
+    ror a
+    sta s_w+2
+    lda 1,y
+    ror a
+    sta s_w+1
+    lda 0,y
+    ror a
+    sta s_w
+    dec s_n
+:   lda s_w+3
+    cmp #$80
     ror s_w+3
     ror s_w+2
     ror s_w+1
     ror s_w
-    lda s_w+3
     dec s_n
     bne :-
-    sub32 s_v, s_v, s_w
-done:
+    sec
+    .repeat 4, k
+    lda k,y
+    sbc s_w+k
+    sta s_v+k
+    .endrepeat
+    rts
+zero:
+    .repeat 4, k
+    lda k,y
+    sta s_v+k
+    .endrepeat
+    rts
+one:
+    sec
+    .repeat 3, k
+    lda k,y
+    adc #0
+    sta s_v+k
+    .endrepeat
+    lda 3,y
+    adc #0
+    bvs ovf
+    cmp #$80                    ; C = segno
+    jmp sh
+ovf:
+    clc
+sh:
+    ror a
+    sta s_v+3
+    ror s_v+2
+    ror s_v+1
+    ror s_v
     rts
 .endproc
 
@@ -1721,13 +2265,31 @@ done:
     rts
 .endproc
 
-; vy tra -n_u e n_u
+; n_t = |ball_vx| (SLOW, SMASH, SUPER); poi n_t = |n_t| (abs_nt). X e Y restano.
+.proc abs_vx_t
+    mov32 n_t, ball_vx
+.endproc
+; (prosegue)
+.proc abs_nt
+    lda n_t+3
+    bpl done
+    neg32 n_t, n_t
+done:
+    rts
+.endproc
+
+; vy tra -n_u e n_u. n_u è |vx|, 2 |vx| (STEER) o 1,75 |vx| (TWIST), e |vx| resta sotto la
+; velocità massima della palla (pochi pixel per tick): n_u >= 0, quindi basta il limite dalla
+; parte del segno di vy (vy >= 0 >= -n_u, vy < 0 <= n_u).
 .proc clamp_vy
+    lda ball_vy+3
+    bmi low
     cmp32 n_u, ball_vy
     bpl :+
     mov32 ball_vy, n_u
-    rts
-:   neg32 n_t, n_u
+:   rts
+low:
+    neg32 n_t, n_u
     cmp32 ball_vy, n_t
     bpl :+
     mov32 ball_vy, n_t
@@ -1752,8 +2314,17 @@ done:
     ; SLOW: al colpo di chi l'ha usato la palla riparte alla velocità di prima (quella di adesso
     ; per P_SLOW_BACK), mai oltre la massima e mai più ripida di 45 gradi
     jsr slow_end
-    mulq16 ball_vx, {#P_SLOW_BACK}
-    mov32 ball_vx, m_a
+    ; P_SLOW_BACK è tra ONE e 2 ONE: mul(v, K) = v +/- (|v| * (K - ONE)) >> 16, come kspeed_mul (il
+    ; fattore in m_a resta per vy)
+    lda #<(P_SLOW_BACK - ONE)
+    sta m_a
+    lda #>(P_SLOW_BACK - ONE)
+    sta m_a+1
+    lda #0
+    sta m_a+2
+    sta m_a+3
+    tax                         ; vx
+    jsr kspeed_mul::one
     cmp32 max_ball, ball_vx
     bpl :+
     mov32 ball_vx, max_ball
@@ -1763,42 +2334,47 @@ done:
     bpl vy
     mov32 ball_vx, n_t
 vy:
-    mulq16 ball_vy, {#P_SLOW_BACK}
-    mov32 ball_vy, m_a
+    ldx #4
+    jsr kspeed_mul::one
     jsr abs_vx
     jsr clamp_vy
     ldx n_side
 kinds:
     lda nx_kind,x
     cmp #K_TWIST
-    bne hammer
+    jne hammer
     ; TWIST: la palla prende parte della velocità della racchetta, fino a ~60 gradi (1,75 * |vx|)
     mulq16 {pad_motion,x}, {#P_TWIST_TRANSFER}
     add32 ball_vy, ball_vy, m_a
-    jsr abs_vx
-    ldx #3
-:   lda n_u,x
-    sta n_t,x
-    dex
-    bpl :-
-    ldy #2
-@tw:
+    jsr abs_vx                  ; n_u = |vx|; n_u += |vx| >> 1, poi += |vx| >> 2
+    lda n_u+3
+    lsr a
+    sta n_t+3
+    lda n_u+2
+    ror a
+    sta n_t+2
+    lda n_u+1
+    ror a
+    sta n_t+1
+    lda n_u
+    ror a
+    sta n_t
+    clc
+    .repeat 4, k
+    lda n_u+k
+    adc n_t+k
+    sta n_u+k
+    .endrepeat
     lsr n_t+3
     ror n_t+2
     ror n_t+1
     ror n_t
-    ldx #0
-    lda #4
-    sta s_n
     clc
-:   lda n_u,x
-    adc n_t,x
-    sta n_u,x
-    inx
-    dec s_n
-    bne :-
-    dey
-    bne @tw
+    .repeat 4, k
+    lda n_u+k
+    adc n_t+k
+    sta n_u+k
+    .endrepeat
     jsr clamp_vy
     jmp armed
 hammer:
@@ -1841,7 +2417,7 @@ armed:
 smash:
     ; schiacciata: veloce e angolata lontano dalla racchetta avversaria
     mov32 ball_boost, {#P_SMASH_MUL}
-    abs32 n_t, ball_vx
+    jsr abs_vx_t
     mov32 n_u, n_t
     asr32 n_u
     asr32 n_u
@@ -1851,7 +2427,7 @@ smash:
     rts
 super:
     mov32 ball_boost, {#P_SUPER_MUL}
-    abs32 n_t, ball_vx           ; a 45 gradi
+    jsr abs_vx_t                ; a 45 gradi
     jsr away_from
     lda #1
     sta nx_super
@@ -1889,6 +2465,8 @@ steer:
 .endproc
 
 ; C = 1 se il giocatore n_side ha armato SMASH o SUPER.
+.assert P_SLOW_BACK >= ONE .and P_SLOW_BACK < 2 * ONE, error, "hit_bonus: P_SLOW_BACK in [ONE, 2 ONE)"
+
 .proc smash_or_super
     ldx n_side
     lda nx_armed,x
@@ -1921,7 +2499,10 @@ yes:
 ; C = 1 se ha rimbalzato.
 .proc next_barrier
     lda nx_barrier,x
-    jeq no
+    bne wall
+    clc                         ; nessun muro (quasi sempre)
+    rts
+wall:
     cpx #0
     bne right
     ; sinistra: palla.sinistra <= linea

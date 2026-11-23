@@ -48,9 +48,12 @@ pk_fixed:  .res 1               ; lato che non sceglie (0, 1; $ff nessuno): la C
 .segment "ZEROPAGE"
 pk_cursor: .res 2
 .segment "NEXTBSS"
+.segment "BSS"                  ; (non NEXTBSS: in fondo alla RAM bassa serve il posto a FZCODE)
 pk_count:  .res 2               ; bonus presi
-pk_chosen: .res 6               ; per giocatore 3 bonus nell'ordine in cui sono stati presi
 pk_ok:     .res 2               ; racchetta confermata
+.segment "CPUBSS"               ; (lo stesso; come NEXTBSS non si azzera all'avvio)
+pk_chosen: .res 6               ; per giocatore 3 bonus nell'ordine in cui sono stati presi
+.segment "NEXTBSS"
 pk_ready:  .res 1               ; frame di READY! rimasti (0 = si sceglie ancora)
 .segment "ZEROPAGE"
 pk_p:      .res 1               ; giocatore in esame
@@ -63,7 +66,9 @@ pk_dirty:  .res 1               ; colonne da ridisegnare
 .segment "NEXTBSS"
 pk_phase:  .res 1               ; lavori lunghi, un frame ciascuno: PH_*
 cap_idx:   .res 1
+.segment "BSS"                  ; (non NEXTBSS: in fondo alla RAM bassa serve il posto a FZCODE)
 hud_res:   .res 6               ; riserve disegnate in alto (B_NONE vuoto, $ff da disegnare)
+.segment "NEXTBSS"
 hud_sel:   .res 2
 
 .segment "CODE"
@@ -1148,7 +1153,10 @@ color_span:
     lda m_next
     bne :+
     rts
-:   jsr sm_hud                  ; mosse speciali: barre, colori, scritta e suoni
+:   lda sm_on
+    beq :+
+    jsr sm_hud                  ; mosse speciali: barre, colori, scritta e suoni
+:
     bit $fffb                  ; con la voce di CHALLENGE (READY?, gli NMI costano circa 5.100
     bmi :+                      ; cicli per frame) le immagini aspettano che finisca
     jsr fx_copy                 ; effetti della palla a $E000, una pagina per frame
@@ -1239,6 +1247,7 @@ slot:
     sty m_lo
     jsr frame_late_hud          ; frame già avanti: il posto al prossimo (su NTSC soglia leggera)
     bcs :+
+    jsr shots_off_hud           ; (un fascio sopra il posto lo rimetterebbe com'era)
     ldy m_lo
     lda m_t
     sta hud_res,y
@@ -1596,7 +1605,14 @@ BAR_FLASH  = (15 * TV_HZ + 25) / 50 ; frame del lampeggio (0,3 s)
 .assert (BAR_ROW0 - 1) * 8 < (P_HEIGHT - P_GUARDIAN_TOP) >> 16 .and BAR_ROW0 * 8 >= (P_HEIGHT - P_GUARDIAN_TOP) >> 16, error, "muro del GUARDIAN: prima riga sotto la banda delle riserve"
 
 .proc draw_barrier
-    ldx #0
+    lda nx_kind                 ; nessun GUARDIAN (quasi sempre): niente da fare
+    cmp #K_GUARDIAN
+    beq :+
+    lda nx_kind+4
+    cmp #K_GUARDIAN
+    beq :+
+    rts
+:   ldx #0
 side_loop:
     stx pk_p
     txa
@@ -1698,193 +1714,749 @@ bar_cols: .byte 0, 38           ; colonne della barriera (pixel 7-8 e 311-312)
 
 ; ------------------------------------------------------------------------------------ BLASTER
 
-; Colpi del BLASTER: due fasci laser verdi paralleli all'altezza dei due cannoni alari (±11 px dal
-; centro della racchetta), in caratteri a passi di 2 pixel. Si disegnano a inizio frame, nel vblank,
-; rimettendo prima quello che c'era sotto quelli del frame prima. Chi scrive sul campo cancella
-; prima i colpi (shots_erase).
-SHOT_MAX_CELLS = 8 * MAX_SHOTS   ; fino a due celle x due fasci per colpo, tutti e due i giocatori
+; Colpi del BLASTER: due fasci laser verdi paralleli che escono dalle bocche dei due cannoni alari
+; dell'astronave (righe SHOT_TOP - ceil(y) e SHOT_BOT - ceil(y), y del colpo, cioè della racchetta
+; quando ha sparato: gen_c64_assets.py, shot_rows), in caratteri a passi di 2 pixel: una cella, o
+; due vicine. Il tratto alto 2 pixel sta a una di quattro altezze nella cella (righe 0-1, 2-3, 4-5,
+; 6-7: SHOT_CHARS per altezza e fase), al più un pixel sopra la bocca. I due fasci sono a 16 righe:
+; stessa altezza, due righe di celle. Le altezze 0-2 sono caratteri presi in prestito in NEXT
+; (shot_glyphs). Dappertutto, anche sopra punteggi, barre e riserve (righe 0-3). Si disegnano a
+; inizio frame, nel vblank, nel conto alla rovescia e in partita (nel GAME OVER no: le scritte vanno
+; sul campo pulito). Chi scrive sul campo cancella prima i colpi (shots_erase; sopra, shots_off_hud).
+;
+; Nelle righe 0-3 il fascio non cancella quello che c'è sotto: dove la cella non è vuota ci va un
+; carattere fuso, quello di sotto con il tratto sopra (bd_fuse), e il colore resta quello di
+; sotto (una cella ha un colore solo: lì il tratto non è verde). I caratteri fusi sono SHOT_PN da
+; SHOT_P0, uno per cella di fascio (lo stesso posto di sv_c), presi in prestito come gli altri:
+; sono le lettere 2x, che next_shots rifà al GAME OVER. Nel resto del campo (rete, muro) il fascio
+; copre, come sempre.
+;
+; Per differenza: per ogni colpo restano a schermo le celle dell'ultimo disegno (sd_cw, sd_y, i
+; puntatori alle righe dei due fasci e, per cella, carattere e colore di prima in sv_c e sv_k nel
+; posto colpo * 4 + fascio * 2 + colonna & 1). Al frame dopo si rimettono solo le celle lasciate,
+; si salvano solo quelle nuove, e in tutte le celle di adesso si scrivono carattere e verde: lo
+; schermo è quello che darebbe cancellare tutto e ridisegnare tutto, se nessun fascio copre un
+; altro. Un fascio sopra un altro si riconosce dal carattere salvato (uno dei colpi): allora si
+; cancella tutto e si ridisegna tutto da capo, nell'ordine dei colpi (i caratteri salvati sono
+; quelli dei fasci sotto, come prima), e al frame dopo di nuovo da capo (sv_n = $FF), finché i
+; fasci non si separano. Con un solo fascio in campo (l'altro sopra le riserve o sotto lo
+; schermo) i due puntatori sono quelli dello stesso fascio: si scrive due volte la stessa cosa.
+SH_LO   = SHOT_P0               ; caratteri dei colpi: da SH_LO a SH_HI - 1 (presi in prestito:
+                                ; i fusi, lettere 2x che in partita non sono a schermo, i tratti)
+SH_HI   = SHOT_B0 + SHOT_BN
+SH2_LO  = SHOT_OWN              ; e da SH2_LO a SH2_HI - 1 (del set)
+SH2_HI  = SHOT_OWN + 7
+.assert SH_HI <= SH2_LO, error, "colpi: i caratteri presi prima di quelli del set (bd_cell)"
+bd_pb   = n_t                   ; fascio basso: puntatori alla riga (carattere) e al colore
+bd_kb   = n_t + 2               ; (il fascio alto in ptr e ptr2)
+bd_c0   = m_b                   ; caratteri delle celle di adesso (bd_c1 = 0: una cella sola)
+bd_c1   = m_b + 1
+bd_nc   = m_b + 2               ; colonna di adesso
+bd_oc   = m_b + 3               ; colonna di prima (in fresh: riga del fascio basso)
+bd_s    = m_a                   ; colpo
+bd_ny   = m_a + 1               ; ceil(y) (la y in pixel interi arrotondata in su)
+bd_ow   = m_a + 2               ; bit 7: due celle prima (in fresh: riga del fascio alto)
+bd_k    = m_a + 3               ; celle a schermo se ci si ferma per una sovrapposizione ($FF nessuna)
+bd_full = m_p                   ; bit 7: da capo (sovrapposizioni ammesse)
+bd_dirty = m_p + 1              ; bit 7: un fascio sopra un altro
+bd_mask = m_p + 2               ; colpi ancora da guardare (in volo o con celle a schermo; bit 0 il prossimo)
+bd_x4   = v_col                 ; colpo * 4
+; (in pagina zero, dichiarate prima dell'uso: ca65 altrimenti le prende per indirizzi lunghi)
+.segment "ZEROPAGE"
+fz_s:   .res 2                  ; bd_fuse: glifo di sotto
+fz_g:   .res 2                  ; e del tratto
+fz_hi:  .res 1                  ; bit 7: il fascio alto del colpo in esame è nelle righe 0-3
+fz_new: .res 1                  ; bit 7: la cella è nuova, il carattere fuso si fa per intero
+.segment "CODE"
+bd_g    = v_n                   ; bd_put: il carattere del tratto
+fz_x    = m_p + 3               ; bd_fuse: X e Y di chi chiama
+fz_y    = m_p + 4
+.assert SHOT_P0 + SHOT_PN <= SHOT_B0 .and SHOT_PN = 8 * MAX_SHOTS, error, "colpi: un carattere fuso per cella di fascio"
+.assert SHOT_BOT = SHOT_TOP + 16 .and SHOT_BOT < 256, error, "colpi: fasci a due righe di celle, righe in un byte"
 
 .proc next_shots
-    ; fuori dalla partita lo schermo è già un altro: i colpi si dimenticano
+    ; fuori dalla partita (anche nel GAME OVER, che ha appena tolto i colpi: enter_over) lo schermo
+    ; è già un altro: i colpi si dimenticano. Al primo frame fuori dalla partita, comunque sia
+    ; finita (GAME OVER, menu, nuovo sfidante, un'altra partita), i caratteri presi in prestito
+    ; tornano vuoti: nessuna schermata deve mostrare un tratto di laser, nemmeno per un frame (sg_on
+    ; a SG_BLANK: restano da rifare le lettere 2x, anche quelle dei caratteri fusi). Nei due frame
+    ; dopo, se è il GAME OVER, le lettere 2x di nuovo al loro posto, metà per frame (le scritte
+    ; vengono dopo: il banco di prova lo controlla); le altre schermate che le usano se le rifanno
     lda state
     cmp #ST_COUNT
-    jcc leave
-    cmp #ST_OVER + 1
-    jcs leave
-    jsr shots_erase
-    lda m_next
-    jeq done
-    lda shot_on
-    ora shot_on+1
-    ora shot_on+2
-    ora shot_on+3
-    ora shot_on+4
-    ora shot_on+5
-    ora shot_on+6
-    ora shot_on+7
-    jeq done
+    bcc out_game
+    cmp #ST_PLAY + 1
+    bcc in_game
+out_game:
+    lda sg_on
+    beq leave
+    cmp #SG_GLYPHS
+    bne relet
+    ldx #8 * SHOT_BN
+    lda #0
+blank:
+    sta SG_DST - 1,x
+    dex
+    bne blank
+    beq step                    ; (sempre)
+relet:
+    ldx state
+    cpx #ST_OVER
+    bne leave
     ldy #0
+    cmp #SG_BLANK
+    beq :+
+    ldy #BIG2_N / 2
+:   ldx #BIG2_N / 2
+    jsr big2_build
+step:
+    inc sg_on
+leave:
+    lda #0
+    sta sv_n
+    rts
+in_game:
+    bit sv_n                    ; fasci sovrapposti al frame prima: via tutto, poi da capo
+    bpl :+
+    jsr shots_erase
+:   lda m_next
+    beq none
+start:
+    ; colpi in volo (bit k: colpo k)
+    lda shot_on+7
+    .repeat 7, k
+    asl a
+    ora shot_on+6-k
+    .endrepeat
+    bne some
+none:
+    jmp shots_erase             ; (via quelli rimasti)
+some:
+    sta bd_mask
+    lda #0
+    sta bd_dirty
+    sta bd_full
+    lda sv_n
+    beq full
+    lda bd_mask                 ; e i colpi con celle a schermo
+    ora sd_on
+    sta bd_mask
+    bne go
+full:
+    ; da capo: niente a schermo che conti
+    lda #$80
+    sta bd_full
+    lda #$FF
+    ldx #7
+:   sta sd_cw,x
+    dex
+    bpl :-
+    inx
+    stx sd_on
+go:
+    ldx #$FF
+skip:
+    inx                         ; il prossimo colpo da guardare
+    lsr bd_mask
+    bcc skip
 shot:
-    lda shot_on,y
-    beq next
-    sty ns_k
-    tya
+    stx bd_s
+    lda shot_on,x
+    beq gone
+    txa
     asl a
     asl a
-    tax                         ; X = posto * 4
+    sta bd_x4
+    tay
     ; colonna e fase: x0 = int(x) - 3, colonna x0 / 8, fase x0 & 6
-    lda shot_x+2,x
+    lda shot_x+2,y
     sec
     sbc #3
     sta v_n
-    lda shot_x+3,x
+    lda shot_x+3,y
     sbc #0
-    bmi skip
+    bmi gone
     lsr a                       ; bit 8 di x0 nel carry
     lda v_n
     ror a
     lsr a
     lsr a
-    sta v_col
     cmp #40
-    bcs skip
+    bcs gone
+    sta bd_nc
+    lda shot_y,y                ; ceil(y): la parte intera, + 1 con la frazione
+    ora shot_y+1,y
+    cmp #1
+    lda shot_y+2,y
+    adc #0
+    sta bd_ny
     lda v_n
     and #6
-    tay                         ; fase * 2 = indice in shot_chars
+    sta bd_c0                   ; fase * 2
+    lda #SHOT_BOT               ; altezza del tratto: (riga del fascio basso & 6) / 2
+    sec
+    sbc bd_ny
+    and #6
+    sta fz_r                    ; riga del tratto nella cella (bd_part)
+    asl a
+    asl a
+    ora bd_c0
+    tay                         ; altezza * 8 + fase * 2 = indice in shot_chars
     lda shot_chars,y
-    sta ns_c0
+    sta bd_c0
+    lda bd_nc
+    cmp #39
+    lda #0                      ; colonna 39: niente cella a destra
+    bcs :+
     lda shot_chars+1,y
-    sta ns_c1
-    lda shot_y+2,x
-    sta v_row
-    ; fascio dal cannone superiore (y_schermo = 200 - y - 11)
-    lda #<((P_HEIGHT >> 16) - 11)
-    sec
-    sbc v_row
-    bcc bot
-    jsr shot_beam
-bot:
-    ; fascio dal cannone inferiore (y_schermo = 200 - y + 11)
-    lda #<((P_HEIGHT >> 16) + 11)
-    sec
-    sbc v_row
-    bcc skip
-    jsr shot_beam
-skip:
-    ldy ns_k
+:   sta bd_c1
+    lda sd_cw,x
+    cmp #$FF
+    jeq fresh
+    lda bd_ny
+    cmp sd_y,x
+    beq same
+    jsr erase_shot              ; altre righe: via le celle di prima
+    jmp fresh
+gone:
+    lda sd_cw,x
+    cmp #$FF
+    beq next
+    jsr erase_shot
 next:
+    ldx bd_s
+    lda bd_mask
+    jne skip
+    lda #1
+    bit bd_dirty
+    bpl :+
+    lda #$FF
+:   sta sv_n
+    rts
+same:
+    ; stesse righe: celle di prima (colonna, una o due) e di adesso
+    lda sd_cw,x
+    sta bd_ow
+    and #$7F
+    sta bd_oc
+    jsr bd_ptrs
+    lda bd_nc
+    sec
+    sbc bd_oc
+    beq same_col
+    cmp #1
+    beq right1
+    cmp #$FF
+    beq left1
+generic:
+    jsr erase_shot
+    jmp fresh
+right1:
+    ; una colonna a destra, con due celle prima: via la prima, la seconda è la prima di adesso
+    bit bd_ow
+    bpl generic
+    ldy bd_oc
+    tya
+    and #1
+    ora bd_x4
+    tax
+    jsr bd_rest
     iny
-    cpy #2 * MAX_SHOTS
-    jne shot
-done:
-    rts
-leave:
-    lda #0
-    sta sv_n
-    rts
-.endproc
-
-; Disegna un fascio laser alla riga schermo A (solo sotto le riserve e i punteggi, righe 4..24),
-; colonna v_col e caratteri ns_c0 / ns_c1.
-.proc shot_beam
+    lda bd_c0
+    jsr bd_put
+    sty bd_k
+    lda bd_c1
+    jeq done_cw
+    iny                         ; la seconda di adesso: nel posto della prima di prima
+    jsr bd_cell
+    jmp done_cw
+left1:
+    ; una colonna a sinistra, con due celle adesso: la prima di prima è la seconda di adesso
+    lda bd_c1
+    beq generic
+    ldy bd_oc
+    jsr bd_put
+    bit bd_ow
+    bpl :+
+    iny                         ; via la seconda di prima
+    tya
+    and #1
+    ora bd_x4
+    tax
+    jsr bd_rest
+    dey
+:   sty bd_k
+    dey                         ; la prima di adesso
+    tya
+    and #1
+    ora bd_x4
+    tax
+    lda bd_c0
+    jsr bd_cell
+    jmp done_cw
+same_col:
+    ldy bd_nc
+    sty bd_k
+    lda bd_c0
+    jsr bd_put
+    iny
+    tya
+    and #1
+    ora bd_x4
+    tax                         ; posto della seconda cella
+    bit bd_ow
+    bmi two
+    lda bd_c1                   ; una prima: con due adesso, la seconda è nuova
+    jeq done_cw
+    jsr bd_cell
+    jmp done_cw
+two:
+    lda bd_c1                   ; due prima: la seconda resta, o va via
+    beq :+
+    jsr bd_put
+    jmp done_cw
+:   jsr bd_rest
+    jmp done_cw
+fresh:
+    ; colpo da disegnare (X = colpo): righe dei fasci (0-24), basso (SHOT_BOT - ceil(y)) / 8, alto
+    ; due righe sopra; uno solo a schermo: tutti e due i puntatori su quello
+    lda #$FF
+    sta bd_k
+    lda #SHOT_BOT
+    sec
+    sbc bd_ny
+    jcc next                    ; tutti e due sopra lo schermo (sd_cw resta $FF)
     lsr a
     lsr a
     lsr a
-    cmp #4
-    bcc done
-    cmp #25
-    bcs done
+    sta bd_oc                   ; riga del fascio basso (25: sotto lo schermo)
+    sec
+    sbc #2                      ; riga del fascio alto
+    bcs :+
+    lda bd_oc                   ; l'alto sopra lo schermo: il basso
+:   sta bd_ow
     tay
     lda row_lo,y
-    clc
-    adc v_col
-    sta ptr
-    sta m_a
+    sta sv_la,x
     lda row_hi,y
-    adc #0
-    sta ptr+1
-    ora #$18                    ; $C0..$C3 -> $D8..$DB (Color RAM)
-    sta m_a+1
-    ldx sv_n
-    lda ns_c0
-    ldy #0
-    jsr shot_cell
-    lda ns_c1
-    beq save                    ; fase 0: tutto nel primo carattere
-    ldy v_col
-    cpy #39
-    bcs save
-    ldy #1                      ; la cella a destra
-    jsr shot_cell
-save:
-    stx sv_n
+    sta sv_ha,x
+    ldy bd_oc
+    cpy #25
+    bcc :+
+    ldy bd_ow                   ; il basso sotto lo schermo: l'alto
+:   lda row_lo,y
+    sta sv_lb,x
+    lda row_hi,y
+    sta sv_hb,x
+    jsr bd_ptrs
+    ldy bd_nc
+    tya
+    and #1
+    ora bd_x4
+    tax
+    lda bd_c0
+    jsr bd_cell
+    lda bd_c1
+    beq done
+    sty bd_k
+    iny
+    txa
+    eor #1
+    tax
+    lda bd_c1
+    jsr bd_cell
 done:
-    rts
+    ldx bd_s                    ; colpo nuovo o righe nuove: la y e il bit in sd_on
+    lda bd_ny
+    sta sd_y,x
+    lda sd_on
+    ora col_bit,x
+    sta sd_on
+done_cw:
+    ldx bd_s                    ; (stesse righe: solo le celle)
+    lda bd_c1
+    cmp #1                      ; C = 1: due celle
+    lda bd_nc
+    bcc :+
+    ora #$80
+:   sta sd_cw,x
+    jmp next
 .endproc
 
 shot_chars: .byte SHOT_CHARS
 
-; Carattere A del colpo (fascio laser verde), nella cella ptr + Y (colore in m_a + Y), salvando
-; quello che c'è all'indice X (incrementato).
-.proc shot_cell
-    sta m_lo
-    tya
-    clc
-    adc ptr
-    sta sv_lo,x
-    lda ptr+1
-    adc #0
-    sta sv_hi,x
-    lda (ptr),y
-    sta sv_ch,x
-    lda m_lo
+; Puntatori dei due fasci del colpo X: ptr e ptr2 l'alto, bd_pb e bd_kb il basso; fz_hi negativo
+; se il fascio alto è nelle righe 0-3 (prima pagina dello schermo, sotto la riga 4: $D8 - $D8 con
+; il prestito). X e Y restano. Sta sotto lo stack (STKCODE: in MAIN non c'è posto), copiato da
+; title_unpack.
+.segment "STKCODE"
+.proc bd_ptrs
+    lda sv_la,x
+    sta ptr
+    sta ptr2
+    cmp #4 * 40
+    lda sv_ha,x
+    sta ptr+1
+    ora #>($d800 - SCREEN)      ; $C0..$C3 -> $D8..$DB (Color RAM)
+    sta ptr2+1
+    sbc #>$d800
+    sta fz_hi
+    lda sv_lb,x
+    sta bd_pb
+    sta bd_kb
+    lda sv_hb,x
+    sta bd_pb+1
+    ora #>($d800 - SCREEN)
+    sta bd_kb+1
+    rts
+.endproc
+.segment "CODE"
+.assert (>SCREEN & >($d800 - SCREEN)) = 0 .and (>(SCREEN + 999) & >($d800 - SCREEN)) = 0, error, "colpi: ora per la RAM del colore"
+
+; Cella Y dei due fasci (posti X e X + 2): rimette carattere e colore di prima. X e Y restano.
+.proc bd_rest
+    lda sv_c,x
     sta (ptr),y
-    lda (m_a),y
-    and #$0f                    ; il nibble alto della RAM del colore non esiste
-    sta sv_col,x
-    lda #COL_GREEN
-    sta (m_a),y
-    inx
+    lda sv_k,x
+    sta (ptr2),y
+    lda sv_c+2,x
+    sta (bd_pb),y
+    lda sv_k+2,x
+    sta (bd_kb),y
     rts
 .endproc
 
-; Toglie i colpi disegnati, rimettendo caratteri e colori (dall'ultimo, se si sovrappongono).
-.proc shots_erase
-    ldx sv_n
-    beq done
-    ldy #0
-:   dex
-    lda sv_lo,x
-    sta ptr
-    lda sv_hi,x
-    sta ptr+1
-    lda sv_ch,x
+; Cella nuova Y dei due fasci (posti X e X + 2): salva carattere e colore (un colpo sotto:
+; sovrapposizione, bd_over), poi il carattere A in verde (bd_put). X e Y restano.
+.proc bd_cell
+    pha
+    lda (ptr),y
+    cmp #SH_LO
+    bcc :+
+    jsr bd_over
+:   sta sv_c,x
+    lda (ptr2),y
+    sta sv_k,x
+    lda (bd_pb),y
+    cmp #SH_LO
+    bcc :+
+    jsr bd_over
+:   sta sv_c+2,x
+    lda (bd_kb),y
+    sta sv_k+2,x
+    lda #$80                    ; cella nuova: il carattere fuso, se serve, si fa per intero
+    sta fz_new
+    pla
+    .byte $2c                   ; (bit abs: salta i due byte del lsr fz_new di bd_put; legge
+.endproc                        ; l'indirizzo fz_new * 256 + $46, che non deve essere dell'I/O)
+.assert fz_new < $d0 .or fz_new > $df, error, "bd_cell: il bit che salta il lsr legge un registro"
+; (prosegue)
+; Carattere A in verde nella cella Y dei due fasci (quello che c'è sotto è salvato nei posti
+; della cella: colpo * 4 + colonna & 1, e + 2 per il fascio basso). Nelle righe 0-3, sopra una
+; cella non vuota, il carattere fuso con quello di sotto e il suo colore (bd_fuse: mai prima il
+; tratto da solo, che per qualche riga del raster si vedrebbe). Il fascio basso può essere nelle
+; righe 0-3 solo con l'alto lì (due righe sopra, o lo stesso fascio: allora basta una volta).
+; Sulla rete (colonne NET_COL e la dopo) lo stesso in tutte le righe: il fascio la attraversa
+; senza cancellarla. Una cella che era già del fascio al frame prima ha già nel suo carattere
+; fuso il glifo di sotto: bd_fuse ci rifà solo le due righe del tratto (fz_new a 0; bd_cell lo
+; alza per le celle nuove). X e Y restano.
+NET_COL = 19                    ; la rete: colonne 19 e 20
+.proc bd_put
+    lsr fz_new                  ; chiamata da sola: la cella c'era già
+    bit fz_hi
+    bmi hud
+    cpy #NET_COL
+    bcc fast
+    cpy #NET_COL + 2
+    bcc hud                     ; sulla rete
+fast:
     sta (ptr),y
-    lda ptr+1
-    ora #$18                    ; $C0..$C3 -> $D8..$DB
-    sta ptr+1
-    lda sv_col,x
-    sta (ptr),y
+    sta (bd_pb),y
+    lda #COL_GREEN
+    sta (ptr2),y
+    sta (bd_kb),y
+    rts
+hud:
+    sta bd_g
     txa
-    bne :-
-    stx sv_n
+    pha
+    tya
+    and #1
+    ora bd_x4
+    tax                         ; il posto della cella
+    lda sv_c,x
+    beq hp
+    jsr bd_fuse
+    sta (ptr),y
+    lda sv_k,x
+    bcc hk                      ; (sempre)
+hp: lda bd_g
+    sta (ptr),y
+    lda #COL_GREEN
+hk: sta (ptr2),y
+    lda bd_pb
+    cmp ptr
+    beq out                     ; un fascio solo a schermo: la stessa cella
+    lda sv_c+2,x
+    beq lp
+    inx
+    inx
+    jsr bd_fuse
+    dex
+    dex
+    sta (bd_pb),y
+    lda sv_k+2,x
+    bcc lk                      ; (sempre)
+lp: lda bd_g
+    sta (bd_pb),y
+    lda #COL_GREEN
+lk: sta (bd_kb),y
+out:
+    pla
+    tax
+    rts
+.endproc
+
+; Puntatore al glifo del carattere A nelle due celle di pagina zero p e p + 1.
+.macro glyph_at p
+    sta p
+    lda #>CHARSET >> 3
+    asl p
+    rol a
+    asl p
+    rol a
+    asl p
+    rol a
+    sta p+1
+.endmacro
+
+; Carattere fuso della cella del posto X: il glifo del carattere A (quello di sotto) con sopra
+; quello del tratto bd_g, nel carattere SHOT_P0 + X. Rende il carattere in A, con C = 0. X e Y
+; restano. Sta in fondo alla RAM bassa (FZCODE: in MAIN non c'è posto), copiato da title_unpack.
+.segment "FZCODE"
+.proc bd_fuse
+    stx fz_x
+    sty fz_y
+    glyph_at fz_s
+    lda bd_g
+    glyph_at fz_g
+    txa
+    asl a
+    asl a
+    asl a
+    bit fz_new
+    bmi full
+    ; la cella era già del fascio al frame prima: nel carattere fuso c'è già il glifo di sotto,
+    ; con il tratto di prima nelle stesse due righe (la y di un colpo non cambia); solo quelle
+    ora fz_r
+    tax
+    ldy fz_r
+    lda (fz_s),y
+    ora (fz_g),y
+    sta CHARSET + 8 * SHOT_P0,x
+    inx
+    iny
+    lda (fz_s),y
+    ora (fz_g),y
+    sta CHARSET + 8 * SHOT_P0,x
+    bcc done                    ; (sempre: C = 0 dall'ultimo asl)
+full:
+    ora #7
+    tax                         ; posto * 8 + 7: l'ultima riga del carattere fuso
+    ldy #7
+:   lda (fz_s),y
+    ora (fz_g),y
+    sta CHARSET + 8 * SHOT_P0,x
+    dex
+    dey
+    bpl :-
+done:
+    lda fz_x                    ; (C = 0 dall'ultimo asl)
+    adc #SHOT_P0
+    ldx fz_x
+    ldy fz_y
+    rts
+.endproc
+.assert <CHARSET = 0 .and (>CHARSET & 7) = 0, error, "glyph_at: il set a una pagina multipla di 8"
+.segment "BSS"
+fz_r:   .res 1                  ; riga del tratto nella cella (0, 2, 4, 6) del colpo in esame
+.segment "CODE"
+.segment "CODE"
+
+; Da bd_cell, con A = carattere sotto (da SH_LO in su): se è un colpo, da capo si continua (al
+; frame dopo di nuovo da capo); per differenza ci si ferma, si cancella tutto (il colpo in esame
+; ha a schermo solo le celle bd_k) e si ricomincia da capo. A resta.
+.proc bd_over
+    cmp #SH_HI
+    bcc shot
+    cmp #SH2_LO
+    bcc ok
+    cmp #SH2_HI
+    bcs ok
+shot:
+    bit bd_full
+    bpl stop
+    sec
+    ror bd_dirty
+ok: rts
+stop:
+    pla                         ; (le chiamate di bd_over e bd_cell, e il carattere di bd_cell)
+    pla
+    pla
+    pla
+    pla
+    ldx bd_s
+    lda bd_k
+    sta sd_cw,x
+    lda #1
+    sta sv_n
+    jsr shots_erase
+    jmp next_shots::start
+.endproc
+
+; Toglie i colpi disegnati, rimettendo caratteri e colori (dall'ultimo colpo: con i fasci
+; sovrapposti il carattere salvato da uno è quello dell'altro). Usa ptr, ptr2, n_t e v_col.
+.proc shots_erase
+    lda sv_n
+    beq done
+    ldx #2 * MAX_SHOTS - 1
+loop:
+    lda sd_cw,x
+    cmp #$FF
+    beq :+
+    jsr erase_shot
+:   dex
+    bpl loop
+    lda #0
+    sta sv_n
 done:
     rts
 .endproc
 
-.segment "NEXTBSS"
+; Come shots_erase, ma solo se un fascio a schermo è nelle righe 0-3 (riserve, barre, punteggi):
+; chi ridisegna lì lo chiama prima. Basta il fascio alto (il basso è più giù), che al posto
+; dell'alto sopra lo schermo è il basso. X resta; usa A, Y, ptr, ptr2, n_t e v_col.
+.proc shots_off_hud
+    lda sv_n
+    beq done
+    txa
+    pha
+    ldx #2 * MAX_SHOTS - 1
+loop:
+    lda sd_cw,x
+    cmp #$FF
+    beq next
+    lda sv_ha,x
+    cmp #>SCREEN
+    bne next
+    lda sv_la,x
+    cmp #<(SCREEN + 4 * 40)
+    bcs next
+    jsr shots_erase
+    jmp out
+next:
+    dex
+    bpl loop
+out:
+    pla
+    tax
+done:
+    rts
+.endproc
+.assert <SCREEN = 0, error, "shots_off_hud: righe 0-3 nella prima pagina dello schermo"
+
+; Nel conto alla rovescia di NEXT (count_scene): i glifi dei fasci alle altezze 0-2 nei caratteri
+; presi in prestito (da SHOT_B0, 7 per altezza), dal tratto dei caratteri del set (altezza 3, righe
+; 6-7), circa 2.100 cicli. Fuori dalla partita next_shots li rimette vuoti, e al GAME OVER rifà le
+; lettere 2x (sg_on: SG_GLYPHS, poi un passo alla volta fino a 0).
+SG_GLYPHS = $FD                 ; glifi dei fasci nei caratteri presi in prestito
+SG_BLANK  = $FE                 ; caratteri dei tratti di nuovo vuoti, lettere 2x da rifare
+                                ; ($FF: fatta la prima metà)
+.assert SHOT_LETTER0 = 0 .and SHOT_LETTERS = BIG2_N .and BIG2_N .mod 2 = 0, error, "next_shots: tutte le lettere 2x, in due metà"
+SG_DST = CHARSET + 8 * SHOT_B0
+SG_SRC = CHARSET + 8 * SHOT_OWN + 2 * SHOT_H0
+.assert 8 * SHOT_BN <= 256 .and SHOT_BN = 3 * 7 .and SHOT_H0 = 3, error, "shot_glyphs: tre altezze prese (0-2), 168 byte"
+.proc shot_glyphs
+    lda #SG_GLYPHS
+    sta sg_on
+    ldx #8 * SHOT_BN
+    lda #0
+:   sta SG_DST - 1,x
+    dex
+    bne :-
+height:
+    ldy #0                      ; tratto del carattere del set (passo 8)
+glyph:
+    lda SG_SRC,y
+    sta SG_DST,x                ; X = 58 * altezza + 8 * carattere: riga 2 * altezza
+    sta SG_DST + 1,x
+    txa
+    clc
+    adc #8
+    tax
+    tya
+    adc #8                      ; (C = 0)
+    tay
+    cpy #8 * 7
+    bne glyph
+    inx                         ; altezza dopo: il carattere dopo, due righe più giù
+    inx
+    cpx #3 * (8 * 7 + 2)
+    bne height
+    rts
+.endproc
+
+; Rimette le celle dei due fasci del colpo X (a schermo) e lo segna senza celle. X resta.
+.proc erase_shot
+    jsr bd_ptrs
+    txa
+    asl a
+    asl a
+    sta bd_x4
+    lda sd_cw,x
+    pha
+    and #$7F
+    tay
+    and #1
+    ora bd_x4
+    tax
+    jsr bd_rest
+    pla
+    bpl :+
+    iny                         ; la seconda cella
+    txa
+    eor #1
+    tax
+    jsr bd_rest
+:   lda bd_x4
+    lsr a
+    lsr a
+    tax
+    lda #$FF
+    sta sd_cw,x
+    lda col_bit,x
+    eor #$FF
+    and sd_on
+    sta sd_on
+    rts
+.endproc
+
+.segment "BSS"                  ; (non NEXTBSS: in fondo alla RAM bassa serve il posto a FZCODE)
 bar_shown: .res 2               ; settori del muro a schermo
 bar_prev:  .res 2               ; settori in piedi al frame prima
 bar_flash: .res 2               ; frame di lampeggio rimasti
 bar_fbit:  .res 2               ; e settore che lampeggia
-.segment "BSS"
-ns_c0:     .res 1               ; caratteri del colpo corrente (fase * 2 e + 1)
-ns_c1:     .res 1
-sv_n:      .res 1               ; celle dei colpi a schermo
-sv_lo:     .res SHOT_MAX_CELLS
-sv_hi:     .res SHOT_MAX_CELLS
-sv_ch:     .res SHOT_MAX_CELLS
-sv_col:    .res SHOT_MAX_CELLS
+sv_n:      .res 1               ; 0 niente a schermo, 1 colpi a schermo, $FF sovrapposti (da capo)
+sv_la:     .res 2 * MAX_SHOTS   ; per colpo: riga del fascio alto (indirizzo della colonna 0)
+sv_ha:     .res 2 * MAX_SHOTS
+sv_lb:     .res 2 * MAX_SHOTS   ; e del fascio basso
+sv_hb:     .res 2 * MAX_SHOTS
+sv_c:      .res 8 * MAX_SHOTS   ; per cella (colpo * 4 + fascio * 2 + colonna & 1): carattere
+sv_k:      .res 8 * MAX_SHOTS   ; e colore di prima
+sd_y:      .res 2 * MAX_SHOTS   ; per colpo: parte intera della y dei fasci a schermo
+sd_cw:     .res 2 * MAX_SHOTS   ; colonna della prima cella, bit 7 due celle; $FF niente a schermo
+sd_on:     .res 1               ; colpi con celle a schermo (bit k: colpo k)
+sg_on:     .res 1               ; 0, o SG_GLYPHS e seguenti: caratteri presi in prestito da rimettere
 .segment "CODE"
 
 ; ------------------------------------------------------------------------------------ effetti
@@ -1895,9 +2467,24 @@ sv_col:    .res SHOT_MAX_CELLS
     lda m_next
     bne :+
     rts
-:   jsr bullet_look
-    jsr sm_labels               ; le scritte delle mosse speciali
-    jsr net_tick                ; la rete dell'avversario
+:   ldx #0                      ; bullet time: 1 in corso; bullet_look se a schermo è cambiato
+    lda nx_btimer
+    beq :+
+    inx
+:   cpx bl_on
+    beq :+
+    jsr bullet_look
+:   lda sm_on                   ; le scritte delle mosse speciali, se c'è un colpo con la mossa,
+    beq :+                      ; una scritta o una mossa armata (quasi mai)
+    lda events+1
+    and #EV_SPECIAL_HI
+    ora mv_st
+    ora mv_st+1
+    ora sm_arm
+    ora sm_arm+4
+    beq :+
+    jsr sm_labels
+:   jsr net_tick                ; la rete dell'avversario
     ; STEER: 1 + lato di chi guida, 0 senza guida
     lda #0
     ldx nx_steer
@@ -1924,19 +2511,15 @@ done:
 ; Bullet time a schermo, con la palette di sempre come su PC e MiSTer: mezzeria e punteggi grigi,
 ; di nuovo bianchi quando finisce (della mezzeria solo le celle che la mostrano: la scritta del
 ; bonus può coprirla). Racchetta avversaria, capsule e coda della palla sono negli sprite. Circa
-; 1.500 cicli, solo all'inizio e alla fine del BULLET, e con il frame avanti al prossimo.
+; 1.500 cicli, solo all'inizio e alla fine del BULLET, e con il frame avanti al prossimo. X = 1
+; con il bullet time, 0 senza, diverso da bl_on (next_fx_scene).
 .proc bullet_look
-    ldx #0
-    lda nx_btimer
-    beq :+
-    inx
-:   cpx bl_on
-    beq done
     jsr frame_late
     bcs done
     stx bl_on
     lda look_color,x
     sta m_t
+    jsr shots_erase             ; i colpi rimetterebbero i colori di prima
     ; mezzeria: colonne 19 e 20 di ogni riga, dove ci sono i suoi caratteri
     ldx #24
 row:

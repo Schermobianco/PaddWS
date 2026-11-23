@@ -51,13 +51,13 @@ OM_CHARS   = CHARSET + 8 * OM_CH
 NM_FRAMES  = (50 * TV_HZ + 25) / 50 ; nome della forma nuova: 1 s, gli ultimi NM_BLINK frame a tratti
 NM_BLINK   = (10 * TV_HZ + 25) / 50
 NM_ROW     = 6                  ; prima riga (sotto le scritte delle mosse, righe 4 e 5)
-OM_LATE_COPY = (TV_BUDGET - (7000)) / TV_LCYC      ; una pagina (circa 3.800 cicli) solo prima di qui: dopo om_tick
-; c'è solo la musica, che oltre SID_LATE aspetta; la rete (circa 1.600 cicli) e il nome (1.800)
-; solo prima di qui: sul PAL con il posto per la musica, sull'NTSC (più carico) senza
+OM_LATE_COPY = (TV_BUDGET - (5800)) / TV_LCYC      ; una pagina (circa 3.800 cicli) solo prima di qui: dopo om_tick
+; c'è solo la coda della palla; la rete (circa 1.600 cicli) e il nome (1.800) solo prima di qui
+; (sull'NTSC, più carico, più avanti)
 .ifdef NTSC
-OM_LATE_NET  = (TV_BUDGET - (3000)) / TV_LCYC
+OM_LATE_NET  = (TV_BUDGET - (1700)) / TV_LCYC
 .else
-OM_LATE_NET  = (TV_BUDGET - (5000)) / TV_LCYC
+OM_LATE_NET  = (TV_BUDGET - (3600)) / TV_LCYC
 .endif
 .assert OM_CH + 6 <= 256, error, "rete di OMEGA: niente caratteri liberi nel set"
 
@@ -118,7 +118,7 @@ done:
 ; mai. Sullo stato del tick prima, come la musica che la rete segue. Solo in
 ; partita con il codice di OMEGA copiato (om_on: begin_match lo azzera, nelle altre partite resta 0).
 .ifdef NTSC
-OM_EARLY_NET = (TV_BUDGET - (13000)) / TV_LCYC
+OM_EARLY_NET = (TV_BUDGET - (12700)) / TV_LCYC
 .proc om_early
     lda state
     cmp #ST_PLAY
@@ -348,12 +348,14 @@ hide:
     beq done
     lda #0
     sta nm_on
+    jsr shots_erase             ; (i colpi del BLASTER rimetterebbero il nome)
     sec
     bcs nm_cells
 done:
     rts
 .endproc
 .proc nm_draw
+    jsr shots_erase             ; (i colpi del BLASTER rimetterebbero quello che c'era)
     clc
 .endproc
 ; (prosegue) C = 1 cancella.
@@ -506,6 +508,7 @@ sig:
     bcs done
     sta om_amp
     stx om_step
+    jsr shots_erase             ; (i colpi del BLASTER rimetterebbero la rete di prima)
     ldx #0
     stx m_t                     ; fase
 row:

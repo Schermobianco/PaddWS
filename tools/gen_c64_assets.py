@@ -294,14 +294,14 @@ def next_chars(cs: Charset, lines: list[str], spare: list[int]) -> bytes:
     dash = [1 if 1 <= y <= 5 else 0 for y in range(8)]
     lines.append(f"CH_BAR_R = {cs.add(tuple(0x01 * d for d in dash), unique=True)}    ; pixel 7 della colonna")
     lines.append(f"CH_BAR_L = {cs.add(tuple(0x80 * d for d in dash), unique=True)}    ; pixel 0 della colonna")
-    # fascio laser del BLASTER (uno per cannone alare): tratto di 7x2 pixel al centro del
-    # carattere (righe 3-4), dal pixel p (0, 2, 4, 6) del primo carattere; il resto nel secondo
+    # fascio laser del BLASTER (uno per cannone alare): tratto di 7x2 pixel dal pixel p (0, 2, 4, 6)
+    # del primo carattere, il resto nel secondo. Questi sette hanno il tratto all'altezza SHOT_H0
+    # (righe 6-7); le altre tre altezze sono caratteri presi in prestito in NEXT (shot_assets)
     shot = []
     for p in (0, 2, 4, 6):
         bits = sum(0x80 >> x for x in range(p, p + 7) if x < 8), sum(0x80 >> (x - 8) for x in range(p, p + 7) if x >= 8)
         for half in bits:
-            shot.append(cs.add((0, 0, 0, half, half, 0, 0, 0)) if half else 0)
-    lines.append(".define SHOT_CHARS " + ", ".join(str(c) for c in shot) + "    ; per fase: primo, secondo")
+            shot.append(cs.add(tuple(half if y >> 1 == SHOT_H0 else 0 for y in range(8)), unique=True) if half else 0)
     # STEER: segni dove finisce la guida, 2 pixel a cavallo di due colonne, alti 6 righe in cima e
     # in fondo allo schermo
     top = [1 if y < 6 else 0 for y in range(8)]
@@ -310,7 +310,97 @@ def next_chars(cs: Charset, lines: list[str], spare: list[int]) -> bytes:
         lines.append(f"CH_STEER_{name}_R = {cs.add(tuple(0x01 * r for r in rows), unique=True)}")
         lines.append(f"CH_STEER_{name}_L = {cs.add(tuple(0x80 * r for r in rows), unique=True)}")
     lines.append("")
-    return bullet_bytes
+    return bullet_bytes, shot
+
+
+# fasci laser del BLASTER (pick.s, next_shots): il tratto alto 2 pixel sta a una di quattro altezze
+# nella cella (righe 0-1, 2-3, 4-5, 6-7), così ogni fascio esce dalla bocca del suo cannone entro un
+# pixel. Sette caratteri per altezza: quelli del set (SHOT_H0) e SHOT_BN presi in prestito in NEXT.
+# Dove sotto il fascio c'è qualcosa (righe 0-3: riserve, barre, punteggi) il programma mette un
+# carattere fuso, quello di sotto con il tratto sopra, in uno dei SHOT_PN caratteri della riserva:
+# uno per cella di fascio (8 colpi, due fasci, due celle), presi in prestito anche loro
+SHOT_H0 = 3
+SHOT_BN = 3 * 7
+SHOT_PN = 32
+
+
+def shot_rows(params: str) -> tuple[int, int]:
+    """Righe di schermo delle bocche dei cannoni del BLASTER (la prima delle due righe di pixel di
+    ciascuna), meno ceil(y) della racchetta: le righe dell'immagine (assets/ships/sprites/c64) con
+    il colore del tipo nella colonna più avanti, nello sprite espanso in verticale che pad_sprite
+    mette dalla riga floor(P_HEIGHT - 1/2 - y - h/2) + 1 (h altezza del BLASTER)."""
+    im = Image.open(ROOT / "assets" / "ships" / "sprites" / "c64" / "blaster.png")
+    w, h = im.size
+    px = [[im.getpixel((x, y)) for x in range(w)] for y in range(h)]
+    front = max(x for x in range(w) if any(px[y][x] for y in range(h)))
+    muzzles = [y for y in range(h) if px[y][front] == 2]
+    assert len(muzzles) == 2, f"BLASTER: bocche dei cannoni nella colonna {front}: {muzzles}"
+    kind_h = [int(v, 16) for v in re.search(r"\.define T_KIND_H (.*)", params).group(1).replace("$", "").split(", ")]
+    height = int(re.search(r"^P_HEIGHT\s*=\s*\$([0-9A-F]+)", params, re.M).group(1), 16)
+    # u - h/2 = P_HEIGHT - 1/2 - h/2 - y in Q16.16: con la parte intera k e senza frazione,
+    # floor(k - y) + 1 = k + 1 - ceil(y)
+    edge = height - 0x8000 - kind_h[PAD_KINDS.index("blaster")] // 2
+    assert edge & 0xFFFF == 0, "BLASTER: bordo della racchetta non intero (altezza dispari)"
+    r0 = (edge >> 16) + 1
+    return r0 + 2 * muzzles[0], r0 + 2 * muzzles[1]
+
+
+def shot_assets(cs: Charset, lines: list[str], own: list[int], letters: str, pick_range: range) -> None:
+    """Caratteri dei fasci laser: quelli del set (`own`, altezza SHOT_H0) e i SHOT_BN presi in
+    prestito in NEXT, gli ultimi prima della pagina dei nomi (TN_FIRST): le ultime lettere 2x e
+    il resto vuoto delle loro pagine. Il programma ci scrive i glifi nel conto alla rovescia
+    (shot_glyphs) e li rimette vuoti al primo frame fuori dalla partita (next_shots). I SHOT_PN
+    caratteri della riserva dei fusi (bd_fuse) sono le prime lettere 2x, da SHOT_P0. Le lettere
+    2x toccate si rifanno al primo frame del GAME OVER (next_shots): si vedono solo lì (e nelle
+    schermate che si rifanno le pagine: scelta, targa, VS, finale). In partita la pagina dei nomi
+    serve a OMEGA, e da lì in su c'è solo il set di sempre."""
+    b0 = TN_FIRST - SHOT_BN
+    p0 = PICK_FIRST
+    taken = [*range(p0, p0 + SHOT_PN), *range(b0, TN_FIRST)]
+    big_end = PICK_FIRST + 4 * len(letters)
+    assert b0 >= p0 + SHOT_PN and TN_FIRST <= pick_range.stop, "colpi: caratteri fuori dalle pagine della scelta"
+    assert p0 % 32 == 0 and SHOT_PN == 32, "bd_fuse: la riserva è una pagina di 256 byte del set"
+    # dalle lettere 2x solo lettere intere (rifatte da big2_build), il resto oltre
+    first_letter = (p0 - PICK_FIRST) // 4
+    assert big_end <= TN_FIRST and first_letter < len(letters)
+    # i caratteri presi non sono di nessun altro: solo segnaposto delle pagine della scelta (le
+    # lettere 2x hanno codici da formula, non da cs.add)
+    for c in taken:
+        assert cs.given.count(c) == 1 and cs.tiles[c] == BLANK, c
+    # e non compaiono nelle scritte del GAME OVER oltre le due lettere che si rifanno
+    big = [int(v) for line in lines if line.startswith(".define BIG_") for v in line.split(" ", 2)[2].split(", ")]
+    assert not any(big_end <= c < TN_FIRST for c in big), "scritte del GAME OVER sui caratteri dei colpi"
+    # la scelta dei bonus ricopre tutte le pagine con le metà delle lettere fino a oltre i colpi
+    assert PICK_FIRST + 2 * len(FONT_DRAWN) >= TN_FIRST, "colpi: la scelta non ricopre i caratteri presi"
+    chars = []
+    for hgt in range(4):
+        if hgt == SHOT_H0:
+            chars += own
+        else:
+            base = b0 + 7 * (hgt - (hgt > SHOT_H0))
+            chars += [base, 0] + [base + i for i in range(1, 7)]
+    assert own == [own[0], 0] + [own[0] + i for i in range(1, 7)], f"colpi: caratteri del set non in fila: {own}"
+    top, bottom = shot_rows((OUT / "params.inc").read_text(encoding="utf-8"))
+    assert bottom - top == 16, "colpi: i due fasci a 16 righe (stessa altezza, due righe di celle)"
+    assert SHOT_H0 == 3, "shot_glyphs: le altezze prese sono 0, 1 e 2 (riga del tratto 2 * altezza)"
+    lines.append("; BLASTER: caratteri dei fasci per altezza del tratto (righe 2h e 2h + 1) e fase: primo e")
+    lines.append("; secondo carattere (0: nessuno); quelli dell'altezza SHOT_H0 nel set, gli altri SHOT_BN da")
+    lines.append("; SHOT_B0 presi in prestito in NEXT (shot_glyphs), dove stanno le lettere 2x da SHOT_LETTER0")
+    lines.append("; (SHOT_LETTERS, rifatte al GAME OVER) e il vuoto dopo. Riserva dei caratteri fusi (bd_fuse):")
+    lines.append("; SHOT_PN da SHOT_P0, uno per cella di fascio. Righe di schermo delle bocche dei cannoni:")
+    lines.append("; SHOT_TOP - ceil(y) e SHOT_BOT - ceil(y)")
+    lines.append(".define SHOT_CHARS " + ", ".join(str(c) for c in chars))
+    lines.append(f"SHOT_H0 = {SHOT_H0}")
+    lines.append(f"SHOT_OWN = {own[0]}")
+    lines.append(f"SHOT_B0 = {b0}")
+    lines.append(f"SHOT_BN = {SHOT_BN}")
+    lines.append(f"SHOT_P0 = {p0}")
+    lines.append(f"SHOT_PN = {SHOT_PN}")
+    lines.append(f"SHOT_LETTER0 = {first_letter}")
+    lines.append(f"SHOT_LETTERS = {len(letters) - first_letter}")
+    lines.append(f"SHOT_TOP = {top}")
+    lines.append(f"SHOT_BOT = {bottom}")
+    lines.append("")
 
 
 # NEXT: effetti della palla, sprite disegnati a inizio partita nella bitmap dell'attract ($E000, che
@@ -1811,7 +1901,7 @@ def main() -> None:
     # CHALLENGE li usano anche in partita NEXT e dopo
     self_test = list(spare)
     spare += [cs.add(BLANK, unique=True) for _ in range(3)]
-    bullet_bytes = next_chars(cs, lines, spare)
+    bullet_bytes, shot_own = next_chars(cs, lines, spare)
     # CHALLENGE: bande della schermata del nuovo sfidante (HERE COMES A NEW CHALLENGER!)
     lines.append(f"CH_SOLID = {cs.add((0xFF,) * 8, unique=True)}")
     # NEXT, mosse speciali: la barra, caratteri suoi (vuoti fuori da NEXT)
@@ -1825,6 +1915,7 @@ def main() -> None:
     for c in spare[len(self_test):] + bar:
         assert cs.given.count(c) == 1 and c not in pick_range, c
     assert grid_t not in spare and wall not in spare
+    shot_assets(cs, lines, shot_own, letters, pick_range)
     lines.append(f"CHARSET_USED = {len(cs.tiles)}")
     OUT.mkdir(parents=True, exist_ok=True)
     charset = bytearray(2048)

@@ -43,7 +43,8 @@ Some files are generated and must not be edited by hand: `mister/rtl/gen/*.vh` (
 `tools/gen_*`), `c64/gen/` (from `tools/gen_c64_assets.py`), the attract mode bitmaps and timings in
 `assets/attract/` (from `tools/gen_attract_assets.py`). Change the generator and regenerate them.
 
-On the C64 a frame can't take more than 18,000 cycles (`paddws-c64 frames` checks it) and the zero
+On the C64 a match frame must stay within 90% of its time (17,700 cycles on PAL, 15,400 on NTSC:
+`paddws-c64 frames` checks it) and the zero
 page is full: see [c64/README.en.md](c64/README.en.md).
 
 ## Building and checking

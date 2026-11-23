@@ -14,6 +14,25 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+### Modificato
+- C64: i laser del BLASTER escono dalle bocche dei cannoni dell'astronave, entro un pixel, e
+  passano anche sopra punteggi, barre, riserve e riga di metà campo senza cancellarli: lì il
+  tratto prende il colore di quello che attraversa.
+- C64: ogni frame di partita ha più margine. Sul PAL nessuno supera il 90% del tempo del frame,
+  sull'NTSC ne restano pochi (circa tre su mille nel caso peggiore); musica ed effetti sonori
+  partono a inizio frame, a un'ora fissa.
+
+### Aggiunto
+- Banco di prova del C64: `frames` conta i cicli veri, compresi quelli che il VIC-II ruba per le
+  righe dei caratteri e per gli sprite (modello tarato su VICE con `tools/c64_vice_frames.py`), e
+  verifica i laser pixel per pixel; golden test per toccare il disegno senza cambiare quello che
+  si vede.
+
+### Corretto
+- C64: la musica non perde più passi nei frame pesanti nemmeno sull'NTSC.
+- C64: una cella della riga di metà campo restava del colore sbagliato se il bullet time
+  cominciava o finiva mentre un laser la attraversava.
+
 ## [4.6.3] - 2026-11-22
 
 ### Modificato

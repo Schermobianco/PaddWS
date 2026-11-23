@@ -100,30 +100,31 @@ keys_any:   .res 1              ; qualche tasto premuto all'ultima scansione
     sta pot_raw
     lda SID_POTY
     sta pot_raw+1
-    ; joystick, senza righe della tastiera
+    ; joystick, senza righe della tastiera; appena premuti: (ora xor prima) and ora
     lda #$ff
     sta CIA1_PRA
     lda joy
     sta joy_prev
-    lda joy+1
-    sta joy_prev+1
     lda CIA1_PRA
     eor #$ff
     and #$1f
     sta joy
+    eor joy_prev
+    and joy
+    sta joy_edge
+    and #JOY_FIRE
+    sta fire_edge
+    lda joy+1
+    sta joy_prev+1
     lda CIA1_PRB
     eor #$ff
     and #$1f
     sta joy+1
-    ldx #1
-:   lda joy_prev,x
-    eor #$ff
-    and joy,x
-    sta joy_edge,x
+    eor joy_prev+1
+    and joy+1
+    sta joy_edge+1
     and #JOY_FIRE
-    sta fire_edge,x
-    dex
-    bpl :-
+    sta fire_edge+1
     ; pulsanti dei paddle (porta 1, bit 2 e 3): valgono come fuoco
     lda ctl_paddle
     beq keyboard
@@ -144,18 +145,22 @@ keys_any:   .res 1              ; qualche tasto premuto all'ultima scansione
     lda #JOY_FIRE
     sta fire_edge+1
 keyboard:
-    ; con un joystick mosso la tastiera darebbe tasti fantasma: niente lettura
+    ; con un joystick mosso la tastiera darebbe tasti fantasma: niente lettura, e righe a zero
+    ; (lo sono già se all'ultima scansione non c'era nessun tasto: keys_any)
     lda joy
     ora joy+1
     beq scan
+    lda keys_any
+    beq done
     lda #0
+    sta keys_any
     ldx #7
 :   sta keys_edge,x
     sta keys,x
     sta keys_prev,x
     dex
     bpl :-
-    jmp done
+    bmi done                    ; (sempre)
 scan:
     ; tutte le righe insieme: nessun tasto ora né all'ultima scansione, tutto resta a zero
     lda #0
@@ -231,13 +236,13 @@ col_bit: .byte $01, $02, $04, $08, $10, $20, $40, $80
 ; Comandi del tick per la logica (in_dir, in_flags, in_offset) dai comandi del frame.
 .proc build_input
     ldy #0                      ; giocatore
+    lda ctl_paddle
+    jeq joystick
 player:
     tya
     asl a
     asl a
     tax                         ; X = giocatore * 4
-    lda ctl_paddle
-    beq joystick
     ; paddle: posizione assoluta, (pot * corsa) / 256 con la corsa = altezza del campo - racchetta
     lda pot_raw,y
     sec
@@ -284,18 +289,24 @@ player:
     ora #IN_FIRE
     sta in_flags,x
 pad_done:
-    jmp next
+    iny
+    cpy #2
+    jne player
+    jmp next_keys
 joystick:
-    ; direzione: su +1, giù -1
+    ldx #0                      ; X = giocatore * 4
+stick:
+    ; direzione: su +1, giù -1 (su vince)
+    .assert JOY_UP = 1 .and JOY_DOWN = 2, error, "build_input: su e giù nei bit 0 e 1"
     lda joy,y
-    and #JOY_UP
-    beq :+
-    lda #1
-    bne dir
-:   lda joy,y
-    and #JOY_DOWN
-    beq dir
+    lsr a
+    bcs up
+    lsr a
+    lda #0
+    bcc dir
     lda #$ff
+    .byte $2c                   ; (bit: salta il lda)
+up: lda #1
 dir:
     sta in_dir,x
     cmp dir_prev,y
@@ -342,6 +353,7 @@ keep:
     ; stesso comando: qui la direzione sceglie quando mandarlo. Fuori da NEXT, dove il fuoco non ha
     ; bonus da attivare, anche il fuoco (va e torna)
     lda joy_edge,y
+    beq fire                    ; niente di appena premuto (quasi sempre)
     and toward,y
     beq back
     beq32 {pad_x,x}, {pad_home,x}, forward
@@ -376,11 +388,11 @@ flags:
     sta m_t
 :   lda m_t
     sta in_flags,x
-next:
     iny
     cpy #2
     beq :+
-    jmp player
+    ldx #4
+    jmp stick
 :   jmp next_keys
 .endproc
 
@@ -405,8 +417,10 @@ player:
     asl a
     asl a
     tax
+    lda sm_on
+    beq :+
     jsr sm_joy
-    lda fire_edge,y
+:   lda fire_edge,y
     beq :+
     lda in_flags,x
     ora #IN_ACTIVATE
