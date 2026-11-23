@@ -145,9 +145,6 @@ pub struct Dl<'a> {
     pub clip: [i32; 4],
     /// spostamento in x degli oggetti che seguono (con il loro ritaglio)
     pub dx: i32,
-    /// griglia in prospettiva dietro agli oggetti (schermate prima della partita): la disegna
-    /// rtl/ui_render.v dove nessun oggetto copre il pixel; il valore è il colore RGB dell'impulso
-    pub grid: Option<u32>,
 }
 
 impl<'a> Dl<'a> {
@@ -161,7 +158,6 @@ impl<'a> Dl<'a> {
             class: CLASS_A,
             clip: [0, 320, 0, 240],
             dx: 0,
-            grid: None,
         }
     }
 
@@ -323,11 +319,8 @@ impl<'a> Dl<'a> {
         &mut *self.p
     }
 
-    /// Fine del frame: numero di oggetti, richiesta di scambio e griglia (con il colore dell'impulso).
+    /// Fine del frame: numero di oggetti e richiesta di scambio.
     pub fn finish(self) {
-        if let Some(rgb) = self.grid {
-            self.p.write(map::GRID_RGB, rgb);
-        }
-        self.p.write(map::CTRL, self.n | 1 << 8 | u32::from(self.grid.is_some()) << 9);
+        self.p.write(map::CTRL, self.n | 1 << 8);
     }
 }

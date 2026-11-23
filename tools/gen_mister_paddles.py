@@ -168,8 +168,11 @@ def colors() -> list[str]:
         ramp = ps.mark_ramp(tuple(spec["accent"][name]))
         out.append(f"localparam [23:0] PD_MARK{k} = {rgb(ramp[ps.MARK])}, PD_MARK_DARK{k} = {rgb(ramp[ps.MARK_DARK])}, "
                    f"PD_MARK_LIGHT{k} = {rgb(ramp[ps.MARK_LIGHT])};")
-    for name, c in (("WHITE", (255, 255, 255)), ("GRAY", (0xB4, 0xB4, 0xB4)), ("ACCENT", (0xFF, 0xD2, 0x25)),
-                    ("OMEGA_RED", (0xE6, 0x28, 0x28)), ("OMEGA_PURPLE", (0xA0, 0x40, 0xE0))):
+    # OMEGA: il corpo è quello di tutte le racchette, i segni nel suo viola (accent di portraits.json)
+    ramp = ps.mark_ramp(tuple(spec["accent"]["omega"]))
+    out.append(f"localparam [23:0] PD_OM_MARK = {rgb(ramp[ps.MARK])}, PD_OM_MARK_DARK = {rgb(ramp[ps.MARK_DARK])}, "
+               f"PD_OM_MARK_LIGHT = {rgb(ramp[ps.MARK_LIGHT])};")
+    for name, c in (("WHITE", (255, 255, 255)), ("GRAY", (0xB4, 0xB4, 0xB4)), ("ACCENT", (0xFF, 0xD2, 0x25))):
         out.append(f"localparam [23:0] PD_{name}_SH = {rgb(ps.body_shade(c))};")
     for name, role in (("SHADOW", ps.SHADOW), ("GRAY", ps.GRAY), ("GRAY_LIGHT", ps.GRAY_LIGHT), ("DARK", ps.DARK),
                        ("DARK_DEEP", ps.DARK_DEEP)):

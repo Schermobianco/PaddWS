@@ -303,14 +303,14 @@ def paddle_images(gfx: Gfx) -> list[str]:
     for i in range(0, len(colors), 8):
         out.append("        " + " ".join(f"0x{r:02X}{g:02X}{b:02X}," for r, g, b in colors[i:i + 8]))
     out.append("    ];")
-    # corpo di OMEGA: viola (anche con l'easter egg RED) e il suo tono in ombra
-    omega = [(0xA0, 0x40, 0xE0), (0xA0, 0x40, 0xE0)]
-    out.append("    /// Corpo e corpo in ombra di OMEGA (valori 1 e 2): viola (anche con l'easter egg).")
-    out.append("    pub const OMEGA_BODY: [[u32; 2]; 2] = [")
-    for c in omega:
-        s = ps.body_shade(c)
-        out.append(f"        [0x{c[0]:02X}{c[1]:02X}{c[2]:02X}, 0x{s[0]:02X}{s[1]:02X}{s[2]:02X}],")
-    out.append("    ];")
+    # OMEGA: il corpo è quello di tutte le racchette, i segni sono nel suo viola (anche con l'easter egg
+    # RED): i tre toni (pieno, scurito, schiarito) prendono il posto di quelli di ogni tipo
+    om = ps.mark_ramp(tuple(spec["accent"]["omega"]))
+    out.append("    /// I tre toni dei segni di OMEGA, nel suo viola; in PADS_OMEGA stanno a ogni terzo posto da MARKS_AT.")
+    out.append("    pub const OMEGA_MARKS: [u32; 3] = [" + ", ".join(
+        f"0x{om[m][0]:02X}{om[m][1]:02X}{om[m][2]:02X}" for m in marks) + "];")
+    out.append(f"    /// Primo dei colori dei segni dei tipi in PAL (indice da 0: il valore del pixel meno uno).")
+    out.append(f"    pub const MARKS_AT: usize = {len(shared)};")
     out.append("}")
     return out
 
@@ -580,6 +580,96 @@ def ship_assets(ddr: Gfx) -> list[str]:
     return out
 
 
+STREAK_DEGREES = (32, 18, 28)
+STREAK_LENGTH = 70
+
+
+def streak_px(deg: int) -> list[list[int]]:
+    """Scia di una stella cadente che va in basso a destra con l'angolo `deg`: la testa bianca 2x2 nell'angolo
+    in basso a destra, dietro la coda (valori dei colori del personaggio: 6 l'accento, 7 l'accento scuro) lunga
+    STREAK_LENGTH pixel, con un contorno scuro di un pixel (come `shooting_stars` di rust/game/src/space.rs)."""
+    import math
+    a = math.radians(deg)
+    dx, dy = math.cos(a), math.sin(a)
+    w, h = round(STREAK_LENGTH * dx) + 4, round(STREAK_LENGTH * dy) + 4
+    px = [[0] * w for _ in range(h)]
+    prio = {0: 0, 7: 1, 6: 2, 2: 3}
+
+    def put(x: int, y: int, v: int) -> None:
+        if 0 <= x < w and 0 <= y < h and prio[v] > prio[px[y][x]]:
+            px[y][x] = v
+
+    hx, hy = w - 2, h - 2
+    for i in range(STREAK_LENGTH * 2 + 1):
+        t = i / 2
+        x, y = hx + 0.5 - dx * t, hy + 0.5 - dy * t
+        v = 6 if t < STREAK_LENGTH / 2 else 7
+        put(int(x), int(y), v)
+        if t < STREAK_LENGTH * 0.8:
+            put(int(x - dy), int(y + dx), 7)
+            put(int(x + dy), int(y - dx), 7)
+    for y in (hy, hy + 1):
+        for x in (hx, hx + 1):
+            put(x, y, 2)
+    return px
+
+
+def space_consts() -> list[str]:
+    """Sfondo spaziale (rust/mister-ui/src/space.rs, come rust/game/src/space.rs ma con meno stelle: gli
+    oggetti sono pochi): per ogni stella la fase del suo avvicinamento (0..255 del ciclo di 1024 frame), il
+    coseno e il seno della sua direzione (x 127) ; la tabella di 300 * u^1.5 per u da 0 a 255 / 256; il
+    rollio (31 * sin: circa 7 gradi su 256); le stelle cadenti: frame di partenza nel ciclo, partenza dal
+    centro, coseno e seno x 256 della direzione, lunghezza, scia (indice di STREAK_DEGREES) e se si specchia
+    in orizzontale o in verticale."""
+    import math
+    stars = 36
+    s = 5
+
+    def nxt() -> float:
+        nonlocal s
+        s = (s * 1103515245 + 12345) & 0x7FFFFFFF
+        return s / 0x7FFFFFFF
+
+    phase, cos, sin = [], [], []
+    for i in range(stars):
+        angle = math.tau * ((i * 0.618034) % 1.0)
+        ph, _twinkle = nxt(), nxt()
+        phase.append(int(ph * 256) & 255)
+        cos.append(round(127 * math.cos(angle)))
+        sin.append(round(127 * math.sin(angle)))
+    pow15 = [round(300 * (u / 256) ** 1.5) for u in range(256)]
+    roll = [round(31 * math.sin(math.tau * k / 64)) for k in range(64)]
+    shooting = [(0.04, (-63, -116), 32, 210), (0.24, (77, -116), 148, 210), (0.43, (-193, -78), 18, 240),
+                (0.62, (192, -106), 162, 240), (0.82, (-43, 85), -28, 210)]
+    rows = []
+    for start, (x0, y0), deg, length in shooting:
+        a = math.radians(deg)
+        base = abs(deg) if deg > 0 else -deg
+        if base > 90:
+            base = 180 - base
+        rows.append(f"Shot {{ start: {round(start * 1024)}, x0: {x0}, y0: {y0}, dx: {round(256 * math.cos(a))}, "
+                    f"dy: {round(256 * math.sin(a))}, length: {length}, streak: {STREAK_DEGREES.index(base)}, "
+                    f"flip_x: {str(math.cos(a) < 0).lower()}, flip_y: {str(math.sin(a) < 0).lower()} }}")
+    out = ["", "/// Sfondo spaziale (tools/gen_mister_ui.py, `space_consts`).", "pub mod space {",
+           f"    pub const STARS: usize = {stars};",
+           f"    pub const PHASE: [u8; {stars}] = {phase};",
+           f"    pub const COS: [i8; {stars}] = {cos};",
+           f"    pub const SIN: [i8; {stars}] = {sin};",
+           f"    pub const POW15: [u16; 256] = {pow15};",
+           f"    pub const ROLL: [i8; 64] = {roll};",
+           f"    pub const SHOOT_FRAMES: i32 = {round(0.045 * 1024)};",
+           "    /// Una stella cadente: frame di partenza nel ciclo, partenza dal centro, coseno e seno x 256 della",
+           "    /// direzione, lunghezza del percorso, scia (indice di IMG_STREAK) e specchio della scia in x e in y.",
+           "    pub struct Shot {",
+           "        pub start: i32,", "        pub x0: i32,", "        pub y0: i32,", "        pub dx: i32,", "        pub dy: i32,",
+           "        pub length: i32,", "        pub streak: usize,", "        pub flip_x: bool,", "        pub flip_y: bool,",
+           "    }",
+           f"    pub const SHOOTING: [Shot; {len(shooting)}] = ["]
+    out += [f"        {r}," for r in rows]
+    out += ["    ];", "}"]
+    return out
+
+
 def rust_name(name: str) -> str:
 
     return "IMG_" + name.upper()
@@ -608,9 +698,14 @@ def main() -> None:
     gfx.add("pick_net", [[1, 1] if y % 8 < 4 else [0, 0] for y in range(160)], 1)
     cap = 12
     gfx.add("cap_frame", [[1 if x in (0, cap - 1) or y in (0, cap - 1) else 0 for x in range(cap)] for y in range(cap)], 1)
-    # VS dello schermo VS a scala 3 (lo schermo a oggetti ingrandisce solo di 2, 4 e 8)
-    vs = [glyphs["V"][y // 3] << 8 | glyphs["S"][y // 3] for y in range(24)]
-    gfx.add("vs3", [[(vs[y] >> (15 - x // 3)) & 1 for x in range(48)] for y in range(24)], 1)
+    # VS dello schermo VS (assets/titles/vs.png, ruoli dei colori come PERFECT, qui in oro): a scala 1, 2 e
+    # 3 (lo schermo a oggetti ingrandisce solo di 2, 4 e 8, e dei pixel in più non ne fa)
+    vs_art = title_px("vs")
+    for s in (1, 2, 3):
+        gfx.add(f"vs{s}", [[v for v in row for _ in range(s)] for row in vs_art for _ in range(s)], 4)
+    # scie delle stelle cadenti dello sfondo spaziale, per angolo (le altre si ottengono specchiando)
+    for deg in STREAK_DEGREES:
+        gfx.add(f"streak_{deg}", streak_px(deg), 4)
     howto = howto_assets(gfx)
     ending = ending_assets(gfx)
     # immagini nella DDR3 (file paddws_gfx.rom, caricato dal .mra all'avvio): il firmware le copia
@@ -685,6 +780,7 @@ def main() -> None:
     lines.append("/// Parole del file paddws_gfx.rom.")
     lines.append(f"pub const DDR_WORDS: u32 = {len(ddr.words)};")
     lines += attract_consts()
+    lines += space_consts()
     lines.append("/// Cifre dei punteggi (22x22), dalla 0 alla 9.")
     lines.append("pub const IMG_SCORE: [Img; 10] = [" + ", ".join(rust_name(f"score_{d}") for d in range(10)) + "];")
     lines += game_consts()
@@ -697,6 +793,8 @@ def main() -> None:
     lines.append("pub const IMG_ICON: [Img; 8] = [" + ", ".join(rust_name(f"icon_{b}") for b in range(8)) + "];")
     lines.append("/// Nomi disegnati degli avversari (PaddleKind).")
     lines.append("pub const IMG_NAME: [Img; 7] = [" + ", ".join(rust_name(f"name_{k}") for k in KINDS) + "];")
+    lines.append(f"pub const IMG_STREAK: [Img; {len(STREAK_DEGREES)}] = [" + ", ".join(
+        rust_name(f"streak_{deg}") for deg in STREAK_DEGREES) + "];")
     RUST.parent.mkdir(parents=True, exist_ok=True)
     RUST.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     print(f"font: {len(CHARS)} caratteri, {checked} scritte controllate; grafica: {len(gfx.images)} immagini, "

@@ -89,8 +89,7 @@ module pong_sid #(
     input  wire [3:0]  fx_vol,
     output reg  [6:0]  fx_gain,
     output wire signed [15:0] sample,
-    output wire [47:0] scope,         // oscilloscopi delle tre voci (sid_filter), {3, 2, 1}, 16 bit con segno
-    output reg         bass_note      // un ciclo: parte una nota della voce 1 (il basso), la sua nota ha acceso il gate
+    output wire [47:0] scope          // oscilloscopi delle tre voci (sid_filter), {3, 2, 1}, 16 bit con segno
 );
 
 `include "sid_music.vh"
@@ -276,7 +275,6 @@ integer c;
 
 always @(posedge clk) begin
     we <= 1'b0;
-    bass_note <= 1'b0;
     song_q <= song;
     if (song != song_q) song_new <= 1'b1;
     if (trigger && fx_of(events) != 4'd0) begin
@@ -560,7 +558,6 @@ always @(posedge clk) begin
         S_GATE: begin
             freq_write <= 1'b0;
             wr(3'd4, wave[ch] | 8'h01);                  // gate: parte l'inviluppo
-            if (ch == 2'd0) bass_note <= 1'b1;           // la griglia delle schermate ci aggancia l'impulso
             state <= S_FLT;
         end
 

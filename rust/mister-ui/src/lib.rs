@@ -23,6 +23,7 @@ mod jukebox;
 mod omega;
 pub mod pal;
 mod pick;
+mod space;
 pub mod regs;
 pub mod win;
 
@@ -66,8 +67,6 @@ pub mod map {
     pub const PAL: u32 = 0xA00;
     /// fine del frame: [7:0] numero di oggetti, [8] scambio dei banchi
     pub const CTRL: u32 = 0xB00;
-    /// colore dell'impulso della griglia (24 bit RGB), da scrivere prima di CTRL
-    pub const GRID_RGB: u32 = 0xB05;
     /// lettura: [0] banco mostrato, [1] scambio in attesa, [2] copia dalla DDR3 in corso
     /// (`DMA_BUSY`), [3] grafica della DDR3 caricata (`GFX_OK`)
     pub const STATUS: u32 = 0x000;
@@ -99,8 +98,6 @@ pub mod map {
 pub struct Ui {
     seq: u32,
     game: game::GameState,
-    /// colori del corpo di OMEGA già scritti nella tavolozza delle racchette: con l'easter egg o no
-    pad_egg: Option<bool>,
     /// illustrazione isometrica caricata in `pal::SHIP` (durante `THE END`), None = ritratti attivi
     ship_pal: Option<usize>,
     /// finestra della DDR3: ritratti grandi e medi e astronavi copiati
@@ -118,7 +115,6 @@ impl Ui {
         Self {
             seq: 0,
             game: game::GameState { glint_ph: 0 },
-            pad_egg: None,
             ship_pal: None,
             win: win::Win::new(),
         }
@@ -136,10 +132,16 @@ impl Ui {
                 p.write(map::PAL + pal::PORTRAIT as u32 + 8 * k as u32 + 1 + j as u32, *c);
             }
         }
-        // le racchette dei personaggi: due copie, la seconda con il corpo di OMEGA (scritto da `poll`)
+        // le racchette dei personaggi: due copie, la seconda con i segni nel viola di OMEGA (quelli dei
+        // sette tipi diventano i suoi tre toni)
         for base in [pal::PADS, pal::PADS_OMEGA] {
             for (j, c) in assets::pads::PAL.iter().enumerate() {
-                p.write(map::PAL + base as u32 + 1 + j as u32, *c);
+                let c = if base == pal::PADS_OMEGA && j >= assets::pads::MARKS_AT {
+                    assets::pads::OMEGA_MARKS[(j - assets::pads::MARKS_AT) % 3]
+                } else {
+                    *c
+                };
+                p.write(map::PAL + base as u32 + 1 + j as u32, c);
             }
         }
     }
@@ -158,13 +160,6 @@ impl Ui {
             return true;
         }
         let r = Regs::read(p);
-        // corpo di OMEGA nelle racchette: rosso, viola con l'easter egg
-        if self.pad_egg != Some(r.egg) {
-            self.pad_egg = Some(r.egg);
-            for (j, c) in assets::pads::OMEGA_BODY[r.egg as usize].iter().enumerate() {
-                p.write(map::PAL + pal::PADS_OMEGA as u32 + 1 + j as u32, *c);
-            }
-        }
         // illustrazione isometrica della nave vincitrice su THE END: carica i 15 colori in pal::SHIP
         // (i primi 15 di PORTRAIT, liberi su THE END) e ripristina i ritratti all'uscita
         let om_peek = regs::Omega::new(&r);

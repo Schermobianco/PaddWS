@@ -34,6 +34,7 @@ module pong_render (
     input  wire signed [31:0] pad1_boost_h,
     input  wire        field_off,       // fine partita con GAME OVER: il campo si spegne (con over_age)
     input  wire [7:0]  over_age,        // GAME OVER: frame dall'inizio (fermi a 255)
+    input  wire        ball_hide,       // YOU WIN e CPU WINS (senza riquadro): niente palla ferma sotto la scritta
     input  wire        ball_accent,     // NEXT: palla del SUPER in volo nel colore di accento
     input  wire        ball_relief,     // NEXT: palla in rilievo (ombra portata, retro e fondo in ombra)
     input  wire        ball_right,      // verso della palla: l'ombra va dietro
@@ -154,6 +155,7 @@ reg        ov_off = 1'b0;
 reg [7:0]  net_cut = 8'd0;              // righe della mezzeria già spente, dall'alto
 reg [5:0]  pad_cut = 6'd0;              // righe tolte a ciascun capo delle racchette
 reg        field_ball_off = 1'b0;
+reg        hide_q = 1'b0;
 reg [5:0]  pc;
 always @(posedge clk) begin
     if (snapshot) begin
@@ -162,6 +164,7 @@ always @(posedge clk) begin
         pc = over_age[5:0] - 6'd48;
         pad_cut <= (over_age < 8'd48) ? 6'd0 : (over_age >= 8'd60) ? 6'd40 : {pc[4:0], 1'b0} + pc;
         field_ball_off <= over_age >= 8'd48;
+        hide_q <= ball_hide;
     end
 end
 
@@ -178,10 +181,11 @@ end
 // - TITAN: trattini lunghi 20 righe ogni 32;
 // - BLASTER: due file di puntini 2x2 sfalsati, ogni 8 righe;
 // - RUSH: trattini di 8 righe ogni 16 che scorrono verso il basso, con 2 righe gialle scure sopra;
-// - GUARDIAN: mattoni 4x4 sfalsati, due per riga, ogni 8 righe, e gli angoli del campo gialli.
+// - GUARDIAN: mattoni 4x4 sfalsati, due per riga, ogni 8 righe, e gli angoli del campo azzurri.
 localparam [2:0] NK_ARCADE = 3'd0, NK_TITAN = 3'd1, NK_HAMMER = 3'd2, NK_TWIST = 3'd3, NK_BLASTER = 3'd4,
                  NK_RUSH = 3'd5, NK_GUARDIAN = 3'd6;
 localparam [23:0] RUSH_TRAIL = 24'h5C4C0D;
+localparam [23:0] GUARDIAN_BLUE = 24'h5A96FF;
 reg        bend_on, bend_dir;              // TWIST: la palla è vicina alla rete, e va a destra
 reg signed [11:0] bend_row;                // ... riga del suo centro
 always @(posedge clk) begin
@@ -194,7 +198,7 @@ end
 reg [15:0] last_bx;
 always @(posedge clk) if (snapshot) last_bx <= ball_x[31:16];
 
-// rete: 0 niente, 1 bianca (grigia nel bullet time), 2 gialla scura (RUSH), 3 gialla (angoli del GUARDIAN)
+// rete: 0 niente, 1 bianca (grigia nel bullet time), 2 gialla scura (RUSH); gli angoli del GUARDIAN a parte
 function [1:0] net_px(input signed [11:0] rx, input [7:0] yy);
     reg [4:0] q;
     reg signed [11:0] d, b, s;
@@ -236,7 +240,7 @@ function [1:0] net_px(input signed [11:0] rx, input [7:0] yy);
         endcase
     end
 endfunction
-// GUARDIAN: angoli del campo gialli, 14 pixel per lato, spessi 2
+// GUARDIAN: angoli del campo nell'accento del GUARDIAN (azzurro, come i suoi ritratti), 14 pixel per lato, spessi 2
 wire corner_px = net_kind == NK_GUARDIAN &&
                  ((hc < 14 || hc >= W - 14) && (vc < 2 || vc >= H - 2) ||
                   (hc < 2 || hc >= W - 2) && (vc < 14 || vc >= H - 14));
@@ -320,11 +324,11 @@ function pad_in(input integer i, input signed [11:0] px, input signed [11:0] py)
     pad_in = in_rect(i, px, py) &&
              !(ov_off && (py < r0[i] + $signed({6'd0, pad_cut}) || py > r1[i] - $signed({6'd0, pad_cut})));
 endfunction
-wire ball_in = in_rect(4, x, y) && !(ov_off && field_ball_off);
+wire ball_in = in_rect(4, x, y) && !(ov_off && field_ball_off) && !hide_q;
 // rilievo: colonna del retro e fila di fondo della palla in ombra; ombra portata 1 pixel in basso e 1
 // dietro (fuori dalla palla)
 wire ball_shade = relief_q && (y == r1[4] || x == (right_q ? c0[4] : c1[4] - 12'sd1));
-wire ball_shadow = relief_q && !(ov_off && field_ball_off) &&
+wire ball_shadow = relief_q && !(ov_off && field_ball_off) && !hide_q &&
                    in_rect(4, right_q ? x + 12'sd1 : x - 12'sd1, y - 12'sd1);
 
 always @(posedge clk) begin
@@ -346,7 +350,7 @@ always @(posedge clk) begin
     else if (line_px)
         rgb <= field_gray_q ? GRAY : WHITE;
     else if (net_acc)
-        rgb <= corner_px ? ACCENT : RUSH_TRAIL;
+        rgb <= corner_px ? GUARDIAN_BLUE : RUSH_TRAIL;
     else if (halo_q != 2'd0)
         rgb <= (halo_q == 2'd1) ? HALO1 : (halo_q == 2'd2) ? HALO2 : HALO3;
     else

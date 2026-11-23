@@ -140,14 +140,13 @@ localparam [23:0] RGB_KICK2 = 24'hAA8C18, RGB_KICK1 = 24'h55460C, RGB_KICK_IMG1 
 localparam [6:0] WHITE = 7'd0, GRAY = 7'd1, BLACK = 7'd2, ACCENT = 7'd3, DETAIL = 7'd4, DIM = 7'd5, GHOST1 = 7'd6,
                  GHOST2 = 7'd7, GHOST3 = 7'd8, KICK2 = 7'd9, KICK1 = 7'd10, KICK_IMG1 = 7'd11, KICK_IMG2 = 7'd12;
 localparam [6:0] T_COL = 7'd13, T_ACC = 7'd25, T_LONG_GRAY = 7'd37, T_LONG_ACC = 7'd59;
-// OMEGA: il rosso del gioco e, con l'easter egg RED (giallo e rosso scambiati), il viola
-localparam [6:0] OMEGA_RED = 7'd81, OMEGA_PURPLE = 7'd82;
-localparam [23:0] RGB_OMEGA_RED = 24'hE62828, RGB_OMEGA_PURPLE = 24'hA040E0;
-// racchette dei personaggi (pong_paddles.vh): ombra portata, corpo in ombra (bianco, grigio, giallo,
-// rosso e viola di OMEGA), grigi, i tre toni di ogni personaggio (P_MARK + 3 * tipo), le immagini
+// OMEGA: il corpo è quello di tutte, i segni sono nel suo viola (pieno, scurito, schiarito)
+localparam [6:0] OM_MARK = 7'd81, OM_MARK_DARK = 7'd82, OM_MARK_LIGHT = 7'd87;
+// racchette dei personaggi (pong_paddles.vh): ombra portata, corpo in ombra (bianco, grigio, giallo),
+// grigi, i tre toni di ogni personaggio (P_MARK + 3 * tipo), le immagini
 // dello scatto del RUSH e il muro del GUARDIAN in campo
-localparam [6:0] P_SHADOW = 7'd83, P_WHITE_SH = 7'd84, P_GRAY_SH = 7'd85, P_ACCENT_SH = 7'd86, P_RED_SH = 7'd87,
-                 P_PURPLE_SH = 7'd88, P_GRAY = 7'd89, P_GRAY_LIGHT = 7'd90, P_DARK = 7'd91, P_DARK_DEEP = 7'd92,
+localparam [6:0] P_SHADOW = 7'd83, P_WHITE_SH = 7'd84, P_GRAY_SH = 7'd85, P_ACCENT_SH = 7'd86,
+                 P_GRAY = 7'd89, P_GRAY_LIGHT = 7'd90, P_DARK = 7'd91, P_DARK_DEEP = 7'd92,
                  P_MARK = 7'd93, P_RGHOST1 = 7'd114, P_RGHOST2 = 7'd115, P_RGHOST3 = 7'd116,
                  P_WALL = 7'd117, P_WALL_LIGHT = 7'd118, P_WALL1 = 7'd119, P_WALL2 = 7'd120,
                  P_SHADOW_TITAN = 7'd121;   // ombra del TITAN, più scura come sul PC
@@ -230,15 +229,14 @@ function [23:0] pal(input [6:0] i);
             KICK1:     pal = RGB_KICK1;
             KICK_IMG1: pal = RGB_KICK_IMG1;
             KICK_IMG2: pal = RGB_KICK_IMG2;
-            OMEGA_RED: pal = RGB_OMEGA_RED;
-            OMEGA_PURPLE: pal = RGB_OMEGA_PURPLE;
+            OM_MARK:      pal = PD_OM_MARK;
+            OM_MARK_DARK: pal = PD_OM_MARK_DARK;
+            OM_MARK_LIGHT: pal = PD_OM_MARK_LIGHT;
             P_SHADOW:     pal = PD_SHADOW;
             P_SHADOW_TITAN: pal = PD_SHADOW_TITAN;
             P_WHITE_SH:   pal = PD_WHITE_SH;
             P_GRAY_SH:    pal = PD_GRAY_SH;
             P_ACCENT_SH:  pal = PD_ACCENT_SH;
-            P_RED_SH:     pal = PD_OMEGA_RED_SH;
-            P_PURPLE_SH:  pal = PD_OMEGA_PURPLE_SH;
             P_GRAY:       pal = PD_GRAY;
             P_GRAY_LIGHT: pal = PD_GRAY_LIGHT;
             P_DARK:       pal = PD_DARK;
@@ -1243,21 +1241,21 @@ function [3:0] kind_px(input p, input [2:0] kind, input signed [11:0] u0, input 
 endfunction
 
 // colore del ruolo r della racchetta del lato p: il corpo come la racchetta di prima (grigio con un
-// bonus armato o dell'avversario nel bullet time, giallo con la mossa di livello 2, rosso o viola di
-// OMEGA) e il suo tono in ombra; i segni nel colore del personaggio
+// bonus armato o dell'avversario nel bullet time, giallo con la mossa di livello 2) e il suo tono in
+// ombra; i segni nel colore del personaggio, per OMEGA nel suo viola (bianchi nel lampo della
+// trasformazione, e grigi o gialli come il corpo quando lo sono)
 function [6:0] kr_col(input [3:0] r, input p);
     reg [2:0] b;
+    reg       om;
     begin
-        b = mmax[p] ? (bcold[p] ? 3'd1 : 3'd2) : kgray[p] ? 3'd1 :
-            (!omega_pad[p] || omega_flash) ? 3'd0 : 3'd4;
+        b = mmax[p] ? (bcold[p] ? 3'd1 : 3'd2) : kgray[p] ? 3'd1 : 3'd0;
+        om = omega_pad[p] && b == 3'd0;
         case (r)
-            KR_BODY:       kr_col = (b == 3'd0) ? WHITE : (b == 3'd1) ? GRAY : (b == 3'd2) ? ACCENT :
-                                    (b == 3'd4) ? OMEGA_PURPLE : OMEGA_RED;
-            KR_SHADE:      kr_col = (b == 3'd0) ? P_WHITE_SH : (b == 3'd1) ? P_GRAY_SH : (b == 3'd2) ? P_ACCENT_SH :
-                                    (b == 3'd4) ? P_PURPLE_SH : P_RED_SH;
-            KR_MARK:       kr_col = P_MARK + 7'd3 * kd[p];
-            KR_MARK_DARK:  kr_col = P_MARK + 7'd3 * kd[p] + 7'd1;
-            KR_MARK_LIGHT: kr_col = P_MARK + 7'd3 * kd[p] + 7'd2;
+            KR_BODY:       kr_col = (b == 3'd0) ? WHITE : (b == 3'd1) ? GRAY : ACCENT;
+            KR_SHADE:      kr_col = (b == 3'd0) ? P_WHITE_SH : (b == 3'd1) ? P_GRAY_SH : P_ACCENT_SH;
+            KR_MARK:       kr_col = om ? (omega_flash ? WHITE : OM_MARK) : P_MARK + 7'd3 * kd[p];
+            KR_MARK_DARK:  kr_col = om ? (omega_flash ? P_GRAY_LIGHT : OM_MARK_DARK) : P_MARK + 7'd3 * kd[p] + 7'd1;
+            KR_MARK_LIGHT: kr_col = om ? (omega_flash ? WHITE : OM_MARK_LIGHT) : P_MARK + 7'd3 * kd[p] + 7'd2;
             KR_GRAY:       kr_col = P_GRAY;
             KR_GRAY_LIGHT: kr_col = P_GRAY_LIGHT;
             KR_DARK:       kr_col = P_DARK;

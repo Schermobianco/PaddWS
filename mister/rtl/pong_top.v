@@ -2026,6 +2026,8 @@ wire        over_solo = over_winner == 3'd3 || over_winner == 3'd5 || (ch_active
 wire [7:0]  over_age = (mframe > 11'd255) ? 8'd255 : mframe[7:0];
 wire        over_off = mode == M_GAME_OVER && !over_solo && !over_perfect && mframe >= 11'd48;
 assign over_closes = mode == M_GAME_OVER && !over_solo && !over_perfect;
+// YOU WIN e CPU WINS, senza riquadro nero: la palla ferma al centro non resta sotto la scritta
+wire        over_nobox = mode == M_GAME_OVER && over_solo && !over_perfect;
 
 // presentazione della CHALLENGE (schermo a oggetti): frame dall'inizio, fermi a 255
 wire [7:0]  intro_age = (mframe > 11'd255) ? 8'd255 : mframe[7:0];
@@ -2055,7 +2057,7 @@ pong_render render (
     .pad0_x(show0_x), .pad0_y(pad0_y), .pad1_x(show1_x), .pad1_y(pad1_y),
     .pad0_h(pad0_h), .pad1_h(pad1_h),
     .pad0_boost_h(pad0_boost_h), .pad1_boost_h(pad1_boost_h),
-    .field_off(over_closes), .over_age(over_age),
+    .field_off(over_closes), .over_age(over_age), .ball_hide(over_nobox),
     .net_kind(net_kind), .net_t(net_t), .net_shake(hammer_net != 4'd0 && hammer_net[1]), .net_shake_dir(hammer_net[2]),
     .ball_accent(nxt && (next_flags[2] || next_flags[10:9] != 2'd0)),
     .ball_relief(nxt && (mode == M_GAME || mode == M_GAME_OVER || mode == M_DEMO)), .ball_right(ball_vx > 0),
@@ -2116,13 +2118,12 @@ ending_render #(.FW_ROM(ENDING_FW_ROM)) ending_draw (
 );
 
 // schermo a oggetti: le schermate e le scritte del firmware (rust/mister-ui)
-wire        bass_note;                 // nota del basso (pong_sid): l'impulso della griglia di ui_render
 wire [7:0]  ui_idx;
 wire [1:0]  ui_class;
 wire [23:0] ui_rgb;
 wire [31:0] ui_status;
 ui_render #(.FONT_ROM(UI_FONT_ROM), .GFX_ROM(UI_GFX_ROM), .GFX_ROM2(UI_GFX_ROM2)) ui (
-    .clk(clk), .clk_cpu(clk_cpu), .clear(reset), .ce_pix(ce_pix), .hc(hc), .vc(vc), .bass_note(bass_note),
+    .clk(clk), .clk_cpu(clk_cpu), .clear(reset), .ce_pix(ce_pix), .hc(hc), .vc(vc),
     .cpu_wr(ui_wr), .cpu_addr(ui_addr), .cpu_wdata(ui_wdata), .status(ui_status),
     .win_we(win_we), .win_addr(win_addr), .win_data(win_data),
     .px_idx(ui_idx), .px_class(ui_class), .px_rgb(ui_rgb)
@@ -2413,8 +2414,7 @@ pong_sid #(.ROM_FILE(SID_ROM), .VOICE_FILE(VOICE_ROM)) sid (
     .fx_vol(fx_vol),
     .fx_gain(fx_gain),
     .sample(sid_sample),
-    .scope(sid_scope_v),
-    .bass_note(bass_note)
+    .scope(sid_scope_v)
 );
 
 // Uscita: il SID (con il nome dell'avversario già nel suo volume, $D418) più le voci di partita a 4

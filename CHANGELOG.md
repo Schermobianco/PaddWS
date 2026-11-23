@@ -28,12 +28,15 @@ crea il commit e il tag `vX.Y.Z`.
   programma. Su PC e web è il cielo visto da un'astronave: stelle bianche che scorrono piano dal
   centro verso i bordi, il cielo che rolla di qualche grado a destra e a sinistra, e ogni tanto una
   stella cadente con la coda nel colore dello sfidante (nello schermo VS l'avversario del campione,
-  nelle scelte il personaggio di destra; per OMEGA il viola). Sul MiSTer è una griglia in prospettiva,
-  muro e pavimento a 90 gradi, disegnata dalla logica video, con impulsi di luce a tempo con la musica.
-- Schermo VS (PC e web): la scritta VS è dorata con il riflesso che l'attraversa di tanto in tanto,
-  come PERFECT; le icone dei bonus sono bianche; il bordo della selezione è più sottile.
-- OMEGA (PC e web): la racchetta ha il corpo di tutte le altre e i segni nel viola di OMEGA, in partita,
-  nello schermo VS e nel finale.
+  nelle scelte il personaggio di destra; per OMEGA il viola). Sul MiSTer le stelle sono meno (gli
+  oggetti dello schermo sono 128 in tutto) e la griglia in prospettiva non c'è più.
+- Schermo VS: la scritta VS è dorata con il riflesso che l'attraversa di tanto in tanto, come PERFECT;
+  le icone dei bonus sono bianche; il bordo della selezione è più sottile.
+- GUARDIAN (PC, web e MiSTer): i quattro angoli del suo campo sono nel suo azzurro, non più gialli.
+- YOU WIN e CPU WINS (PC, web e MiSTer): la palla ferma al centro, rimasta dopo l'ultimo punto, non resta più
+  sotto la scritta; si vede solo quella che salta sulle lettere.
+- OMEGA: la racchetta ha il corpo di tutte le altre e i segni nel viola di OMEGA, in partita, nello
+  schermo VS e nel finale.
 - Attract (PC, web, MiSTer e C64): le strisce non arrivano più e il logo non compare più dall'alto con il
   raster e il lampo. Dopo l'auto-test il titolo c'è subito, con le strisce, PADD e WS fermi, e la
   pallina che rimbalza come prima. Con il tipo di partita NEXT sotto il logo escono le lettere di NEXT, una

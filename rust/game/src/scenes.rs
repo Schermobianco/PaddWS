@@ -2523,7 +2523,10 @@ impl Play {
         }
         let ball = &self.game.ball;
         let blink_off = self.game.serving() && (self.game.serve_timer * 8 / TICK_HZ) % 2 == 1;
-        if !blink_off && self.fx.is_none() {
+        // YOU WIN e CPU WINS non hanno il riquadro nero: la palla ferma al centro, rimasta dopo l'ultimo
+        // punto, non deve restare sotto la scritta (quella che salta è la palla dell'animazione)
+        let over_no_box = over.is_some() && self.over_texts().0.is_none();
+        if !blink_off && self.fx.is_none() && !over_no_box {
             let d = to_f32(ball.radius) * 2.0;
             r.rect_centered(pos[2].0, pos[2].1, d, d, white);
         }
@@ -2760,7 +2763,7 @@ impl Play {
     /// - TITAN: trattini lunghi 20 righe ogni 32;
     /// - BLASTER: due file di puntini 2x2 sfalsati, ogni 8 righe;
     /// - RUSH: trattini di 8 righe ogni 16 che scorrono verso il basso, con 2 righe gialle scure sopra;
-    /// - GUARDIAN: mattoni 4x4 sfalsati, due per riga, ogni 8 righe, e gli angoli del campo gialli.
+    /// - GUARDIAN: mattoni 4x4 sfalsati, due per riga, ogni 8 righe, e gli angoli del campo azzurri.
     ///
     /// Come la rete di sempre: grigia nel bullet time (`white`), spenta dall'alto fino a `net_off`
     /// a fine partita, senza la zona del simbolo della pausa sul touch; la COMETA ne sposta i pezzi.
@@ -2768,7 +2771,6 @@ impl Play {
         let r = &app.renderer;
         let (w, h) = (r.world_w, r.world_h);
         let (s, u) = (app.scale(), h / 240.0);
-        let accent = App::color(app.cfg.colors.accent);
         let trail = Color::from_rgba(0x5C, 0x4C, 0x0D, 255);
         let dash = (10.0 * s).floor().max(1.0);
         let t = (get_time() * 60.0) as i32;
@@ -2848,12 +2850,13 @@ impl Play {
                 draw_rectangle(w / 2.0 + a as f32 * u + dx, y, (b - a + 1) as f32 * u, u, color);
             }
         }
-        // il boss: gli angoli del campo gialli, 14 pixel per lato, spessi 2
+        // il boss: gli angoli del campo nell'accento del GUARDIAN (azzurro), 14 pixel per lato, spessi 2
         if kind == PaddleKind::Guardian {
             let (l, t2) = (14.0 * u, 2.0 * u);
+            let blue = app.assets.portraits.accent(PaddleKind::Guardian);
             for (x, y, fx, fy) in [(0.0, 0.0, 0.0, 0.0), (w, 0.0, 1.0, 0.0), (0.0, h, 0.0, 1.0), (w, h, 1.0, 1.0)] {
-                draw_rectangle(x - fx * l, y - fy * t2, l, t2, accent);
-                draw_rectangle(x - fx * t2, y - fy * l, t2, l, accent);
+                draw_rectangle(x - fx * l, y - fy * t2, l, t2, blue);
+                draw_rectangle(x - fx * t2, y - fy * l, t2, l, blue);
             }
         }
     }

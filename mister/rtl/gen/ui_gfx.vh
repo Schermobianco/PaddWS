@@ -1,8 +1,8 @@
 // Generato da tools/gen_mister_ui.py: non modificare a mano.
-localparam integer UI_GFX_WORDS = 15581;
-localparam integer UI_GFX_AW = 14;
+localparam integer UI_GFX_WORDS = 18433;
+localparam integer UI_GFX_AW = 15;
 // prima parte (ui_gfx.hex) e seconda (ui_gfx2.hex, dall'indirizzo 32768)
-localparam integer UI_GFX1_WORDS = 15581;
+localparam integer UI_GFX1_WORDS = 18433;
 localparam integer UI_GFX2_WORDS = 1;
 localparam integer UI_GFX2_AW = 1;
 // finestra della DDR3: base nello spazio delle immagini e parole

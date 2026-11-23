@@ -14,11 +14,11 @@
 //! (il colpo e il punto del VS) li fa pong_top.
 
 use crate::assets::game::KIND_TAGS;
-use crate::assets::{IMG_ICON, IMG_NAME, IMG_NAME_OMEGA, IMG_VS3, portraits};
+use crate::assets::{IMG_ICON, IMG_NAME, IMG_NAME_OMEGA, IMG_VS1, IMG_VS2, IMG_VS3, portraits};
 use crate::cast::{Cast, HALF_X, OMEGA, PADDLE_X, PORTRAIT_W, PORTRAIT_X, TOP, line, name_x, paddle, plain_paddle};
 use crate::challenge::Ch;
 use crate::dl::{CLASS_A, Dl, Obj, code, text_w};
-use crate::pal::{ACCENT, BLACK, DIM, GRAY, TL, TL_WHITE, WHITE};
+use crate::pal::{ACCENT, BLACK, DIM, GRAY, TL, TL_GOLD, TL_GOLD_GLINT, TL_WHITE, WHITE};
 use crate::regs::{Omega, Regs, field};
 
 const W: i32 = 320;
@@ -50,6 +50,9 @@ const VS_SLIDE: i32 = 16;
 const VS_LAND: i32 = VS_SLIDE_AT + VS_SLIDE;
 const VS_STAMP_AT: i32 = 24;
 const VS_STAMP_SETTLE: i32 = 7;
+/// riflesso sul VS: parte VS_GLINT_AT frame dopo la stampa, poi ogni VS_GLINT_PERIOD (come il PC)
+const VS_GLINT_AT: i32 = 60;
+const VS_GLINT_PERIOD: i32 = 240;
 const VS_COURT_AT: i32 = 34;
 const VS_PADDLES_AT: i32 = 42;
 const VS_NAME_AT: i32 = 44;
@@ -148,7 +151,7 @@ pub fn draw(r: &Regs, d: &mut Dl) {
     if omega && f < OMEGA_VS_AT {
         d.rect(0, 0, W, 240, BLACK);
     } else {
-        // lo sfondo è la griglia in prospettiva (rtl/ui_render.v), con l'impulso del colore dello
+        // lo sfondo è il cielo visto da un'astronave, con le stelle cadenti nel colore dello
         // sfidante: l'avversario del campione (OMEGA viola)
         let me = st.ch.side as usize;
         let challenger = if omega {
@@ -158,7 +161,7 @@ pub fn draw(r: &Regs, d: &mut Dl) {
         } else {
             st.ch.kind as usize
         };
-        d.grid = Some(portraits::PAL[challenger][5]);
+        crate::space::draw(d, r.frame, challenger);
     }
     header(d, &st);
     if omega && f < OMEGA_VS_AT {
@@ -263,18 +266,28 @@ fn vs(r: &Regs, d: &mut Dl, st: &Stage, f: i32) {
             cast.big(d, who, x + k.0, VS_PORTRAIT_Y + drop + k.1, side == 1);
         }
     }
-    // VS: a 4x, poi 3x, poi si posa a 2x
+    // VS dorato (assets/titles/vs.png): si stampa a 3x, poi 2x, si posa a 1x; ogni tanto una banda di
+    // luce bianca in diagonale lo attraversa (le righe della grafica con 0 <= colonna + riga - g < 12)
     if f >= VS_STAMP_AT {
         let t = f - VS_STAMP_AT;
-        let ink = text_w(b"VS");
-        if (4..VS_STAMP_SETTLE).contains(&t) {
-            let o = d.img_obj(W / 2 - 3 * ink / 2, VS_Y - 12, &IMG_VS3, ACCENT);
-            d.push(&sh(o, k));
+        let (s, img) = if t < 4 {
+            (3, &IMG_VS3)
+        } else if t < VS_STAMP_SETTLE {
+            (2, &IMG_VS2)
         } else {
-            let s = if t < 4 { 2 } else { 1 };
-            let base = d.tiles(b"VS", ACCENT);
-            let o = d.text_obj(W / 2 - (ink << s) / 2, VS_Y - (4 << s), base, 2, s);
-            d.push(&sh(o, k));
+            (1, &IMG_VS1)
+        };
+        let (w, h) = (i32::from(img.w), i32::from(img.h));
+        let (x, y) = (W / 2 - w / 2, VS_Y - h / 2);
+        let o = d.img_obj(x, y, img, TL_GOLD);
+        d.push(&sh(o, k));
+        if t >= VS_GLINT_AT {
+            let g = (t - VS_GLINT_AT) % VS_GLINT_PERIOD * 4 - 20;
+            for v in 0..h / s {
+                let (x0, y0) = (x + (g - v) * s, y + v * s);
+                let o = d.img_obj(x, y, img, TL_GOLD_GLINT).clip(x0, x0 + 12 * s, y0, y0 + s);
+                d.push(&sh(o, k));
+            }
         }
     }
     // il campo: la rete si disegna dall'alto, una riga di trattini per frame, poi le due racchette

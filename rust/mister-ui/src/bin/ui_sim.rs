@@ -344,6 +344,8 @@ fn main() -> ExitCode {
         fs::create_dir_all(d).unwrap();
     }
     let (mut same, mut diff): (u32, Vec<(i64, u32, bool)>) = (0, vec![]);
+    // oggetti per frame: il più alto di ogni modo e il frame in cui capita (la lista ne ha 128)
+    let mut most: std::collections::BTreeMap<u32, (u32, i64)> = std::collections::BTreeMap::new();
     for line in fs::read_to_string(&pos[0]).expect("registro degli stati").lines() {
         let v: Vec<&str> = line.split_whitespace().collect();
         if v.len() < 2 || v[0] == "#" {
@@ -357,6 +359,11 @@ fn main() -> ExitCode {
         ui.poll(&mut m);
         m.flip();
         let mode = m.uis[0] & 15;
+        let n = m.count[m.front];
+        let e = most.entry(mode).or_insert((0, frame));
+        if n > e.0 {
+            *e = (n, frame);
+        }
         let wanted = only.is_some_and(|(a, b)| frame >= a && frame <= b);
         if !modes.contains(&mode) && !wanted {
             continue;
@@ -382,6 +389,9 @@ fn main() -> ExitCode {
         }
     }
     println!("frame uguali {same}, diversi {}", diff.len());
+    for (mode, (n, frame)) in &most {
+        println!("  oggetti: modo {mode} al più {n} (frame {frame}){}", if *n >= 128 { " PIENA" } else { "" });
+    }
     // intervalli di frame diversi, con il modo
     let mut k = 0;
     while k < diff.len() {
