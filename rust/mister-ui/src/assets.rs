@@ -69,10 +69,10 @@ pub const IMG_NAME_GUARDIAN: Img = Img { base: 3404, w: 77, h: 14, bpp_sh: 2, st
 pub const IMG_WARNING: Img = Img { base: 3628, w: 192, h: 38, bpp_sh: 2, stride_sh: 5 };
 pub const IMG_NAME_OMEGA: Img = Img { base: 4844, w: 80, h: 33, bpp_sh: 2, stride_sh: 4 };
 pub const IMG_PAD_PREVIEW_0: Img = Img { base: 5372, w: 18, h: 33, bpp_sh: 3, stride_sh: 3 };
-pub const IMG_PAD_PREVIEW_1: Img = Img { base: 5636, w: 23, h: 49, bpp_sh: 3, stride_sh: 3 };
+pub const IMG_PAD_PREVIEW_1: Img = Img { base: 5636, w: 22, h: 49, bpp_sh: 3, stride_sh: 3 };
 pub const IMG_PAD_PREVIEW_2: Img = Img { base: 6028, w: 19, h: 41, bpp_sh: 3, stride_sh: 3 };
 pub const IMG_PAD_PREVIEW_3: Img = Img { base: 6356, w: 22, h: 41, bpp_sh: 3, stride_sh: 3 };
-pub const IMG_PAD_PREVIEW_4: Img = Img { base: 6684, w: 29, h: 45, bpp_sh: 3, stride_sh: 3 };
+pub const IMG_PAD_PREVIEW_4: Img = Img { base: 6684, w: 27, h: 45, bpp_sh: 3, stride_sh: 3 };
 pub const IMG_PAD_PREVIEW_5: Img = Img { base: 7044, w: 34, h: 35, bpp_sh: 3, stride_sh: 4 };
 pub const IMG_PAD_PREVIEW_6: Img = Img { base: 7604, w: 17, h: 33, bpp_sh: 3, stride_sh: 3 };
 pub const IMG_PAD_PLAIN_3: Img = Img { base: 7868, w: 15, h: 41, bpp_sh: 3, stride_sh: 2 };
@@ -237,19 +237,19 @@ pub mod pads {
     use crate::Img;
     pub const PREVIEW: [(Img, i32, i32); 7] = [
         (Img { base: 5372, w: 18, h: 33, bpp_sh: 3, stride_sh: 3 }, -14, 0),
-        (Img { base: 5636, w: 23, h: 49, bpp_sh: 3, stride_sh: 3 }, -19, 0),
+        (Img { base: 5636, w: 22, h: 49, bpp_sh: 3, stride_sh: 3 }, -18, 0),
         (Img { base: 6028, w: 19, h: 41, bpp_sh: 3, stride_sh: 3 }, -15, 0),
         (Img { base: 6356, w: 22, h: 41, bpp_sh: 3, stride_sh: 3 }, -12, 0),
-        (Img { base: 6684, w: 29, h: 45, bpp_sh: 3, stride_sh: 3 }, -22, 0),
+        (Img { base: 6684, w: 27, h: 45, bpp_sh: 3, stride_sh: 3 }, -21, 0),
         (Img { base: 7044, w: 34, h: 35, bpp_sh: 3, stride_sh: 4 }, -30, 0),
         (Img { base: 7604, w: 17, h: 33, bpp_sh: 3, stride_sh: 3 }, -13, 0),
     ];
     pub const PLAIN: [(Img, i32, i32); 7] = [
         (Img { base: 5372, w: 18, h: 33, bpp_sh: 3, stride_sh: 3 }, -14, 0),
-        (Img { base: 5636, w: 23, h: 49, bpp_sh: 3, stride_sh: 3 }, -19, 0),
+        (Img { base: 5636, w: 22, h: 49, bpp_sh: 3, stride_sh: 3 }, -18, 0),
         (Img { base: 6028, w: 19, h: 41, bpp_sh: 3, stride_sh: 3 }, -15, 0),
         (Img { base: 7868, w: 15, h: 41, bpp_sh: 3, stride_sh: 2 }, -11, 0),
-        (Img { base: 6684, w: 29, h: 45, bpp_sh: 3, stride_sh: 3 }, -22, 0),
+        (Img { base: 6684, w: 27, h: 45, bpp_sh: 3, stride_sh: 3 }, -21, 0),
         (Img { base: 8032, w: 17, h: 35, bpp_sh: 3, stride_sh: 3 }, -13, 0),
         (Img { base: 7604, w: 17, h: 33, bpp_sh: 3, stride_sh: 3 }, -13, 0),
     ];

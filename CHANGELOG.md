@@ -15,6 +15,8 @@ crea il commit e il tag `vX.Y.Z`.
 ## [Non rilasciato]
 
 ### Modificato
+- Astronavi delle racchette di NEXT ritoccate: TITAN, TWIST e BLASTER (canne più corte di un
+  pixel) su PC, web e MiSTer, tutte e sette sul Commodore 64.
 - C64: i laser del BLASTER escono dalle bocche dei cannoni dell'astronave, entro un pixel, e
   passano anche sopra punteggi, barre, riserve e riga di metà campo senza cancellarli: lì il
   tratto prende il colore di quello che attraversa.
