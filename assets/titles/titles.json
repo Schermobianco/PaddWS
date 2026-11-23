@@ -74,6 +74,13 @@
         25
       ]
     },
+    "vs": {
+      "file": "vs.png",
+      "size": [
+        32,
+        23
+      ]
+    },
     "warning": {
       "file": "warning.png",
       "size": [

@@ -34,6 +34,9 @@ localparam integer AT_DEMO_LABEL_Y = 112;
 localparam integer AT_GAME_OVER_Y = 112;
 localparam integer AT_WINNER_Y = 132;
 localparam integer AT_GAME_OVER_BLACK = 120;
+localparam integer AT_NEXT_START = 15;
+localparam integer AT_NEXT_STEP = 8;
+localparam integer AT_NEXT_LINE_START = 54;
 localparam integer AT_STRIPE_ROW_0 = 96;
 localparam integer AT_STRIPE_ROW_1 = 115;
 localparam integer AT_STRIPE_ROW_2 = 134;
@@ -309,6 +312,31 @@ function ws_lit(input [9:0] dx, input [9:0] dy);
     begin
         r = ws_row(dy[2:0]);
         ws_lit = (dx < 22 && dy < 8) ? r[21 - dx] : 1'b0;
+    end
+endfunction
+
+localparam NEXT_W = 62;
+localparam NEXT_H = 10;
+function [61:0] next_row(input [3:0] row);
+    case (row)
+        4'd0: next_row = 62'b11110011000000000011111111000000000011000011000000000011111111;
+        4'd1: next_row = 62'b11110011000000000011111111000000000001100110000000000011111111;
+        4'd2: next_row = 62'b11110011000000000011000000000000000001100110000000000000011000;
+        4'd3: next_row = 62'b11011011000000000011000000000000000000111100000000000000011000;
+        4'd4: next_row = 62'b11011011000000000011111110000000000000011000000000000000011000;
+        4'd5: next_row = 62'b11011011000000000011111110000000000000011000000000000000011000;
+        4'd6: next_row = 62'b11011011000000000011000000000000000000111100000000000000011000;
+        4'd7: next_row = 62'b11001111000000000011000000000000000001100110000000000000011000;
+        4'd8: next_row = 62'b11001111000000000011111111000000000001100110000000000000011000;
+        4'd9: next_row = 62'b11001111000000000011111111000000000011000011000000000000011000;
+        default: next_row = 62'd0;
+    endcase
+endfunction
+function next_lit(input [9:0] dx, input [9:0] dy);
+    reg [61:0] r;
+    begin
+        r = next_row(dy[3:0]);
+        next_lit = (dx < 62 && dy < 10) ? r[61 - dx] : 1'b0;
     end
 endfunction
 

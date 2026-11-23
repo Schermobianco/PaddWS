@@ -4,8 +4,8 @@
 //! le iniziali della classifica. Start salta tutto e va dritto alle iniziali.
 //!
 //! Dopo OMEGA (`Run::omega_won`) prima di tutto il finale speciale (`Part::Shatter`): la racchetta
-//! rossa di OMEGA trema e si spezza nelle sette racchette degli avversari, che si allontanano; in
-//! fondo, sotto THE END, OMEGA DEFEATED. Il premio del campione è sempre quello del GUARDIAN.
+//! di OMEGA (corpo normale, segni viola) trema e si spezza nelle sette racchette degli avversari, che
+//! si allontanano; in fondo, sotto THE END, OMEGA DEFEATED. Il premio del campione è sempre quello del GUARDIAN.
 //!
 //! Colori: solo bianco, giallo (l'accento) e rosso, senza sfumature: le scintille dei fuochi si
 //! diradano invece di scurirsi. Tempi e disegni come le anteprime approvate (`ending.py`,
@@ -877,7 +877,7 @@ fn draw_the_end_ship(app: &App, at: f64, winner: PaddleKind, white: Color, yello
     );
 }
 
-/// La racchetta rossa di OMEGA (ARCADE, grande come nella sfilata) trema sempre di più con dei
+/// La racchetta di OMEGA (ARCADE con i segni viola, grande come nella sfilata) trema sempre di più con dei
 /// lampi bianchi, a `SHATTER_AT` diventa bianca per 8 frame e si spezza: le sette racchette della
 /// scala, ognuna con il suo tipo e la sua misura, si allontanano dal centro in tutte le direzioni,
 /// con qualche scheggia rossa e bianca.
@@ -887,7 +887,7 @@ fn draw_shatter(app: &App, at: f64, white: Color) {
     let p = &app.params;
     let zoom = 1.6;
     let (cx, cy) = (r.world_w / 2.0, r.world_h / 2.0);
-    let paddle = |kind: PaddleKind, x: f32, y: f32, body: Color| {
+    let paddle = |kind: PaddleKind, x: f32, y: f32, mark: Option<Color>| {
         let shape = Shape {
             kind: Some(kind),
             x,
@@ -901,7 +901,11 @@ fn draw_shatter(app: &App, at: f64, white: Color) {
             scan: None,
             anim: Anim::still(at as f32),
         };
-        draw_paddle(r, &shape, u * zoom, paddle_ui::look(app, Some(kind), body));
+        let mut look = paddle_ui::look(app, Some(kind), white);
+        if let Some(m) = mark {
+            look.mark = m;
+        }
+        draw_paddle(r, &shape, u * zoom, look);
     };
     let frame = (at * 60.0) as i32;
     if at < SHATTER_AT + SHATTER_FLASH {
@@ -910,8 +914,8 @@ fn draw_shatter(app: &App, at: f64, white: Color) {
         let dx = if frame % 4 < 2 { 1.0 } else { -1.0 } * 3.0 * k * u;
         let every = (16.0 - 12.0 * k) as i32;
         let lit = at >= SHATTER_AT || (at > 0.4 && frame % every.max(2) == 0);
-        let body = if lit { white } else { crate::next_ui::omega_color(app) };
-        paddle(PaddleKind::Arcade, cx + dx, cy, body);
+        let mark = if lit { white } else { crate::next_ui::omega_color(app) };
+        paddle(PaddleKind::Arcade, cx + dx, cy, Some(mark));
         return;
     }
     let k = ((at - SHATTER_AT - SHATTER_FLASH) / (SHATTER - SHATTER_AT - SHATTER_FLASH)).min(1.0) as f32;
@@ -921,7 +925,7 @@ fn draw_shatter(app: &App, at: f64, white: Color) {
     for (i, rung) in RUNGS.iter().enumerate() {
         let angle = -std::f32::consts::FRAC_PI_2 + i as f32 * std::f32::consts::TAU / LEVELS as f32;
         let (x, y) = (cx + angle.cos() * reach * d, cy + angle.sin() * reach * d * 0.8);
-        paddle(rung.kind, x, y, white);
+        paddle(rung.kind, x, y, None);
     }
     // schegge: quadratini più veloci, che si diradano
     let mut rng = Rng::new(0x0E6A_0001);

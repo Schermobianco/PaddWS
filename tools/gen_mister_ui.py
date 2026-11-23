@@ -175,8 +175,17 @@ def attract_consts() -> list[str]:
     out = ["", "/// Attract (assets/attract/attract.json, come pong_attract.vh).", "pub mod at {"]
     out += [f"    pub const {k}: i32 = {v};" for k, v in values.items()]
     out.append(f"    pub const STRIPE_ROWS: [i32; 3] = {st['rows']};")
-    (a0, b0), (a1, b1) = spec["ws"]["off"]
-    out.append(f"    pub const WS_OFF: [(i32, i32); 2] = [({a0}, {b0}), ({a1}, {b1})];")
+    # NEXT sotto il logo (spec["next"], vedi next_spec di tools/gen_attract_assets.py)
+    nx = spec["next"]
+    for name, v in (("NEXT_X", nx["x"]), ("NEXT_Y", nx["y"]), ("NEXT_PITCH", nx["pitch"]), ("NEXT_START", nx["start"]),
+                    ("NEXT_STEP", nx["step"]), ("NEXT_LETTER_FRAMES", nx["letter_frames"]),
+                    ("NEXT_LINE_X", nx["line"]["x"]), ("NEXT_LINE_Y", nx["line"]["y"]), ("NEXT_LINE_H", nx["line"]["h"]),
+                    ("NEXT_LINE_START", nx["line"]["start"]), ("NEXT_LINE_FRAMES", nx["line"]["frames"])):
+        out.append(f"    pub const {name}: i32 = {v};")
+    out.append(f"    pub const NEXT_AMP: [u8; {len(nx['amp'])}] = {nx['amp']};")
+    out.append(f"    pub const NEXT_PRESENT: [u16; {len(nx['present'])}] = {nx['present']};")
+    out.append(f"    pub const NEXT_NOISE: [u8; {len(nx['noise'])}] = {nx['noise']};")
+    out.append(f"    pub const NEXT_LINE_HALF: [u8; {len(nx['line']['half'])}] = {nx['line']['half']};")
     out.append(f"    pub const BOOT_LINES: [&[u8]; 6] = [{', '.join('b' + json.dumps(attract.BOOT_LINES[i]) for i in range(6))}];")
     left = [round(st["left_end"] * v / 1000) for v in ease]
     right = [round(320 - (320 - st["right_start"]) * v / 1000) for v in ease]
@@ -584,6 +593,7 @@ def main() -> None:
     logo, ws = attract.splash_masks()
     gfx.add("logo", mask_px(logo), 1)
     gfx.add("ws", mask_px(ws), 1)
+    gfx.add("next", mask_px(attract.next_mask()), 1)
     for d, cell in enumerate(score_digits()):
         gfx.add(f"score_{d}", cell, 1)
     import gen_next_assets

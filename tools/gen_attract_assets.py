@@ -76,6 +76,81 @@ def splash_masks() -> tuple[Image.Image, Image.Image]:
     return logo, ws
 
 
+# NEXT sotto il logo (solo con il tipo di partita NEXT): quattro lettere disegnate a pixel, alte 10 e
+# larghe 8 con il tratto da 2 (come PADD), a passo 18. Compaiono una dopo l'altra a righe sfalsate che
+# si assestano (`NEXT_*`), poi una riga larga come il logo si allarga dal centro.
+NEXT_W, NEXT_H, NEXT_PITCH = 62, 10, 18
+NEXT_X, NEXT_Y = 127, 166          # angolo del blocco: l'inchiostro è centrato sul logo (centro a 158)
+NEXT_START, NEXT_STEP, NEXT_LETTER_FRAMES = 15, 8, 24
+NEXT_LINE_X, NEXT_LINE_Y, NEXT_LINE_HALF, NEXT_LINE_H = 158, 181, 76, 2
+NEXT_LINE_START, NEXT_LINE_FRAMES = 54, 22
+
+
+def next_letter_rows(name: str) -> list[list[int]]:
+    rows = []
+    for r in range(NEXT_H):
+        row = [0] * 8
+
+        def on(a: int, b: int) -> None:
+            for x in range(a, b + 1):
+                row[x] = 1
+
+        if name == "N":
+            on(0, 1)
+            on(6, 7)
+            a = 2 + round(r * 2 / 9)
+            on(a, a + 1)
+        elif name == "E":
+            on(0, 1)
+            if r in (0, 1, 8, 9):
+                on(0, 7)
+            if r in (4, 5):
+                on(0, 6)
+        elif name == "X":
+            a = round(r * 6 / 9)
+            on(a, a + 1)
+            on(6 - a, 7 - a)
+        elif name == "T":
+            on(3, 4)
+            if r in (0, 1):
+                on(0, 7)
+        rows.append(row)
+    return rows
+
+
+def next_mask() -> Image.Image:
+    mask = Image.new("1", (NEXT_W, NEXT_H), 0)
+    for i, name in enumerate("NEXT"):
+        for y, row in enumerate(next_letter_rows(name)):
+            for x, v in enumerate(row):
+                if v:
+                    mask.putpixel((i * NEXT_PITCH + x, y), 1)
+    return mask
+
+
+def next_spec() -> dict:
+    """Tempi e tabelle dell'ingresso di NEXT, in interi: lo stesso calcolo su ogni versione.
+
+    Lettera i parte al frame `start + step * i`; per `letter_frames` frame (k = frame - partenza) è a
+    righe sfalsate, poi intera. A ogni coppia di frame s = k >> 1 (0..11) la riga y (0..9) c'è se
+    `noise[(y*7 + s*29 + i*61) & 255] < present[s]` ed è spostata di `noise[(indice + 131) & 255] %
+    (2*amp[s] + 1) - amp[s]` pixel. La riga larga come il logo parte da `line.start` e dopo
+    `line.frames` frame è intera: a ogni frame, mezza larghezza `line.half[q]` a destra e a sinistra
+    del centro."""
+    import random
+    rnd = random.Random(7)
+    noise = [rnd.randrange(256) for _ in range(256)]
+    steps = NEXT_LETTER_FRAMES // 2
+    xs = [(2 * s + 1) / NEXT_LETTER_FRAMES for s in range(steps)]
+    amp = [round(12 * (1 - x) ** 6) for x in xs]
+    present = [min(256, round((0.08 + 0.92 * x) * 256)) for x in xs]
+    half = [round(NEXT_LINE_HALF * (1 - (1 - (q + 1) / NEXT_LINE_FRAMES) ** 3)) for q in range(NEXT_LINE_FRAMES)]
+    return {"x": NEXT_X, "y": NEXT_Y, "pitch": NEXT_PITCH, "start": NEXT_START, "step": NEXT_STEP,
+            "letter_frames": NEXT_LETTER_FRAMES, "amp": amp, "present": present, "noise": noise,
+            "line": {"x": NEXT_LINE_X, "y": NEXT_LINE_Y, "h": NEXT_LINE_H, "half": half,
+                     "start": NEXT_LINE_START, "frames": NEXT_LINE_FRAMES}}
+
+
 FONT = ROOT / "assets/fonts/PressStart2P-Regular.ttf"
 CELL = 8          # Press Start 2P: celle 8x8, lettere di 7x7 pixel con la colonna e la riga di spazio
 # scala delle scritte grandi della fine partita (GAME OVER, YOU WIN, PERFECT): 1 o 2; tutte le altre
@@ -186,6 +261,9 @@ def verilog_timing(spec: dict, ease: list[int]) -> str:
         "AT_LABEL_FROM": t["label_from"], "AT_BLINK_PERIOD": t["blink_period"], "AT_BLINK_ON": t["blink_on"],
         "AT_DEMO_LABEL_Y": spec["demo"]["label_y"], "AT_GAME_OVER_Y": spec["game_over"]["label_y"],
         "AT_WINNER_Y": spec["game_over"]["winner_y"], "AT_GAME_OVER_BLACK": spec["game_over"]["black_frames"],
+        # suoni di NEXT: un colpo a ogni lettera, un lampo alla riga
+        "AT_NEXT_START": spec["next"]["start"], "AT_NEXT_STEP": spec["next"]["step"],
+        "AT_NEXT_LINE_START": spec["next"]["line"]["start"],
     }
     lines = [f"localparam integer {k} = {v};" for k, v in values.items()]
     lines += [f"localparam integer AT_STRIPE_ROW_{i} = {r};" for i, r in enumerate(st["rows"])]
@@ -206,7 +284,7 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     logo, ws = splash_masks()
     texts = text_masks()
-    images = {"logo": logo, "ws": ws, **texts}
+    images = {"logo": logo, "ws": ws, "next": next_mask(), **texts}
     for name, mask in images.items():
         save_mask(mask, OUT / f"{name}.png")
 
@@ -226,6 +304,7 @@ def main() -> None:
         "title": {"label_y": 172, "label_scale": 1, "credit_y": 204, "copyright_y": 222,
                   "blink_period": 60, "blink_on": 37, "label_from": 54,
                   "ball": {"x": 10, "y": 60, "vx": 1.6, "vy": 1.1667, "size": 4}},
+        "next": next_spec(),
         "demo": {"label_y": 112, "box_pad": 6, "credit_x": 8, "credit_y": 6},
         # black_frames: dopo la chiusura del GAME OVER lo schermo resta nero (Rust e MiSTer)
         "game_over": {"label_y": 112, "winner_y": 132, "black_frames": 120},

@@ -1,4 +1,4 @@
-; Ciclo dei frame e scene: attract (auto-test all'accensione, strisce, logo, titolo, classifica), menu,
+; Ciclo dei frame e scene: attract (auto-test all'accensione, titolo, classifica), menu,
 ; conto alla rovescia, partita, GAME OVER; gettoni e crediti.
 ;
 ; Un interrupt di raster alla riga 250 segna l'inizio del vblank: lì si copiano i registri ombra
@@ -13,10 +13,9 @@ LIVES = 3
 MAX_CREDITS = 9
 
 ; scene (indice nella tabella `scenes`); le prime quattro sono l'attract (poi la classifica,
-; ST_SCORES); il 4 era la demo e resta libero, così gli altri numeri non cambiano
+; ST_SCORES); il 2 (il logo animato) e il 4 (la demo) restano liberi, così gli altri numeri non cambiano
 ST_BOOT    = 0
-ST_STRIPES = 1
-ST_LOGO    = 2
+ST_PREP    = 1                  ; preparazione del titolo (a schermo spento)
 ST_TITLE   = 3
 ST_MENU    = 5
 ST_COUNT   = 6
@@ -530,7 +529,7 @@ ft_state: .byte 0
 .endproc
 
 scenes:
-    .word boot_scene - 1, stripes_scene - 1, logo_scene - 1, title_scene - 1, go_stripes - 1
+    .word boot_scene - 1, prep_scene - 1, go_title - 1, title_scene - 1, go_title - 1
     .word menu_scene - 1, count_scene - 1, play_scene - 1, ov_scene - 1, pick_scene - 1
     .word intro_scene - 1, cl_scene - 1, cl_scene - 1, initials_scene - 1, scores_scene - 1
     .word challenger_scene - 1, end_scene - 1, warn_scene - 1, jb_scene - 1
@@ -914,35 +913,24 @@ yes:
     bcs done
     jsr boot_frame
     bcc done
-    jsr go_stripes
+    jsr go_title
 done:
     rts
 .endproc
 
-; Strisce: anche dopo la classifica, il GAME OVER e il menu.
-.proc go_stripes
-    jsr stripes_enter
-    lda #ST_STRIPES
+; Titolo: dall'auto-test, e anche dopo la classifica, il GAME OVER e il menu. Prima si prepara a
+; schermo spento (strisce, logo), poi il titolo con la pallina (e NEXT, in NEXT).
+.proc go_title
+    jsr title_prep_enter
+    lda #ST_PREP
     sta state
     jmp attract_song
 .endproc
 
-.proc stripes_scene
+.proc prep_scene
     jsr coin_and_start
     bcs done
-    jsr stripes_frame
-    bcc done
-    jsr logo_enter
-    lda #ST_LOGO
-    sta state
-done:
-    rts
-.endproc
-
-.proc logo_scene
-    jsr coin_and_start
-    bcs done
-    jsr logo_frame
+    jsr title_prep_frame
     bcc done
     jsr title_enter
     lda #ST_TITLE
@@ -956,7 +944,7 @@ done:
     bcs done
     jsr title_frame
     bcc done
-    ; dopo il titolo la classifica di CHALLENGE (poi di nuovo le strisce), come sul MiSTer
+    ; dopo il titolo la classifica di CHALLENGE (poi di nuovo il titolo), come sul MiSTer
     lda #$ff
     sta ch_hl
     jmp enter_scores
@@ -1212,7 +1200,7 @@ vol_text:   .byte "100%", 0     ; il valore di VOLUME, scritto da v_volume
     lda #KEY_STOP
     jsr key_pressed
     bcc :+
-    jmp go_stripes
+    jmp go_title
 :   lda joy_edge
     ora joy_edge+1
     ora fire_edge               ; anche i pulsanti dei paddle
@@ -2066,7 +2054,7 @@ tick:
 :   lda cg_active               ; CHALLENGE: livello superato o continue
     beq :+
     jmp ch_after
-:   jmp go_stripes              ; (salti: dopo questo codice può sparire)
+:   jmp go_title              ; (salti: dopo questo codice può sparire)
 done:
     rts
 .endproc
@@ -2324,7 +2312,7 @@ tick:
     lda cg_active               ; CHALLENGE: la sfida, o il continue
     beq :+
     jmp ch_after
-:   jmp go_stripes              ; (salti: dopo questo codice può sparire)
+:   jmp go_title              ; (salti: dopo questo codice può sparire)
 done:
     rts
 .endproc

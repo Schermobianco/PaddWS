@@ -1,27 +1,32 @@
-; Attract: auto-test, strisce, logo e titolo, come nelle altre versioni (assets/attract,
-; rust/game/src/attract.rs), riportati a 320x200 e 50 Hz da tools/gen_c64_assets.py.
+; Attract: auto-test e titolo, come nelle altre versioni (assets/attract, rust/game/src/attract.rs),
+; riportati a 320x200 e 50 Hz da tools/gen_c64_assets.py.
 ;
-; L'auto-test è a caratteri; strisce, logo e titolo sono una bitmap hires gialla e nera ($E000).
-; Il titolo completo (strisce, WS, logo, simbolo del copyright) è già pronto in gen/title.bin, che
-; l'avvio decomprime a TITLE_BUF (unpack.s): le strisce si disegnano frame per frame, il logo si
-; copia da lì riga per riga, e la pallina del titolo rimbalza sui pixel neri della bitmap stessa.
-; Le scritte del titolo (INSERT COIN o PRESS START, i crediti, il copyright) le scrive print_str
-; nelle celle della bitmap, con i glifi del set di caratteri (il font della ROM).
+; L'auto-test è a caratteri; il titolo è una bitmap hires gialla e nera ($E000), ferma: strisce, WS,
+; logo e simbolo del copyright. Il titolo completo è già pronto in gen/title.bin, che l'avvio
+; decomprime a TITLE_BUF (unpack.s): prima del titolo, a schermo spento, si pulisce la bitmap, si
+; disegnano le strisce e si copia il logo da lì (title_prep_frame). La pallina del titolo rimbalza sui
+; pixel neri della bitmap stessa. In NEXT, sotto il logo, ci sono le lettere di NEXT e la loro riga
+; (next_draw): sul C64 senza l'animazione del PC, la scritta c'è o non c'è.
+; Le scritte del titolo (INSERT COIN, i crediti, il copyright) le scrive print_str nelle celle della
+; bitmap, con i glifi del set di caratteri (il font della ROM).
 
 .segment "RODATA"
-s_label:     .byte "INSERT COIN", 0, "PRESS START", 0   ; (FREE PLAY: s_free del menu)
+s_label:     .byte "INSERT COIN", 0                      ; (FREE PLAY: s_free del menu)
 s_credit:    .byte "CREDIT ", 0, 0              ; la cifra al posto del primo 0
 s_copy:      .byte AT_COPYRIGHT_TEXT, 0
-slide_left:  .byte AT_SLIDE_LEFT
-slide_right: .byte AT_SLIDE_RIGHT
 stripe_y:    .byte AT_STRIPE_Y0, AT_STRIPE_Y1, AT_STRIPE_Y2
-ws_off:      .byte AT_WS_OFF
 mask_left:  .byte $00, $80, $c0, $e0, $f0, $f8, $fc, $fe   ; i primi n pixel di un byte
 mask_right: .byte $ff, $7f, $3f, $1f, $0f, $07, $03, $01   ; tutti tranne i primi n
+.assert mask_right = mask_left + 8, error, "mask_left + 1: i primi n + 1 pixel (l'ultimo è mask_right, $ff)"
+
+; NEXT (gen_c64_assets.py): colonna di cella di ogni lettera e le lettere già spostate (per riga: il
+; byte nella cella della lettera e quello nella cella dopo)
+nx_cols:    .byte NX_COLS
+nx_glyphs:  .byte NX_GLYPHS
 
 ; righe dell'auto-test: colonna 5, righe 5, 7, ..., 15 (l'ultima volta il reticolo); come il
-; codice dell'auto-test, solo all'accensione (segmento BOOTCODE, unpack.s: a $F800 finché le
-; strisce non disegnano la bitmap)
+; codice dell'auto-test, solo all'accensione (segmento BOOTCODE, unpack.s: a $F800 finché il
+; titolo non pulisce la bitmap)
 .segment "BOOTCODE"
 boot_lines: .word boot_0, 0, boot_2, boot_3, boot_4, boot_5
 boot_0: .byte "PADD WS  V4.6", 0
@@ -50,15 +55,20 @@ at_buf:   .res 11               ; byte di una riga di striscia
 
 .segment "BSS"
 .segment "ZEROPAGE"
-at_shown:   .res 1              ; auto-test: righe a schermo; logo: righe copiate
+at_shown:   .res 1              ; auto-test: righe a schermo; titolo: righe del logo copiate
 .segment "BSS"
-at_drawn:   .res 1              ; strisce ridisegnate in questo frame
-at_acc:     .res 1
-at_clear:   .res 1              ; strisce: parti di bm_clear_part ancora da fare
-at_target:  .res 1              ; logo: righe da mostrare in questo frame
-at_label:   .res 1              ; scritta del titolo a schermo: 0 nessuna, 1 INSERT COIN, 2 PRESS START
+at_acc:     .res 1              ; titolo: indice dopo l'ultima striscia da disegnare in questo frame
+at_clear:   .res 1              ; titolo: parti di bm_clear_part ancora da fare
+at_label:   .res 1              ; scritta del titolo a schermo: 0 nessuna, 1 INSERT COIN
 at_credit:  .res 1              ; riga dei crediti a schermo (variante + 1, 0 = da ridisegnare)
-at_ws:      .res 1              ; WS a schermo
+nx_i:       .res 1              ; NEXT: lettera (o colonna della riga), riga (o prima colonna),
+nx_r:       .res 1              ; ultimo pixel, primo pixel, ultima colonna
+nx_thr:     .res 1
+nx_idx:     .res 1
+nx_y:       .res 1
+nx_c8:      .res 1              ; colonna di cella * 8
+nx_b0:      .res 1              ; i due byte di una riga di lettera, e la maschera della riga
+nx_b1:      .res 1
 ball_px:    .res 2              ; pallina del titolo: pixel * 64
 ball_py:    .res 2
 ball_vxa:   .res 2
@@ -431,7 +441,6 @@ row:
 
 .segment "BSS"
 at_c0x8: .res 2                 ; prima colonna di byte * 8
-at_len:  .res 6                 ; lunghezza a schermo di ogni striscia ($ff = da disegnare)
 at_cn:   .res 1                 ; colonne di byte
 .segment "CODE"
 
@@ -468,21 +477,19 @@ title_rows_hi:
     rts
 .endproc
 
-; ------------------------------------------------------------------------------------ strisce
+; ------------------------------------------------------------------------------------ preparazione
 
-.proc stripes_enter
+; Prepara il titolo a schermo spento: bitmap tutta gialla (BM_PARTS frame), le sei strisce (tre per
+; frame, circa 2.400 cicli l'una), il logo in tre parti da 17 righe e WS; poi la bitmap si accende.
+.proc title_prep_enter
     jsr math_invalidate         ; la bitmap copre le tabelle dei quadrati
     lda #0
     sta at_f
     sta at_f+1
+    sta at_shown
     sta sh_enable
-    lda #$ff
-    ldx #5
-:   sta at_len,x
-    dex
-    bpl :-
-    lda #MODE_OFF               ; schermo spento mentre si pulisce la bitmap, già tutto giallo
-    sta sh_mode                 ; (bordo compreso, come poi con strisce, logo e titolo)
+    lda #MODE_OFF               ; schermo spento mentre si prepara, già tutto giallo (bordo compreso)
+    sta sh_mode
     lda #COL_YELLOW
     sta sh_bg
     lda #BM_PARTS
@@ -490,9 +497,11 @@ title_rows_hi:
     rts
 .endproc
 
-; Un frame delle strisce: sei strisce che entrano una dopo l'altra; C = 1 alla fine. Prima,
-; un frame per parte, la bitmap si pulisce a schermo spento.
-.proc stripes_frame
+LOGO_PART = 17
+.assert AT_LOGO_H = 3 * LOGO_PART, error, "title_prep_frame: il logo in tre parti"
+
+; Un frame della preparazione; C = 1 quando il titolo è pronto (e la bitmap accesa).
+.proc title_prep_frame
     lda at_clear
     beq run
     eor #$ff
@@ -500,76 +509,62 @@ title_rows_hi:
     adc #BM_PARTS               ; parte BM_PARTS - at_clear
     jsr bm_clear_part
     dec at_clear
-    bne :+
-    lda #MODE_BITMAP
-    sta sh_mode
-:   clc
+    clc
     rts
 run:
-    lda #0
-    sta at_drawn
-    ldx #0
+    ldx at_f
+    cpx #2
+    bcs logo
+    ; strisce 3 * f .. 3 * f + 2: le pari a sinistra, le dispari a destra
+    txa
+    asl a
+    adc at_f
+    tax
+    adc #3
+    sta at_acc
 stripe:
     stx at_tmp
-    ; frame della striscia: f - i * passo (0 se non è ancora partita), al massimo l'ultimo
-    lda at_f
-    ldy at_tmp
-sub:
-    cpy #0
-    beq got
-    sec
-    sbc #AT_STRIPE_STEP
-    bcc waiting
-    dey
-    jmp sub
-waiting:
-    lda #0
-got:
-    cmp #AT_SLIDE_LAST
-    bcc frame
-    bne full
-    ; arrivata in questo frame: un colpo
-    lda #EV_HIT
-    jsr at_sound
-full:
-    lda #AT_SLIDE_LAST
-frame:
-    tay
-    ldx at_tmp
-    lda at_drawn                ; già AT_DRAWN_MAX strisce in questo frame: questa al prossimo
-    cmp #AT_DRAWN_MAX
-    bcs next
-    lda at_tmp
-    and #1
-    bne right
-    lda slide_left,y
-    cmp at_len,x
-    beq next                    ; stessa lunghezza: niente da rifare
-    sta at_len,x
-    inc at_drawn
+    txa
+    lsr a
+    bcs right
+    lda #AT_STRIPE_LEFT
     jsr stripe_left
     jmp next
 right:
-    lda slide_right,y
-    cmp at_len,x
-    beq next
-    sta at_len,x
-    inc at_drawn
+    lda #320 - AT_STRIPE_RIGHT
     jsr stripe_right
 next:
     ldx at_tmp
     inx
-    cpx #6
+    cpx at_acc
     bne stripe
+    jmp tick
+logo:
+    cpx #5
+    bcs done
+    lda #AT_LOGO_C0
+    ldx #AT_LOGO_C1 - AT_LOGO_C0 + 1
+    jsr set_cols
+    lda at_shown
+    clc
+    adc #AT_LOGO_Y
+    ldx #LOGO_PART
+    jsr copy_rows
+    lda at_shown
+    clc
+    adc #LOGO_PART
+    sta at_shown
+tick:
     jsr at_tick
-    lda at_f
-    cmp #AT_STRIPES_FRAMES
+    clc
+    rts
+done:
+    jsr ws_on
+    lda #MODE_BITMAP
+    sta sh_mode
+    sec
     rts
 .endproc
-
-; strisce ridisegnate al più per frame (circa 2.400 cicli l'una): le 6 insieme, con la canzone
-; dell'easter egg, non ci stanno nemmeno sul PAL (l'ultima aspetta il frame dopo)
-AT_DRAWN_MAX = 5
 
 ; Striscia sinistra lunga A pixel nella riga di at_tmp / 2.
 .proc stripe_left
@@ -691,44 +686,6 @@ next:
     rts
 .endproc
 
-; ------------------------------------------------------------------------------------ logo
-
-.proc logo_enter
-    lda #0
-    sta at_f
-    sta at_f+1
-    sta at_shown
-    sta at_acc
-    ; strisce al loro posto, con WS
-    jsr ws_on
-    ; il raster: tre sprite da 48 pixel e uno da 8, bianchi, sopra il logo
-    ldx #3
-:   lda #COL_WHITE
-    sta sh_col,x
-    lda #SP_LINE24
-    sta sh_ptr,x
-    lda logo_line_x,x
-    sta sh_x,x
-    dex
-    bpl :-
-    lda #SP_LINE8
-    sta sh_ptr+3
-    lda #%0111                  ; tre sprite da 48 pixel (espansi) e uno da 8
-    sta sh_xexp
-    lda #0
-    sta sh_yexp
-    sta sh_mc
-    lda logo_line_msb
-    sta sh_msb
-    lda #%1111
-    sta sh_enable
-    rts
-.endproc
-
-LOGO_SX = SPR_X0 + AT_LOGO_X
-logo_line_x:   .byte <LOGO_SX, <(LOGO_SX + 48), <(LOGO_SX + 96), <(LOGO_SX + 144)
-logo_line_msb: .byte ((LOGO_SX >> 8) & 1) | (((LOGO_SX + 48) >> 8) & 1) << 1 | (((LOGO_SX + 96) >> 8) & 1) << 2 | (((LOGO_SX + 144) >> 8) & 1) << 3
-
 ; WS nella striscia destra (copiato dal titolo).
 .proc ws_on
     lda #AT_WS_C0
@@ -736,140 +693,7 @@ logo_line_msb: .byte ((LOGO_SX >> 8) & 1) | (((LOGO_SX + 48) >> 8) & 1) << 1 | (
     jsr set_cols
     lda #AT_WS_Y
     ldx #AT_WS_H
-    jsr copy_rows
-    lda #1
-    sta at_ws
-    rts
-.endproc
-
-; WS spento: la striscia piena (una riga della striscia sopra WS, ripetuta).
-.proc ws_off_draw
-    lda #AT_WS_C0
-    ldx #AT_WS_C1 - AT_WS_C0 + 1
-    jsr set_cols
-    ldy #AT_WS_Y
-:   sty at_tmp
-    jsr bm_row
-    clc
-    adc at_c0x8
-    sta ptr
-    txa
-    adc at_c0x8+1
-    sta ptr+1
-    ldy #AT_STRIPE_Y2
-    jsr bm_row
-    clc
-    adc at_c0x8
-    sta ptr2
-    txa
-    adc at_c0x8+1
-    sta ptr2+1
-    ldy #0
-    ldx at_cn
-:   lda (ptr2),y
-    sta (ptr),y
-    tya
-    clc
-    adc #8
-    tay
-    dex
-    bne :-
-    ldy at_tmp
-    iny
-    cpy #AT_WS_Y + AT_WS_H
-    bne :--
-    lda #0
-    sta at_ws
-    rts
-.endproc
-
-; Un frame del logo: si scopre dall'alto con il raster bianco, poi un lampo; C = 1 alla fine.
-.proc logo_frame
-    lda at_f
-    cmp #AT_WIPE_FRAMES
-    bcs after
-    ; righe da mostrare: floor(altezza * f / durata), senza divisioni
-    lda at_acc
-    clc
-    adc #AT_LOGO_H
-    sta at_acc
-    ldx at_shown
-:   lda at_acc
-    cmp #AT_WIPE_FRAMES
-    bcc :+
-    sbc #AT_WIPE_FRAMES
-    sta at_acc
-    inx
-    jmp :-
-:   stx at_target               ; (copy_rows usa at_tmp)
-    cpx at_shown
-    beq line
-    ; righe nuove del logo
-    lda #AT_LOGO_C0
-    ldx #AT_LOGO_C1 - AT_LOGO_C0 + 1
-    jsr set_cols
-    lda at_target
-    sec
-    sbc at_shown
-    tax
-    lda at_shown
-    clc
-    adc #AT_LOGO_Y
-    jsr copy_rows
-    lda at_target
-    sta at_shown
-line:
-    ; il raster: la riga sotto l'ultima scoperta
-    lda at_shown
-    clc
-    adc #AT_LOGO_Y + 1 + SPR_Y0
-    ldx #3
-:   sta sh_y,x
-    dex
-    bpl :-
-    jmp done
-after:
-    bne :+
-    ; fine: il resto del logo (le righe non ancora scoperte), lampo e boost
-    lda #AT_LOGO_C0
-    ldx #AT_LOGO_C1 - AT_LOGO_C0 + 1
-    jsr set_cols
-    lda #AT_LOGO_H
-    sec
-    sbc at_shown
-    beq whole
-    bcc whole
-    tax
-    lda at_shown
-    clc
-    adc #AT_LOGO_Y
-    jsr copy_rows
-    lda #AT_LOGO_H
-    sta at_shown
-whole:
-    lda #0
-    sta sh_enable
-    lda #EV_BOOST
-    jsr at_sound
-:   lda at_f
-    sec
-    sbc #AT_WIPE_FRAMES
-    cmp #AT_FLASH_FRAMES
-    bcs :+
-    lda #MODE_OFF
-    sta sh_mode
-    lda #COL_WHITE
-    sta sh_bg
-    jmp done
-:   lda #MODE_BITMAP
-    sta sh_mode
-    lda #COL_YELLOW
-    sta sh_bg
-done:
-    jsr at_tick
-    lda at_f
-    cmp #AT_LOGO_FRAMES
-    rts
+    jmp copy_rows
 .endproc
 
 ; ------------------------------------------------------------------------------------ titolo
@@ -936,30 +760,18 @@ done:
     sty v_row
     ldy #AT_COPYRIGHT_C0
     jsr bm_print
-:   ; WS lampeggia due volte all'inizio
-    lda at_f+1
-    bne ws_lit
-    ldx #0
-:   lda at_f
-    cmp ws_off,x
-    bcc :+
-    cmp ws_off+1,x
-    bcc ws_dark
-:   inx
-    inx
-    cpx #4
-    bne :--
-ws_lit:
-    lda at_ws
+:   ; NEXT: al secondo frame le lettere e la riga (il primo ha già il copyright)
+    lda opt_mode
+    cmp #2
     bne label
-    jsr ws_on
-    jmp label
-ws_dark:
-    lda at_ws
-    beq label
-    jsr ws_off_draw
+    lda at_f+1
+    bne label
+    lda at_f
+    cmp #1
+    bne label
+    jsr next_draw
 label:
-    ; INSERT COIN / PRESS START lampeggia (dopo i primi frame)
+    ; INSERT COIN lampeggia (dopo i primi frame): è l'unico invito, senza crediti e mai in NEXT
     ldx #0
     lda at_f+1
     bne :+
@@ -969,7 +781,9 @@ label:
 :   jsr blink_on
     ldx #0
     bcc show
-    ldx #2                      ; PRESS START
+    lda opt_mode
+    cmp #2
+    beq show
     jsr credit_variant
     bne show
     ldx #1                      ; senza crediti: INSERT COIN
@@ -1044,15 +858,8 @@ on:
     jsr zero_cells
     ldx at_label
     beq done
-    dex
-    beq insert
-    lda #<(s_label + 12)        ; PRESS START
-    ldx #>(s_label + 12)
-    bne print                   ; (sempre)
-insert:
     lda #<s_label               ; INSERT COIN
     ldx #>s_label
-print:
     ldy #AT_LABEL_R0
     sty v_row
     ldy #AT_LABEL_C0
@@ -1167,6 +974,144 @@ cell_row_hi:
     .repeat 25, r
     .byte >(BITMAP + r * 320)
     .endrepeat
+
+; ------------------------------------------------------------------------------------ NEXT
+
+; Le quattro lettere di NEXT e la riga larga come il logo (mezza larghezza NX_LINE_HALF).
+.proc next_draw
+    ldx #3
+:   stx nx_i
+    jsr nx_draw
+    ldx nx_i
+    dex
+    bpl :-
+    lda #NX_LINE_HALF
+    jmp nx_line
+.endproc
+
+; Lettera `nx_i`, 10 righe: scrive i due byte di ogni riga nelle due celle della lettera.
+.proc nx_draw
+    ldx nx_i
+    lda nx_cols,x
+    asl a
+    asl a
+    asl a
+    sta nx_c8                   ; colonna di cella * 8 (al più 22 * 8)
+    lda #0
+    sta nx_r                    ; riga
+row:
+    lda nx_i                    ; i due byte della lettera: 20 * lettera + 2 * riga
+    asl a
+    asl a
+    sta nx_b0
+    asl a
+    asl a
+    adc nx_b0
+    sta nx_b0
+    lda nx_r
+    asl a
+    adc nx_b0
+    tax
+    lda nx_glyphs,x
+    sta nx_b0
+    lda nx_glyphs+1,x
+    sta nx_b1
+    lda nx_r                    ; indirizzo della riga di pixel NX_Y + riga, nella colonna della lettera
+    clc
+    adc #NX_Y
+    tay
+    jsr bm_row
+    clc
+    adc nx_c8
+    sta ptr
+    bcc :+
+    inx
+:   stx ptr+1
+    ldy #0
+    lda nx_b0
+    sta (ptr),y
+    ldy #8
+    lda nx_b1
+    sta (ptr),y
+    inc nx_r
+    lda nx_r
+    cmp #NX_ROWS
+    bne row
+    rts
+.endproc
+
+; Riga di NEXT lunga 2 * A pixel, centrata su NX_LINE_X, alta due righe di pixel.
+.proc nx_line
+    sta nx_i                    ; mezza larghezza
+    lda #NX_LINE_X
+    sec
+    sbc nx_i
+    sta nx_idx                  ; primo pixel
+    lda #NX_LINE_X - 1
+    clc
+    adc nx_i
+    sta nx_thr                  ; ultimo pixel
+    lda nx_idx
+    lsr a
+    lsr a
+    lsr a
+    sta nx_r                    ; prima colonna di byte
+    sta nx_i                    ; (la colonna in corso)
+    lda nx_thr
+    lsr a
+    lsr a
+    lsr a
+    sta nx_y                    ; ultima
+    ldy #NX_LINE_Y
+    jsr bm_row                  ; prima riga di pixel, colonna 0
+    sta ptr
+    stx ptr+1
+    lda nx_r
+    asl a
+    asl a
+    asl a                       ; (al più la colonna 29: 232)
+    clc
+    adc ptr
+    sta ptr
+    bcc col
+    inc ptr+1
+col:
+    lda #$ff
+    ldy nx_i
+    cpy nx_r
+    bne :+
+    lda nx_idx                  ; la prima colonna: da quel pixel in poi
+    and #7
+    tay
+    lda mask_right,y
+:   ldy nx_i
+    cpy nx_y
+    bne store
+    sta nx_b0                    ; l'ultima: fino a quel pixel
+    lda nx_thr
+    and #7
+    tay
+    lda mask_left + 1,y
+    and nx_b0
+store:
+    ldy #0
+    sta (ptr),y
+    iny
+    sta (ptr),y
+    lda nx_i
+    cmp nx_y
+    beq end
+    inc nx_i
+    lda ptr
+    clc
+    adc #8
+    sta ptr
+    bcc col
+    inc ptr+1
+    jmp col
+end:
+    rts
+.endproc
 
 ; ------------------------------------------------------------------------------------ pallina
 

@@ -205,9 +205,10 @@ const WARP_EXIT_AT: f32 = 0.36;
 /// a `BULLET_GHOST_TICKS` (meno immagini, e bordo che lampeggia, durante le rampe).
 const BULLET_GHOST_STEP: usize = 12;
 const BULLET_GHOST_TICKS: usize = 96;
-/// OMEGA: la racchetta è viola (anche con l'easter egg RED, che lascia stare i viola). A ogni
-/// trasformazione un lampo bianco di 8 frame.
-const OMEGA_PURPLE: Color = Color::new(160.0 / 255.0, 64.0 / 255.0, 224.0 / 255.0, 1.0);
+/// OMEGA: la racchetta ha il corpo normale e i segni nel viola di OMEGA (il suo accento, come in
+/// `portraits.json`; l'easter egg RED lascia stare i viola). A ogni trasformazione un lampo bianco di
+/// 8 frame, anche sui segni.
+const OMEGA_PURPLE: Color = Color::new(224.0 / 255.0, 64.0 / 255.0, 1.0, 1.0);
 pub const MORPH_FLASH_SECONDS: f64 = 8.0 / 60.0;
 /// OMEGA: a ogni trasformazione, con il lampo, il nome disegnato della forma nuova (la grafica delle
 /// presentazioni) per `MORPH_NAME_SECONDS`, nella metà del campo di OMEGA in alto; negli ultimi
@@ -217,7 +218,7 @@ const MORPH_NAME_BLINK: f64 = 10.0 / 60.0;
 /// Altezza del centro del nome (frazione dell'altezza del campo, dall'alto).
 const MORPH_NAME_Y: f32 = 0.3;
 
-/// Colore della racchetta di OMEGA (viola, come il suo sigillo e il C64).
+/// Colore dei segni della racchetta di OMEGA (il viola del suo accento, come il sigillo e il C64).
 pub fn omega_color(_app: &App) -> Color {
     OMEGA_PURPLE
 }
@@ -749,7 +750,9 @@ impl Pick {
         let font = &app.assets.font_text;
         let t1 = r.text_1x();
         r.fill(BLACK);
-        crate::grid::draw(app);
+        // le code delle stelle cadenti hanno il colore della racchetta di destra, se è già scelta
+        let peak = app.paddles[1].map_or(crate::space::NEUTRAL, |k| app.assets.portraits.accent_rgb(k));
+        crate::space::draw(app, peak);
         r.text_centered("PICK 3 BONUSES", font, t1, w / 2.0, 34.0 * s, 0.0, accent);
         let dash = 10.0 * s;
         let mut y = 120.0 * s;
@@ -1553,9 +1556,11 @@ impl NextFx {
         );
         let x = x + shake;
         let (pw, ph) = (to_f32(pad.width), to_f32(pad.height));
-        // OMEGA: rossa (o viola), bianca nel lampo della trasformazione, grigia nel bullet time
-        // dell'avversario come le altre
-        let skin = if game.morph().is_some_and(|s| s as usize == side) {
+        // OMEGA: il corpo è quello di tutte, grigio nel bullet time dell'avversario; sono i segni a
+        // prendere il viola di OMEGA, bianchi nel lampo della trasformazione e grigi nel bullet time
+        let morphing = game.morph().is_some_and(|s| s as usize == side);
+        let skin = if morphing && cold { gray } else { white };
+        let omega_mark = morphing.then(|| {
             if self.morph_flash[side] > 0.0 {
                 white
             } else if cold {
@@ -1563,8 +1568,13 @@ impl NextFx {
             } else {
                 omega_color(app)
             }
-        } else {
-            white
+        });
+        let make_look = |kind: Option<PaddleKind>, color: Color| {
+            let mut look = paddle_ui::look(app, kind, color);
+            if let Some(m) = omega_mark {
+                look.mark = m;
+            }
+            look
         };
         let pl = &n.players[side];
         let front = if side == 0 { 1.0 } else { -1.0 };
@@ -1584,10 +1594,11 @@ impl NextFx {
             build,
             recoil: self.recoil[side].map(|(_, at)| at),
             dashing: self.rush_ghost[side] > 0.0,
+            clock: get_time() as f32,
         };
         if let Some(from) = self.warp[side] {
             let progress = warp_progress(field_share(game, side), pad_share(game, side));
-            let look = paddle_ui::look(app, pl.kind, skin);
+            let look = make_look(pl.kind, skin);
             // tremolio delle righe in luce a 7,5 al secondo, come sul MiSTer
             let jitter = (game.tick / 32).is_multiple_of(2);
             draw_warp((from, y), progress, jitter, |cy, scan| {
@@ -1662,7 +1673,7 @@ impl NextFx {
                 scan: None,
                 anim,
             };
-            let look = paddle_ui::look(app, pl.kind, color);
+            let look = make_look(pl.kind, color);
             paddle_ui::draw_paddle(r, &shape, u, look);
         };
         let body = |color: Color| body_rot(color, tilt);

@@ -482,8 +482,8 @@ function [10:0] mode_frames(input [3:0] m);
     endcase
 endfunction
 
-// suoni dell'attract nel frame f del modo m
-function [8:0] attract_events(input [3:0] m, input [10:0] f);
+// suoni dell'attract nel frame f del modo m; `nx`: tipo di partita NEXT (le lettere sotto il logo)
+function [8:0] attract_events(input [3:0] m, input [10:0] f, input nx);
     begin
         attract_events = 9'd0;
         case (m)
@@ -492,11 +492,14 @@ function [8:0] attract_events(input [3:0] m, input [10:0] f);
                 else if (f == 2 * AT_BOOT_LINE_FRAMES || f == 3 * AT_BOOT_LINE_FRAMES ||
                          f == 4 * AT_BOOT_LINE_FRAMES || f == 5 * AT_BOOT_LINE_FRAMES) attract_events = SND_PING;
                 else if (f == AT_BOOT_GRID_FROM) attract_events = SND_BOOST;
-            M_STRIPES:
-                if (f >= AT_SLIDE_LAST && f <= AT_SLIDE_LAST + 5 * AT_STRIPE_START_STEP &&
-                    ((f - AT_SLIDE_LAST) % AT_STRIPE_START_STEP) == 0) attract_events = SND_PONG;
-            M_LOGO:
-                if (f == AT_WIPE_FRAMES) attract_events = SND_BOOST;
+            // NEXT: un colpo a ogni lettera, un lampo quando parte la riga
+            M_TITLE:
+                if (nx) begin
+                    if (f == AT_NEXT_START || f == AT_NEXT_START + AT_NEXT_STEP ||
+                        f == AT_NEXT_START + 2 * AT_NEXT_STEP || f == AT_NEXT_START + 3 * AT_NEXT_STEP)
+                        attract_events = SND_PONG;
+                    else if (f == AT_NEXT_LINE_START) attract_events = SND_BOOST;
+                end
             default: attract_events = 9'd0;
         endcase
     end
@@ -642,11 +645,11 @@ always @(posedge clk) begin
     end
 
     // il MiSTer tiene il reset mentre carica il core: l'auto-test riparte da capo finché dura,
-    // i reset successivi (OSD, cambio di opzioni) tornano alle strisce
+    // i reset successivi (OSD, cambio di opzioni) tornano al titolo
     if (mode != M_BOOT) booted <= 1'b1;
 
     if (reset) begin
-        mode <= booted ? M_STRIPES : M_BOOT;
+        mode <= booted ? M_TITLE : M_BOOT;
         mframe <= 11'd0;
         blink <= 6'd0;
         credits <= 4'd0;                                 // il reset azzera anche i crediti
@@ -910,19 +913,17 @@ always @(posedge clk) begin
             next_frame >= mode_frames(mode) + (over_closes ? AT_GAME_OVER_BLACK : 0)) begin
             next_frame = 11'd0;
             case (mode)
-                M_BOOT: next_mode = M_STRIPES;
+                M_BOOT: next_mode = M_TITLE;
                 M_TITLE: next_mode = M_SCORES;           // dopo il titolo la classifica, poi la demo
-                M_STRIPES: next_mode = M_LOGO;
-                M_LOGO: next_mode = M_TITLE;
-                M_SCORES: next_mode = ch_scores_attract ? M_DEMO : M_STRIPES;
+                M_SCORES: next_mode = ch_scores_attract ? M_DEMO : M_TITLE;
                 // CHALLENGE: livello vinto (l'ultimo: il finale) o continue; demo e GAME OVER tornano
-                // alle strisce (la fine della sfida tra due giocatori è qui sopra)
+                // al titolo (la fine della sfida tra due giocatori è qui sopra)
                 // OMEGA: battuto il GUARDIAN con la scala fatta tutta, l'allarme (M_INTRO); contro
                 // OMEGA niente continue (persa: il finale normale), vinta: OMEGA CLEAR!
-                M_GAME_OVER: next_mode = (!ch_active || train) ? M_STRIPES :
+                M_GAME_OVER: next_mode = (!ch_active || train) ? M_TITLE :
                                          ((score0 > score1) == ch_side) ? (omega_lvl ? M_ENDING : M_CONT) :
                                          (ch_level == CH_LEVELS - 1) ? (omega_open ? M_INTRO : M_ENDING) : M_CLEAR;
-                default: next_mode = M_STRIPES;
+                default: next_mode = M_TITLE;
             endcase
             if (next_mode == M_SCORES) begin
                 ch_scores_attract <= 1'b1;
@@ -934,7 +935,7 @@ always @(posedge clk) begin
                 omega_warn <= 1'b1;
             end
             // fine dell'allenamento: si torna all'attract
-            if (mode == M_GAME_OVER && next_mode == M_STRIPES) begin
+            if (mode == M_GAME_OVER && next_mode == M_TITLE) begin
                 ch_active <= 1'b0;
                 train <= 1'b0;
             end
@@ -969,8 +970,8 @@ always @(posedge clk) begin
             match_reset <= 1'b1;
         end
 
-        if (attract_events(mode, mframe) != 9'd0) begin
-            attract_sound <= attract_events(mode, mframe);
+        if (attract_events(mode, mframe, want_next) != 9'd0) begin
+            attract_sound <= attract_events(mode, mframe, want_next);
             attract_trigger <= 1'b1;
             attract_auto <= 1'b1;
         end
@@ -2115,12 +2116,13 @@ ending_render #(.FW_ROM(ENDING_FW_ROM)) ending_draw (
 );
 
 // schermo a oggetti: le schermate e le scritte del firmware (rust/mister-ui)
+wire        bass_note;                 // nota del basso (pong_sid): l'impulso della griglia di ui_render
 wire [7:0]  ui_idx;
 wire [1:0]  ui_class;
 wire [23:0] ui_rgb;
 wire [31:0] ui_status;
 ui_render #(.FONT_ROM(UI_FONT_ROM), .GFX_ROM(UI_GFX_ROM), .GFX_ROM2(UI_GFX_ROM2)) ui (
-    .clk(clk), .clk_cpu(clk_cpu), .clear(reset), .ce_pix(ce_pix), .hc(hc), .vc(vc),
+    .clk(clk), .clk_cpu(clk_cpu), .clear(reset), .ce_pix(ce_pix), .hc(hc), .vc(vc), .bass_note(bass_note),
     .cpu_wr(ui_wr), .cpu_addr(ui_addr), .cpu_wdata(ui_wdata), .status(ui_status),
     .win_we(win_we), .win_addr(win_addr), .win_data(win_data),
     .px_idx(ui_idx), .px_class(ui_class), .px_rgb(ui_rgb)
@@ -2326,7 +2328,7 @@ wire [4:0] sid_song = ch_join || music_off ? 5'd0 :
                       mode == M_CONT ? (cont_over ? SID_SONG_GAME_OVER : SID_SONG_CONTINUE) :
                       mode == M_ENDING ? SID_SONG_ENDING :
                       mode == M_INITIALS ? SID_SONG_CHAMPION :
-                      mode == M_PICK || mode == M_HOWTO || ((mode == M_STRIPES || mode == M_LOGO || mode == M_TITLE ||
+                      mode == M_PICK || mode == M_HOWTO || ((mode == M_TITLE ||
                                           (mode == M_SCORES && ch_scores_attract)) && !attract_mute) ||
                       (mode == M_SCORES && !ch_scores_attract)
                           ? (egg ? SID_SONG_ENDING : SID_SONG_TITLE) : 5'd0;   // easter egg: il finale
@@ -2411,7 +2413,8 @@ pong_sid #(.ROM_FILE(SID_ROM), .VOICE_FILE(VOICE_ROM)) sid (
     .fx_vol(fx_vol),
     .fx_gain(fx_gain),
     .sample(sid_sample),
-    .scope(sid_scope_v)
+    .scope(sid_scope_v),
+    .bass_note(bass_note)
 );
 
 // Uscita: il SID (con il nome dell'avversario già nel suo volume, $D418) più le voci di partita a 4
@@ -2523,7 +2526,7 @@ always @(posedge clk) begin
         else if (ui_cnt == 6'd63) begin
             ui_wait <= 1'b0;
             ui_seq <= ui_seq + 8'd1;
-            uis[0] <= {4'd0, egg, upright, free_play, credits, blink, mframe, mode};
+            uis[0] <= {3'd0, want_next, egg, upright, free_play, credits, blink, mframe, mode};
             uis[1] <= {14'd0, cur_iy[8:0], cur_ix[8:0]};
             // scalata: livello e avversario, lato, sfida, allenamento, continue
             uis[2] <= {1'b0, ch_cont_sub, ch_cont_digit, cont_over, ch_perfect, train, duel, ch_active, ch_side,

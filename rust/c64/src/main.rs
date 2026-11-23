@@ -207,6 +207,52 @@ fn vice(m: &mut Machine, file: &std::path::Path) -> bool {
     ok
 }
 
+/// Il titolo con e senza NEXT: le lettere (i byte di `nx_glyphs` nelle celle di `nx_cols`, dalla riga
+/// NX_Y) e la riga (da NX_LINE_X - NX_LINE_HALF, alta due righe di pixel) di NEXT sono nella bitmap
+/// solo con il tipo di partita NEXT (`opt_mode` = 2); non c'è nessuna animazione.
+fn next_title(m: &mut Machine) -> Result<(), String> {
+    let inc = std::fs::read_to_string(c64_dir().join("gen/assets.inc")).unwrap_or_default();
+    let get = |n: &str| inc_const(&inc, n).ok_or(format!("assets.inc: manca {n}"));
+    let (ny, ly, lx, half) = (get("NX_Y")?, get("NX_LINE_Y")?, get("NX_LINE_X")?, get("NX_LINE_HALF")?);
+    let bitmap = |m: &Machine, c: usize, y: usize| m.cpu.read((0xE000 + y / 8 * 320 + c * 8 + y % 8) as u16);
+    let pixel = |m: &Machine, x: usize, y: usize| bitmap(m, x / 8, y) & (0x80 >> (x % 8)) != 0;
+    for (mode, next) in [(2u8, true), (0, false)] {
+        m.write_u8("opt_mode", 0, mode);
+        m.call("go_title");
+        for _ in 0..12 {
+            m.call("title_prep_frame");
+        }
+        m.call("title_enter");
+        for _ in 0..3 {
+            m.call("title_frame");
+        }
+        let mut letters = 0;
+        for i in 0..4usize {
+            let col = m.image_u8("nx_cols", i as u16) as usize;
+            for r in 0..10usize {
+                let want = [m.image_u8("nx_glyphs", (i * 20 + r * 2) as u16), m.image_u8("nx_glyphs", (i * 20 + r * 2 + 1) as u16)];
+                let got = [bitmap(m, col, ny + r), bitmap(m, col + 1, ny + r)];
+                if next && got != want {
+                    return Err(format!("NEXT: lettera {i} riga {r}: bitmap {got:02x?}, attesa {want:02x?}"));
+                }
+                // (INSERT COIN occupa le righe di celle sotto: le ultime righe delle lettere si sovrappongono)
+                letters += (r < 6 && got != [0, 0]) as u32;
+            }
+        }
+        let line = (lx - half..lx + half).all(|x| pixel(m, x, ly) && pixel(m, x, ly + 1));
+        let outside = pixel(m, lx - half - 1, ly) || pixel(m, lx + half, ly);
+        if next && (!line || outside) {
+            return Err(format!("NEXT: la riga non è larga {} pixel centrata su {lx} (dentro {line}, fuori {outside})", 2 * half));
+        }
+        if !next && (letters != 0 || (lx - half..lx + half).any(|x| pixel(m, x, ly))) {
+            return Err("fuori da NEXT il titolo ha le lettere o la riga di NEXT".to_string());
+        }
+        println!("  titolo {}: {}", if next { "NEXT" } else { "senza NEXT" }, if next { "lettere e riga giuste" } else { "nessuna lettera" });
+    }
+    m.write_u8("opt_mode", 0, 0);
+    Ok(())
+}
+
 /// Scene e menu: ogni routine di avvio, attract, menu e partita deve tornare entro un
 /// milione di cicli (nessun ciclo infinito), anche frame dopo frame e con tutti i valori del menu.
 fn ui(m: &mut Machine) -> bool {
@@ -236,10 +282,8 @@ fn ui(m: &mut Machine) -> bool {
         ("sid_init", 0, 1),
         ("boot_enter", 0, 1),
         ("boot_frame", 0, 260),
-        ("go_stripes", 0, 1),
-        ("stripes_frame", 0, 130),
-        ("logo_enter", 0, 1),
-        ("logo_frame", 0, 120),
+        ("go_title", 0, 1),
+        ("title_prep_frame", 0, 12),
         ("title_enter", 0, 1),
         ("title_frame", 0, 420),
         ("enter_menu", 0, 1),
@@ -264,14 +308,10 @@ fn ui(m: &mut Machine) -> bool {
         return false;
     }
     println!("  video_init: font 1x e lettere 2x dalla ROM dei caratteri (finta)");
-    // la tendina del logo scopre le righe man mano: a metà, circa metà del logo
-    m.call("logo_enter");
-    for _ in 0..35 {
-        m.call("logo_frame");
-    }
-    let shown = m.read_u8("at_shown", 0);
-    if !(20..=30).contains(&shown) {
-        println!("FAIL: dopo 35 frame del logo {shown} righe scoperte invece di circa 25");
+    // NEXT sotto il logo, solo in NEXT: 120 frame dopo l'entrata nel titolo le quattro lettere e la
+    // riga sono nella bitmap, nei byte delle tabelle; fuori da NEXT non c'è niente
+    if let Err(e) = next_title(m) {
+        println!("FAIL: {e}");
         return false;
     }
     // tutte le voci del menu, avanti e indietro (il codice del menu dalla cartuccia: lì c'è stato
@@ -8099,8 +8139,9 @@ fn perfect_ui(m: &mut Machine) -> Result<String, String> {
     // dopo un PERFECT l'attract, fino al titolo con INSERT COIN (senza crediti)
     quiet_inputs(m);
     m.call("math_ensure");
-    let free = m.read_u8("opt_free", 0);
-    for (name, v) in [("cg_active", 0u8), ("cpu_side", 4), ("m_players", 2), ("m_next", 0), ("ch_phase", 0), ("opt_free", 0), ("credits", 0)] {
+    let (free, mode) = (m.read_u8("opt_free", 0), m.read_u8("opt_mode", 0));
+    // (in NEXT il titolo non ha INSERT COIN: al suo posto c'è NEXT)
+    for (name, v) in [("cg_active", 0u8), ("cpu_side", 4), ("m_players", 2), ("m_next", 0), ("ch_phase", 0), ("opt_free", 0), ("opt_mode", 0), ("credits", 0)] {
         m.write_u8(name, 0, v);
     }
     for (o, v) in [(0u16, 11u8), (1, 0), (4, 0), (5, 0)] {
@@ -8127,6 +8168,7 @@ fn perfect_ui(m: &mut Machine) -> Result<String, String> {
         return Err(format!("titolo senza INSERT COIN dopo {frames} frame (stato {})", m.read_u8("state", 0)));
     }
     m.write_u8("opt_free", 0, free);
+    m.write_u8("opt_mode", 0, mode);
     m.call("math_ensure");
     Ok(format!(
         "PERFECT nel GAME OVER da solo contro la CPU e sopra P1 / P2 WINS in due, con la voce (non all'ultimo livello di CHALLENGE); YOU WIN, CPU WINS, GAME OVER come prima; la grafica di PERFECT con i colori delle fasce e i suoi caratteri dalla cartuccia, il resto del set non cambia (glifi della ROM); frame dell'ultimo punto al più {worst_enter} cicli, GAME OVER al più {worst}; poi l'attract fino al titolo con INSERT COIN (dopo {frames} frame)"

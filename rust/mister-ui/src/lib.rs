@@ -66,6 +66,8 @@ pub mod map {
     pub const PAL: u32 = 0xA00;
     /// fine del frame: [7:0] numero di oggetti, [8] scambio dei banchi
     pub const CTRL: u32 = 0xB00;
+    /// colore dell'impulso della griglia (24 bit RGB), da scrivere prima di CTRL
+    pub const GRID_RGB: u32 = 0xB05;
     /// lettura: [0] banco mostrato, [1] scambio in attesa, [2] copia dalla DDR3 in corso
     /// (`DMA_BUSY`), [3] grafica della DDR3 caricata (`GFX_OK`)
     pub const STATUS: u32 = 0x000;

@@ -1,7 +1,7 @@
 ; Avvio, prima delle variabili: tutto qui sta nel segmento INIT, che nel .prg occupa il loro posto.
 ; - Le routine che servono solo all'avvio (segmento BOOTCODE: clear_vars, math_init, irq_init,
 ;   video_init, input_init, sid_init e l'auto-test dell'accensione) vanno a $F800, nella bitmap
-;   dell'attract, che fino alle strisce non serve: così non occupano il programma. Nel .prg sono
+;   dell'attract, che fino al titolo non serve: così non occupano il programma. Nel .prg sono
 ;   a $D100, dopo l'immagine della RAM della cartuccia: nella flash (banco 4, ROML da $8900), da
 ;   dove si copiano.
 ; - Il titolo dell'attract (gen/title.bin, 8 pagine nel banco PICK_BANK della cartuccia) passa per

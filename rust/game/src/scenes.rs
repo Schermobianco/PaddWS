@@ -349,6 +349,7 @@ impl App {
             } else {
                 Some(self.credits)
             },
+            next: self.next,
         }
     }
 

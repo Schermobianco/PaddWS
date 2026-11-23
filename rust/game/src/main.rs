@@ -9,7 +9,7 @@ mod encoder;
 mod ending_ui;
 mod gamepad;
 mod gesture;
-mod grid;
+mod space;
 mod input;
 mod jukebox;
 mod mouse;
@@ -643,7 +643,7 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         app.set_egg(true);
         scene
     }
-    let shots: [(&str, MakeScene); 137] = [
+    let shots: [(&str, MakeScene); 138] = [
         ("1_demo_classic", |app| demo_at(app, DemoMode::Classic)),
         ("1_demo_evo", |app| demo_at(app, DemoMode::Evo)),
         ("1_demo_next", |app| demo_at(app, DemoMode::Next)),
@@ -786,13 +786,24 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         }),
         ("0_boot", |app| attract_at(app, true, 100)),
         ("0_boot_grid", |app| attract_at(app, true, 210)),
-        ("0_stripes", |app| attract_at(app, false, 0)),
-        ("0_logo", |app| attract_at(app, false, 144)),
-        ("0_title_free", |app| attract_at(app, false, 144 + 132 + 150)),
+        ("0_title_free", |app| attract_at(app, false, 150)),
         ("0_title_coin", |app| {
             app.cfg.game.free_play = false;
             app.credits = 0;
-            attract_at(app, false, 144 + 132 + 150)
+            attract_at(app, false, 150)
+        }),
+        // NEXT: le prime lettere a righe sfalsate, la riga che si allarga, il titolo finito
+        ("0_next_in", |app| {
+            app.next = true;
+            attract_at(app, false, 5)
+        }),
+        ("0_next_line", |app| {
+            app.next = true;
+            attract_at(app, false, 40)
+        }),
+        ("0_next_title", |app| {
+            app.next = true;
+            attract_at(app, false, 150)
         }),
         ("2_menu", |app| Scene::Menu(Menu::new(app))),
         ("2_menu_top", |app| {
@@ -997,7 +1008,7 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
             egg(app, Scene::Scores(challenge_ui::Scores::new(Some(0))))
         }),
         ("a_egg_title", |app| {
-            let scene = attract_at(app, false, 144 + 132 + 150);
+            let scene = attract_at(app, false, 150);
             egg(app, scene)
         }),
         ("a_egg_menu", |app| egg(app, Scene::Menu(Menu::new(app)))),
@@ -1158,7 +1169,7 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
     // le schermate che accendono il touch o il gamepad non cambiano le altre
     let touch = app.touch;
     for (name, make) in shots {
-        (app.touch, app.pad_used) = (touch, false);
+        (app.touch, app.pad_used, app.next) = (touch, false, false);
         app.set_egg(false);
         let mut scene = make(app);
         // la musica suona solo dove si vedono le voci del SID (la rete di OMEGA, il JUKEBOX)

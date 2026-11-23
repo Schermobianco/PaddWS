@@ -24,9 +24,23 @@ crea il commit e il tag `vX.Y.Z`.
 - Ritratti grandi (PC, web e MiSTer): il busto tagliato in basso sfuma verso il nero a retino.
 - SUPER armato (PC, web e MiSTer): mentre la racchetta ruota, due archi di righe girano attorno a
   lei, bianchi vicino alla punta, poi grigi e a scacchi.
-- Scelta della racchetta, scelta dei bonus e schermo VS (PC, web e MiSTer): dietro c'è una griglia in
-  prospettiva, muro e pavimento a 90 gradi, disegnata dal programma (sul MiSTer dalla logica video,
-  senza immagini) con un impulso più chiaro che parte dallo spigolo ogni tre secondi.
+- Scelta della racchetta, scelta dei bonus e schermo VS: dietro c'è uno sfondo disegnato dal
+  programma. Su PC e web è il cielo visto da un'astronave: stelle bianche che scorrono piano dal
+  centro verso i bordi, il cielo che rolla di qualche grado a destra e a sinistra, e ogni tanto una
+  stella cadente con la coda nel colore dello sfidante (nello schermo VS l'avversario del campione,
+  nelle scelte il personaggio di destra; per OMEGA il viola). Sul MiSTer è una griglia in prospettiva,
+  muro e pavimento a 90 gradi, disegnata dalla logica video, con impulsi di luce a tempo con la musica.
+- Schermo VS (PC e web): la scritta VS è dorata con il riflesso che l'attraversa di tanto in tanto,
+  come PERFECT; le icone dei bonus sono bianche; il bordo della selezione è più sottile.
+- OMEGA (PC e web): la racchetta ha il corpo di tutte le altre e i segni nel viola di OMEGA, in partita,
+  nello schermo VS e nel finale.
+- Attract (PC, web, MiSTer e C64): le strisce non arrivano più e il logo non compare più dall'alto con il
+  raster e il lampo. Dopo l'auto-test il titolo c'è subito, con le strisce, PADD e WS fermi, e la
+  pallina che rimbalza come prima. Con il tipo di partita NEXT sotto il logo escono le lettere di NEXT, una
+  dopo l'altra a righe sfalsate che si assestano, e la riga larga come il logo si allarga dal centro; ogni
+  lettera ha il suo colpo e la riga il suo lampo. PRESS START non c'è più nel titolo: resta INSERT COIN
+  senza crediti (e non in NEXT, dove sta NEXT). Sul C64 NEXT non si anima: c'è, con la sua riga, o non
+  c'è. La versione Python, congelata, non cambia.
 - C64: i laser del BLASTER escono dalle bocche dei cannoni dell'astronave, entro un pixel, e
   passano anche sopra punteggi, barre, riserve e riga di metà campo senza cancellarli: lì il
   tratto prende il colore di quello che attraversa.
@@ -41,6 +55,8 @@ crea il commit e il tag `vX.Y.Z`.
   si vede.
 
 ### Corretto
+- Scelta della racchetta (PC e web): la scansione del GUARDIAN segue un orologio vero, non il tempo
+  della scena.
 - C64: la musica non perde più passi nei frame pesanti nemmeno sull'NTSC.
 - C64: una cella della riga di metà campo restava del colore sbagliato se il bullet time
   cominciava o finiva mentre un laser la attraversava.

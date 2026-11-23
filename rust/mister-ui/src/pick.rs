@@ -62,7 +62,9 @@ fn common(d: &mut Dl, title: &[u8]) {
 pub fn draw(r: &Regs, d: &mut Dl) {
     let p = Pick::new(r);
     d.class = CLASS_A;
-    d.grid = true; // lo sfondo è la griglia in prospettiva (rtl/ui_render.v)
+    // lo sfondo è la griglia in prospettiva (rtl/ui_render.v), con l'impulso del colore del
+    // personaggio di destra (l'avversario o P2)
+    d.grid = Some(portraits::PAL[p.kcur[1] as usize][5]);
     if p.paddle {
         paddles(r, d, &p);
         return;

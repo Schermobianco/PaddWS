@@ -144,6 +144,12 @@ impl Portraits {
         self.accent[kind as usize]
     }
 
+    /// Lo stesso colore a 8 bit per canale (come `accent` di `portraits.json`).
+    pub fn accent_rgb(&self, kind: PaddleKind) -> [u8; 3] {
+        let c = self.accent[kind as usize];
+        [c.r, c.g, c.b].map(|v| (v * 255.0).round() as u8)
+    }
+
     pub fn big(&self, kind: PaddleKind) -> &Texture2D {
         &self.big[kind as usize]
     }

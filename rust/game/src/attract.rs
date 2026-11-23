@@ -1,4 +1,4 @@
-//! Sequenza "attract" in stile cabinato anni '80: auto-test, strisce, logo, titolo.
+//! Sequenza "attract" in stile cabinato anni '80: auto-test e titolo.
 //!
 //! Tempi, posizioni e bitmap vengono da `assets/attract/` (tools/gen_attract_assets.py),
 //! gli stessi del core MiSTer. Tutto è definito su uno schermo virtuale 320x240 e
@@ -16,6 +16,9 @@ use crate::render::{ArtPaint, ArtPart, PixelArt, Renderer, TEXT_1X, TEXT_2X};
 use crate::titles;
 
 const FRAME: f64 = 1.0 / 60.0;
+/// Le lettere di NEXT: altezza e larghezza di ognuna, in pixel dello schermo virtuale.
+const NEXT_H: i32 = 10;
+const NEXT_LETTER_W: i32 = 8;
 const VW: f32 = 320.0;
 const VH: f32 = 240.0;
 
@@ -28,6 +31,7 @@ struct Spec {
     logo: Logo,
     ws: Ws,
     title: Title,
+    next: NextSpec,
     demo: Demo,
     game_over: GameOver,
 }
@@ -43,8 +47,6 @@ struct Colors {
 #[derive(Deserialize)]
 struct Frames {
     boot: u32,
-    stripes: u32,
-    logo: u32,
     title: u32,
     demo: u32,
     game_over: u32,
@@ -69,23 +71,46 @@ struct Stripes {
     height: f32,
     left_end: f32,
     right_start: f32,
-    start_step: u32,
-    slide: Vec<u32>,
 }
 
 #[derive(Deserialize)]
 struct Logo {
     x: f32,
     y: f32,
-    wipe_frames: u32,
-    flash_frames: u32,
 }
 
 #[derive(Deserialize)]
 struct Ws {
     x: f32,
     y: f32,
-    off: Vec<[u32; 2]>,
+}
+
+/// NEXT sotto il logo (solo con il tipo di partita NEXT): le lettere partono una dopo l'altra a righe
+/// sfalsate che si assestano, poi la riga larga come il logo si allarga dal centro. I numeri e le
+/// tabelle sono interi (vedi `next_spec` di tools/gen_attract_assets.py): su ogni versione lo stesso
+/// calcolo, con lo stesso risultato.
+#[derive(Deserialize)]
+struct NextSpec {
+    x: i32,
+    y: i32,
+    pitch: i32,
+    start: i32,
+    step: i32,
+    letter_frames: i32,
+    amp: Vec<i32>,
+    present: Vec<u32>,
+    noise: Vec<i32>,
+    line: NextLine,
+}
+
+#[derive(Deserialize)]
+struct NextLine {
+    x: i32,
+    y: i32,
+    h: i32,
+    half: Vec<i32>,
+    start: i32,
+    frames: i32,
 }
 
 #[derive(Deserialize)]
@@ -160,6 +185,7 @@ macro_rules! bitmaps {
 const BITMAPS: &[(&str, &[u8])] = bitmaps!(
     "logo",
     "ws",
+    "next",
     "insert_coin",
     "press_start",
     "credit",
@@ -323,28 +349,37 @@ fn letters(bm: &Bitmap) -> Vec<(f32, f32)> {
     out
 }
 
-/// Scritte del titolo che dipendono dai crediti.
+/// Scritte del titolo che dipendono dai crediti e dal tipo di partita.
 #[derive(Clone, Copy)]
 pub struct Hud {
     /// None = Free Play
     pub credits: Option<u8>,
+    /// Tipo di partita NEXT: sotto il logo compare la scritta NEXT.
+    pub next: bool,
 }
 
 impl Hud {
+    /// L'invito del riquadro della demo: INSERT COIN senza crediti, altrimenti PRESS START.
     fn label(&self) -> &'static str {
         match self.credits {
             Some(0) => "insert_coin",
             _ => "press_start",
         }
     }
+
+    /// La scritta lampeggiante del titolo: solo INSERT COIN, senza crediti (e senza NEXT, che sta al
+    /// suo posto); con i crediti o in Free Play niente, bastano CREDIT n e FREE PLAY.
+    fn title_label(&self) -> Option<&'static str> {
+        (self.credits == Some(0) && !self.next).then_some("insert_coin")
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Phase {
     Boot,
-    Stripes,
-    Logo,
     Title,
+    /// Il titolo è finito: la scena passa alla classifica.
+    Done,
 }
 
 pub struct Attract {
@@ -361,7 +396,7 @@ impl Attract {
     pub fn new(art: &AttractArt, self_test: bool) -> Self {
         let b = &art.spec.title.ball;
         Self {
-            phase: if self_test { Phase::Boot } else { Phase::Stripes },
+            phase: if self_test { Phase::Boot } else { Phase::Title },
             frame: 0,
             acc: 0.0,
             ball: [b.x, b.y, b.vx, b.vy],
@@ -412,37 +447,35 @@ impl Attract {
                     self.once(31, Event::Boost, sounds);
                 }
             }
-            Phase::Stripes => {
-                let last = s.stripes.slide.len() as u32 - 1;
-                for i in 0..6 {
-                    if f >= i * s.stripes.start_step + last {
-                        self.once(i, Event::Hit, sounds);
+            Phase::Title => {
+                if hud.next {
+                    // un colpo a ogni lettera di NEXT, un lampo quando parte la riga
+                    let n = &s.next;
+                    for i in 0..4 {
+                        if f as i32 >= n.start + n.step * i {
+                            self.once(i as u32, Event::Hit, sounds);
+                        }
+                    }
+                    if f as i32 >= n.line.start {
+                        self.once(4, Event::Boost, sounds);
                     }
                 }
-            }
-            Phase::Logo => {
-                if f >= s.logo.wipe_frames {
-                    self.once(0, Event::Boost, sounds);
-                }
-            }
-            Phase::Title => {
                 if self.step_ball(art, r, hud) {
                     sounds.push(Event::Wall);
                 }
             }
+            Phase::Done => return,
         }
         self.frame += 1;
         let duration = match self.phase {
             Phase::Boot => s.frames.boot,
-            Phase::Stripes => s.frames.stripes,
-            Phase::Logo => s.frames.logo,
             Phase::Title => s.frames.title,
+            Phase::Done => return,
         };
         if self.frame >= duration {
             let next = match self.phase {
-                Phase::Boot | Phase::Title => Phase::Stripes,
-                Phase::Stripes => Phase::Logo,
-                Phase::Logo => Phase::Title,
+                Phase::Boot => Phase::Title,
+                Phase::Title | Phase::Done => Phase::Done,
             };
             self.enter(art, next);
         }
@@ -450,9 +483,60 @@ impl Attract {
 
     // ----------------------------------------------------------------- pallina
 
-    fn label_visible(&self, art: &AttractArt) -> bool {
+    fn label_visible(&self, art: &AttractArt, hud: Hud) -> bool {
         let t = &art.spec.title;
-        self.frame > t.label_from && self.frame % t.blink_period < t.blink_on
+        hud.title_label().is_some() && self.frame > t.label_from && self.frame % t.blink_period < t.blink_on
+    }
+
+    /// Le righe di NEXT: lo spostamento in pixel della riga `row` (0..10) della lettera `i`, o None se
+    /// a questo frame non c'è. Prima che la lettera parta non c'è nulla, poi è a righe sfalsate che si
+    /// assestano per `letter_frames` frame, poi intera.
+    fn next_row(&self, art: &AttractArt, i: i32, row: i32) -> Option<i32> {
+        let n = &art.spec.next;
+        let k = self.frame as i32 - (n.start + n.step * i);
+        if k < 0 {
+            return None;
+        }
+        if k >= n.letter_frames {
+            return Some(0);
+        }
+        let s = (k >> 1) as usize;
+        let idx = ((row * 7 + s as i32 * 29 + i * 61) & 255) as usize;
+        if n.noise[idx] as u32 >= n.present[s] {
+            return None;
+        }
+        let amp = n.amp[s];
+        Some(n.noise[(idx + 131) & 255] % (2 * amp + 1) - amp)
+    }
+
+    /// Mezza larghezza della riga di NEXT a questo frame.
+    fn next_line_half(&self, art: &AttractArt) -> i32 {
+        let l = &art.spec.next.line;
+        let k = self.frame as i32 - l.start;
+        if k < 0 {
+            0
+        } else {
+            l.half[k.min(l.frames - 1) as usize]
+        }
+    }
+
+    /// Il pixel virtuale (x, y) è una lettera o la riga di NEXT in questo frame?
+    fn next_lit(&self, art: &AttractArt, x: i32, y: i32) -> bool {
+        let n = &art.spec.next;
+        let row = y - n.y;
+        if (0..NEXT_H).contains(&row) {
+            let bm = art.bm("next");
+            for i in 0..4 {
+                if let Some(dx) = self.next_row(art, i, row) {
+                    let bx = x - n.x - dx;
+                    if (i * n.pitch..i * n.pitch + NEXT_LETTER_W).contains(&bx) && bm.lit(bx, row) {
+                        return true;
+                    }
+                }
+            }
+        }
+        let half = self.next_line_half(art);
+        (n.line.y..n.line.y + n.line.h).contains(&y) && (n.line.x - half..n.line.x + half).contains(&x)
     }
 
     /// Il pixel virtuale (x, y) del titolo è nero? Strisce, logo e scritte, esclusa la pallina.
@@ -469,7 +553,12 @@ impl Attract {
             return true;
         }
         let t = &s.title;
-        if self.label_visible(art) && centered_lit(art.bm(hud.label()), t.label_scale, t.label_y, x, y) {
+        if hud.next && self.next_lit(art, x, y) {
+            return true;
+        }
+        if let Some(label) = hud.title_label().filter(|_| self.label_visible(art, hud))
+            && centered_lit(art.bm(label), t.label_scale, t.label_y, x, y)
+        {
             return true;
         }
         if credit_line(art, hud)
@@ -522,6 +611,34 @@ impl Attract {
 
     // ------------------------------------------------------------------ disegno
 
+    /// NEXT: le lettere a righe sfalsate (ogni riga in pixel interi) e la riga sotto.
+    fn draw_next(&self, art: &AttractArt, view: &View, color: Color) {
+        let n = &art.spec.next;
+        let bm = art.bm("next");
+        for i in 0..4 {
+            let (from, to) = (i * n.pitch, i * n.pitch + NEXT_LETTER_W);
+            for row in 0..NEXT_H {
+                let Some(dx) = self.next_row(art, i, row) else { continue };
+                let mut x = from;
+                while x < to {
+                    if !bm.lit(x, row) {
+                        x += 1;
+                        continue;
+                    }
+                    let start = x;
+                    while x < to && bm.lit(x, row) {
+                        x += 1;
+                    }
+                    view.rect((n.x + start + dx) as f32, (n.y + row) as f32, (x - start) as f32, 1.0, color);
+                }
+            }
+        }
+        let half = self.next_line_half(art);
+        if half > 0 {
+            view.rect((n.line.x - half) as f32, n.line.y as f32, (2 * half) as f32, n.line.h as f32, color);
+        }
+    }
+
     pub fn draw(&self, art: &AttractArt, r: &Renderer, hud: Hud) {
         let s = &art.spec;
         let view = View::of(r);
@@ -562,43 +679,17 @@ impl Attract {
                     view.rect(view.left, VH - 1.0, view.right - view.left, 1.0, white);
                 }
             }
-            Phase::Stripes => {
-                r.fill(yellow);
-                let last = s.stripes.slide.len() - 1;
-                let progress: Vec<f32> = (0..6)
-                    .map(|i| {
-                        let local = f.saturating_sub(i * s.stripes.start_step) as usize;
-                        s.stripes.slide[local.min(last)] as f32 / 1000.0
-                    })
-                    .collect();
-                draw_stripes(art, &view, &progress, black);
-            }
-            Phase::Logo => {
-                r.fill(yellow);
-                draw_stripes(art, &view, &[1.0; 6], black);
-                view.bitmap(art.bm("ws"), s.ws.x, s.ws.y, 1.0, yellow);
-                let logo = art.bm("logo");
-                if f < s.logo.wipe_frames {
-                    let rows = (logo.height() * f as f32 / s.logo.wipe_frames as f32).floor();
-                    view.bitmap_rows(logo, s.logo.x, s.logo.y, 1.0, black, rows);
-                    view.rect(s.logo.x, s.logo.y + rows + 1.0, logo.width(), 1.0, white); // il raster che scende
-                } else {
-                    view.bitmap(logo, s.logo.x, s.logo.y, 1.0, black);
-                    if f < s.logo.wipe_frames + s.logo.flash_frames {
-                        r.fill(white); // lampo
-                    }
-                }
-            }
-            Phase::Title => {
+            Phase::Title | Phase::Done => {
                 let t = &s.title;
                 r.fill(yellow);
-                draw_stripes(art, &view, &[1.0; 6], black);
-                if !s.ws.off.iter().any(|[a, b]| f >= *a && f < *b) {
-                    view.bitmap(art.bm("ws"), s.ws.x, s.ws.y, 1.0, yellow);
-                }
+                draw_stripes(art, &view, black);
+                view.bitmap(art.bm("ws"), s.ws.x, s.ws.y, 1.0, yellow);
                 view.bitmap(art.bm("logo"), s.logo.x, s.logo.y, 1.0, black);
-                if self.label_visible(art) {
-                    draw_centered(&view, art.bm(hud.label()), t.label_scale, t.label_y, black);
+                if hud.next {
+                    self.draw_next(art, &view, black);
+                }
+                if let Some(label) = hud.title_label().filter(|_| self.label_visible(art, hud)) {
+                    draw_centered(&view, art.bm(label), t.label_scale, t.label_y, black);
                 }
                 for (bm, x0) in credit_line(art, hud) {
                     view.bitmap(art.bm(bm), x0, t.credit_y, 1.0, black);
@@ -840,22 +931,9 @@ pub fn draw_game_over_anim(
         r.art_centered(pa, 1.0, c.x, c.y, 0.0, ArtPart::Whole, paint);
         // riflesso: una banda in diagonale, colonna per colonna della grafica, sulle lettere e
         // sul filetto (bianco, giallo e giallo scuro), non sul bordo
-        if f >= GLINT_AT {
-            let g = ((f - GLINT_AT) % GLINT_PERIOD) as f32 * 4.0 - 20.0;
+        if let Some(g) = titles::glint_offset(f as f32, GLINT_AT as f32, GLINT_PERIOD as f32) {
             let shine = paint[titles::WHITE_ROLE].unwrap_or(white);
-            let mut glint = titles::only(paint, &[titles::WHITE_ROLE, titles::YELLOW_ROLE, titles::DARK_YELLOW_ROLE]);
-            for c in glint.iter_mut().flatten() {
-                *c = shine;
-            }
-            for col in 0..pa.w as i32 {
-                // pixel (col, row) nella banda se 0 <= col + row - g < 12
-                let r0 = (g - col as f32).ceil().max(0.0);
-                let r1 = (g + 12.0 - col as f32).ceil().min(pa.h);
-                if r1 > r0 {
-                    let src = Rect::new(col as f32, r0, 1.0, r1 - r0);
-                    r.art_centered(pa, 1.0, c.x, c.y, 0.0, ArtPart::Area(src), &glint);
-                }
-            }
+            titles::draw_glint(r, pa, 1.0, c, paint, shine, g, 12.0);
         }
         if let (Some(win), true) = (o.win, f >= STAMP_WIN) {
             draw_centered(&view, win, ws, wy + dy, winner_color);
@@ -979,16 +1057,12 @@ pub fn draw_demo_overlay(art: &AttractArt, r: &Renderer, hud: Hud, mode: &str, f
     draw_centered(&view, bm, k, y, white);
 }
 
-fn draw_stripes(art: &AttractArt, view: &View, progress: &[f32], color: Color) {
+/// Le strisce, ferme: la sinistra arriva al bordo sinistro, la destra a quello destro.
+fn draw_stripes(art: &AttractArt, view: &View, color: Color) {
     let st = &art.spec.stripes;
-    for (i, &row) in st.rows.iter().enumerate() {
-        // la striscia sinistra arriva al bordo sinistro, la destra a quello destro
-        let len_l = st.left_end - view.left;
-        let right_edge = view.left + len_l * progress[i * 2];
-        view.rect(right_edge - len_l, row, len_l, st.height, color);
-        let len_r = view.right - st.right_start;
-        let left_edge = view.right - len_r * progress[i * 2 + 1];
-        view.rect(left_edge, row, len_r + 1.0, st.height, color);
+    for &row in &st.rows {
+        view.rect(view.left, row, st.left_end - view.left, st.height, color);
+        view.rect(st.right_start, row, view.right - st.right_start + 1.0, st.height, color);
     }
 }
 
@@ -1027,3 +1101,32 @@ fn credit_line(art: &AttractArt, hud: Hud) -> Vec<(&'static str, f32)> {
 const DIGITS: [&str; 10] = [
     "digit_0", "digit_1", "digit_2", "digit_3", "digit_4", "digit_5", "digit_6", "digit_7", "digit_8", "digit_9",
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn spec() -> Spec {
+        serde_json::from_str(include_str!("../../../assets/attract/attract.json")).expect("attract.json")
+    }
+
+    /// Le tabelle di NEXT hanno la forma che i calcoli interi si aspettano: un valore per ogni mezzo
+    /// passo di assestamento, soglie e spostamenti che chiudono a "intero", la riga che arriva alla
+    /// larghezza del logo senza mai tornare indietro, le lettere una dopo l'altra prima della riga.
+    #[test]
+    fn next_tables_are_consistent() {
+        let n = spec().next;
+        let steps = (n.letter_frames / 2) as usize;
+        assert_eq!((n.amp.len(), n.present.len(), n.noise.len()), (steps, steps, 256));
+        assert!(n.amp.windows(2).all(|w| w[0] >= w[1]) && n.amp[steps - 1] <= 1);
+        assert!(n.present.windows(2).all(|w| w[0] <= w[1]) && n.present[steps - 1] >= 240);
+        assert!(n.noise.iter().all(|&v| (0..256).contains(&v)));
+        assert_eq!(n.line.half.len(), n.line.frames as usize);
+        assert!(n.line.half.windows(2).all(|w| w[0] <= w[1]));
+        assert_eq!(n.line.x - n.line.half[n.line.half.len() - 1], spec().logo.x as i32, "larga come il logo");
+        let last_letter_starts = n.start + 3 * n.step;
+        assert!(n.line.start > last_letter_starts && n.line.start < last_letter_starts + n.letter_frames);
+        // il blocco delle lettere è centrato sul logo
+        assert_eq!(n.x + (3 * n.pitch + NEXT_LETTER_W) / 2, n.line.x);
+    }
+}

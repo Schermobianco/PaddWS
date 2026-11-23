@@ -32,9 +32,11 @@
 // (u, v) = scambio ? (b, a) : (a, b), più l'origine. Colore 0 = trasparente.
 //
 // Griglia in prospettiva (schermate prima della partita): con [9] di 0xB00 acceso il pixel che nessun
-// oggetto copre (colore 0) è, dove la regola `grid_gray` lo dice, una riga di muro o di pavimento, più
-// chiara dove passa l'impulso di luce (l'indice 255 e il grigio dalla logica, senza tavolozza).
-// Stessa regola di rust/game/src/grid.rs (`shade`), pixel per pixel.
+// oggetto copre (colore 0) è, dove la regola `grid_cell` lo dice, una riga di muro o di pavimento, che
+// dove passa un impulso di luce va dal suo grigio al colore dello sfidante (scritto a 0xB05, 24 bit RGB:
+// l'indice 255 e il colore dalla logica, senza tavolozza). Gli impulsi (3 insieme) partono a ogni
+// secondo colpo del basso della musica (`bass_note`) o, senza musica, ogni GRID_IDLE frame. Stessa
+// regola di rust/game/src/grid.rs (`cell` e `blend`), pixel per pixel.
 //
 // Registri del firmware (indirizzi in parole, scritture): 0x000 oggetti, 0x400 caratteri ([7:0]
 // codice del font, [15:8] colore), 0x800 tabella delle righe (16 bit), 0xA00 tavolozza (24 bit),
@@ -60,6 +62,7 @@ module ui_render #(
     input  wire        ce_pix,
     input  wire [8:0]  hc,
     input  wire [8:0]  vc,
+    input  wire        bass_note,      // un ciclo di clk: parte una nota del basso (pong_sid): impulso della griglia
     // scritture del firmware (dominio di clk_cpu)
     input  wire        cpu_wr,
     input  wire [13:0] cpu_addr,
@@ -216,6 +219,8 @@ always @(posedge clk_cpu) clear_q <= clear;
 always @(posedge clk_cpu) begin
     go_d <= go_tog;
     lb_we <= 1'b0;
+    // colore dell'impulso della griglia
+    if (cpu_wr && cpu_addr == 14'h0B05) grid_rgb <= cpu_wdata[23:0];
     // fine del frame del firmware: oggetti del banco nascosto e richiesta di scambio
     if (cpu_wr && cpu_addr == 14'h0B00) begin
         count[~front] <= cpu_wdata[7:0];
@@ -422,13 +427,19 @@ wire       lsel = (hc == 9'd423) ? ~vc[0] : vc[0];
 reg  [9:0] lb_q = 10'd0;
 reg        lb_ok = 1'b0;
 reg        grid_q = 1'b0;              // griglia accesa nel banco mostrato (clk_cpu -> clk, registro a registro)
-reg [7:0]  gt = 8'd0;                  // frame dell'impulso della griglia (0..GRID_CYCLE-1)
-reg [7:0]  g_gray = 8'd0;              // grigio del pixel letto (0 se non è su una riga della griglia)
+reg [7:0]  gp0 = 8'd255, gp1 = 8'd255, gp2 = 8'd255;  // fase (frame da quando è partito) dei 3 impulsi; >= GRID_PULSE: finito
+reg [1:0]  g_next = 2'd0;              // impulso che parte al prossimo
+reg        g_odd = 1'b0;               // note del basso: ne parte uno ogni due
+reg [7:0]  g_idle = 8'd0;              // frame dall'ultimo impulso partito
+reg        bass_q = 1'b0;
+reg [11:0] g_cell = 12'd0;            // pixel letto: [7:0] grigio della riga (0 se non è su una riga), [11:8] impulso 0..8
+reg [23:0] grid_rgb = 24'hC0C0C0;      // colore dell'impulso (clk_cpu)
+reg [23:0] grid_rgb_q = 24'hC0C0C0;    // e in clk (registro a registro)
 always @(posedge clk) grid_q <= grid_b[front];
 
 // ------------------------------------------------------------------ griglia
 
-localparam integer GRID_CYCLE = 240, GRID_PULSE = 170;
+localparam integer GRID_PULSE = 80, GRID_IDLE = 90;
 // 131072 / (y - 96) arrotondato, per la riga y = 128 + r del pavimento
 function [12:0] grid_step(input [6:0] r);
     case (r)
@@ -548,17 +559,26 @@ function [12:0] grid_step(input [6:0] r);
     endcase
 endfunction
 
-// grigio del pixel (gx, gy) al frame t: la stessa regola di `shade` in rust/game/src/grid.rs. Muro 32 e
-// pavimento 80 a riposo, fino a 192 in testa all'impulso, 8 livelli a gradini di 4 righe di coda
-function [7:0] grid_gray(input [8:0] gx, input [8:0] gy, input [7:0] t);
+// pixel (gx, gy) al frame t, la stessa regola di `cell` in rust/game/src/grid.rs: {livello dell'impulso
+// (8 in testa, uno in meno ogni 4 righe di coda), grigio della riga: muro 32, pavimento 80; 0 se niente}
+function [3:0] grid_pulse(input [8:0] gy, input [7:0] t);
+    reg signed [10:0] behind;
+    begin
+        behind = (gy < 9'd128) ? $signed({2'b0, gy}) + $signed({2'b0, t, 1'b0}) - 11'sd128
+                               : 11'sd128 + $signed({2'b0, t, 1'b0}) - $signed({2'b0, gy});
+        // distanza dalla testa (0..31 righe): 8 in testa, un livello in meno ogni 4 righe di coda
+        grid_pulse = (t < GRID_PULSE && behind >= 11'sd0 && behind < 11'sd32) ? 4'd8 - {1'b0, behind[4:2]} : 4'd0;
+    end
+endfunction
+
+function [11:0] grid_cell(input [8:0] gx, input [8:0] gy, input [7:0] t0, input [7:0] t1, input [7:0] t2);
     reg signed [9:0] dx;
     reg [8:0]  ax;
     reg [6:0]  r;
     reg [12:0] st;
     reg [19:0] q;
     reg        on;
-    reg signed [10:0] behind;
-    reg [3:0]  k;
+    reg [3:0]  k, k1, k2;
     begin
         dx = $signed({1'b0, gx}) - 10'sd160;
         ax = dx[9] ? -dx[8:0] : dx[8:0];
@@ -567,15 +587,17 @@ function [7:0] grid_gray(input [8:0] gx, input [8:0] gy, input [7:0] t);
         q = ax * st;
         if (gy < 9'd128) begin
             on = gy[3:0] == 4'd0 || gx[3:0] == 4'd0;
-            behind = $signed({2'b0, gy}) + $signed({3'b0, t}) - 11'sd128;
         end else begin
             on = gy == 9'd128 || gy == 9'd133 || gy == 9'd139 || gy == 9'd147 || gy == 9'd160 || gy == 9'd181 ||
                  gy == 9'd224 || q[15:0] < {3'd0, st};
-            behind = 11'sd128 + $signed({3'b0, t}) - $signed({2'b0, gy});
         end
-        // distanza dalla testa dell'impulso (0..31 righe): 8 in testa, un livello in meno ogni 4 righe
-        k = (t < GRID_PULSE && behind >= 11'sd0 && behind < 11'sd32) ? 4'd8 - {1'b0, behind[4:2]} : 4'd0;
-        grid_gray = !on ? 8'd0 : (gy < 9'd128) ? 8'd32 + 8'd20 * k : 8'd80 + 8'd14 * k;
+        // il più luminoso dei tre impulsi
+        k = grid_pulse(gy, t0);
+        k1 = grid_pulse(gy, t1);
+        k2 = grid_pulse(gy, t2);
+        if (k1 > k) k = k1;
+        if (k2 > k) k = k2;
+        grid_cell = !on ? 12'd0 : {k, (gy < 9'd128) ? 8'd32 : 8'd80};
     end
 endfunction
 
@@ -583,13 +605,53 @@ always @(posedge clk) begin
     if (ce_pix) begin
         lb_q <= lb[{lsel, xn}];
         lb_ok <= xn < 9'd320;
-        g_gray <= grid_gray(xn, vc, gt);
-        if (hc == 9'd0 && vc == 9'd0) gt <= (gt == GRID_CYCLE - 1) ? 8'd0 : gt + 8'd1;
+        g_cell <= grid_cell(xn, vc, gp0, gp1, gp2);
     end
 end
-wire       grid_px = grid_q && lb_ok && lb_q[7:0] == 8'd0 && g_gray != 8'd0;
+
+// impulsi: un frame in più per ogni impulso in volo; ne parte uno a ogni secondo colpo del basso, o
+// da solo dopo GRID_IDLE frame senza note
+wire g_note = bass_note && !bass_q;
+wire g_frame = ce_pix && hc == 9'd0 && vc == 9'd0;
+wire g_spawn = (g_note && !g_odd) || (g_frame && g_idle >= GRID_IDLE - 1 && !g_note);
+always @(posedge clk) begin
+    bass_q <= bass_note;
+    if (g_frame) begin
+        if (gp0 < 8'd200) gp0 <= gp0 + 8'd1;
+        if (gp1 < 8'd200) gp1 <= gp1 + 8'd1;
+        if (gp2 < 8'd200) gp2 <= gp2 + 8'd1;
+        if (g_idle != 8'd255) g_idle <= g_idle + 8'd1;
+    end
+    if (g_note) g_odd <= ~g_odd;
+    if (g_spawn) begin
+        case (g_next)
+            2'd0: gp0 <= 8'd0;
+            2'd1: gp1 <= 8'd0;
+            default: gp2 <= 8'd0;
+        endcase
+        g_next <= (g_next == 2'd2) ? 2'd0 : g_next + 2'd1;
+        g_idle <= 8'd0;
+    end
+end
+wire       grid_px = grid_q && lb_ok && lb_q[7:0] == 8'd0 && g_cell[7:0] != 8'd0;
+
+// canale del colore di una riga: dal grigio `base` al colore `c` in proporzione k / 8 (scorrimento aritmetico)
+function [7:0] grid_chan(input [7:0] base, input [7:0] c, input [3:0] k);
+    reg signed [13:0] m, sh;
+    begin
+        m = ($signed({1'b0, c}) - $signed({1'b0, base})) * $signed({1'b0, k});
+        sh = m >>> 3;
+        grid_chan = base + sh[7:0];
+    end
+endfunction
+wire [23:0] grid_col = {grid_chan(g_cell[7:0], grid_rgb_q[23:16], g_cell[11:8]),
+                        grid_chan(g_cell[7:0], grid_rgb_q[15:8], g_cell[11:8]),
+                        grid_chan(g_cell[7:0], grid_rgb_q[7:0], g_cell[11:8])};
 assign px_idx = grid_px ? 8'd255 : lb_ok ? lb_q[7:0] : 8'd0;
 assign px_class = lb_q[9:8];
-always @(posedge clk) px_rgb <= grid_px ? {g_gray, g_gray, g_gray} : pal_ram[px_idx];
+always @(posedge clk) begin
+    grid_rgb_q <= grid_rgb;
+    px_rgb <= grid_px ? grid_col : pal_ram[px_idx];
+end
 
 endmodule

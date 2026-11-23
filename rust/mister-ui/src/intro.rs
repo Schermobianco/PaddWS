@@ -148,7 +148,17 @@ pub fn draw(r: &Regs, d: &mut Dl) {
     if omega && f < OMEGA_VS_AT {
         d.rect(0, 0, W, 240, BLACK);
     } else {
-        d.grid = true; // lo sfondo è la griglia in prospettiva (rtl/ui_render.v)
+        // lo sfondo è la griglia in prospettiva (rtl/ui_render.v), con l'impulso del colore dello
+        // sfidante: l'avversario del campione (OMEGA viola)
+        let me = st.ch.side as usize;
+        let challenger = if omega {
+            OMEGA
+        } else if st.ch.duel {
+            field(r.w[28], if me == 0 { 3 } else { 0 }, 3) as usize
+        } else {
+            st.ch.kind as usize
+        };
+        d.grid = Some(portraits::PAL[challenger][5]);
     }
     header(d, &st);
     if omega && f < OMEGA_VS_AT {
@@ -209,13 +219,14 @@ fn header(d: &mut Dl, st: &Stage) {
 fn capsule(d: &mut Dl, bonus: u32, cx: i32, cy: i32, inverted: bool, k: (i32, i32)) {
     let (x, y) = (cx - CAP / 2, cy - CAP / 2);
     let icon = &IMG_ICON[bonus as usize];
+    // le icone dei bonus sono bianche
     if inverted {
-        rect(d, x, y, CAP, CAP, ACCENT, k);
+        rect(d, x, y, CAP, CAP, WHITE, k);
         let o = d.img_obj(x + 2, y + 2, icon, BLACK);
         d.push(&sh(o, k));
     } else {
-        crate::cast::frame(d, x + k.0, y + k.1, CAP, CAP, 1, ACCENT);
-        let o = d.img_obj(x + 2, y + 2, icon, ACCENT);
+        crate::cast::frame(d, x + k.0, y + k.1, CAP, CAP, 1, WHITE);
+        let o = d.img_obj(x + 2, y + 2, icon, WHITE);
         d.push(&sh(o, k));
     }
 }

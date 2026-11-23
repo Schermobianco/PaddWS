@@ -105,6 +105,9 @@ pub struct Anim {
     pub recoil: Option<f32>,
     /// RUSH: sta scattando in avanti (i lembi si allungano dritti)
     pub dashing: bool,
+    /// secondi dell'orologio vero, che non si ferma col conto alla rovescia e con la pausa: l'impulso
+    /// di scansione delle piastre del GUARDIAN ci va, altrimenti restava sulla prima
+    pub clock: f32,
 }
 
 impl Anim {
@@ -122,6 +125,7 @@ impl Anim {
             build: None,
             recoil: None,
             dashing: false,
+            clock: t,
         }
     }
 }
@@ -428,11 +432,14 @@ fn broken(px: u8) -> u8 {
 fn wall(r: &mut Ops, ship: &Ship, h: f32, a: &Anim, boost: Boost) {
     let n = GUARDIAN_SECTORS;
     let tq = (pose(a.t) as i64).rem_euclid(120) as usize;
+    // l'impulso di scansione e l'allarme dell'ultimo corso vanno con l'orologio vero: con la partita
+    // ferma (conto alla rovescia, pausa) restavano sulla prima piastra
+    let tc = (pose(a.clock) as i64).rem_euclid(120) as usize;
     let k = h / ship.h as f32;
     let sectors = ship.sectors.expect("settori del GUARDIAN");
     let alive = a.wall.iter().filter(|w| w.is_none()).count();
-    let warn = alive == 1 && (tq % 4) < 2;
-    let scan = tq % n;
+    let warn = alive == 1 && (tc % 4) < 2;
+    let scan = tc % n;
     let recoil = a.recoil.map(|at| ((at * n as f32).floor() as usize).min(n - 1));
     // spostamento di una piastra (None: non ancora entrata nella costruzione)
     let offset = |i: usize| -> Option<(f32, f32)> {
@@ -1335,7 +1342,8 @@ impl PaddlePick {
         let p = &app.params;
         let t1 = r.text_1x();
         r.fill(BLACK);
-        crate::grid::draw(app);
+        // le code delle stelle cadenti hanno il colore del personaggio di destra (l'avversario o P2)
+        crate::space::draw(app, portraits.accent_rgb(PaddleKind::ALL[self.cursor[1]]));
         r.text_centered("PICK YOUR PADDLE", font, t1, w / 2.0, at(app, 0.0, line(0)).y, 0.0, accent);
 
         // griglia: le caselle dei sette tipi e quella di OMEGA, il boss segreto (non si sceglie)
@@ -1418,7 +1426,9 @@ impl PaddlePick {
                 continue;
             }
             let cell = cell_rect(app, self.cursor[side]);
-            draw_rectangle_lines(cell.x, cell.y, cell.w, cell.h, 4.0 * u, accent);
+            // bordo sottile, di 2 pixel arcade dentro la casella (la linea è centrata sul bordo: si
+            // restringe il rettangolo di un pixel), come sul MiSTer
+            draw_rectangle_lines(cell.x + u, cell.y + u, cell.w - 2.0 * u, cell.h - 2.0 * u, 2.0 * u, accent);
             let tag = if self.cpu && self.fixed == Some(side) { "CPU".to_string() } else { format!("{}P", side + 1) };
             let tag_w = (tag.len() as f32 * 8.0 + 2.0) * u;
             let x = if side == 0 { cell.x + 2.0 * u } else { cell.x + cell.w - 2.0 * u - tag_w };

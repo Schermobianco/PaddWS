@@ -277,8 +277,8 @@ math_init:
     jmp math_ensure
 .segment "CODE"
 
-; Le tabelle dei quadrati stanno nella bitmap dell'attract ($F000), che strisce, logo e titolo
-; coprono: math_invalidate le segna da rifare, math_step ne rifà un pezzo per frame fuori da quelle
+; Le tabelle dei quadrati stanno nella bitmap dell'attract ($F000), che il titolo
+; copre: math_invalidate le segna da rifare, math_step ne rifà un pezzo per frame fuori da quelle
 ; scene, math_ensure le finisce subito (prima di una partita).
 .segment "BSS"
 sq_x:       .res 2              ; prossima voce di f(x) (512: poi f(x - 255))

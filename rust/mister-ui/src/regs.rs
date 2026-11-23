@@ -2,7 +2,7 @@
 //! registro.
 //!
 //! - 0: [3:0] modo, [14:4] frame dall'inizio del modo, [20:15] frame % 60, [24:21] crediti,
-//!   [25] Free Play, [26] scritte dritte, [27] easter egg
+//!   [25] Free Play, [26] scritte dritte, [27] easter egg, [28] tipo di partita NEXT
 //! - 1: pallina del titolo, [8:0] x e [17:9] y dell'angolo in alto a sinistra
 //! - 2: scalata: [2:0] livello, [5:3] tipo dell'avversario, [14:6] i suoi bonus, [15] campione a
 //!   destra, [16] scalata in corso, [17] sfida tra due, [18] allenamento, [19] livello vinto senza
@@ -104,6 +104,7 @@ pub struct Regs {
     pub free_play: bool,
     pub upright: bool,
     pub egg: bool,
+    pub next: bool,
     pub ball_x: i32,
     pub ball_y: i32,
 }
@@ -131,6 +132,7 @@ impl Regs {
             free_play: w[0] >> 25 & 1 != 0,
             upright: w[0] >> 26 & 1 != 0,
             egg: w[0] >> 27 & 1 != 0,
+            next: w[0] >> 28 & 1 != 0,
             ball_x: (w[1] & 0x1FF) as i32,
             ball_y: ((w[1] >> 9) & 0x1FF) as i32,
             w,

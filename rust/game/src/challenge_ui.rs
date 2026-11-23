@@ -634,7 +634,18 @@ impl Intro {
         let f = ((self.length - self.left) * 60.0).floor() as f32;
         let st = Stage::new(app, run, f, self.duel);
         if !(st.omega && st.f < OMEGA_VS_AT) {
-            crate::grid::draw(app);
+            // le code delle stelle cadenti hanno il colore dello sfidante: l'avversario del campione (OMEGA viola)
+            let peak = if st.omega && !self.duel {
+                [0xE0, 0x40, 0xFF]
+            } else {
+                let kind = if self.duel {
+                    app.paddles[1 - run.side as usize].unwrap_or(PaddleKind::Arcade)
+                } else {
+                    st.rung.kind
+                };
+                app.assets.portraits.accent_rgb(kind)
+            };
+            crate::space::draw(app, peak);
         }
         st.header();
         // OMEGA prima la sua parte speciale (forme e sigillo), poi come gli altri lo schermo VS
@@ -693,6 +704,9 @@ const VS_TAG_AT: f32 = 54.0;
 const VS_ICONS_AT: f32 = 74.0;
 const VS_ICON_GAP: f32 = 6.0;
 const VS_FIRST_AT: f32 = 100.0;
+/// Riflesso del VS: dal frame (dalla comparsa del VS) e ogni quanti frame.
+const VS_GLINT_AT: f32 = 60.0;
+const VS_GLINT_PERIOD: f32 = 240.0;
 /// Schermo VS: posizioni in pixel del campo 320x240, sulle righe di caratteri del C64 (da `TOP`):
 /// ritratti righe 1-13 (ai lati della scritta del livello), VS alla 4, campo righe 6-14, nomi
 /// fra il disegno del ritratto e il motto (`vs_name_y`), motti 19, icone 20-21, punti 22.
@@ -958,9 +972,16 @@ impl<'a> Stage<'a> {
         // VS: a 4x, poi 3x, poi si posa a 2x
         if f >= VS_STAMP_AT {
             let t = f - VS_STAMP_AT;
-            let times = if t < 4.0 { 4.0 } else if t < VS_STAMP_SETTLE { 3.0 } else { 2.0 };
+            // come PERFECT: si stampa grande a scale intere, poi si posa; ogni tanto una banda di luce
+            // bianca la attraversa (il VS dura quanto la schermata: il riflesso è più raro di PERFECT)
+            let times = if t < 4.0 { 3.0 } else if t < VS_STAMP_SETTLE { 2.0 } else { 1.0 };
             let c = at(160.0, VS_Y);
-            r.text_centered("VS", font, t1 * times, c.x, c.y, 0.0, self.accent);
+            let art = &self.app.assets.titles.vs;
+            let paint = titles::vs_paint();
+            r.art_centered(art, times, c.x, c.y, 0.0, ArtPart::Whole, &paint);
+            if let Some(g) = titles::glint_offset(t, VS_GLINT_AT, VS_GLINT_PERIOD) {
+                titles::draw_glint(r, art, times, c, &paint, self.white, g, 12.0);
+            }
         }
         // il campo: la rete si disegna dall'alto, poi le due racchette
         if f >= VS_COURT_AT {
@@ -988,8 +1009,12 @@ impl<'a> Stage<'a> {
                     scan: None,
                     anim: Anim::still(get_time() as f32),
                 };
-                let body = if self.omega && side != me { crate::next_ui::omega_color(app) } else { self.white };
-                draw_paddle(r, &shape, u, paddle_ui::look(app, Some(kind), body));
+                // OMEGA: corpo normale e segni viola
+                let mut look = paddle_ui::look(app, Some(kind), self.white);
+                if self.omega && side != me {
+                    look.mark = crate::next_ui::omega_color(app);
+                }
+                draw_paddle(r, &shape, u, look);
             }
         }
         // nomi, motti e bonus: prima il giocatore, poi l'avversario `VS_THEIRS` frame dopo
@@ -1020,7 +1045,7 @@ impl<'a> Stage<'a> {
                 let s = VS_ICONS_AT + delay / 2.0 + VS_ICON_GAP * i as f32;
                 if f >= s {
                     let c = at(HALF_X[side] + (i as f32 - 1.0) * 20.0, VS_ICON_Y);
-                    draw_capsule(bonus, c.x, c.y, 13.0 * u, u, f < s + 4.0, self.accent);
+                    draw_capsule(bonus, c.x, c.y, 13.0 * u, u, f < s + 4.0, self.white);
                 }
             }
         }
@@ -1042,7 +1067,8 @@ impl<'a> Stage<'a> {
             let kind = if step < LEVELS { RUNGS[step].kind } else { OMEGA.kind };
             let changed = since - step.min(LEVELS) as f32 * OMEGA_FORM_FRAMES;
             let flash = if step < LEVELS { OMEGA_FLASH / 2.0 } else { OMEGA_FLASH };
-            let body = if changed < flash { self.white } else { crate::next_ui::omega_color(self.app) };
+            // corpo normale e segni viola, bianchi nel lampo del cambio di forma
+            let mark = if changed < flash { self.white } else { crate::next_ui::omega_color(self.app) };
             let r = &self.app.renderer;
             let shape = Shape {
                 kind: Some(kind),
@@ -1057,7 +1083,9 @@ impl<'a> Stage<'a> {
                 scan: None,
                 anim: Anim::still(get_time() as f32),
             };
-            draw_paddle(r, &shape, self.u, paddle_ui::look(self.app, Some(kind), body));
+            let mut look = paddle_ui::look(self.app, Some(kind), self.white);
+            look.mark = mark;
+            draw_paddle(r, &shape, self.u, look);
         }
         // il sigillo: bianco per qualche frame, poi un lampeggio, poi i suoi colori
         if f >= OMEGA_NAME_AT {

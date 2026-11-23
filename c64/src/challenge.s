@@ -468,7 +468,7 @@ done:
 train:
     lda #0                      ; allenamento finito: l'attract
     sta cg_active
-    jmp go_stripes
+    jmp go_title
 ladder:
     ldx ch_side
     txa
@@ -1806,7 +1806,7 @@ done:
 ; Il codice della classifica (disegno della tabella, scena) sta nella
 ; cartuccia (segmento HSCODE, nel .prg da HS_IMG, dopo le mosse speciali) e girano a HS_RUN, nella
 ; bitmap dell'attract: nella classifica lo schermo è a caratteri, e dopo la classifica la bitmap si
-; rifà sempre da capo (strisce). Lo copia hs_load nel primo frame di disegno, quando a schermo c'è
+; rifà sempre da capo (titolo). Lo copia hs_load nel primo frame di disegno, quando a schermo c'è
 ; già il testo pulito: la copia non si vede. Nel programma restano enter_scores, hs_load e l'inizio
 ; di scores_scene (le fasi comuni, prima della copia).
 HS_RUN   = $E000                ; dove gira (paddws.cfg, HSRAM)
@@ -1819,7 +1819,7 @@ HS_PAGES = >(__HSCODE_SIZE__ + 255)
 .assert ((HS_IMG - $0800) .mod $4000) + $0600 <= $2000, error, "classifica oltre la ROML del banco"
 HS_FIRST = 3                   ; pagine copiate nel primo frame (hs_load), le altre nel secondo
 
-; Classifica (ch_hl in evidenza), dall'attract e dopo una partita; poi le strisce.
+; Classifica (ch_hl in evidenza), dall'attract e dopo una partita; poi il titolo.
 .proc enter_scores
     lda #0
     sta pk_i                    ; prima riga da disegnare
@@ -2417,7 +2417,7 @@ off:
 time:
     jsr ch_timeout
     bcc done
-    jmp go_stripes              ; dall'attract e dopo una partita, le strisce
+    jmp go_title              ; dall'attract e dopo una partita, il titolo
 done:
     rts
 .endproc

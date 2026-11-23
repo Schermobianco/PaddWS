@@ -118,6 +118,11 @@ pub struct Music {
     steps: u64,
     /// oscilloscopi delle voci, se richiesti
     scope: Option<Box<Scope>>,
+    /// campioni prodotti
+    samples: u64,
+    /// gate della voce 1 (il basso) acceso, e i campioni delle note nuove non ancora ritirate
+    bass_gate: bool,
+    bass_notes: Vec<u64>,
 }
 
 impl Music {
@@ -143,7 +148,22 @@ impl Music {
             pending_fx: None,
             steps: 0,
             scope: None,
+            samples: 0,
+            bass_gate: false,
+            bass_notes: Vec::new(),
         }
+    }
+
+    /// Campioni prodotti da quando esiste la musica.
+    pub fn samples(&self) -> u64 {
+        self.samples
+    }
+
+    /// Ritira in `out` i campioni (da `samples`) in cui è partita una nota del basso (gate della voce 1
+    /// che si accende) dall'ultima volta: il gioco ci aggancia l'impulso della griglia delle
+    /// schermate prima della partita, come il core MiSTer fa con il suo player.
+    pub fn take_bass_notes(&mut self, out: &mut Vec<u64>) {
+        out.append(&mut self.bass_notes);
     }
 
     /// Accende o spegne gli oscilloscopi delle voci (`scope`): accesi riprendono da capo.
@@ -265,6 +285,7 @@ impl Music {
     /// Prossimo campione d'uscita.
     #[inline]
     fn next(&mut self) -> f32 {
+        self.samples += 1;
         self.frac += CLOCK_HZ;
         let n = self.frac / self.rate;
         self.frac %= self.rate;
@@ -272,8 +293,17 @@ impl Music {
         if song || fx {
             // con il nome dell'avversario il player conta ma non scrive
             let (sid, name) = (&mut self.sid, self.name.on());
+            let (gate, notes, now) = (&mut self.bass_gate, &mut self.bass_notes, self.samples);
             self.player.step(song, fx, &mut |r, v| {
                 if !name {
+                    // controllo della voce 1: il gate che si accende è una nota del basso
+                    if r == 4 {
+                        let on = v & 1 != 0;
+                        if on && !*gate && notes.len() < 64 {
+                            notes.push(now);
+                        }
+                        *gate = on;
+                    }
                     sid.write(r, v)
                 }
             });
@@ -344,6 +374,29 @@ mod tests {
 
     fn rms(x: &[f32]) -> f32 {
         (x.iter().map(|s| s * s).sum::<f32>() / x.len() as f32).sqrt()
+    }
+
+    /// Il basso della canzone del titolo (canzone 1) fa una croma ogni 12 passi a 50 Hz, cioè una nota
+    /// ogni 0,24 s: `take_bass_notes` le dà tutte, nei campioni giusti, e senza musica non dà niente.
+    #[test]
+    fn le_note_del_basso_battono_il_tempo() {
+        let mut m = Music::new(44_100);
+        let mut buf = vec![0.0; 44_100];
+        let mut notes = Vec::new();
+        m.render(&mut buf);
+        m.take_bass_notes(&mut notes);
+        assert!(notes.is_empty(), "senza canzone: {notes:?}");
+        m.set_song(1);
+        for _ in 0..10 {
+            m.render(&mut buf);
+        }
+        m.take_bass_notes(&mut notes);
+        assert!((40..=43).contains(&notes.len()), "{} note in 10 s", notes.len());
+        for w in notes.windows(2) {
+            let gap = (w[1] - w[0]) as f64 / 44_100.0;
+            assert!((gap - 0.24).abs() < 0.02, "distanza {gap} s");
+        }
+        assert!(notes.iter().all(|&s| s <= m.samples()));
     }
 
     #[test]

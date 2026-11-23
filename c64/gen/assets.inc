@@ -82,16 +82,12 @@ SID_FX_BOUNCE = 9
 
 ; attract (attract.json riportato a 320x200 e 50 Hz)
 AT_BOOT_FRAMES = 240
-AT_STRIPES_FRAMES = 120
-AT_LOGO_FRAMES = 110
 AT_TITLE_FRAMES = 400
 AT_GAME_OVER_FRAMES = 150
 AT_GAME_OVER_BLACK = 100
 AT_BOOT_LINE_FRAMES = 25
 AT_BOOT_GRID_FROM = 190
 AT_CURSOR_HALF = 8
-AT_STRIPE_STEP = 10
-AT_SLIDE_LAST = 35
 AT_STRIPE_H = 12
 AT_STRIPE_LEFT = 75
 AT_STRIPE_RIGHT = 241
@@ -101,8 +97,6 @@ AT_LOGO_X = 82
 AT_LOGO_W = 152
 AT_LOGO_C0 = 10
 AT_LOGO_C1 = 29
-AT_WIPE_FRAMES = 70
-AT_FLASH_FRAMES = 3
 AT_WS_Y = 116
 AT_WS_H = 8
 AT_WS_C0 = 30
@@ -129,10 +123,15 @@ AT_COPYRIGHT_C0 = 12
 AT_STRIPE_Y0 = 76
 AT_STRIPE_Y1 = 95
 AT_STRIPE_Y2 = 114
-.define AT_WS_OFF 0, 12, 25, 38
-; strisce: pixel coperti a sinistra e a destra, frame per frame
-.define AT_SLIDE_LEFT 0, 8, 15, 29, 35, 40, 45, 50, 58, 62, 65, 68, 71, 75, 76, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 77, 77, 76, 76, 75, 75, 75
-.define AT_SLIDE_RIGHT 0, 8, 16, 30, 37, 43, 48, 53, 62, 65, 69, 72, 74, 79, 81, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 81, 80, 80, 79, 79, 79
+
+; NEXT sotto il logo (solo in NEXT): posizione, lettere
+NX_Y = 146
+NX_LINE_Y = 161
+NX_LINE_X = 158
+NX_LINE_HALF = 76
+NX_ROWS = 10
+.define NX_COLS 15, 18, 20, 22
+.define NX_GLYPHS 1, 230, 1, 230, 1, 230, 1, 182, 1, 182, 1, 182, 1, 182, 1, 158, 1, 158, 1, 158, 127, 128, 127, 128, 96, 0, 96, 0, 127, 0, 127, 0, 96, 0, 96, 0, 127, 128, 127, 128, 24, 96, 12, 192, 12, 192, 7, 128, 3, 0, 3, 0, 7, 128, 12, 192, 12, 192, 24, 96, 7, 248, 7, 248, 0, 192, 0, 192, 0, 192, 0, 192, 0, 192, 0, 192, 0, 192, 0, 192
 TITLE_A_ROW = 9    ; righe di caratteri del blocco A in title.bin, poi il B
 TITLE_A_END = 16
 TITLE_A_C0 = 10    ; colonne del blocco A (il B è largo tutto lo schermo)

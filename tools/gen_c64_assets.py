@@ -710,6 +710,33 @@ def centered(width: int) -> int:
     return round((W64 - width) / 2)
 
 
+def next_consts() -> list[str]:
+    """NEXT sotto il logo (assets/attract/attract.json, "next") nella bitmap a 320x200 (le righe come
+    il titolo, meno Y_SHIFT). Le quattro lettere sono già spostate di quanto serve per cadere ai loro
+    pixel (non sono allineate alle celle): per ogni riga due byte, la parte nella cella della lettera e
+    quella nella cella dopo. Sul C64 NEXT non si anima: c'è, intero, o non c'è."""
+    import gen_attract_assets as attract
+    nx = SPEC["next"]
+    letters = []                       # per lettera: 10 righe x (byte nella cella, byte nella cella dopo)
+    cols = []
+    for i, name in enumerate("NEXT"):
+        x = nx["x"] + i * nx["pitch"]
+        shift = x & 7
+        cols.append(x >> 3)
+        for row in attract.next_letter_rows(name):
+            b = sum(v << (7 - k) for k, v in enumerate(row))
+            letters += [b >> shift, (b << (8 - shift)) & 0xFF]
+    consts = {
+        "NX_Y": nx["y"] - Y_SHIFT, "NX_LINE_Y": nx["line"]["y"] - Y_SHIFT, "NX_LINE_X": nx["line"]["x"],
+        "NX_LINE_HALF": nx["line"]["half"][-1], "NX_ROWS": 10,
+    }
+    lines = ["", "; NEXT sotto il logo (solo in NEXT): posizione, lettere"]
+    lines += [f"{k} = {v}" for k, v in consts.items()]
+    lines.append(".define NX_COLS " + ", ".join(map(str, cols)))
+    lines.append(".define NX_GLYPHS " + ", ".join(map(str, letters)))
+    return lines
+
+
 def attract_assets(lines: list[str]) -> dict[str, bytes]:
     st, logo, ws, t = SPEC["stripes"], SPEC["logo"], SPEC["ws"], SPEC["title"]
     rows = [int(r) - Y_SHIFT for r in st["rows"]]
@@ -729,26 +756,16 @@ def attract_assets(lines: list[str]) -> dict[str, bytes]:
     title.put([[bool(r & 0x80 >> x) for x in range(8)] for r in COPYRIGHT_SIGN], 8 * cp_col, 8 * COPYRIGHT_ROW)
     # 1x: il 2x è solo per i titoli grandi (attract.json ha label_scale per le altre versioni)
     scale = 1
-    # bordi delle strisce a 50 Hz (la tabella dell'attract è a 60 Hz, in millesimi)
-    slide60 = st["slide"]
-    n50 = f50(len(slide60) - 1) + 1
-    prog = [slide60[min(len(slide60) - 1, round(k * 60 / 50))] / 1000 for k in range(n50)]
-    left = [round(left_end * p) for p in prog]
-    right = [round((W64 - right_start) * p) for p in prog]
     fr = SPEC["frames"]
     b = SPEC["boot"]
     consts = {
         "AT_BOOT_FRAMES": f50(fr["boot"]),
-        "AT_STRIPES_FRAMES": f50(fr["stripes"]),
-        "AT_LOGO_FRAMES": f50(fr["logo"]),
         "AT_TITLE_FRAMES": f50(fr["title"]),
         "AT_GAME_OVER_FRAMES": f50(fr["game_over"]),
         "AT_GAME_OVER_BLACK": f50(SPEC["game_over"]["black_frames"]),
         "AT_BOOT_LINE_FRAMES": f50(b["line_frames"]),
         "AT_BOOT_GRID_FROM": f50(b["grid_from"]),
         "AT_CURSOR_HALF": f50(b["cursor_period"] / 2),
-        "AT_STRIPE_STEP": f50(st["start_step"]),
-        "AT_SLIDE_LAST": n50 - 1,
         "AT_STRIPE_H": height,
         "AT_STRIPE_LEFT": left_end,
         "AT_STRIPE_RIGHT": right_start,
@@ -758,8 +775,6 @@ def attract_assets(lines: list[str]) -> dict[str, bytes]:
         "AT_LOGO_W": len(logo_px[0]),
         "AT_LOGO_C0": lx // 8,
         "AT_LOGO_C1": (lx + len(logo_px[0]) - 1) // 8,
-        "AT_WIPE_FRAMES": f50(logo["wipe_frames"]),
-        "AT_FLASH_FRAMES": int(logo["flash_frames"]),
         "AT_WS_Y": wy,
         "AT_WS_H": len(ws_px),
         "AT_WS_C0": wx // 8,
@@ -790,11 +805,7 @@ def attract_assets(lines: list[str]) -> dict[str, bytes]:
     lines += [f"{k} = {v}" for k, v in consts.items()]
     for i, r in enumerate(rows):
         lines.append(f"AT_STRIPE_Y{i} = {r}")
-    off = [(f50(a), f50(b2)) for a, b2 in ws["off"]]
-    lines.append(".define AT_WS_OFF " + ", ".join(f"{a}, {b2}" for a, b2 in off))
-    lines.append("; strisce: pixel coperti a sinistra e a destra, frame per frame")
-    lines.append(".define AT_SLIDE_LEFT " + ", ".join(map(str, left)))
-    lines.append(".define AT_SLIDE_RIGHT " + ", ".join(map(str, right)))
+    lines += next_consts()
     # del titolo servono solo le righe di caratteri con il logo e WS (blocco A) e con il copyright
     # (blocco B): l'attract li copia nella bitmap a schermo
     # del blocco A solo le colonne del logo e di WS

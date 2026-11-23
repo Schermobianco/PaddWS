@@ -13,7 +13,7 @@ use macroquad::prelude::*;
 use paddws_core::PaddleKind;
 
 use crate::config::Colors;
-use crate::render::{ART_ROLES, ArtPaint, PixelArt};
+use crate::render::{ART_ROLES, ArtPaint, ArtPart, PixelArt, Renderer};
 
 /// Ruoli della palette (indici dei PNG, come in `assets/titles/titles.json`) e, per `ArtPaint`,
 /// la sagoma.
@@ -63,6 +63,8 @@ pub struct Titles {
     /// WARNING!, la targa rossa dell'allarme prima di OMEGA
     pub warning: PixelArt,
     pub perfect: PixelArt,
+    /// VS dello schermo VS, nello stile di PERFECT
+    pub vs: PixelArt,
     /// PADD con tre strisce per lato (`menu_logo.png`): palette 0 trasparente, 1-5 l'accento
     /// sempre più scuro (`logo_paint`)
     pub menu_logo: PixelArt,
@@ -76,6 +78,7 @@ impl Titles {
             challenger: PixelArt::from_png(title_png!("challenger")),
             warning: PixelArt::from_png(title_png!("warning")),
             perfect: PixelArt::from_png(title_png!("perfect")),
+            vs: PixelArt::from_png(title_png!("vs")),
             menu_logo: PixelArt::from_png(title_png!("menu_logo")),
         }
     }
@@ -90,6 +93,31 @@ fn rgb(r: u8, g: u8, b: u8) -> Color {
     Color::from_rgba(r, g, b, 255)
 }
 
+/// Il riflesso di PERFECT e del VS: una banda in diagonale, colonna per colonna della grafica `art`
+/// (centrata in `c`, a `times` pixel per pixel), sulle lettere e sul filetto (bianco, giallo e giallo
+/// scuro) ma non sul bordo; i pixel (col, riga) con `0 <= col + riga - g < width` diventano `shine`.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_glint(r: &Renderer, art: &PixelArt, times: f32, c: Vec2, paint: &ArtPaint, shine: Color, g: f32, width: f32) {
+    let mut glint = only(paint, &[WHITE_ROLE, YELLOW_ROLE, DARK_YELLOW_ROLE]);
+    for color in glint.iter_mut().flatten() {
+        *color = shine;
+    }
+    for col in 0..art.w as i32 {
+        let r0 = (g - col as f32).ceil().max(0.0);
+        let r1 = (g + width - col as f32).ceil().min(art.h);
+        if r1 > r0 {
+            let src = Rect::new(col as f32, r0, 1.0, r1 - r0);
+            r.art_centered(art, times, c.x, c.y, 0.0, ArtPart::Area(src), &glint);
+        }
+    }
+}
+
+/// Posizione della banda del riflesso `frame` frame dopo l'inizio della scritta: parte dopo `first`
+/// frame, ogni `period` frame, a 4 righe a frame da `-20` (prima del bordo sinistro). None prima.
+pub fn glint_offset(frame: f32, first: f32, period: f32) -> Option<f32> {
+    (frame >= first).then(|| (frame - first) % period * 4.0 - 20.0)
+}
+
 /// Colori dei ruoli con i colori della configurazione (vedi l'inizio del modulo).
 pub fn paint(colors: &Colors) -> ArtPaint {
     let accent = Color::from_rgba(colors.accent[0], colors.accent[1], colors.accent[2], 255);
@@ -102,6 +130,17 @@ pub fn paint(colors: &Colors) -> ArtPaint {
     p[DARK_GRAY_ROLE] = Some(rgb(55, 55, 55));
     p[RED_ROLE] = Some(rgb(200, 30, 30));
     p[DARK_RED_ROLE] = Some(rgb(90, 10, 10));
+    p
+}
+
+/// I colori del VS: oro. Il VS usa gli stessi ruoli di PERFECT (le tre fasce e il bordo) ma qui
+/// diventano le tre fasce dell'oro, dalla più chiara in alto, e un bordo marrone scuro.
+pub fn vs_paint() -> ArtPaint {
+    let mut p: ArtPaint = [None; ART_ROLES];
+    p[WHITE_ROLE] = Some(rgb(245, 215, 120));
+    p[YELLOW_ROLE] = Some(rgb(215, 165, 40));
+    p[DARK_YELLOW_ROLE] = Some(rgb(140, 95, 15));
+    p[DARK_RED_ROLE] = Some(rgb(60, 35, 5));
     p
 }
 
@@ -160,7 +199,7 @@ mod tests {
         // ogni grafica dell'elenco è inclusa con il suo nome
         let titles = spec["titles"].as_object().unwrap();
         let names: Vec<String> = PaddleKind::ALL.iter().map(|k| format!("name_{}", k.name().to_lowercase())).collect();
-        let others = ["name_omega", "challenger", "warning", "perfect"];
+        let others = ["name_omega", "challenger", "warning", "perfect", "vs"];
         for n in names.iter().map(String::as_str).chain(others) {
             assert!(titles.contains_key(n), "{n}");
         }

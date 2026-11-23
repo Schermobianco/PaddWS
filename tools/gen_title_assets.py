@@ -289,6 +289,21 @@ def perfect() -> Canvas:
     return c
 
 
+def vs() -> Canvas:
+    """Come PERFECT (stesse lettere larghe e alte, stesse tre fasce), senza il filetto: la scritta VS
+    dello schermo VS, che si stampa e ha il riflesso come PERFECT. Il gioco la colora in oro (i ruoli
+    bianco, giallo, giallo scuro e rosso scuro, qui nei colori di PERFECT, diventano le tre fasce
+    dell'oro e il bordo scuro: `vs_paint` in rust/game/src/titles.rs)."""
+    c = Canvas(64, 30)
+    p, w = text("VS", 2, 3, 16)
+    ox = 32 - w // 2
+    for x, y in outline(p):
+        c.put(ox + x, 3 + y, DR)
+    for x, y in p:
+        c.put(ox + x, 3 + y, W if y < 8 else Y if y < 15 else DY)
+    return c
+
+
 TITLES = {
     "name_arcade": arcade,
     "name_titan": titan,
@@ -299,6 +314,7 @@ TITLES = {
     "name_guardian": guardian,
     "challenger": challenger,
     "perfect": perfect,
+    "vs": vs,
     "warning": warning,
     "name_omega": omega,
 }

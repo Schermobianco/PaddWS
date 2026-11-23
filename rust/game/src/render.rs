@@ -1486,6 +1486,7 @@ mod pixel_art_tests {
                 "challenger" => include_bytes!("../../../assets/titles/challenger.png"),
                 "warning" => include_bytes!("../../../assets/titles/warning.png"),
                 "perfect" => include_bytes!("../../../assets/titles/perfect.png"),
+                "vs" => include_bytes!("../../../assets/titles/vs.png"),
                 other => panic!("{other}"),
             }
         };
