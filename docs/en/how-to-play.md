@@ -388,8 +388,8 @@ used with `F` / `C` (left) and `.` / `-` (right). Key **5** coin, fire or **RETU
 | MiSTer core at 320×240: title after the coin | MiSTer core: paddle pick, with the characters |
 | ![Commodore 64: title](../screenshots/c64-title.png) | ![Commodore 64: NEXT match](../screenshots/c64-next.png) |
 | Commodore 64: title in Free Play | Commodore 64: NEXT, ARCADE against ARCADE |
-| ![Commodore 64: power-up pick](../screenshots/c64-pick.png) | ![Commodore 64: the ladder's VS screen](../screenshots/c64-challenge.png) |
-| Commodore 64: power-up pick (the CPU has already picked) | Commodore 64: the VS screen before the first opponent |
+| ![Commodore 64: power-up pick](../screenshots/c64-pick.png) | |
+| Commodore 64: power-up pick (the CPU has already picked) | |
 
 The PC screenshots come from `paddws --screenshot-tour DIR` (Rust version), the MiSTer ones from the
 simulation of the core with Verilator (`mister/sim/frames`), the C64 ones from VICE

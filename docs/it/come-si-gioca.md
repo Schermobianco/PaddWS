@@ -383,8 +383,8 @@ menu. Solo PAL; finora provata in VICE. Dettagli in [c64/README.md](../../c64/RE
 | Core MiSTer a 320×240: titolo dopo il gettone | Core MiSTer: scelta della racchetta, con i personaggi |
 | ![Commodore 64: titolo](../screenshots/c64-title.png) | ![Commodore 64: partita NEXT](../screenshots/c64-next.png) |
 | Commodore 64: titolo in Free Play | Commodore 64: NEXT, ARCADE contro ARCADE |
-| ![Commodore 64: scelta dei bonus](../screenshots/c64-pick.png) | ![Commodore 64: lo schermo VS della scalata](../screenshots/c64-challenge.png) |
-| Commodore 64: scelta dei bonus (la CPU ha già scelto) | Commodore 64: lo schermo VS prima del primo avversario |
+| ![Commodore 64: scelta dei bonus](../screenshots/c64-pick.png) | |
+| Commodore 64: scelta dei bonus (la CPU ha già scelto) | |
 
 Le schermate PC vengono da `paddws --screenshot-tour DIR` (versione Rust), quelle MiSTer dalla
 simulazione del core con Verilator (`mister/sim/frames`), quelle C64 da VICE (`c64/shot.ps1`).
