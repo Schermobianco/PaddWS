@@ -82,6 +82,11 @@ pub struct Portraits {
     /// colore di ogni personaggio (`accent` di `portraits.json`): anche quello dei segni della
     /// sua racchetta
     accent: [Color; PaddleKind::COUNT],
+    /// riga dopo l'ultima con il disegno in ogni ritratto grande, poi in quello di OMEGA
+    /// (`art_bottom` di `portraits.json`): sotto ci va il nome nello schermo VS
+    art_bottom: [f32; PaddleKind::COUNT + 1],
+    /// la più bassa di quelle (`art_base`): i ritratti si abbassano fino a lì
+    art_base: f32,
     /// illustrazione isometrica dell'astronave di ciascun tipo (224x126, sfondo trasparente)
     ships: [Texture2D; PaddleKind::COUNT],
 }
@@ -105,8 +110,28 @@ impl Portraits {
                 let [r, g, b] = rgb(&spec["accent"][&names[i]]);
                 Color::from_rgba(r, g, b, 255)
             }),
+            art_bottom: std::array::from_fn(|i| {
+                let name = names.get(i).map_or("omega", |n| n.as_str());
+                spec["art_bottom"][name].as_f64().expect("art_bottom del ritratto") as f32
+            }),
+            art_base: spec["art_base"].as_f64().expect("art_base dei ritratti") as f32,
             ships: std::array::from_fn(|i| ship_texture(SHIPS[i])),
         }
+    }
+
+    /// Riga del fondo comune dei ritratti grandi, dove finiscono tutti i personaggi (`art_base`).
+    pub fn art_base(&self) -> f32 {
+        self.art_base
+    }
+
+    /// Quanto scende il ritratto grande di `kind` (None: OMEGA) per finire sulla riga comune.
+    pub fn art_drop(&self, kind: Option<PaddleKind>) -> f32 {
+        self.art_base - self.art_bottom(kind)
+    }
+
+    /// Riga dopo l'ultima con il disegno nel ritratto grande di `kind` (None: OMEGA).
+    pub fn art_bottom(&self, kind: Option<PaddleKind>) -> f32 {
+        self.art_bottom[kind.map_or(PaddleKind::COUNT, |k| k as usize)]
     }
 
     /// Illustrazione isometrica dell'astronave `kind` (224x126 pixel nativi, sfondo trasparente).

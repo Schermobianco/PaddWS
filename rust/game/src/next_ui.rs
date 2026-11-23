@@ -334,6 +334,44 @@ pub fn draw_special_icon(special: Special, x: f32, y: f32, u: f32, side: usize, 
     draw_bits(&SPECIAL_ICONS[special as usize - 1], x, y, u, side == 1, color);
 }
 
+/// Raggi dei due archi delle righe di rotazione oltre la punta della racchetta, in pixel arcade.
+const SPIN_RADII: [f32; 2] = [5.0, 2.0];
+/// Per ogni arco, da dove a dove resta dietro la punta (radianti); e dove il bianco diventa
+/// grigio e il grigio scuro a scacchi, per tutti e due.
+const SPIN_SPANS: [(f32, f32); 2] = [(0.30, 1.75), (0.65, 1.45)];
+const SPIN_GRAY_AT: f32 = 0.80;
+const SPIN_DARK_AT: f32 = 1.15;
+
+/// Righe di rotazione della racchetta che gira con il SUPER armato (centro `(cx, cy)` sullo schermo,
+/// alta `ph`, girata di `angle` in senso orario): due archi dietro ogni punta, fermi rispetto alla
+/// racchetta, quindi girano con lei. Bianchi vicino alla punta, poi grigi, poi scuri e a scacchi;
+/// a pixel arcade (`u`).
+fn draw_spin_lines((cx, cy): (f32, f32), ph: f32, angle: f32, u: f32, (white, gray): (Color, Color)) {
+    let dark = Color::new(gray.r * 0.5, gray.g * 0.5, gray.b * 0.5, 1.0);
+    for tip in [-std::f32::consts::FRAC_PI_2, std::f32::consts::FRAC_PI_2] {
+        for (extra, (from, to)) in SPIN_RADII.into_iter().zip(SPIN_SPANS) {
+            let rad = ph * 0.5 + extra * u;
+            // un passo di mezzo pixel arcade: nessun buco lungo l'arco
+            let steps = ((to - from) * rad / u * 2.0).ceil() as usize;
+            for i in 0..=steps {
+                let behind = from + (to - from) * i as f32 / steps as f32;
+                let a = tip + angle - behind;
+                let (px, py) = ((rad * a.cos() / u).round(), (rad * a.sin() / u).round());
+                let color = if behind < SPIN_GRAY_AT {
+                    white
+                } else if behind < SPIN_DARK_AT {
+                    gray
+                } else if (px + py).rem_euclid(2.0) == 0.0 {
+                    dark
+                } else {
+                    continue;
+                };
+                draw_rectangle(cx + (px - 0.5) * u, cy + (py - 0.5) * u, u, u, color);
+            }
+        }
+    }
+}
+
 /// Onda d'urto del colpo di una mossa davanti alla racchetta in (x, y) (coordinate del core), a
 /// `k` (0..1) della sua durata; `back` è il verso del fondo del campo di chi colpisce. STRAIGHT
 /// SHOT: due righe orizzontali che partono dalla faccia e corrono avanti accorciandosi; RISING
@@ -1645,6 +1683,7 @@ impl NextFx {
             Some(Bonus::Super) if pl.super_anim == SuperAnim::Spin => {
                 // la racchetta vera (astronave del personaggio) ruota su se stessa attorno al centro
                 let angle = game.tick as f32 * 0.09;
+                draw_spin_lines((x, r.screen_y(y)), ph, angle, u, (white, gray));
                 body_rot(skin, -angle * front);
             }
             Some(b) => {

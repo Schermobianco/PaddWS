@@ -1366,7 +1366,8 @@ impl PaddlePick {
         for side in 0..2 {
             let kind = PaddleKind::ALL[self.cursor[side]];
             // ritratto grande, il personaggio intero; quello di destra guarda il centro
-            let corner = at(app, PORTRAIT_X[side], PORTRAIT_Y);
+            // tutti i personaggi finiscono sulla stessa riga: scendono fino a `art_base`
+            let corner = at(app, PORTRAIT_X[side], PORTRAIT_Y + portraits.art_drop(Some(kind)));
             draw_texture_ex(portraits.big(kind), corner.x, corner.y, WHITE, DrawTextureParams {
                 dest_size: Some(vec2(PORTRAIT_W, PORTRAIT_H) * u),
                 flip_x: side == 1,
@@ -1387,7 +1388,8 @@ impl PaddlePick {
             let half = name.w / 2.0 + 2.0;
             let cx = mid.clamp(half, 320.0 - half);
             let paint = crate::titles::paint(colors);
-            r.art_centered(name, 1.0, at(app, cx, 0.0).x, at(app, 0.0, NAME_Y).y, 0.0, ArtPart::Whole, &paint);
+            let name_y = pick_name_y(portraits.art_base());
+            r.art_centered(name, 1.0, at(app, cx, 0.0).x, at(app, 0.0, name_y).y, 0.0, ArtPart::Whole, &paint);
             let shape = Shape {
                 kind: Some(kind),
                 x: at(app, PADDLE_X[side], 0.0).x,
@@ -1485,7 +1487,13 @@ fn grid_step(i: usize, step: GridStep) -> usize {
 const COURT_Y: f32 = TOP + 13.0 * 8.0;
 const COURT_H: f32 = 9.0 * 8.0;
 pub(crate) const PADDLE_X: [f32; 2] = [14.0 * 8.0 + 4.0, 25.0 * 8.0 + 4.0];
-const NAME_Y: f32 = TOP + 18.0 * 8.0 + 16.0;
+
+/// Centro verticale del nome disegnato sotto il ritratto: a metà fra il fondo comune dei disegni
+/// (`art_base`: i ritratti scendono tutti fino a lì, `Portraits::art_drop`) e la frase della riga 22
+/// (le maiuscole cominciano 3 pixel e mezzo sopra il suo centro), in pixel interi come sul MiSTer.
+pub(crate) fn pick_name_y(art_base: f32) -> f32 {
+    TOP + ((art_base + 217.0) / 2.0).floor()
+}
 /// centro di ciascuna metà, per le frasi e i comandi
 pub(crate) const HALF_X: [f32; 2] = [80.0, 240.0];
 

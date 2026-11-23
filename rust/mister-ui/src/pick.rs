@@ -127,7 +127,12 @@ const GRID_Y: i32 = PORTRAIT_Y;
 const CELL: i32 = 32;
 const COURT_Y: i32 = TOP + 13 * 8;
 const COURT_H: i32 = 9 * 8;
-const NAME_Y: i32 = TOP + 18 * 8 + 16;
+/// Centro verticale del nome disegnato: a metà fra il fondo comune dei ritratti (`ART_BASE`) e la
+/// frase della riga 22 (le maiuscole cominciano 3 pixel e mezzo sopra il suo centro), come
+/// `pick_name_y` di paddle_ui.rs.
+fn name_y() -> i32 {
+    TOP + (portraits::ART_BASE + 217) / 2
+}
 
 /// Angolo della casella `i` della griglia (prima riga ARCADE-TWIST, seconda BLASTER-OMEGA).
 fn cell_xy(i: u32) -> (i32, i32) {
@@ -153,7 +158,9 @@ fn paddles(r: &Regs, d: &mut Dl, p: &Pick) {
         let kind = p.kcur[side];
         let chosen = p.chosen >> side & 1 != 0;
         let fixed = p.lock >> side & 1 != 0;
-        cast.big(d, kind as usize, PORTRAIT_X[side], PORTRAIT_Y, side == 1);
+        // tutti i personaggi finiscono sulla stessa riga: scendono fino a ART_BASE
+        let drop = portraits::ART_BASE - portraits::ART_BOTTOM[kind as usize];
+        cast.big(d, kind as usize, PORTRAIT_X[side], PORTRAIT_Y + drop, side == 1);
         let mid = PORTRAIT_X[side] + PORTRAIT_W / 2;
         let head: &[u8] = match side {
             0 => b"P1",
@@ -165,7 +172,7 @@ fn paddles(r: &Regs, d: &mut Dl, p: &Pick) {
             centered(d, b"OK", mid + if side == 0 { 28 } else { -28 }, line(4), ACCENT);
         }
         let img = &IMG_NAME[kind as usize];
-        name_art(d, kind, name_x(mid, img.w as i32), NAME_Y, TL);
+        name_art(d, kind, name_x(mid, img.w as i32), name_y(), TL);
         paddle(d, kind, PADDLE_X[side], COURT_Y + COURT_H / 2, side == 0);
         centered(d, KIND_TAGS[kind as usize], HALF_X[side], line(22), WHITE);
     }

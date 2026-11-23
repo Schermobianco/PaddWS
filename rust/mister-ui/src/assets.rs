@@ -453,6 +453,11 @@ pub mod portraits {
     /// sfilata del finale (nella DDR3): normale e sconfitto
     pub const MID: [[Img; 2]; 8] = [[IMG_PT_MID_ARCADE, IMG_PT_MID_ARCADE_DEFEATED], [IMG_PT_MID_TITAN, IMG_PT_MID_TITAN_DEFEATED], [IMG_PT_MID_HAMMER, IMG_PT_MID_HAMMER_DEFEATED], [IMG_PT_MID_TWIST, IMG_PT_MID_TWIST_DEFEATED], [IMG_PT_MID_BLASTER, IMG_PT_MID_BLASTER_DEFEATED], [IMG_PT_MID_RUSH, IMG_PT_MID_RUSH_DEFEATED], [IMG_PT_MID_GUARDIAN, IMG_PT_MID_GUARDIAN_DEFEATED], [IMG_PT_MID_OMEGA, IMG_PT_MID_OMEGA_DEFEATED]];
     pub const MID_LOCKED: Img = IMG_PT_MID_OMEGA_LOCKED;
+    /// riga dopo l'ultima con il disegno in ogni ritratto grande (art_bottom di portraits.json):
+    /// i nomi dello schermo VS e della scelta ci centrano sotto
+    pub const ART_BOTTOM: [i32; 8] = [95, 76, 84, 86, 85, 85, 80, 85];
+    /// la più bassa: i ritratti scendono di ART_BASE - ART_BOTTOM e finiscono tutti sulla stessa riga
+    pub const ART_BASE: i32 = 95;
     /// colori RGB dei ruoli 1-7 di ogni personaggio
     pub const PAL: [[u32; 7]; 8] = [[0x000000, 0xFFFFFF, 0xC3C3C3, 0x828282, 0x464646, 0xFFD21E, 0x8C7411], [0x000000, 0xFFFFFF, 0xC3C3C3, 0x828282, 0x464646, 0xE67828, 0x7F4216], [0x000000, 0xFFFFFF, 0xC3C3C3, 0x828282, 0x464646, 0xE62828, 0x7F1616], [0x000000, 0xFFFFFF, 0xC3C3C3, 0x828282, 0x464646, 0x9646C8, 0x53276E], [0x000000, 0xFFFFFF, 0xC3C3C3, 0x828282, 0x464646, 0x46BE46, 0x276927], [0x000000, 0xFFFFFF, 0xC3C3C3, 0x828282, 0x464646, 0x3CC8DC, 0x216E79], [0x000000, 0xFFFFFF, 0xC3C3C3, 0x828282, 0x464646, 0x5A96FF, 0x32538C], [0x000000, 0xFFFFFF, 0xC3C3C3, 0x828282, 0x464646, 0xE040FF, 0x7B238C]];
 }

@@ -692,19 +692,17 @@ const VS_ICON_GAP: f32 = 6.0;
 const VS_FIRST_AT: f32 = 100.0;
 /// Schermo VS: posizioni in pixel del campo 320x240, sulle righe di caratteri del C64 (da `TOP`):
 /// ritratti righe 1-13 (ai lati della scritta del livello), VS alla 4, campo righe 6-14, nomi
-/// 15-18 (il sigillo di OMEGA, alto 33, da metà della 14), motti 19, icone 20-21, punti 22.
+/// fra il disegno del ritratto e il motto (`vs_name_y`), motti 19, icone 20-21, punti 22.
 const VS_PORTRAIT_Y: f32 = TOP + 8.0;
 const VS_Y: f32 = TOP + 4.0 * 8.0;
 const VS_COURT_Y: f32 = TOP + 6.0 * 8.0;
 const VS_COURT_H: f32 = 9.0 * 8.0;
-/// centro dei nomi disegnati (righe 15-18); i più alti (TITAN, il sigillo di OMEGA alto 33) salgono
-/// quanto basta a finire a `VS_NAME_BOTTOM`, 4 righe sopra il motto
-const VS_NAME_Y: f32 = TOP + 15.0 * 8.0 + 16.0;
-const VS_NAME_BOTTOM: f32 = TOP + 19.0 * 8.0 - 4.0;
 
-/// Centro verticale di un nome disegnato alto `h` nello schermo VS.
-fn vs_name_y(h: f32) -> f32 {
-    VS_NAME_Y.min(VS_NAME_BOTTOM - h / 2.0)
+/// Centro verticale del nome disegnato nello schermo VS: a metà fra il fondo comune dei disegni dei
+/// ritratti (`art_base`: i ritratti scendono tutti fino a lì, `Portraits::art_drop`) e il motto (riga
+/// 19, le maiuscole cominciano 3 pixel e mezzo sopra il centro), in pixel interi come sul MiSTer.
+fn vs_name_y(art_base: f32) -> f32 {
+    TOP + ((art_base + 161.0) / 2.0).floor()
 }
 const VS_TAG_ROW: u32 = 19;
 const VS_ICON_Y: f32 = TOP + 20.0 * 8.0 + 8.0;
@@ -938,7 +936,9 @@ impl<'a> Stage<'a> {
             for side in 0..2 {
                 let end = PORTRAIT_X[side];
                 let start = if side == 0 { 160.0 - half - PORTRAIT_W } else { 160.0 + half };
-                let corner = at(start + (end - start) * ease, VS_PORTRAIT_Y);
+                // tutti i personaggi finiscono sulla stessa riga: OMEGA nella sua presentazione compreso
+                let who = if self.omega && side != me { None } else { Some(kinds[side]) };
+                let corner = at(start + (end - start) * ease, VS_PORTRAIT_Y + app.assets.portraits.art_drop(who));
                 let params = DrawTextureParams {
                     dest_size: Some(vec2(PORTRAIT_W, PORTRAIT_H) * u),
                     flip_x: side == 1,
@@ -997,8 +997,9 @@ impl<'a> Stage<'a> {
             let delay = if theirs { VS_THEIRS } else { 0.0 };
             if f >= VS_NAME_AT + delay {
                 let art = if theirs && !self.duel { self.name_art() } else { app.assets.titles.name(kind) };
+                let name_y = vs_name_y(app.assets.portraits.art_base());
                 let half = art.w / 2.0 + 2.0;
-                let c = at((PORTRAIT_X[side] + PORTRAIT_W / 2.0).clamp(half, 320.0 - half), vs_name_y(art.h));
+                let c = at((PORTRAIT_X[side] + PORTRAIT_W / 2.0).clamp(half, 320.0 - half), name_y);
                 r.art_centered(art, 1.0, c.x, c.y, 0.0, ArtPart::Whole, &self.paint);
             }
             let t0 = VS_TAG_AT + delay;
@@ -1973,16 +1974,47 @@ mod tests {
             .collect()
     }
 
-    /// Schermo VS: ogni nome disegnato (anche il sigillo di OMEGA) sta sotto il ritratto e finisce
-    /// sopra il motto, con almeno un pixel; centrato sotto il ritratto, resta nello schermo 320x240;
-    /// i più alti non arrivano al ritratto.
+    /// Schermo VS: ogni nome disegnato (anche il sigillo di OMEGA) sta sotto il fondo comune dei
+    /// ritratti e sopra il motto, a metà (al più un pixel di differenza fra sopra e sotto) e con
+    /// almeno due pixel per parte; centrato sotto il ritratto, resta nello schermo 320x240. I ritratti
+    /// scesi fino alla riga comune restano dentro lo schermo e sopra il nome.
     #[test]
-    fn the_drawn_names_fit_under_the_portraits() {
+    fn the_drawn_names_sit_halfway_between_portrait_and_tagline() {
+        let spec: serde_json::Value =
+            serde_json::from_str(include_str!("../../../assets/characters/portraits/portraits.json")).unwrap();
         let tag_top = line(VS_TAG_ROW) - 3.5; // maiuscole di Press Start 2P a 1x, alte 7 righe
-        for (name, w, h) in title_heights().into_iter().filter(|t| t.0.starts_with("name_")) {
-            let (top, bottom) = (vs_name_y(h) - h / 2.0, vs_name_y(h) + h / 2.0);
-            assert!(bottom + 1.0 <= tag_top, "{name}: fino a {bottom}, motto da {tag_top}");
-            assert!(top >= VS_PORTRAIT_Y + PORTRAIT_H, "{name}: da {top}, ritratto fino a {}", VS_PORTRAIT_Y + PORTRAIT_H);
+        let base = spec["art_base"].as_f64().unwrap() as f32;
+        for (kind, bottom) in spec["art_bottom"].as_object().unwrap() {
+            let bottom = bottom.as_f64().unwrap() as f32;
+            assert!(bottom <= base, "{kind}: il fondo è sotto art_base");
+            // sceso fino alla riga comune, il ritratto resta nello schermo
+            assert!(VS_PORTRAIT_Y + PORTRAIT_H + base - bottom <= 240.0, "{kind}: fuori dallo schermo");
+        }
+        let names: Vec<_> = title_heights().into_iter().filter(|t| t.0.starts_with("name_")).collect();
+        assert_eq!(names.len(), PaddleKind::COUNT + 1);
+        for (name, w, h) in names {
+            let y = vs_name_y(base);
+            let (above, below) = (y - h / 2.0 - (VS_PORTRAIT_Y + base), tag_top - (y + h / 2.0));
+            assert!(above >= 2.0 && below >= 2.0, "{name}: {above} sopra, {below} sotto");
+            assert!((above - below).abs() <= 1.0, "{name}: {above} sopra, {below} sotto");
+            assert!(w + 4.0 <= 320.0, "{name} largo {w}");
+        }
+    }
+
+    /// Scelta della racchetta: come nello schermo VS, il nome disegnato sta a metà fra il fondo
+    /// comune dei ritratti e la frase (le maiuscole della riga 22), con almeno due pixel per parte.
+    #[test]
+    fn the_pick_names_sit_halfway_between_portrait_and_tagline() {
+        let spec: serde_json::Value =
+            serde_json::from_str(include_str!("../../../assets/characters/portraits/portraits.json")).unwrap();
+        let tag_top = line(22) - 3.5;
+        let portrait_top = TOP + 5.0 * 8.0;
+        let base = spec["art_base"].as_f64().unwrap() as f32;
+        for (name, w, h) in title_heights().into_iter().filter(|t| t.0.starts_with("name_") && t.0 != "name_omega") {
+            let y = crate::paddle_ui::pick_name_y(base);
+            let (above, below) = (y - h / 2.0 - (portrait_top + base), tag_top - (y + h / 2.0));
+            assert!(above >= 2.0 && below >= 2.0, "{name}: {above} sopra, {below} sotto");
+            assert!((above - below).abs() <= 1.0, "{name}: {above} sopra, {below} sotto");
             assert!(w + 4.0 <= 320.0, "{name} largo {w}");
         }
     }

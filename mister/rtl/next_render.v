@@ -1316,6 +1316,18 @@ reg [9:0]  dx, dy, sx;
 reg [TEXT_W-1:0] trow;
 reg signed [10:0] sdx, sdy;
 reg signed [21:0] u8, v8;
+// righe di rotazione del SUPER (come draw_spin_lines di next_ui.rs): due archi dietro ogni punta della
+// racchetta, che girano con lei; nel riferimento della racchetta (u_px, v_px) l'arco sta fra due raggi
+// (seno e coseno in 1/256), il colore dall'angolo: bianco, grigio, poi scuro a scacchi
+reg [1:0]  spz;                        // 0 niente, 1 bianco, 2 grigio, 3 scuro
+reg [15:0] rho4;                       // 4 volte il quadrato della distanza dal centro
+reg [9:0]  spm0, spm1;                 // doppio del raggio dei due archi
+reg signed [21:0] sc_o1, sc_o2, sc_i1, sc_i2, sc_w, sc_g;
+reg        sp_ao, sp_bo, sp_ai, sp_bi;  // dentro lo spicchio dell'arco esterno/interno (una punta o l'altra)
+reg        sp_r0, sp_r1, sp_s, sp_wh, sp_gr;
+function signed [21:0] ray_cross(input signed [11:0] a, input signed [11:0] b, input signed [9:0] rx, input signed [9:0] ry);
+    ray_cross = rx * b - ry * a;
+endfunction
 reg signed [11:0] sy;
 reg signed [11:0] kx, ky, kq, kr, ka, lx, ly;
 reg signed [11:0] ke, kf, kv, kb, ko;  // colpo di una mossa: frame dal colpo, davanti, dal centro, dietro
@@ -1362,6 +1374,7 @@ always @(*) begin
     sdy = 11'sd0;
     u8 = 22'sd0;
     v8 = 22'sd0;
+    spz = 2'd0;
     sy = $signed({2'b0, y});
     kx = 12'sd0;
     ky = 12'sd0;
@@ -1431,6 +1444,29 @@ always @(*) begin
             v_px = (v8 + 22'sd128) >>> 8;
             sh_u = sh_p ? (-u_px - 12'sd2) : (u_px - 12'sd1);
             sh_v = v_px + $signed({2'b0, kh[sh_p] >>> 1});
+            // righe di rotazione: la corona attorno al centro dalla distanza vera (sullo schermo), lo
+            // spicchio e il colore dall'angolo nel riferimento della racchetta
+            rho4 = 16'd4 * (sdx * sdx + sdy * sdy);
+            spm0 = kh[sh_p] + 10'd10;
+            spm1 = kh[sh_p] + 10'd4;
+            sp_r0 = rho4 >= (spm0 - 10'd1) * (spm0 - 10'd1) && rho4 <= (spm0 + 10'd1) * (spm0 + 10'd1);
+            sp_r1 = rho4 >= (spm1 - 10'd1) * (spm1 - 10'd1) && rho4 <= (spm1 + 10'd1) * (spm1 + 10'd1);
+            sc_o1 = ray_cross(u_px, v_px, 10'sd252, -10'sd46);
+            sc_o2 = ray_cross(u_px, v_px, 10'sd76, 10'sd245);
+            sc_i1 = ray_cross(u_px, v_px, 10'sd254, 10'sd31);
+            sc_i2 = ray_cross(u_px, v_px, 10'sd155, 10'sd204);
+            sc_w = ray_cross(u_px, v_px, 10'sd184, 10'sd178);
+            sc_g = ray_cross(u_px, v_px, 10'sd234, 10'sd105);
+            sp_ao = sc_o1 >= 0 && sc_o2 <= 0;
+            sp_bo = sc_o1 <= 0 && sc_o2 >= 0;
+            sp_ai = sc_i1 >= 0 && sc_i2 <= 0;
+            sp_bi = sc_i1 <= 0 && sc_i2 >= 0;
+            // punta di sopra o di sotto: l'altra è la stessa con il segno cambiato
+            sp_s = sp_r0 ? sp_ao : sp_ai;
+            sp_wh = sp_s ? sc_w >= 0 : sc_w <= 0;
+            sp_gr = sp_s ? sc_g >= 0 : sc_g <= 0;
+            if ((sp_r0 && (sp_ao || sp_bo)) || (sp_r1 && (sp_ai || sp_bi)))
+                spz = sp_wh ? 2'd1 : sp_gr ? 2'd2 : ((sdx[0] ^ sdy[0]) ? 2'd0 : 2'd3);
         end else begin
             sh_u = 12'sd60;
             sh_v = 12'sd60;
@@ -1529,6 +1565,11 @@ always @(*) begin
                             y - (pcy[p] - 4))) begin
                 on = 1'b1;
                 col = bcold[p] ? GRAY : ACCENT;
+            end
+            // righe di rotazione del SUPER attorno alla racchetta che gira
+            if (spin[p] && sh_p == p && spz != 2'd0) begin
+                on = 1'b1;
+                col = (spz == 2'd1) ? WHITE : (spz == 2'd2) ? GRAY : P_DARK;
             end
             // racchette dei personaggi (pong_render non le disegna): tutti i pixel della forma, l'ombra
             // portata compresa, anche durante la rotazione del SUPER e il salto del TELEPORT; con una

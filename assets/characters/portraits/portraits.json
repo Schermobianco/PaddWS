@@ -87,6 +87,17 @@
     64,
     72
   ],
+  "art_bottom": {
+    "arcade": 95,
+    "titan": 76,
+    "hammer": 84,
+    "twist": 86,
+    "blaster": 85,
+    "rush": 85,
+    "guardian": 80,
+    "omega": 85
+  },
+  "art_base": 95,
   "c64_accent": {
     "arcade": 7,
     "titan": 8,

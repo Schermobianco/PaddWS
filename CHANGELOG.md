@@ -19,6 +19,11 @@ crea il commit e il tag `vX.Y.Z`.
 ### Modificato
 - Astronavi delle racchette di NEXT ritoccate: TITAN, TWIST e BLASTER (canne più corte di un
   pixel) su PC, web e MiSTer, tutte e sette sul Commodore 64.
+- Schermo VS e scelta della racchetta (PC, web e MiSTer): il nome disegnato di ogni personaggio sta
+  a metà fra il fondo del suo ritratto e la riga sotto, invece di stare in basso.
+- Ritratti grandi (PC, web e MiSTer): il busto tagliato in basso sfuma verso il nero a retino.
+- SUPER armato (PC, web e MiSTer): mentre la racchetta ruota, due archi di righe girano attorno a
+  lei, bianchi vicino alla punta, poi grigi e a scacchi.
 - C64: i laser del BLASTER escono dalle bocche dei cannoni dell'astronave, entro un pixel, e
   passano anche sopra punteggi, barre, riserve e riga di metà campo senza cancellarli: lì il
   tratto prende il colore di quello che attraversa.

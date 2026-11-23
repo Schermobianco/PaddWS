@@ -112,6 +112,10 @@ BAYER4 = (np.array([
 ], dtype=float) + 0.5) / 16.0 - 0.5
 BIG_EDGE_FADE = 10
 BIG_EDGE_DITHER = 28.0
+# I disegni dei personaggi sono tagliati in basso (busto, gambe, la console di ARCADE): le ultime
+# BIG_BOTTOM_FADE righe del ritratto grande sfumano verso il nero. OMEGA no: il monolite finisce da sé.
+BIG_BOTTOM_FADE = 14
+BIG_BOTTOM_DITHER = 60.0
 # lente HAL-9000 magenta di OMEGA Space Age (pixel di source/omega.jpg 1376x768)
 OMEGA_LENS = (636, 210, 744, 316)
 
@@ -533,6 +537,35 @@ def fade_cut_edges(lo: np.ndarray, pal: np.ndarray) -> np.ndarray:
     return out
 
 
+def art_bottom(lo: np.ndarray, pal: np.ndarray) -> int:
+    """La riga dopo l'ultima con il disegno (un ruolo diverso dal nero)."""
+    raw = ((lo[:, :, None, :] - pal[None, None, :, :]) ** 2).sum(3).argmin(2)
+    return int(np.flatnonzero((raw != 0).any(axis=1)).max()) + 1
+
+
+def fade_cut_bottom(lo: np.ndarray, pal: np.ndarray) -> np.ndarray:
+    """Sfuma verso il nero le ultime BIG_BOTTOM_FADE righe del disegno del ritratto grande, a retino
+    come i lati tagliati: da intero, sopra, a quasi nero all'ultima riga."""
+    h, w, _ = lo.shape
+    bottom = art_bottom(lo, pal)
+    top = bottom - BIG_BOTTOM_FADE
+    ys = np.arange(h, dtype=float)
+    mask = np.clip((bottom - ys) / float(BIG_BOTTOM_FADE + 1), 0.0, 1.0)
+    mask[:top] = 1.0
+    bayer = np.tile(BAYER4, (h // 4 + 1, w // 4 + 1))[:h, :w]
+    lit = lo.max(axis=2) > 24.0        # il nero resta nero: il retino non accende lo sfondo
+    faded = np.clip(lo * mask[:, None, None] + bayer[:, :, None] * BIG_BOTTOM_DITHER, 0.0, 255.0)
+    rows = ((ys >= top) & (ys < bottom))[:, None]
+    return np.where((rows & lit)[:, :, None], faded, lo)
+
+
+# riga dopo l'ultima con il disegno in ogni ritratto grande (prima della sfumatura), scritta in
+# portraits.json come `art_bottom`; `art_base` è la più bassa: gli schermi VS e della scelta spostano
+# ogni ritratto in giù di art_base - art_bottom, così i personaggi finiscono tutti sulla stessa riga, e ci
+# centrano sotto il nome
+ART_BOTTOM: dict[str, int] = {}
+
+
 def portrait(name: str, w: int, h: int, src_w: int, up: float, shift: int,
              defeated: bool = False, locked: bool = False) -> Image.Image:
     is_big = (w == BIG_W and h == BIG_H and not defeated and not locked)
@@ -541,6 +574,9 @@ def portrait(name: str, w: int, h: int, src_w: int, up: float, shift: int,
     pal = palette(name)
     if is_big:
         lo = fade_cut_edges(lo, pal)
+        ART_BOTTOM[name] = art_bottom(lo, pal)
+        if name != "omega":
+            lo = fade_cut_bottom(lo, pal)
     roles = ((lo[:, :, None, :] - pal[None, None, :, :]) ** 2).sum(3).argmin(2).astype(np.uint8)
     out = Image.new("P", (w, h))
     out.putdata(roles.flatten().tolist())
@@ -597,6 +633,8 @@ def main() -> None:
         "big": [BIG_W, BIG_H],
         "small": SMALL,
         "mid": [MID_W, MID_H],
+        "art_bottom": ART_BOTTOM,
+        "art_base": max(ART_BOTTOM.values()),
         "c64_accent": C64_ACCENT,
     }
     (OUT / "portraits.json").write_text(json.dumps(spec, indent=2) + "\n", encoding="utf-8")

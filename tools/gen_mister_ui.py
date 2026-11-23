@@ -490,6 +490,11 @@ def portrait_assets(gfx: Gfx, ddr: Gfx) -> list[str]:
            "    pub const MID: [[Img; 2]; 8] = [" + ", ".join(
                f"[{rust_name(f'pt_mid_{n}')}, {rust_name(f'pt_mid_{n}_defeated')}]" for n in names) + "];",
            "    pub const MID_LOCKED: Img = IMG_PT_MID_OMEGA_LOCKED;",
+           "    /// riga dopo l'ultima con il disegno in ogni ritratto grande (art_bottom di portraits.json):",
+           "    /// i nomi dello schermo VS e della scelta ci centrano sotto",
+           "    pub const ART_BOTTOM: [i32; 8] = [" + ", ".join(str(spec["art_bottom"][n]) for n in names) + "];",
+           "    /// la più bassa: i ritratti scendono di ART_BASE - ART_BOTTOM e finiscono tutti sulla stessa riga",
+           f"    pub const ART_BASE: i32 = {spec['art_base']};",
            f"    /// colori RGB dei ruoli 1-{len(roles)} di ogni personaggio",
            f"    pub const PAL: [[u32; {len(roles)}]; 8] = [{', '.join(pal)}];",
            "}"]

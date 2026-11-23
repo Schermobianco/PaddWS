@@ -14,7 +14,7 @@
 //! (il colpo e il punto del VS) li fa pong_top.
 
 use crate::assets::game::KIND_TAGS;
-use crate::assets::{IMG_ICON, IMG_NAME, IMG_NAME_OMEGA, IMG_VS3};
+use crate::assets::{IMG_ICON, IMG_NAME, IMG_NAME_OMEGA, IMG_VS3, portraits};
 use crate::cast::{Cast, HALF_X, OMEGA, PADDLE_X, PORTRAIT_W, PORTRAIT_X, TOP, line, name_x, paddle, plain_paddle};
 use crate::challenge::Ch;
 use crate::dl::{CLASS_A, Dl, Obj, code, text_w};
@@ -58,15 +58,19 @@ const VS_TAG_AT: i32 = 54;
 const VS_ICONS_AT: i32 = 74;
 const VS_ICON_GAP: i32 = 6;
 const VS_FIRST_AT: i32 = 100;
-/// posizioni: ritratti righe 1-13, VS alla 4, campo righe 6-14, nomi 15-18 (i più alti salgono fino a
-/// finire a VS_NAME_BOTTOM), motti 19, icone 20-21, FIRST TO 22
+/// posizioni: ritratti righe 1-13 (scesi fino alla riga comune ART_BASE), VS alla 4, campo righe 6-14,
+/// nomi a metà fra il fondo dei ritratti e il motto (vs_name_y), motti 19, icone 20-21, FIRST TO 22
 const VS_PORTRAIT_Y: i32 = TOP + 8;
 const VS_Y: i32 = TOP + 4 * 8;
 const VS_COURT_Y: i32 = TOP + 6 * 8;
 const VS_COURT_H: i32 = 9 * 8;
-const VS_NAME_Y: i32 = TOP + 15 * 8 + 16;
-const VS_NAME_BOTTOM: i32 = TOP + 19 * 8 - 4;
 const VS_TAG_ROW: i32 = 19;
+/// Centro verticale del nome disegnato: a metà fra il fondo comune dei ritratti (`ART_BASE`) e il
+/// motto (le maiuscole cominciano 3 pixel e mezzo sopra il centro della riga 19), come `vs_name_y` di
+/// challenge_ui.rs.
+fn vs_name_y() -> i32 {
+    TOP + (portraits::ART_BASE + 161) / 2
+}
 const VS_ICON_Y: i32 = TOP + 20 * 8 + 8;
 const VS_FIRST_ROW: i32 = 22;
 const CAP: i32 = 13;
@@ -239,7 +243,9 @@ fn vs(r: &Regs, d: &mut Dl, st: &Stage, f: i32) {
             let start = if side == 0 { -PORTRAIT_W } else { W };
             let x = start + (end - start) * ease / 4096;
             let who = if st.omega && side != me { OMEGA } else { kinds[side] as usize };
-            cast.big(d, who, x + k.0, VS_PORTRAIT_Y + k.1, side == 1);
+            // tutti i personaggi finiscono sulla stessa riga: scendono fino a ART_BASE
+            let drop = portraits::ART_BASE - portraits::ART_BOTTOM[who];
+            cast.big(d, who, x + k.0, VS_PORTRAIT_Y + drop + k.1, side == 1);
         }
     }
     // VS: a 4x, poi 3x, poi si posa a 2x
@@ -285,7 +291,7 @@ fn vs(r: &Regs, d: &mut Dl, st: &Stage, f: i32) {
             let img = if rival && st.omega { &IMG_NAME_OMEGA } else { &IMG_NAME[kinds[side] as usize] };
             let (iw, ih) = (img.w as i32, img.h as i32);
             let cx = name_x(PORTRAIT_X[side] + PORTRAIT_W / 2, iw);
-            let cy = VS_NAME_Y.min(VS_NAME_BOTTOM - ih / 2);
+            let cy = vs_name_y();
             let o = d.img_obj(cx - iw / 2, cy - ih / 2, img, TL);
             d.push(&sh(o, k));
         }
