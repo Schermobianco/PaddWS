@@ -633,6 +633,9 @@ impl Intro {
         r.fill(BLACK);
         let f = ((self.length - self.left) * 60.0).floor() as f32;
         let st = Stage::new(app, run, f, self.duel);
+        if !(st.omega && st.f < OMEGA_VS_AT) {
+            crate::grid::draw(app);
+        }
         st.header();
         // OMEGA prima la sua parte speciale (forme e sigillo), poi come gli altri lo schermo VS
         if st.omega && st.f < OMEGA_VS_AT {

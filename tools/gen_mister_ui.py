@@ -431,12 +431,23 @@ KINDS = ["arcade", "titan", "hammer", "twist", "blaster", "rush", "guardian"]
 PORTRAITS = ROOT / "assets" / "characters" / "portraits"
 
 
-def portrait_px(name: str, size: tuple[int, int]) -> list[list[int]]:
+def portrait_px(name: str, size: tuple[int, int], cut: bool = False) -> list[list[int]]:
     """Ritratto a ruoli (tools/gen_portraits.py, la variante dei PC): l'indice del PNG è il ruolo del
-    colore; qui il ruolo + 1, perché 0 è trasparente."""
+    colore; qui il ruolo + 1, perché 0 è trasparente. Con `cut` (i ritratti grandi, che stanno sulla
+    griglia delle schermate prima della partita) il nero collegato ai bordi, lo sfondo, è trasparente."""
     im = Image.open(PORTRAITS / f"{name}.png")
     assert im.mode == "P" and im.size == size, (name, im.mode, im.size)
-    return [[im.getpixel((x, y)) + 1 for x in range(im.size[0])] for y in range(im.size[1])]
+    w, h = im.size
+    px = [[im.getpixel((x, y)) + 1 for x in range(w)] for y in range(h)]
+    if cut:
+        todo = [(x, y) for y in range(h) for x in range(w) if x in (0, w - 1) or y in (0, h - 1)]
+        while todo:
+            x, y = todo.pop()
+            if not (0 <= x < w and 0 <= y < h) or px[y][x] != 1:
+                continue
+            px[y][x] = 0
+            todo += [(x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)]
+    return px
 
 
 def portrait_assets(gfx: Gfx, ddr: Gfx) -> list[str]:
@@ -452,7 +463,7 @@ def portrait_assets(gfx: Gfx, ddr: Gfx) -> list[str]:
     roles = spec["roles"]
     big, small, mid = tuple(spec["big"]), (spec["small"], spec["small"]), tuple(spec["mid"])
     names = KINDS + ["omega"]
-    row_words = {ddr.add_packed(f"pt_big_{n}", portrait_px(n, big), 4) for n in names}
+    row_words = {ddr.add_packed(f"pt_big_{n}", portrait_px(n, big, cut=True), 4) for n in names}
     assert len(row_words) == 1
     for n in KINDS:
         gfx.add(f"pt_small_{n}", portrait_px(f"{n}_small", small), 4)

@@ -62,7 +62,7 @@ fn common(d: &mut Dl, title: &[u8]) {
 pub fn draw(r: &Regs, d: &mut Dl) {
     let p = Pick::new(r);
     d.class = CLASS_A;
-    d.rect(0, 0, W, 240, BLACK);
+    d.grid = true; // lo sfondo è la griglia in prospettiva (rtl/ui_render.v)
     if p.paddle {
         paddles(r, d, &p);
         return;

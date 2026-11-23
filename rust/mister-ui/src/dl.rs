@@ -145,6 +145,9 @@ pub struct Dl<'a> {
     pub clip: [i32; 4],
     /// spostamento in x degli oggetti che seguono (con il loro ritaglio)
     pub dx: i32,
+    /// griglia in prospettiva dietro agli oggetti (schermate prima della partita): la disegna
+    /// rtl/ui_render.v dove nessun oggetto copre il pixel
+    pub grid: bool,
 }
 
 impl<'a> Dl<'a> {
@@ -158,6 +161,7 @@ impl<'a> Dl<'a> {
             class: CLASS_A,
             clip: [0, 320, 0, 240],
             dx: 0,
+            grid: false,
         }
     }
 
@@ -319,8 +323,8 @@ impl<'a> Dl<'a> {
         &mut *self.p
     }
 
-    /// Fine del frame: numero di oggetti e richiesta di scambio.
+    /// Fine del frame: numero di oggetti, richiesta di scambio e griglia.
     pub fn finish(self) {
-        self.p.write(map::CTRL, self.n | 1 << 8);
+        self.p.write(map::CTRL, self.n | 1 << 8 | u32::from(self.grid) << 9);
     }
 }

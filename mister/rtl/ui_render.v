@@ -31,9 +31,14 @@
 // Pixel (i, j) del rettangolo, con gli specchi in i' e j': (a, b) = (i' >> sx, j' >> sy), poi
 // (u, v) = scambio ? (b, a) : (a, b), più l'origine. Colore 0 = trasparente.
 //
+// Griglia in prospettiva (schermate prima della partita): con [9] di 0xB00 acceso il pixel che nessun
+// oggetto copre (colore 0) è, dove la regola `grid_gray` lo dice, una riga di muro o di pavimento, più
+// chiara dove passa l'impulso di luce (l'indice 255 e il grigio dalla logica, senza tavolozza).
+// Stessa regola di rust/game/src/grid.rs (`shade`), pixel per pixel.
+//
 // Registri del firmware (indirizzi in parole, scritture): 0x000 oggetti, 0x400 caratteri ([7:0]
 // codice del font, [15:8] colore), 0x800 tabella delle righe (16 bit), 0xA00 tavolozza (24 bit),
-// 0xB00 fine del frame ([7:0] numero di oggetti, [8] scambio), 0xC00-0xDFF immagine scrivibile
+// 0xB00 fine del frame ([7:0] numero di oggetti, [8] scambio, [9] griglia), 0xC00-0xDFF immagine scrivibile
 // (GRAM_WORDS parole, per gli oscilloscopi del JUKEBOX: un'immagine con la base da 0xC000 la legge
 // qui invece che nella ROM grafica; non ha due banchi, il firmware la riscrive nel vblank), 0xE00-0xE02
 // registri della copia dalla DDR3 (gfx_ddr: sorgente, destinazione, parole). Lettura di stato: [0]
@@ -103,9 +108,12 @@ end
 reg        front = 1'b0;           // banco che il motore disegna
 reg        flip_req = 1'b0;
 reg [7:0]  count [0:1];            // oggetti di ogni banco
+reg        grid_b [0:1];           // griglia accesa in ogni banco
 initial begin
     count[0] = 8'd0;
     count[1] = 8'd0;
+    grid_b[0] = 1'b0;
+    grid_b[1] = 1'b0;
 end
 assign status = {30'd0, flip_req, front};
 
@@ -211,11 +219,14 @@ always @(posedge clk_cpu) begin
     // fine del frame del firmware: oggetti del banco nascosto e richiesta di scambio
     if (cpu_wr && cpu_addr == 14'h0B00) begin
         count[~front] <= cpu_wdata[7:0];
+        grid_b[~front] <= cpu_wdata[9];
         if (cpu_wdata[8]) flip_req <= 1'b1;
     end
     if (clear_q) begin
         count[0] <= 8'd0;
         count[1] <= 8'd0;
+        grid_b[0] <= 1'b0;
+        grid_b[1] <= 1'b0;
         flip_req <= 1'b0;
     end
     if (ui_go) begin
@@ -410,14 +421,175 @@ wire [8:0] xn = (hc == 9'd423) ? 9'd0 : hc + 9'd1;
 wire       lsel = (hc == 9'd423) ? ~vc[0] : vc[0];
 reg  [9:0] lb_q = 10'd0;
 reg        lb_ok = 1'b0;
+reg        grid_q = 1'b0;              // griglia accesa nel banco mostrato (clk_cpu -> clk, registro a registro)
+reg [7:0]  gt = 8'd0;                  // frame dell'impulso della griglia (0..GRID_CYCLE-1)
+reg [7:0]  g_gray = 8'd0;              // grigio del pixel letto (0 se non è su una riga della griglia)
+always @(posedge clk) grid_q <= grid_b[front];
+
+// ------------------------------------------------------------------ griglia
+
+localparam integer GRID_CYCLE = 240, GRID_PULSE = 170;
+// 131072 / (y - 96) arrotondato, per la riga y = 128 + r del pavimento
+function [12:0] grid_step(input [6:0] r);
+    case (r)
+        7'd0: grid_step = 13'd4096;
+        7'd1: grid_step = 13'd3972;
+        7'd2: grid_step = 13'd3855;
+        7'd3: grid_step = 13'd3745;
+        7'd4: grid_step = 13'd3641;
+        7'd5: grid_step = 13'd3542;
+        7'd6: grid_step = 13'd3449;
+        7'd7: grid_step = 13'd3361;
+        7'd8: grid_step = 13'd3277;
+        7'd9: grid_step = 13'd3197;
+        7'd10: grid_step = 13'd3121;
+        7'd11: grid_step = 13'd3048;
+        7'd12: grid_step = 13'd2979;
+        7'd13: grid_step = 13'd2913;
+        7'd14: grid_step = 13'd2849;
+        7'd15: grid_step = 13'd2789;
+        7'd16: grid_step = 13'd2731;
+        7'd17: grid_step = 13'd2675;
+        7'd18: grid_step = 13'd2621;
+        7'd19: grid_step = 13'd2570;
+        7'd20: grid_step = 13'd2521;
+        7'd21: grid_step = 13'd2473;
+        7'd22: grid_step = 13'd2427;
+        7'd23: grid_step = 13'd2383;
+        7'd24: grid_step = 13'd2341;
+        7'd25: grid_step = 13'd2300;
+        7'd26: grid_step = 13'd2260;
+        7'd27: grid_step = 13'd2222;
+        7'd28: grid_step = 13'd2185;
+        7'd29: grid_step = 13'd2149;
+        7'd30: grid_step = 13'd2114;
+        7'd31: grid_step = 13'd2081;
+        7'd32: grid_step = 13'd2048;
+        7'd33: grid_step = 13'd2016;
+        7'd34: grid_step = 13'd1986;
+        7'd35: grid_step = 13'd1956;
+        7'd36: grid_step = 13'd1928;
+        7'd37: grid_step = 13'd1900;
+        7'd38: grid_step = 13'd1872;
+        7'd39: grid_step = 13'd1846;
+        7'd40: grid_step = 13'd1820;
+        7'd41: grid_step = 13'd1796;
+        7'd42: grid_step = 13'd1771;
+        7'd43: grid_step = 13'd1748;
+        7'd44: grid_step = 13'd1725;
+        7'd45: grid_step = 13'd1702;
+        7'd46: grid_step = 13'd1680;
+        7'd47: grid_step = 13'd1659;
+        7'd48: grid_step = 13'd1638;
+        7'd49: grid_step = 13'd1618;
+        7'd50: grid_step = 13'd1598;
+        7'd51: grid_step = 13'd1579;
+        7'd52: grid_step = 13'd1560;
+        7'd53: grid_step = 13'd1542;
+        7'd54: grid_step = 13'd1524;
+        7'd55: grid_step = 13'd1507;
+        7'd56: grid_step = 13'd1489;
+        7'd57: grid_step = 13'd1473;
+        7'd58: grid_step = 13'd1456;
+        7'd59: grid_step = 13'd1440;
+        7'd60: grid_step = 13'd1425;
+        7'd61: grid_step = 13'd1409;
+        7'd62: grid_step = 13'd1394;
+        7'd63: grid_step = 13'd1380;
+        7'd64: grid_step = 13'd1365;
+        7'd65: grid_step = 13'd1351;
+        7'd66: grid_step = 13'd1337;
+        7'd67: grid_step = 13'd1324;
+        7'd68: grid_step = 13'd1311;
+        7'd69: grid_step = 13'd1298;
+        7'd70: grid_step = 13'd1285;
+        7'd71: grid_step = 13'd1273;
+        7'd72: grid_step = 13'd1260;
+        7'd73: grid_step = 13'd1248;
+        7'd74: grid_step = 13'd1237;
+        7'd75: grid_step = 13'd1225;
+        7'd76: grid_step = 13'd1214;
+        7'd77: grid_step = 13'd1202;
+        7'd78: grid_step = 13'd1192;
+        7'd79: grid_step = 13'd1181;
+        7'd80: grid_step = 13'd1170;
+        7'd81: grid_step = 13'd1160;
+        7'd82: grid_step = 13'd1150;
+        7'd83: grid_step = 13'd1140;
+        7'd84: grid_step = 13'd1130;
+        7'd85: grid_step = 13'd1120;
+        7'd86: grid_step = 13'd1111;
+        7'd87: grid_step = 13'd1101;
+        7'd88: grid_step = 13'd1092;
+        7'd89: grid_step = 13'd1083;
+        7'd90: grid_step = 13'd1074;
+        7'd91: grid_step = 13'd1066;
+        7'd92: grid_step = 13'd1057;
+        7'd93: grid_step = 13'd1049;
+        7'd94: grid_step = 13'd1040;
+        7'd95: grid_step = 13'd1032;
+        7'd96: grid_step = 13'd1024;
+        7'd97: grid_step = 13'd1016;
+        7'd98: grid_step = 13'd1008;
+        7'd99: grid_step = 13'd1001;
+        7'd100: grid_step = 13'd993;
+        7'd101: grid_step = 13'd986;
+        7'd102: grid_step = 13'd978;
+        7'd103: grid_step = 13'd971;
+        7'd104: grid_step = 13'd964;
+        7'd105: grid_step = 13'd957;
+        7'd106: grid_step = 13'd950;
+        7'd107: grid_step = 13'd943;
+        7'd108: grid_step = 13'd936;
+        7'd109: grid_step = 13'd930;
+        7'd110: grid_step = 13'd923;
+        7'd111: grid_step = 13'd917;
+        default: grid_step = 13'd0;
+    endcase
+endfunction
+
+// grigio del pixel (gx, gy) al frame t: la stessa regola di `shade` in rust/game/src/grid.rs. Muro 32 e
+// pavimento 80 a riposo, fino a 192 in testa all'impulso, 8 livelli a gradini di 4 righe di coda
+function [7:0] grid_gray(input [8:0] gx, input [8:0] gy, input [7:0] t);
+    reg signed [9:0] dx;
+    reg [8:0]  ax;
+    reg [6:0]  r;
+    reg [12:0] st;
+    reg [19:0] q;
+    reg        on;
+    reg signed [10:0] behind;
+    reg [3:0]  k;
+    begin
+        dx = $signed({1'b0, gx}) - 10'sd160;
+        ax = dx[9] ? -dx[8:0] : dx[8:0];
+        r = gy[6:0] - 7'd0;
+        st = grid_step(gy[6:0]);
+        q = ax * st;
+        if (gy < 9'd128) begin
+            on = gy[3:0] == 4'd0 || gx[3:0] == 4'd0;
+            behind = $signed({2'b0, gy}) + $signed({3'b0, t}) - 11'sd128;
+        end else begin
+            on = gy == 9'd128 || gy == 9'd133 || gy == 9'd139 || gy == 9'd147 || gy == 9'd160 || gy == 9'd181 ||
+                 gy == 9'd224 || q[15:0] < {3'd0, st};
+            behind = 11'sd128 + $signed({3'b0, t}) - $signed({2'b0, gy});
+        end
+        // distanza dalla testa dell'impulso (0..31 righe): 8 in testa, un livello in meno ogni 4 righe
+        k = (t < GRID_PULSE && behind >= 11'sd0 && behind < 11'sd32) ? 4'd8 - {1'b0, behind[4:2]} : 4'd0;
+        grid_gray = !on ? 8'd0 : (gy < 9'd128) ? 8'd32 + 8'd20 * k : 8'd80 + 8'd14 * k;
+    end
+endfunction
+
 always @(posedge clk) begin
     if (ce_pix) begin
         lb_q <= lb[{lsel, xn}];
         lb_ok <= xn < 9'd320;
+        g_gray <= grid_gray(xn, vc, gt);
+        if (hc == 9'd0 && vc == 9'd0) gt <= (gt == GRID_CYCLE - 1) ? 8'd0 : gt + 8'd1;
     end
 end
-assign px_idx = lb_ok ? lb_q[7:0] : 8'd0;
+wire       grid_px = grid_q && lb_ok && lb_q[7:0] == 8'd0 && g_gray != 8'd0;
+assign px_idx = grid_px ? 8'd255 : lb_ok ? lb_q[7:0] : 8'd0;
 assign px_class = lb_q[9:8];
-always @(posedge clk) px_rgb <= pal_ram[px_idx];
+always @(posedge clk) px_rgb <= grid_px ? {g_gray, g_gray, g_gray} : pal_ram[px_idx];
 
 endmodule

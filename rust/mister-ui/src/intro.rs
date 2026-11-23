@@ -145,7 +145,11 @@ pub fn draw(r: &Regs, d: &mut Dl) {
         f,
     };
     d.class = CLASS_A;
-    d.rect(0, 0, W, 240, BLACK);
+    if omega && f < OMEGA_VS_AT {
+        d.rect(0, 0, W, 240, BLACK);
+    } else {
+        d.grid = true; // lo sfondo è la griglia in prospettiva (rtl/ui_render.v)
+    }
     header(d, &st);
     if omega && f < OMEGA_VS_AT {
         omega_part(d, &st);

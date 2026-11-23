@@ -24,6 +24,9 @@ crea il commit e il tag `vX.Y.Z`.
 - Ritratti grandi (PC, web e MiSTer): il busto tagliato in basso sfuma verso il nero a retino.
 - SUPER armato (PC, web e MiSTer): mentre la racchetta ruota, due archi di righe girano attorno a
   lei, bianchi vicino alla punta, poi grigi e a scacchi.
+- Scelta della racchetta, scelta dei bonus e schermo VS (PC, web e MiSTer): dietro c'è una griglia in
+  prospettiva, muro e pavimento a 90 gradi, disegnata dal programma (sul MiSTer dalla logica video,
+  senza immagini) con un impulso più chiaro che parte dallo spigolo ogni tre secondi.
 - C64: i laser del BLASTER escono dalle bocche dei cannoni dell'astronave, entro un pixel, e
   passano anche sopra punteggi, barre, riserve e riga di metà campo senza cancellarli: lì il
   tratto prende il colore di quello che attraversa.

@@ -97,10 +97,10 @@ impl Portraits {
             .expect("portraits.json incluso nell'eseguibile");
         let names = PaddleKind::ALL.map(|k| k.name().to_lowercase());
         Self {
-            big: std::array::from_fn(|i| texture(&spec, &names[i], BIG[i])),
+            big: std::array::from_fn(|i| texture_cut(&spec, &names[i], BIG[i])),
             small: std::array::from_fn(|i| texture(&spec, &names[i], SMALL[i])),
             omega_small: texture(&spec, "omega", portrait_png!("omega_small")),
-            omega_big: texture(&spec, "omega", portrait_png!("omega")),
+            omega_big: texture_cut(&spec, "omega", portrait_png!("omega")),
             mid: std::array::from_fn(|i| {
                 let name = names.get(i).map_or("omega", |n| n.as_str());
                 (texture(&spec, name, MID[i].0), texture(&spec, name, MID[i].1))
@@ -159,6 +159,32 @@ impl Portraits {
     }
 }
 
+/// Pixel dello sfondo: quelli di ruolo 0 (nero) collegati a un bordo dell'immagine.
+fn background(index: &[u8], w: usize, h: usize) -> Vec<bool> {
+    let mut outside = vec![false; w * h];
+    let mut todo: Vec<usize> = (0..w * h).filter(|&i| i % w == 0 || i % w == w - 1 || i < w || i >= w * (h - 1)).collect();
+    while let Some(i) = todo.pop() {
+        if outside[i] || index[i] != 0 {
+            continue;
+        }
+        outside[i] = true;
+        let (x, y) = (i % w, i / w);
+        if x > 0 {
+            todo.push(i - 1);
+        }
+        if x + 1 < w {
+            todo.push(i + 1);
+        }
+        if y > 0 {
+            todo.push(i - w);
+        }
+        if y + 1 < h {
+            todo.push(i + w);
+        }
+    }
+    outside
+}
+
 /// Colore RGB di `portraits.json`.
 fn rgb(v: &Value) -> [u8; 3] {
     let a = v.as_array().expect("colore RGB");
@@ -182,13 +208,26 @@ fn role_colors(spec: &Value, name: &str) -> Vec<[u8; 3]> {
 }
 
 fn texture(spec: &Value, name: &str, png: &[u8]) -> Texture2D {
+    texture_masked(spec, name, png, false)
+}
+
+/// Come [`texture`], ma il nero collegato ai bordi (lo sfondo) è trasparente: i ritratti grandi
+/// stanno sulla griglia delle schermate prima della partita (`grid.rs`). Il nero dentro il disegno
+/// resta.
+fn texture_cut(spec: &Value, name: &str, png: &[u8]) -> Texture2D {
+    texture_masked(spec, name, png, true)
+}
+
+fn texture_masked(spec: &Value, name: &str, png: &[u8], cut: bool) -> Texture2D {
     let colors = role_colors(spec, name);
     let (w, h, index) = decode_indexed(png);
+    let outside = if cut { background(&index, w, h) } else { vec![false; w * h] };
     let rgba: Vec<u8> = index
         .iter()
-        .flat_map(|&i| {
+        .enumerate()
+        .flat_map(|(n, &i)| {
             let [r, g, b] = colors[i as usize];
-            [r, g, b, 255]
+            [r, g, b, if outside[n] { 0 } else { 255 }]
         })
         .collect();
     let texture = Texture2D::from_rgba8(w as u16, h as u16, &rgba);

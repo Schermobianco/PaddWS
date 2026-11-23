@@ -9,6 +9,7 @@ mod encoder;
 mod ending_ui;
 mod gamepad;
 mod gesture;
+mod grid;
 mod input;
 mod jukebox;
 mod mouse;

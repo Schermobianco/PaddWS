@@ -749,6 +749,7 @@ impl Pick {
         let font = &app.assets.font_text;
         let t1 = r.text_1x();
         r.fill(BLACK);
+        crate::grid::draw(app);
         r.text_centered("PICK 3 BONUSES", font, t1, w / 2.0, 34.0 * s, 0.0, accent);
         let dash = 10.0 * s;
         let mut y = 120.0 * s;

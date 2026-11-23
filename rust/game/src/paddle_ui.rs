@@ -1335,6 +1335,7 @@ impl PaddlePick {
         let p = &app.params;
         let t1 = r.text_1x();
         r.fill(BLACK);
+        crate::grid::draw(app);
         r.text_centered("PICK YOUR PADDLE", font, t1, w / 2.0, at(app, 0.0, line(0)).y, 0.0, accent);
 
         // griglia: le caselle dei sette tipi e quella di OMEGA, il boss segreto (non si sceglie)
