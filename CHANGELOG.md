@@ -14,6 +14,8 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+## [4.6.5] - 2026-11-24
+
 ### Aggiunto
 - C64: le astronavi di NEXT hanno la fiamma dei motori, come su PC, web e MiSTer ma più semplice:
   corta da ferme, più lunga in movimento, con due fotogrammi che si alternano, e un lampo bianco
@@ -1489,7 +1491,8 @@ Ricostruite dalle cartelle di backup in `archive/` (date indicative).
 - **1.5** (2020-08) – versione per Raspberry Pi con encoder rotativi.
 - **1.1 – 1.4** (2020-08) – prime versioni pygame: menu, modalità CLASSIC ed EVO, suoni, splash.
 
-[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.6.4...HEAD
+[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.6.5...HEAD
+[4.6.5]: https://github.com/Schermobianco/PaddWS/compare/v4.6.4...v4.6.5
 [4.6.4]: https://github.com/Schermobianco/PaddWS/compare/v4.6.3...v4.6.4
 [4.6.3]: https://github.com/Schermobianco/PaddWS/compare/v4.6.2...v4.6.3
 [4.6.2]: https://github.com/Schermobianco/PaddWS/compare/v4.6.1...v4.6.2
