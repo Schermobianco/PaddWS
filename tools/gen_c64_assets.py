@@ -62,7 +62,6 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-import c64_flames
 import gen_howto_assets as howto
 from gen_next_assets import ICONS
 from gen_voices import NAMES as VOICE_NAMES
@@ -1756,6 +1755,80 @@ def title_assets(lines: list[str]) -> tuple[bytes, list[tuple[str, list[list[int
 PAD_KINDS = ("arcade", "titan", "hammer", "twist", "blaster", "rush", "guardian")
 PAD_W = 12            # colonne doppie dello sprite multicolore
 PAD_TILT = 3          # colonne di spostamento massimo dell'inclinazione della TWIST (pad_image)
+PAD_ENGINE = 16       # aggancio motore nei PNG (editor delle racchette): non si disegna
+PAD_ENGINES = (2, 2, 1, 1, 2, 1, 2)   # agganci motore per tipo, come sul PC
+PAD_SLOTS = 8         # immagini per lato e tipo nel banco PAD_BANK (2 pagine)
+PAD_ROWS = 21
+
+
+def pad_anchors(name: str, px: list[list[int]], want: int) -> list[list[int]]:
+    """Lo sprite senza gli agganci motore (indice 16: dove partirebbe la fiamma, colonna e righe del
+    getto, nello spazio vuoto dietro lo scafo), dopo averli controllati: `want` gruppi in colonna,
+    con il vuoto a sinistra e lo scafo a destra entro due colonne."""
+    clean = [[0 if c == PAD_ENGINE else c for c in row] for row in px]
+    groups = []
+    for x in range(len(px[0])):
+        for y in range(len(px)):
+            if px[y][x] == PAD_ENGINE and (y == 0 or px[y - 1][x] != PAD_ENGINE):
+                groups.append((x, y))
+            if px[y][x] == PAD_ENGINE:
+                assert not any(clean[y][: x + 1]), f"{name}.png: l'aggancio ({x}, {y}) non ha vuoto a sinistra"
+                hull = next((i for i in range(x + 1, len(px[0])) if clean[y][i]), None)
+                assert hull is not None and hull - x <= 2, f"{name}.png: l'aggancio ({x}, {y}) è lontano dallo scafo"
+    assert len(groups) == want, f"{name}.png: {len(groups)} agganci motore, ne servono {want}"
+    return clean
+
+
+def pad_block(kind: int, data: list[int], n: int, thr: list[int]) -> tuple[bytes, bytes]:
+    """Le immagini in partita NEXT del tipo `kind` per la racchetta sinistra e la destra (PAD_SLOTS da
+    64 byte l'una), byte per byte come pad_image di video.s: per TWIST le 7 inclinazioni (posto =
+    inclinazione + 3, righe spostate di (acc >> 3) colonne doppie), per BLASTER i 5 livelli del
+    caricatore (%10 -> %01 nelle righe sopra la soglia), per gli altri l'immagine sola."""
+    def image(rows: list[int]) -> bytes:
+        return bytes(rows).ljust(3 * PAD_ROWS, b"\0").ljust(64, b"\0")
+
+    def mirror(rows: list[int]) -> list[int]:
+        out = []
+        for y in range(0, len(rows), 3):
+            v = rows[y] << 16 | rows[y + 1] << 8 | rows[y + 2]
+            m = 0
+            for c in range(12):
+                m |= (v >> (2 * c) & 3) << (22 - 2 * c)
+            out += [m >> 16, m >> 8 & 255, m & 255]
+        return out
+
+    variants: list[list[int]] = []
+    if kind == 3:
+        half = n >> 1
+        for var in range(7):
+            sign = var - 3
+            tabs = abs(sign)
+            acc = (tabs * -half) & 255
+            rows = []
+            for k in range(n):
+                v = data[3 * k] << 16 | data[3 * k + 1] << 8 | data[3 * k + 2]
+                sh = (acc - 256 if acc >= 128 else acc) >> 3
+                if sign < 0:
+                    sh = -sh
+                acc = (acc + tabs) & 255
+                v = (v >> 2 * sh if sh >= 0 else v << -2 * sh) & 0xFFFFFF
+                rows += [v >> 16, v >> 8 & 255, v & 255]
+            variants.append(rows)
+    elif kind == 4:
+        for level in range(len(thr)):
+            rows = list(data)
+            for k in range(min(n, thr[level])):
+                for b in range(3):
+                    x = rows[3 * k + b]
+                    t = ((~(x << 1)) & x) & 0xAA
+                    rows[3 * k + b] = x ^ (t | t >> 1)
+            variants.append(rows)
+    else:
+        variants.append(list(data))
+    assert len(variants) <= PAD_SLOTS
+    left = b"".join(image(r) for r in variants).ljust(PAD_SLOTS * 64, b"\0")
+    right = b"".join(image(mirror(r)) for r in variants).ljust(PAD_SLOTS * 64, b"\0")
+    return left, right
 
 
 def paddle_sprites() -> list[str]:
@@ -1771,7 +1844,7 @@ def paddle_sprites() -> list[str]:
     params = (OUT / "params.inc").read_text(encoding="utf-8")
     kind_h = [int(v, 16) >> 16 for v in re.search(r"\.define T_KIND_H (.*)", params).group(1).replace("$", "").split(", ")]
     dx_l, dx_r, rows_n, out = [], [], [], []
-    drawn: list = []
+    datas: list[list[int]] = []
     thr: list[int] = []
     for k, name in enumerate(PAD_KINDS):
         im = Image.open(src / f"{name}.png")
@@ -1780,10 +1853,9 @@ def paddle_sprites() -> list[str]:
         want = ((kind_h[k] - 1) >> 1) + 1
         assert w == PAD_W and h == want, f"{name}.png: {w}x{h}, la racchetta del C64 è {PAD_W}x{want}"
         px = [[im.getpixel((x, y)) for x in range(w)] for y in range(h)]
-        # gli agganci motore (indice 16) non si disegnano: dicono dove parte la fiamma
-        px, engines = c64_flames.anchors(px)
+        # gli agganci motore (indice 16) non si disegnano
+        px = pad_anchors(name, px, PAD_ENGINES[k])
         assert all(c < 4 for row in px for c in row), f"{name}.png: indici oltre 3 (servono le coppie di bit)"
-        c64_flames.check(name, px, engines, c64_flames.ENGINES[k])
         front = json.loads(im.info.get("paddedit", "{}")).get("front", 0)
         face = PAD_W - 1 - front
         used = [x for x in range(w) if any(px[y][x] for y in range(h))]
@@ -1809,7 +1881,6 @@ def paddle_sprites() -> list[str]:
         dx_l.append(2 * (fi - 1))
         dx_r.append(2 * (PAD_W - 1 - fi))
         rows_n.append(h)
-        drawn.append((px, engines, im.info.get("paddedit") and json.loads(im.info["paddedit"]).get("front", 0)))
         data = []
         for row in px:
             img = [0] * PAD_W
@@ -1818,23 +1889,19 @@ def paddle_sprites() -> list[str]:
                     img[x - shift] = c
             for b in range(3):
                 data.append((img[4 * b] << 6) | (img[4 * b + 1] << 4) | (img[4 * b + 2] << 2) | img[4 * b + 3])
+        datas.append(data)
         out.append(f".define PAD_IMG_{name.upper()} " + ", ".join(f"${v:02X}" for v in data))
     # la racchetta senza tipo (Classic, EVO, allenamento): corpo bianco nelle colonne 4 e 5
     dx_l.append(8)
     dx_r.append(2 * (PAD_W - 1 - 5))
-    # immagini della partita NEXT con la fiamma (blocchi di 2 pagine per lato e tipo, nella cartuccia):
-    # lo scafo come disegnato, quindi la faccia in un'altra colonna e un altro PAD_FL_DX
-    flames = bytearray()
-    fl_l, fl_r = [], []
-    for k, (hull, engines, front) in enumerate(drawn):
-        left, right, face = c64_flames.kind_block(k, hull, engines, front, thr)
-        flames += left + right
-        fl_l.append(2 * (face - 1))
-        fl_r.append(2 * (PAD_W - 1 - face))
-    fl_l.append(8)
-    fl_r.append(2 * (PAD_W - 1 - 5))
-    assert len(flames) == len(PAD_KINDS) * 4 * 256 <= 0x2000
-    (OUT / "flames.bin").write_bytes(bytes(flames))
+    # le immagini della partita NEXT, nella cartuccia (banco PAD_BANK): per tipo la sinistra e la
+    # destra, 2 pagine l'una, copiate da pad_prep invece di farle con pad_image
+    pads = bytearray()
+    for k, data in enumerate(datas):
+        left, right = pad_block(k, data, rows_n[k], thr)
+        pads += left + right
+    assert len(pads) == len(PAD_KINDS) * 4 * 256 <= 0x2000
+    (OUT / "paddles.bin").write_bytes(bytes(pads))
     return [
         "; astronavi delle racchette di NEXT (assets/ships/sprites/c64): righe viste dalla racchetta",
         "; sinistra, 3 byte per riga; x dello sprite: colonna della racchetta - PAD_DX_L / PAD_DX_R",
@@ -1844,10 +1911,6 @@ def paddle_sprites() -> list[str]:
         ".define PAD_DX_R " + ", ".join(map(str, dx_r)),
         ".define PAD_IMG_N " + ", ".join(map(str, rows_n)),
         ".define PAD_BL_THR " + ", ".join(map(str, thr)),
-        "; come PAD_DX_*, per le immagini in partita con la fiamma (flames.bin: per tipo, la sinistra e la",
-        "; destra da 2 pagine; ogni blocco 8 immagini: posa 0-4, inclinazione + 3 o livello del caricatore)",
-        ".define PAD_FL_DX_L " + ", ".join(map(str, fl_l)),
-        ".define PAD_FL_DX_R " + ", ".join(map(str, fl_r)),
         *out,
     ]
 

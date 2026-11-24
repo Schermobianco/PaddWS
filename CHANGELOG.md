@@ -17,16 +17,14 @@ crea il commit e il tag `vX.Y.Z`.
 ## [4.6.5] - 2026-11-24
 
 ### Aggiunto
-- C64: le astronavi di NEXT hanno la fiamma dei motori, come su PC, web e MiSTer ma più semplice:
-  corta da ferme, più lunga in movimento, con due fotogrammi che si alternano, e un lampo bianco
-  mentre la racchetta scatta. TWIST e BLASTER hanno la fiamma fissa. Anche OMEGA, che quando cambia
-  forma riprende le immagini della forma nuova. Le immagini sono già pronte nella cartuccia: in
-  partita il programma non le disegna.
-- Editor delle racchette: sugli sprite del C64 l'aggancio motore, il punto da cui parte la fiamma;
-  lo sfondo della tela si può scegliere, per vedere bene i pixel scuri.
+- Editor delle racchette: lo sfondo della tela si può scegliere, per vedere bene i pixel scuri; sugli
+  sprite del C64 c'è l'aggancio motore, il punto da cui partirebbe la fiamma (in gioco non si vede).
 
 ### Modificato
-- C64: la TWIST si inclina al più di due colonne invece di tre, per lasciare posto alla fiamma.
+- C64: le immagini delle racchette di NEXT sono già pronte nella cartuccia invece di essere
+  disegnate nel conto alla rovescia. Il programma ha più memoria libera e i frame della partita
+  sono un po' più leggeri; a schermo non cambia nulla. Quando OMEGA cambia forma, le immagini della
+  forma nuova arrivano dalla cartuccia nella pausa dopo il punto.
 
 ## [4.6.4] - 2026-11-23
 

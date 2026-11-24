@@ -9,7 +9,7 @@
 ; - la musica: la sezione della forma (canzoni OMEGA0-OMEGA6 del MiSTer, SID_SONG_OMEGA del player)
 ;   copiata dalla cartuccia a THEME_BASE dopo la trasformazione, una pagina per frame con il tempo
 ;   e senza voce in corso (la copia accende le ROM); intanto silenzio;
-; - le immagini della racchetta: come per ogni lato, il blocco del tipo con la fiamma dalla
+; - le immagini della racchetta: come per ogni lato, il blocco del tipo dalla
 ;   cartuccia (pad_prep di video.s), che si ricopia dopo la trasformazione (2 pagine, nella pausa
 ;   dopo il punto; intanto l'immagine dinamica); OMEGA non ha la rotazione del SUPER, quella
 ;   dell'avversario resta;
