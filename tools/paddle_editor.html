@@ -255,6 +255,14 @@ dialog button.primary { background: var(--accent2); border-color: var(--accent);
         <label><input type="checkbox" id="showErr" checked> Errori</label>
         <label title="Solo per GUARDIAN: i cinque settori del muro sulle piastre"><input type="checkbox" id="showSect" checked> Settori</label>
       </div>
+      <div class="row">
+        <label title="Sfondo della tela sotto i pixel trasparenti: con i pixel scuri uno chiaro li fa vedere">Sfondo
+          <select id="bgSel">
+            <option value="dark">scacchiera scura</option><option value="mid">scacchiera grigia</option>
+            <option value="light">scacchiera chiara</option><option value="magenta">magenta</option>
+            <option value="black">nero (come in gioco)</option>
+          </select></label>
+      </div>
       <ul id="checks" class="small"></ul>
     </section>
     <section>
@@ -380,8 +388,12 @@ const ROLES_PC = [
 // C64: sprite multicolore, l'indice è la coppia di bit (%01 grigio $D025, %10 colore dello sprite
 // $D027+i, %11 bianco $D026)
 const C64_GRAY = 1, C64_MARK = 2, C64_WHITE = 3;
+// L'aggancio motore (indice 16, come sul PC) segna dove parte la fiamma: pixel nello spazio vuoto
+// dietro l'ugello (la sua colonna è la prima della fiamma, le righe sono quelle del getto), non
+// disegnati in gioco. Armi e agganci speciali sul C64 non ci sono.
 const ROLES_C64 = [[NONE, 'trasparente', '0'], [C64_GRAY, 'grigio (%01)', '1'],
-                   [C64_MARK, 'personaggio (%10)', '2'], [C64_WHITE, 'bianco (%11)', '3']];
+                   [C64_MARK, 'personaggio (%10)', '2'], [C64_WHITE, 'bianco (%11)', '3'],
+                   [ENGINE, 'aggancio motore', '']];
 // colore dello sprite (%10) di ogni tipo sul C64 (kind_col, tavolozza Colodore)
 const C64_ACCENT = [[0xEF, 0xF3, 0x47], [0x9F, 0x48, 0x15], [0x96, 0x28, 0x2E], [0x9F, 0x2D, 0xAD],
                     [0x41, 0xB9, 0x36], [0x5B, 0xD6, 0xCE], [0x68, 0x64, 0xFF]];
@@ -424,7 +436,7 @@ const bodyShade = c => [Math.round(c[0] * 212 / 255), Math.round(c[1] * 214 / 25
 function colorsFor(kind, body) {
   if (isC64())
     return { [C64_GRAY]: [0xAE, 0xAE, 0xAE], [C64_MARK]: body || C64_ACCENT[kind], [C64_WHITE]: [255, 255, 255],
-             [SHADOW]: [0, 0, 0] };
+             [ENGINE]: FIXED[ENGINE], [SHADOW]: [0, 0, 0] };
   body = body || [255, 255, 255];
   return { ...FIXED, ...ramp(KINDS[kind].accent), [BODY]: body, [SHADE]: bodyShade(body),
            [SHADOW]: kind === 1 ? SHADOW_TITAN : SHADOW_RGB };
@@ -702,7 +714,7 @@ function checks() {
                                 + (doc.kind === 6 ? ' (poi c\'è il muro)' : ''), true]);
   if (doc.kind === GUARDIAN) sectorChecks(out, bad);
   const need = ANCHORS[doc.kind], names = ['motore', 'arma', 'speciale'];
-  for (let i = 0; i < (isC64() ? 0 : 3); i++) {
+  for (let i = 0; i < (isC64() ? 1 : 3); i++) {
     const n = anchorGroups(ENGINE + i).length;
     if (n !== need[i]) out.push([`Agganci ${names[i]}: ${n}, per ${k.name} ne servono ${need[i]}`, true]);
   }
@@ -831,15 +843,21 @@ function refPlace() {
   const cols = Math.max(1, Math.round(bw / cell));
   return { cell, cols, x: doc.w - cols };
 }
+// sfondi della tela (le due caselle della scacchiera)
+const BG = {
+  dark: ['#1b1d23', '#23262e'], mid: ['#6b6e76', '#7a7d85'], light: ['#d8dae0', '#eceef2'],
+  magenta: ['#b000b0', '#c400c4'], black: ['#000', '#000'],
+};
 function draw() {
   const z = view.z, p = view.pad, W = doc.w * z, H = doc.h * z, col = COL();
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, cv.width, cv.height);
   g.translate(p, p);
-  // scacchiera del trasparente
+  // scacchiera del trasparente, nei colori scelti (Sfondo)
+  const bg = BG[$('#bgSel').value] || BG.dark;
   for (let y = 0; y < doc.h; y++)
     for (let x = 0; x < doc.w; x++) {
-      g.fillStyle = (x + y) & 1 ? '#1b1d23' : '#23262e';
+      g.fillStyle = (x + y) & 1 ? bg[0] : bg[1];
       g.fillRect(x * z, y * z, z, z);
     }
   if (ref && $('#refShow').checked) {
@@ -1376,7 +1394,7 @@ async function encodePng() {
   const { w, h, px } = doc, col = COL();
   const ihdr = new Uint8Array(13), dv = new DataView(ihdr.buffer);
   dv.setUint32(0, w); dv.setUint32(4, h); ihdr[8] = 8; ihdr[9] = 3;
-  const n = isC64() ? C64_WHITE + 1 : SPECIAL + 1, plte = new Uint8Array(n * 3);
+  const n = isC64() ? ENGINE + 1 : SPECIAL + 1, plte = new Uint8Array(n * 3);
   plte.set([255, 0, 255], 0);
   for (let i = 1; i < n; i++) plte.set(col[i] || [0, 0, 0], i * 3);
   const trns = new Uint8Array([0]);
@@ -1642,7 +1660,7 @@ $('#front').oninput = () => {
   doc.front = clamp(+$('#front').value | 0, 0, Math.max(0, doc.w - FACE));
   doc.dirty = true; updateTitle(); sizeInfo(); render();
 };
-for (const id of ['#showGrid', '#showHit', '#showMister', '#showErr', '#showSect', '#optSym', '#refShow', '#refAlpha', '#pvScale', '#pvBody', '#pvCur', '#pvWall'])
+for (const id of ['#showGrid', '#showHit', '#showMister', '#showErr', '#showSect', '#bgSel', '#optSym', '#refShow', '#refAlpha', '#pvScale', '#pvBody', '#pvCur', '#pvWall'])
   $(id).addEventListener('input', render);
 $('#bgTol').oninput = () => { if (ref) { findBox(); render(); } };
 $('#fileFilter').oninput = renderFiles;
