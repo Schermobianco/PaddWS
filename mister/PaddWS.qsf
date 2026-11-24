@@ -49,8 +49,9 @@ set_global_assignment -name PERIPHERY_TO_CORE_PLACEMENT_AND_ROUTING_OPTIMIZATION
 set_global_assignment -name PHYSICAL_SYNTHESIS_ASYNCHRONOUS_SIGNAL_PIPELINING ON
 set_global_assignment -name ALM_REGISTER_PACKING_EFFORT MEDIUM
 # seme del fitter: con il chip al 78% i tempi dipendono dal piazzamento; con l'1 un percorso dello
-# scaler HDMI (ascal) sforava di 0,147 ns, con il 3 resta un margine di 0,24 ns (4.1.1-beta.2)
-set_global_assignment -name SEED 3
+# scaler HDMI (ascal) sforava di 0,147 ns, con il 3 resta un margine di 0,24 ns (4.1.1-beta.2); nella
+# 4.6.4 (stelle al posto della griglia) con il 3 lo stesso clock HDMI sforava di 0,027 ns: seme 4
+set_global_assignment -name SEED 4
 
 #set_global_assignment -name VERILOG_MACRO "MISTER_FB=1"
 
