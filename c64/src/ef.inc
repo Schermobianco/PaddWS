@@ -31,3 +31,5 @@ OM_BANK     = 26                ; OMEGA (ROML e ROMH): il suo file voce (come qu
                                 ; l'entrata di OMEGA nella presentazione (paddws.cfg, %O.omega)
 KP_BANK     = 27                ; dal 27 (ROML e ROMH): la scelta della racchetta con i ritratti, il
                                 ; codice (kpick.s, %O.kpick) e i dati (gen/kpick.bin)
+FL_BANK      = 32                ; (ROML) le immagini delle racchette in partita NEXT con la fiamma (gen/flames.bin:
+                                ; per tipo la sinistra e la destra da 2 pagine; src/video.s, pad_prep)

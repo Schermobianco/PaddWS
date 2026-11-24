@@ -62,6 +62,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
+import c64_flames
 import gen_howto_assets as howto
 from gen_next_assets import ICONS
 from gen_voices import NAMES as VOICE_NAMES
@@ -1770,6 +1771,7 @@ def paddle_sprites() -> list[str]:
     params = (OUT / "params.inc").read_text(encoding="utf-8")
     kind_h = [int(v, 16) >> 16 for v in re.search(r"\.define T_KIND_H (.*)", params).group(1).replace("$", "").split(", ")]
     dx_l, dx_r, rows_n, out = [], [], [], []
+    drawn: list = []
     thr: list[int] = []
     for k, name in enumerate(PAD_KINDS):
         im = Image.open(src / f"{name}.png")
@@ -1778,7 +1780,10 @@ def paddle_sprites() -> list[str]:
         want = ((kind_h[k] - 1) >> 1) + 1
         assert w == PAD_W and h == want, f"{name}.png: {w}x{h}, la racchetta del C64 è {PAD_W}x{want}"
         px = [[im.getpixel((x, y)) for x in range(w)] for y in range(h)]
+        # gli agganci motore (indice 16) non si disegnano: dicono dove parte la fiamma
+        px, engines = c64_flames.anchors(px)
         assert all(c < 4 for row in px for c in row), f"{name}.png: indici oltre 3 (servono le coppie di bit)"
+        c64_flames.check(name, px, engines, c64_flames.ENGINES[k])
         front = json.loads(im.info.get("paddedit", "{}")).get("front", 0)
         face = PAD_W - 1 - front
         used = [x for x in range(w) if any(px[y][x] for y in range(h))]
@@ -1804,6 +1809,7 @@ def paddle_sprites() -> list[str]:
         dx_l.append(2 * (fi - 1))
         dx_r.append(2 * (PAD_W - 1 - fi))
         rows_n.append(h)
+        drawn.append((px, engines, im.info.get("paddedit") and json.loads(im.info["paddedit"]).get("front", 0)))
         data = []
         for row in px:
             img = [0] * PAD_W
@@ -1816,6 +1822,19 @@ def paddle_sprites() -> list[str]:
     # la racchetta senza tipo (Classic, EVO, allenamento): corpo bianco nelle colonne 4 e 5
     dx_l.append(8)
     dx_r.append(2 * (PAD_W - 1 - 5))
+    # immagini della partita NEXT con la fiamma (blocchi di 2 pagine per lato e tipo, nella cartuccia):
+    # lo scafo come disegnato, quindi la faccia in un'altra colonna e un altro PAD_FL_DX
+    flames = bytearray()
+    fl_l, fl_r = [], []
+    for k, (hull, engines, front) in enumerate(drawn):
+        left, right, face = c64_flames.kind_block(k, hull, engines, front, thr)
+        flames += left + right
+        fl_l.append(2 * (face - 1))
+        fl_r.append(2 * (PAD_W - 1 - face))
+    fl_l.append(8)
+    fl_r.append(2 * (PAD_W - 1 - 5))
+    assert len(flames) == len(PAD_KINDS) * 4 * 256 <= 0x2000
+    (OUT / "flames.bin").write_bytes(bytes(flames))
     return [
         "; astronavi delle racchette di NEXT (assets/ships/sprites/c64): righe viste dalla racchetta",
         "; sinistra, 3 byte per riga; x dello sprite: colonna della racchetta - PAD_DX_L / PAD_DX_R",
@@ -1825,6 +1844,10 @@ def paddle_sprites() -> list[str]:
         ".define PAD_DX_R " + ", ".join(map(str, dx_r)),
         ".define PAD_IMG_N " + ", ".join(map(str, rows_n)),
         ".define PAD_BL_THR " + ", ".join(map(str, thr)),
+        "; come PAD_DX_*, per le immagini in partita con la fiamma (flames.bin: per tipo, la sinistra e la",
+        "; destra da 2 pagine; ogni blocco 8 immagini: posa 0-4, inclinazione + 3 o livello del caricatore)",
+        ".define PAD_FL_DX_L " + ", ".join(map(str, fl_l)),
+        ".define PAD_FL_DX_R " + ", ".join(map(str, fl_r)),
         *out,
     ]
 

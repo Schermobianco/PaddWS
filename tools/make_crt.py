@@ -89,6 +89,8 @@ END_BANK = const("END_BANK", "ef.inc")
 HOWTO_BANK = const("HOWTO_BANK", "ef.inc")
 OM_BANK = const("OM_BANK", "ef.inc")
 KP_BANK = const("KP_BANK", "ef.inc")
+FL_BANK = const("FL_BANK", "ef.inc")
+FLAMES = SRC.parent / "gen" / "flames.bin"
 KPICK = SRC.parent / "gen" / "kpick.bin"
 HOWTO = SRC.parent / "gen" / "howto.bin"
 WIN_RUN = const("WIN_RUN", "voice.inc")
@@ -261,7 +263,11 @@ def main() -> None:
     for i in range(0, len(kpick), HALF):
         chips.append(chip(KP_BANK + i // (2 * HALF), 0x8000 + i // HALF % 2 * HALF, kpick[i:i + HALF]))
     assert VOICE_BANK0 + 7 <= PICK_BANK < WIN_BANK < END_BANK < HI_BANK < HI_BANK + 8 <= HOWTO_BANK < HOWTO_BANK + 2 <= OM_BANK < KP_BANK
-    assert KP_BANK + (len(kpick) - 1) // (2 * HALF) < 64
+    flames = FLAMES.read_bytes()
+    if len(flames) != 7 * 1024:
+        sys.exit(f"{FLAMES}: {len(flames)} byte invece di 7168")
+    chips.append(chip(FL_BANK, 0x8000, flames))
+    assert KP_BANK + (len(kpick) - 1) // (2 * HALF) < FL_BANK < 64
     out.write_bytes(header + b"".join(chips))
     print(f"{out}: {len(chips)} pezzi da 8 KB")
 

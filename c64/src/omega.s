@@ -9,10 +9,10 @@
 ; - la musica: la sezione della forma (canzoni OMEGA0-OMEGA6 del MiSTer, SID_SONG_OMEGA del player)
 ;   copiata dalla cartuccia a THEME_BASE dopo la trasformazione, una pagina per frame con il tempo
 ;   e senza voce in corso (la copia accende le ROM); intanto silenzio;
-; - le immagini della racchetta: pad_prep (video.s) prepara nel conto alla rovescia, per il lato di
-;   OMEGA, un'immagine dritta per ogni forma, che la trasformazione prende nel frame stesso, e le
-;   inclinazioni della TWIST e i caricatori del BLASTER; OMEGA non ha la rotazione del SUPER (i
-;   suoi sprite tengono quelle immagini), quella dell'avversario resta;
+; - le immagini della racchetta: come per ogni lato, il blocco del tipo con la fiamma dalla
+;   cartuccia (pad_prep di video.s), che si ricopia dopo la trasformazione (2 pagine, nella pausa
+;   dopo il punto; intanto l'immagine dinamica); OMEGA non ha la rotazione del SUPER, quella
+;   dell'avversario resta;
 ; - il nome della forma nuova (om_name), la grafica delle presentazioni, per NM_FRAMES frame in alto
 ;   nella metà campo di OMEGA, a tratti negli ultimi NM_BLINK: i suoi caratteri (la pagina del nome
 ;   di titles.bin) vanno a TN_FIRST, che in partita non si vedono, copiati dopo la trasformazione
@@ -139,7 +139,11 @@ OM_EARLY_NET = (TV_BUDGET - (12700)) / TV_LCYC
     bcs loaded
     jmp om_tick                 ; il suo codice, una pagina (dopo gli sprite non c'era il tempo)
 loaded:
-    jsr om_rest                 ; caratteri del nome, una pagina della musica o il nome a schermo
+    lda pp_side                 ; prima le immagini della forma nuova dalla cartuccia (pad_prep, due
+    cmp #2                      ; pagine: intanto l'immagine dinamica), poi il resto
+    bcs :+
+    jmp pad_prep
+:   jsr om_rest                 ; caratteri del nome, una pagina della musica o il nome a schermo
     lda #OM_EARLY_NET           ; poi la rete, se il frame è ancora all'inizio (niente di pesante
     jsr frame_after             ; prima)
     bcs done

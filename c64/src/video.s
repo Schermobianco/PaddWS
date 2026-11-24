@@ -1688,7 +1688,8 @@ kicked:
     lda nx_kind,x
 :   sta pi_kind
     ora kind_side,y
-    tax
+    ora pp_ready,y              ; con le immagini dalla cartuccia (pad_prep, la fiamma dietro, pp_ready
+    tax                         ; 16) lo scafo sta in un'altra colonna: PAD_FL_DX, le 16 voci dopo
     lda v_n
     sec
     sbc pad_dx,x
@@ -1873,29 +1874,84 @@ kind_color:
 color:
     sta sh_col+SPN_PAD,y
     ; variante dell'immagine in pi_var: TWIST l'inclinazione + 3, BLASTER i colpi nel caricatore
-    ; * 32, GUARDIAN i settori persi (un bit per settore: 0 il muro intero, l'immagine preparata);
-    ; X = la variante tra le immagini preparate (TWIST pi_var, BLASTER pi_ammo, gli altri 0)
+    ; * 32, GUARDIAN i settori persi (un bit per settore: 0 il muro intero); X = il posto
+    ; dell'immagine nel blocco del lato (TWIST pi_var, BLASTER pi_ammo, gli altri la posa della
+    ; fiamma, pose)
     ldx side
     lda pi_kind
     cmp #K_BLASTER
-    beq blaster
+    jeq blaster
     cmp #K_TWIST
     jeq twist
     cmp #K_GUARDIAN
-    beq guardian
-    lda #0
+    bne :+
+    lda nx_barrier,x
+    eor #(1 << G_SECTORS) - 1
     sta pi_var
-    tax
-prep:
-    ; l'immagine preparata a inizio partita, se c'è: TWIST per inclinazione, BLASTER per colpi
-    ; nel caricatore, così il caricatore cala nel frame del colpo (Y = lato)
-    lda #0                      ; (nessun muro intero del GUARDIAN da cui partire)
+    beq pose
+    ; GUARDIAN con dei settori persi: l'immagine dinamica, fatta dal muro intero preparato (la
+    ; posa 0)
+    lda #0
     sta pd_full,y
     lda pp_ready,y
     jeq dynamic
     lda pi_n
-    cmp pp_n,y                  ; (il lato di OMEGA ha pp_n = $FF: prep_slot)
-    bne other
+    cmp pp_n,y
+    jne dynamic
+    lda prep_base,y
+    sta pd_full,y
+    jmp dynamic
+:   lda #0
+    sta pi_var
+pose:
+    ; posa della fiamma (0-4) in X: il lampo mentre lo scatto scivola (la colonna disegnata non è
+    ; ancora quella della racchetta), le pose 2 e 3 in movimento, 0 e 1 ferma; A e B a 8 tick l'una
+    ; (l'orologio delle animazioni del PC, che si ferma con il conto alla rovescia). In movimento:
+    ; la velocità (Q16.16) diviso 256 oltre FL_MOVE_HI in valore assoluto (circa mezzo pixel per
+    ; frame, come vy del PC), dai soli byte alti. (La colonna: basta il byte basso, lo scatto non
+    ; sposta di 256 pixel.)
+    lda t0+2
+    cmp pd_draw_lo,y
+    bne flash
+    ldx side
+    lda pad_motion+3,x
+    bmi neg
+    ora pad_motion+2,x
+    bne moving
+    lda #FL_MOVE_HI
+    cmp pad_motion+1,x
+    bcs still
+moving:
+    ldx #2
+    bne clock                   ; (sempre)
+neg:
+    and pad_motion+2,x
+    cmp #$ff
+    bne moving
+    lda pad_motion+1,x
+    cmp #255 - FL_MOVE_HI
+    bcc moving
+still:
+    ldx #0
+clock:
+    lda tick
+    and #8
+    beq prep
+    inx
+    bne prep                    ; (sempre)
+flash:
+    ldx #4
+prep:
+    ; l'immagine preparata a inizio partita, se c'è (pad_prep, dalla cartuccia): TWIST per
+    ; inclinazione, BLASTER per colpi nel caricatore, così il caricatore cala nel frame del colpo,
+    ; gli altri per posa della fiamma (Y = lato)
+    lda #0                      ; (nessun muro intero del GUARDIAN da cui partire)
+    sta pd_full,y
+    lda pp_ready,y              ; (next_morph lo azzera: il blocco della forma nuova arriva tra poco)
+    jeq dynamic
+    lda pi_n
+    cmp pp_n,y
+    jne dynamic
     txa
     clc
     adc prep_base,y
@@ -1908,8 +1964,8 @@ spin:
     lda nx_armed,x
     cmp #B_SUPER
     bne no_spin1
-    cpx nx_morph                ; (OMEGA non ruota: nei suoi sprite della rotazione ci sono le
-    beq no_spin1                ; varianti delle forme, om_slot)
+    cpx nx_morph                ; (OMEGA non ruota, come prima: spin_prep non gli prepara le
+    beq no_spin1                ; immagini della rotazione)
     lda nx_anim,x
     bne no_spin1
     lda sp_k
@@ -1930,32 +1986,6 @@ blaster:
     sta pi_var
     ldy pi_side
     bcc prep                    ; (sempre: livello <= BLASTER_VIS)
-guardian:
-    lda nx_barrier,x
-    eor #(1 << G_SECTORS) - 1
-    sta pi_var
-    ldx #0
-    txa
-    sta pd_full,y
-    lda pp_ready,y
-    beq dynamic
-    lda pi_n
-    cmp pp_n,y
-    bne other
-    lda prep_base,y
-    bcs found                   ; (sempre: C = 1 da cmp)
-other:
-    jsr prep_slot
-    bcs dynamic
-found:
-    ; GUARDIAN con dei settori persi: l'immagine dinamica, fatta dal muro intero preparato
-    ldx pi_kind
-    cpx #K_GUARDIAN
-    bne put
-    ldx pi_var
-    beq put
-    sta pd_full,y
-    bcs dynamic                 ; (sempre: C = 1 da cpx)
 evo:
     ; le altre partite: racchetta bianca senza tipo, niente immagini preparate
     lda #COL_WHITE
@@ -2050,7 +2080,7 @@ g_right:
     bpl :-
 g_gray:
     lda pi_var
-    jsr guard_gray
+    jsr guard_gray_fl
     jmp done
 spin_on:
     ldy pi_side
@@ -2351,6 +2381,7 @@ done:
     lda guard_mask,x
     sta m_t
     ldy img_base,x
+loop:
     ldx #PAD_ROWS
 row:
     lda sh_img+1,y
@@ -2385,6 +2416,22 @@ next:
     rts
 .endproc
 guard_mask: .byte $F0, $0F
+
+; Come guard_gray, con le immagini della partita (pad_prep): lo scudo nelle colonne 10 e 11 della
+; sinistra (byte 2) e nelle 0 e 1 della destra (byte 0).
+.proc guard_gray_fl
+    sta pi_k
+    ldx pi_side
+    lda guard_mask_fl,x
+    sta m_t
+    lda img_base,x
+    clc
+    adc guard_off_fl,x
+    tay
+    jmp guard_gray::loop
+.endproc
+guard_mask_fl: .byte $0F, $F0
+guard_off_fl: .byte 1, $FF            ; (il byte 2 della sinistra e il byte 0 della destra, dal byte 1 di guard_gray)
 .assert COLOR_GRAY = 1 .and COLOR_YELLOW = 2 .and COLOR_WHITE = 3, error, "guard_gray: colori dello scudo del GUARDIAN"
 
 ; A con le quattro coppie di bit in ordine inverso (pixel multicolore specchiati). Y cambia.
@@ -2427,6 +2474,8 @@ pad_bl_thr: .byte PAD_BL_THR
 ; pixel tra il bordo sinistro dello sprite e la colonna della racchetta: sinistra per tipo (K_NONE
 ; per ultimo), poi destra
 pad_dx:     .byte PAD_DX_L, PAD_DX_R
+; lo stesso per le immagini con la fiamma (PAD_FL_DX_*, dopo le prime 16 voci)
+            .byte PAD_FL_DX_L, PAD_FL_DX_R
 .assert K_ARCADE = 0 .and K_TITAN = 1 .and K_HAMMER = 2 .and K_TWIST = 3 .and K_BLASTER = 4 .and K_RUSH = 5 .and K_GUARDIAN = 6 .and K_NONE = 7, error, "astronavi delle racchette nell'ordine dei tipi"
 
 ; colore dedicato di ciascuna astronave (%10 = $D027+i): ARCADE, TITAN, HAMMER, TWIST, BLASTER,
@@ -2436,7 +2485,7 @@ kind_col:
 
 
 img_base: .byte 0, IMG_BYTES
-prep_base: .byte SP_PREP0, SP_PREP0 + 7
+prep_base: .byte SP_PREP0, SP_PREP0 + 8
 
 
 bit_of: .byte %00000001, %00000010, %00000100, %00001000, %00010000, %00100000, %01000000, %10000000
@@ -2601,7 +2650,7 @@ mode_d018: .byte $02, $18, $02, $08
 SP_FX0    = ($E000 - $C000) / 64 ; prima immagine: gli sprite della coda, poi gli aloni
 TRAIL_BUFS = 4                  ; coda della palla: sprite della cache (trail_end)
 SP_TRAIL0 = SP_FX0
-SP_RING0  = SP_FX0 + TRAIL_BUFS ; alone di SLOW, palla 4 e 6
+SP_RING0  = SP_SPIN0 + 16      ; alone di SLOW, palla 4 e 6 (dopo le immagini delle racchette)
 
 ; Un'immagine degli effetti per frame, finché non ci sono tutte: gli aloni si disegnano dai
 ; quadrati di FX_SQUARES (x, y, lato in pixel; $FF chiude l'immagine), che fx_sp scorre.
@@ -3798,224 +3847,80 @@ late_lines: .res 1              ; frame_after: righe concesse
 fx_size:  .res 1
 .segment "CODE"
 
-; NEXT: immagini delle racchette preparate a inizio partita (una per frame, durante il conto alla
-; rovescia) nella bitmap dell'attract, dopo gli effetti della palla: TWIST le 7 inclinazioni, il
-; BLASTER una per colpi nel caricatore (0 - P_BLASTER_SHOTS), gli altri tipi un'immagine. In
-; partita si cambia solo il puntatore, nel frame stesso; un'altezza diversa (rara) resta con
-; l'immagine rifatta, che aspetta un frame con il tempo per farla.
-SP_PREP0 = SP_RING0 + FX_SPRITES   ; 7 immagini per lato
+; NEXT: immagini delle racchette con la fiamma dei motori, pronte nella cartuccia (gen/flames.bin di
+; tools/gen_c64_assets.py e tools/c64_flames.py, banco FL_BANK): per tipo e lato un blocco di 8
+; posti (2 pagine) con la faccia dove dice PAD_FL_DX, copiato nel blocco del lato, una pagina per
+; frame, nei frame con il tempo e senza voci (next_hud; sull'NTSC anche om_early); nel posto k la
+; posa k della fiamma (0-4, pad_sprite), per TWIST l'inclinazione k - 3, per BLASTER il livello k del
+; caricatore (le due con la fiamma fissa). In partita si cambia solo il puntatore. Quando OMEGA si
+; trasforma next_morph azzera pp_ready del suo lato e pp_side, e il suo blocco si ricopia nella pausa
+; dopo il punto; intanto l'immagine dinamica.
+SP_PREP0 = SP_FX0 + TRAIL_BUFS  ; 8 immagini per lato, i blocchi a inizio pagina
+.assert (SP_PREP0 .mod 4) = 0, error, "immagini delle racchette: i blocchi a inizio pagina"
+FL_DST = >($C000 + SP_PREP0 * 64)
+FL_LATE = (TV_BUDGET - 5800) / TV_LCYC  ; come OM_LATE_COPY: la copia di una pagina e quello che resta
 
 .proc pad_prep
+    ldy pp_side
+    cpy #2
+    bcs quit                    ; tutte pronte (next_morph lo rimette a 0)
+    lda pp_ready,y
+    beq load
+    iny
+    sty pp_side
+    bne pad_prep                ; (sempre)
+load:
+    lda #FL_LATE                ; una pagina, circa 3.700 cicli: anche in partita (OMEGA trasformato)
+    jsr frame_after
+    bcs quit
     lda pp_side
-    cmp #2
-    bcs quit
-    lda pd_made                 ; immagine dinamica fatta in questo frame (compute_sprites): la
-    bne quit                    ; preparazione, che usa sh_img, al prossimo
-    jsr frame_late
-    bcs quit
-    lda pp_side                 ; frame_late cambia A
+    asl a
+    ora pp_var
+    sta m_lo                    ; lato * 2 + pagina
+    asl a
+    and #%100
+    tax                         ; lato * 4
+    lda nx_kind,x
     tax
     asl a
-    asl a
-    cmp nx_morph
-    beq omega
+    asl a                       ; (C = 0)
+    adc m_lo
+    adc #$80                    ; pagina nella ROML: tipo * 4 + lato * 2 + pagina
+    sta ef_src+2
+    lda pv_rows,x
+    ldy pp_side
+    sta pp_n,y                  ; righe delle immagini
+    lda m_lo
+    clc
+    adc #FL_DST
     tay
-    lda nx_kind,y
-    sta pi_kind
-    tay
+    lda #FL_BANK
+    ldx #1
+    jsr ef_copy
+    ldy pp_side
+    inc pp_var
     lda pp_var
-    cmp prep_count,y
-    bcc more
-side_done:
-    lda pd_cur_n,x
-set_n:
-    sta pp_n,x
-    lda #1
-    sta pp_ready,x
-    inc pp_side
+    cmp #2
+    bcc quit
     lda #0
     sta pp_var
+    lda #16
+    sta pp_ready,y
 quit:
     rts
-om_done:
-    lda #$ff                    ; (altezza che non c'è: il posto lo trova prep_slot)
-    bne set_n                   ; (sempre)
-more:
-    ; variante pp_var del lato pp_side
-    lda pd_cur_n,x
-    sta pi_n
-    lda pp_var
-    bpl image                   ; (sempre)
-omega:
-    ; OMEGA: per ogni forma l'immagine dritta a grandezza intera (il BLASTER con il caricatore
-    ; pieno), così la trasformazione la prende nel frame del tick (prep_slot), poi le inclinazioni
-    ; della TWIST e gli altri caricatori del BLASTER, come nelle partite normali (pp_var: le forme
-    ; 0 - CH_LEVELS-1, poi le inclinazioni 0-6 della TWIST, la 3 di nuovo, poi i colpi
-    ; 0 - P_BLASTER_SHOTS-1 del BLASTER; il posto lo dà om_slot)
-    lda pp_var
-    cmp #CH_LEVELS
-    bcs var
-    tay                         ; forma: tipo pp_var, dritta
-    sta pi_kind
-    lda om_dvar,y
-    bcc rows                    ; (sempre)
-var:
-    sbc #CH_LEVELS              ; (C = 1)
-    ldy #K_TWIST
-    cmp #7
-    bcc :+
-    sbc #7
-    ldy #K_BLASTER
-    cmp #BLASTER_VIS
-    bcs om_done
-:   sty pi_kind
-rows:
-    pha
-    ldy pi_kind
-    lda pv_rows,y
-    sta pi_n
-    pla
-image:
-    stx pi_side
-    sta pi_var
-    ldy pi_kind
-    cpy #K_BLASTER
-    bne :+
-    jsr mag_vis                 ; BLASTER: variante = livello visivo della barra (0..BLASTER_VIS)
-:   ldy pi_side
-    tya
-    asl a
-    asl a
-    cmp nx_morph
-    bne :+
-    lda pi_var                  ; (OMEGA: il posto di tipo e variante)
-    ldx pi_kind
-    jsr om_slot
-    jmp dst
-:   lda prep_base,y
-    clc
-    adc pp_var
-dst:
-    sta pp_dst                  ; puntatore della variante (pad_image usa m_t: TITAN, TWIST)
-    jsr pad_image
-    ; da sh_img alla bitmap: indirizzo $C000 + puntatore * 64
-    lda pp_dst
-    lsr a
-    lsr a
-    clc
-    adc #>$C000
-    sta ptr+1
-    lda pp_dst
-    asl a
-    asl a
-    asl a
-    asl a
-    asl a
-    asl a
-    sta ptr
-    ldx pi_side
-    ldy img_base,x
-    sty m_lo
-    ldy #IMG_BYTES - 1
-:   tya
-    clc
-    adc m_lo
-    tax
-    lda sh_img,x
-    sta (ptr),y
-    dey
-    bpl :-
-    ldx pi_side
-    lda #$ff                    ; l'immagine dinamica, se servirà, si rifà: in sh_img ora c'è
-    sta pd_n,x                  ; questa, che apply_shadows non deve copiare nello sprite che si
-    sta wp_ls                   ; (e il salto del TELEPORT in corso rifà tutte le sue righe)
-    lda #0                      ; vede (pd_dirty a 0, anche le righe del salto, 2)
-    sta pd_dirty,x
-    inc pp_var
-    rts
 .endproc
 
-; immagini da preparare per tipo (ARCADE, TITAN, HAMMER, TWIST, BLASTER, RUSH, GUARDIAN, nessuno)
-prep_count: .byte 1, 1, 1, 7, BLASTER_VIS + 1, 1, 1, 1
-.segment "SMCODE"               ; (in partita NEXT sempre in memoria, come le mosse speciali; la
-                                ; legge solo il lato di OMEGA)
-; variante dell'immagine dritta, a grandezza intera, per tipo (TWIST non inclinata, BLASTER pieno)
-om_dvar: .byte 0, 0, 0, 3, BLASTER_VIS, 0, 0
-.assert K_ARCADE = 0 .and K_GUARDIAN = CH_LEVELS - 1 .and K_TWIST > K_ARCADE .and K_BLASTER > K_ARCADE, error, "OMEGA: una forma per tipo"
-; posto delle varianti per tipo ($80 nessuna): TWIST per inclinazione 0-6 (3 è la forma), BLASTER
-; per livelli visivi 0 - BLASTER_VIS - 1 da 7
-om_xb:   .byte $80, $80, $80, 0, 7, $80, $80
-OM_XSLOTS = 7 + BLASTER_VIS
-; Le varianti stanno negli 8 sprite della rotazione del SUPER del lato di OMEGA (che non ruota:
-; spin_prep li salta) e le altre in SP_OMX, dopo le icone delle mosse.
-SP_OMX = SM_ICON0 + 4
-.assert $C000 + (SP_OMX + OM_XSLOTS - 8) * 64 <= VOL_TAB, error, "OMEGA: varianti della racchetta sopra il player delle voci"
+; pad_sprite (pose): in movimento oltre circa mezzo pixel per frame
+FL_MOVE_HI = (P_PAD_MAX_SPEED / 12) >> 8
+.assert FL_MOVE_HI < 255, error, "posa della fiamma: soglia del movimento oltre un byte"
 
-; Sprite dell'immagine preparata del lato di OMEGA Y (0-1) per il tipo X e la variante A (C = 0), o
-; C = 1 se non c'è.
-.proc om_slot
-    cmp om_dvar,x
-    bne var
-    txa                         ; la forma dritta: il posto del tipo
-    clc
-    adc prep_base,y
-    rts
-var:
-    clc
-    adc om_xb,x
-    bmi no
-    cmp #8
-    bcs hi
-    sta m_t                     ; negli sprite della rotazione: SP_SPIN0 + 8 * lato + posto
-    tya
-    asl a
-    asl a
-    asl a
-    adc m_t
-    adc #SP_SPIN0
-    rts
-hi:
-    adc #SP_OMX - 8 - 1         ; (C = 1)
-    rts
-no:
-    sec
-    rts
-.endproc
-
-.segment "CODE"
-
-; Immagine preparata del lato Y per la variante X con un'altezza diversa da quella delle preparate:
-; A = sprite (C = 0), o C = 1 se non c'è (l'immagine dinamica). Il lato di OMEGA ne ha una per
-; forma a grandezza intera, più le inclinazioni della TWIST e i caricatori del BLASTER (om_slot).
-.proc prep_slot
-    tya
-    asl a
-    asl a
-    cmp nx_morph
-    bne no
-    txa
-    pha
-    ldx pi_kind
-    lda pv_rows,x
-    cmp pi_n
-    bne other
-    pla                         ; (compute_sprites solo da scene_done, nel conto alla rovescia e
-    jmp om_slot                 ; in partita: c'è sempre il codice delle mosse speciali)
-other:
-    pla
-no:
-    sec
-    rts
-.endproc
-
-.assert BLASTER_VIS + 1 <= 7, error, "immagini del BLASTER: al massimo 7 per lato"
+.assert BLASTER_VIS + 1 <= 8, error, "immagini delle racchette: al massimo 8 per lato"
 
 .segment "NEXTBSS"
-pp_side:  .res 1                ; lato in preparazione (2: finito)
-pp_var:   .res 1
-pp_ready: .res 2                ; immagini pronte per il lato
-pp_n:     .res 2                ; righe con cui sono state fatte
-pp_dst:   .res 1                ; sprite in preparazione
+pp_side:  .res 1                ; lato da preparare (2: tutti pronti)
+pp_var:   .res 1                ; pagina del blocco in copia
+pp_ready: .res 2                ; immagini pronte per il lato: 16 (pad_sprite: le voci di PAD_FL_DX)
+pp_n:     .res 2                ; righe delle immagini del lato
 .segment "CODE"
 
 ; C = 1 se il frame è già avanti: dall'interrupt della riga 250 sono passate più righe (TV_LCYC
@@ -4091,7 +3996,7 @@ late:
 ; partita dopo le altre immagini: sprite hires espansi (pixel 2x2, griglia 24x21) con il centro
 ; della racchetta nel pixel doppio (12, 10). La racchetta è un segmento spesso 2 pixel doppi
 ; (4 pixel) disegnato a mezzi passi in virgola fissa 8.8.
-SP_SPIN0 = SP_PREP0 + 14        ; 8 immagini per lato
+SP_SPIN0 = SP_PREP0 + 16        ; 8 immagini per lato
 SPIN_CX  = 12
 SPIN_CY  = 10
 
@@ -4099,7 +4004,7 @@ SPIN_CY  = 10
     lda sp_k
     cmp #16
     jcs done
-    ; le immagini della rotazione del lato di OMEGA no (ci sono le sue varianti): al lato dopo
+    ; le immagini della rotazione del lato di OMEGA no (OMEGA non ruota): al lato dopo
     and #8
     lsr a
     cmp nx_morph
@@ -4305,7 +4210,7 @@ sp_py: .res 1
 WARP_STEP = 32
 WARP_SUNK = (P_WIDTH >> 16) / 2
 WARP_RISE = 3 * WARP_STEP
-SP_WARP   = SP_SPIN0 + 16       ; immagine del pezzo che esce
+SP_WARP   = SP_RING0 + FX_SPRITES ; immagine del pezzo che esce
 ; Il salto si disegna dopo la scena, quando il frame è già oltre gli 8.000 cicli di frame_late (in
 ; NEXT a circa 10.000-12.500: con frame_late non si disegnava mai). Il salto (warp_fx con
 ; l'immagine) costa fino a WARP_COST cicli veri, con la prima immagine di una fase tutta da fare

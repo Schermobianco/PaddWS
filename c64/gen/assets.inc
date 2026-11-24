@@ -195,6 +195,10 @@ HT_TEXTS_AT = $E140
 .define PAD_DX_R 12, 10, 12, 8, 10, 12, 12, 12
 .define PAD_IMG_N 14, 20, 17, 17, 19, 14, 14
 .define PAD_BL_THR 19, 10, 9, 8, 0
+; come PAD_DX_*, per le immagini in partita con la fiamma (flames.bin: per tipo, la sinistra e la
+; destra da 2 pagine; ogni blocco 8 immagini: posa 0-4, inclinazione + 3 o livello del caricatore)
+.define PAD_FL_DX_L 20, 20, 20, 16, 16, 20, 20, 8
+.define PAD_FL_DX_R 0, 0, 0, 4, 4, 0, 0, 12
 .define PAD_IMG_ARCADE $01, $40, $00, $05, $50, $00, $0F, $F0, $00, $1D, $D0, $00, $7F, $F0, $00, $05, $50, $00, $0A, $20, $00, $0A, $20, $00, $05, $50, $00, $7F, $F0, $00, $1D, $D0, $00, $0F, $F0, $00, $05, $50, $00, $01, $40, $00
 .define PAD_IMG_TITAN $00, $F0, $00, $03, $FC, $00, $01, $54, $00, $1F, $FC, $00, $47, $FC, $00, $17, $FC, $00, $1F, $FC, $00, $03, $FC, $00, $02, $A8, $00, $09, $18, $00, $09, $18, $00, $02, $A8, $00, $03, $FC, $00, $1F, $FC, $00, $17, $FC, $00, $47, $FC, $00, $1F, $FC, $00, $01, $54, $00, $03, $FC, $00, $00, $F0, $00
 .define PAD_IMG_HAMMER $01, $80, $00, $05, $90, $00, $00, $00, $00, $0A, $90, $00, $0B, $D0, $00, $0B, $D0, $00, $0B, $D0, $00, $41, $D0, $00, $1A, $D0, $00, $41, $D0, $00, $0B, $D0, $00, $0B, $D0, $00, $0B, $D0, $00, $0B, $D0, $00, $00, $00, $00, $05, $50, $00, $01, $40, $00

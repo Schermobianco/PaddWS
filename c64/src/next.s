@@ -2610,8 +2610,16 @@ last:
     lda rung_loadout+2,y
     sta nx_load+2,x
     jsr set_kind
-    ; (per lo schermo, nello stesso tick il lampo bianco, om_flash di omega.s; l'immagine della
-    ; forma nuova è tra quelle preparate a inizio partita, pad_prep di video.s)
+    ; (per lo schermo, nello stesso tick il lampo bianco, om_flash di omega.s; le immagini della
+    ; forma nuova le copia dalla cartuccia pad_prep di video.s, da capo per il lato di OMEGA)
+    txa
+    lsr a
+    lsr a
+    tay
+    lda #0
+    sta pp_ready,y
+    sta pp_side
+    sta pp_var
     lda #OM_FLASH
     sta om_flash
     ldy #4                      ; x = home_x (X avanti di 4: non serve più)

@@ -1159,13 +1159,25 @@ color_span:
 :
     bit $fffb                  ; con la voce di CHALLENGE (READY?, gli NMI costano circa 5.100
     bmi :+                      ; cicli per frame) le immagini aspettano che finisca
+    ; (ognuna chiamata solo finché ha da fare: è codice di quasi tutti i frame della partita)
+    lda fx_pages
+    cmp #FX_SPRITES
+    bcs fx_done
     jsr fx_copy                 ; effetti della palla a $E000, una pagina per frame
     lda fx_wait
     bne :+
-    jsr pad_prep                ; e le immagini delle racchette, una per frame
+fx_done:
+    lda pp_side
+    cmp #2
+    bcs pp_done
+    jsr pad_prep                ; e le immagini delle racchette, una pagina per frame
     lda pp_side
     cmp #2
     bcc :+
+pp_done:
+    lda sp_k
+    cmp #16
+    bcs :+
     jsr spin_prep               ; poi quelle della rotazione del SUPER
 :   ; riserve e selezioni come a schermo (quasi tutti i frame): solo le barriere
     ldx #2
