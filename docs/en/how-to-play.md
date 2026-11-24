@@ -14,7 +14,7 @@
 
 ## Attract mode and matches
 
-At power-on the attract mode starts: self-test and the title (stripes and logo, with NEXT written
+At power-on the attract mode starts: self-test and the title (PADD, stripes and WS still from the first instant, with NEXT being written
 under it in the NEXT game type) with the ball bouncing off everything that is black, the high-score table and a demo match, CPU against CPU, in the chosen
 mode (in the menu on PC, in the OSD on the MiSTer; not on the C64), with the mode name in the
 middle. In NEXT you see the opponent of a random level of the ladder.

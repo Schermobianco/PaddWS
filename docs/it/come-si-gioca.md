@@ -14,7 +14,7 @@
 
 ## L'attract e la partita
 
-All'accensione parte l'attract: auto-test e titolo (strisce e logo, con NEXT scritto sotto nel tipo
+All'accensione parte l'attract: auto-test e titolo (PADD, strisce e WS fermi fin dal primo istante, con NEXT che si scrive sotto nel tipo
 di partita NEXT) con la pallina che rimbalza su tutto ciò che è nero, la classifica e una partita dimostrativa, CPU contro CPU, nella modalità
 scelta (nel menu sul PC, nell'OSD sul MiSTer; sul C64 non c'è), con il nome della modalità al
 centro. In NEXT si vede l'avversario di un livello a caso della scalata.
