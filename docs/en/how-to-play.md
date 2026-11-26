@@ -372,8 +372,8 @@ used with `F` / `C` (left) and `.` / `-` (right). Key **5** coin, fire or **RETU
 
 | | |
 |---|---|
-| ![Attract mode title with the CRT filter](../screenshots/attract-crt.jpg) | ![Countdown before the serve](../screenshots/countdown.png) |
-| Attract mode title, with the CRT filter | Countdown before the serve |
+| ![Attract mode title with NEXT, with the CRT filter](../screenshots/attract-crt.jpg) | ![Countdown before the serve](../screenshots/countdown.png) |
+| Attract mode title with NEXT, with the CRT filter | Countdown before the serve |
 | ![NEXT: power-up pick](../screenshots/next-pick.png) | ![NEXT: reserves, capsules and an armed SUPER](../screenshots/next-game.png) |
 | NEXT: each player picks 3 power-ups out of 6 | NEXT: reserves at the top, capsules in flight, paddle spinning with the SUPER |
 | ![NEXT: special moves introduction](../screenshots/next-howto.png) | ![NEXT: STRAIGHT SHOT in flight](../screenshots/next-supers.png) |

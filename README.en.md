@@ -28,8 +28,8 @@ keyboard, a gamepad or the mouse.
 
 | | |
 |---|---|
-| ![Attract mode title with the CRT filter](docs/screenshots/attract-crt.jpg) | ![NEXT: paddle pick with the characters](docs/screenshots/next-paddles.png) |
-| Attract mode title, with the CRT filter | NEXT: paddle pick, with the characters |
+| ![Attract mode title with NEXT, with the CRT filter](docs/screenshots/attract-crt.jpg) | ![NEXT: paddle pick with the characters](docs/screenshots/next-paddles.png) |
+| Attract mode title with NEXT, with the CRT filter | NEXT: paddle pick, with the characters |
 | ![NEXT: the ladder's VS screen](docs/screenshots/challenge-intro.png) | ![NEXT: BLASTER against GUARDIAN](docs/screenshots/next-kinds.png) |
 | The ladder: the VS screen before each opponent | The characters' paddles: BLASTER against GUARDIAN |
 | ![MiSTer core: title](docs/screenshots/mister-title.png) | ![MiSTer core: paddle pick](docs/screenshots/mister-pick.png) |

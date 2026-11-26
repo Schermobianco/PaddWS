@@ -367,8 +367,8 @@ menu. Solo PAL; finora provata in VICE. Dettagli in [c64/README.md](../../c64/RE
 
 | | |
 |---|---|
-| ![Titolo dell'attract con il filtro CRT](../screenshots/attract-crt.jpg) | ![Conto alla rovescia prima del servizio](../screenshots/countdown.png) |
-| Titolo dell'attract, con il filtro CRT | Conto alla rovescia prima del servizio |
+| ![Titolo dell'attract con NEXT, con il filtro CRT](../screenshots/attract-crt.jpg) | ![Conto alla rovescia prima del servizio](../screenshots/countdown.png) |
+| Titolo dell'attract con NEXT, con il filtro CRT | Conto alla rovescia prima del servizio |
 | ![NEXT: scelta dei bonus](../screenshots/next-pick.png) | ![NEXT: riserve, capsule e SUPER armato](../screenshots/next-game.png) |
 | NEXT: ognuno sceglie 3 bonus su 6 | NEXT: riserve in alto, capsule in volo, racchetta che ruota con il SUPER |
 | ![NEXT: presentazione delle mosse speciali](../screenshots/next-howto.png) | ![NEXT: STRAIGHT SHOT in volo](../screenshots/next-supers.png) |

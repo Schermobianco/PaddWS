@@ -28,8 +28,8 @@ gamepad o mouse.
 
 | | |
 |---|---|
-| ![Titolo dell'attract con il filtro CRT](docs/screenshots/attract-crt.jpg) | ![NEXT: scelta della racchetta con i personaggi](docs/screenshots/next-paddles.png) |
-| Titolo dell'attract, con il filtro CRT | NEXT: scelta della racchetta, con i personaggi |
+| ![Titolo dell'attract con NEXT, con il filtro CRT](docs/screenshots/attract-crt.jpg) | ![NEXT: scelta della racchetta con i personaggi](docs/screenshots/next-paddles.png) |
+| Titolo dell'attract con NEXT, con il filtro CRT | NEXT: scelta della racchetta, con i personaggi |
 | ![NEXT: lo schermo VS della scalata](docs/screenshots/challenge-intro.png) | ![NEXT: BLASTER contro GUARDIAN](docs/screenshots/next-kinds.png) |
 | La scalata: lo schermo VS prima di ogni avversario | Le racchette dei personaggi: BLASTER contro GUARDIAN |
 | ![Core MiSTer: titolo](docs/screenshots/mister-title.png) | ![Core MiSTer: scelta della racchetta](docs/screenshots/mister-pick.png) |
