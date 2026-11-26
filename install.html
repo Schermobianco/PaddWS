@@ -1,0 +1,158 @@
+<!doctype html>
+<!-- Pagina per installare PADD WS come app (link da dare: .../install.html).
+     Nessun browser installa da un link senza conferma: qui un pulsante apre la richiesta del
+     browser (evento beforeinstallprompt: Chrome, Edge, Samsung Internet, Android). Su iPhone e iPad
+     non c'è: si spiega Condividi -> Aggiungi alla schermata Home. Se la pagina è già aperta come
+     app installata si va diretti al gioco. In italiano o in inglese secondo la lingua del browser.
+     Nessuna risorsa esterna: niente font o script da altri siti. -->
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>PADD WS - installa</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="PADD WS">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-64.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+    html, body { margin: 0; min-height: 100%; background: #000; color: #e8e8e8; }
+    body {
+        font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        display: grid; place-items: center; min-height: 100vh; min-height: 100dvh;
+        padding: max(24px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+                 max(24px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+        box-sizing: border-box;
+    }
+    main { max-width: 30rem; text-align: center; display: grid; gap: 18px; justify-items: center; }
+    img { width: 128px; height: 128px; image-rendering: pixelated; }
+    h1 { margin: 0; font: 700 28px/1.2 ui-monospace, Consolas, monospace; letter-spacing: .12em; color: #f6c200; }
+    p { margin: 0; color: #b8b8b8; }
+    .button {
+        display: inline-block; min-width: 14rem; padding: 14px 22px; border: 2px solid #f6c200;
+        border-radius: 4px; background: #f6c200; color: #000; text-decoration: none; cursor: pointer;
+        font: 700 18px/1.2 ui-monospace, Consolas, monospace; letter-spacing: .1em;
+    }
+    .button.secondary { background: transparent; color: #f6c200; }
+    .button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+    ol { margin: 0; padding-left: 1.4em; text-align: left; color: #e8e8e8; }
+    li + li { margin-top: 6px; }
+    .share { display: inline-block; width: 1.1em; height: 1.1em; vertical-align: -0.15em; }
+    [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+    <img src="icon-512.png" alt="">
+    <h1>PADD WS</h1>
+    <p id="intro"></p>
+
+    <button id="install" class="button" type="button" hidden></button>
+    <p id="done" hidden></p>
+
+    <div id="ios" hidden>
+        <ol>
+            <li id="ios1"></li>
+            <li id="ios2"></li>
+            <li id="ios3"></li>
+        </ol>
+    </div>
+
+    <p id="other" hidden></p>
+
+    <a id="play" class="button secondary" href="./"></a>
+</main>
+<script>
+"use strict";
+(function () {
+    const it = (navigator.language || "").toLowerCase().startsWith("it");
+    const share = '<svg class="share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"'
+        + ' aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5M5 12v8h14v-8"/></svg>';
+    const T = it ? {
+        intro: "Installa il gioco come un'app: si apre a schermo intero dalla schermata Home o dal menu Start, e funziona anche senza rete.",
+        install: "INSTALLA",
+        done: "Installato. Lo trovi tra le app.",
+        ios1: "Tocca " + share + " <b>Condividi</b> nella barra del browser.",
+        ios2: "Scegli <b>Aggiungi alla schermata Home</b> (se non lo vedi, scorri l'elenco).",
+        ios3: "Tocca <b>Aggiungi</b>: PADD WS compare tra le app.",
+        other: "Se il pulsante non compare, nel menu del browser cerca <b>Installa app</b> (Chrome, Edge, Android) o <b>Aggiungi al Dock</b> (Safari sul Mac). Forse l'app è già installata. Si gioca anche nel browser, senza installare.",
+        play: "GIOCA NEL BROWSER"
+    } : {
+        intro: "Install the game as an app: it opens full screen from the Home screen or the Start menu, and also works offline.",
+        install: "INSTALL",
+        done: "Installed. You will find it among your apps.",
+        ios1: "Tap " + share + " <b>Share</b> in the browser bar.",
+        ios2: "Choose <b>Add to Home Screen</b> (scroll the list if you don't see it).",
+        ios3: "Tap <b>Add</b>: PADD WS appears among your apps.",
+        other: "If the button doesn't appear, look for <b>Install app</b> in the browser menu (Chrome, Edge, Android) or <b>Add to Dock</b> (Safari on the Mac). The app may already be installed. You can also play in the browser without installing.",
+        play: "PLAY IN THE BROWSER"
+    };
+    document.documentElement.lang = it ? "it" : "en";
+    document.title = it ? "PADD WS - installa" : "PADD WS - install";
+    const $ = (id) => document.getElementById(id);
+    $("intro").textContent = T.intro;
+    $("install").textContent = T.install;
+    $("done").textContent = T.done;
+    $("ios1").innerHTML = T.ios1;
+    $("ios2").innerHTML = T.ios2;
+    $("ios3").innerHTML = T.ios3;
+    $("other").innerHTML = T.other;
+    $("play").textContent = T.play;
+
+    // già aperta come app installata: si va al gioco
+    const standalone = navigator.standalone === true
+        || matchMedia("(display-mode: standalone), (display-mode: fullscreen)").matches;
+    if (standalone) {
+        location.replace("./");
+        return;
+    }
+
+    // il service worker serve al browser per offrire l'installazione (sw.js)
+    if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("sw.js").catch(() => {});
+    }
+
+    // iPhone e iPad (l'iPad si presenta come Mac, ma ha il touch): solo i passaggi a mano
+    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent)
+        || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    if (ios) {
+        $("ios").hidden = false;
+        return;
+    }
+
+    let deferred = null;
+    window.addEventListener("beforeinstallprompt", (e) => {
+        e.preventDefault();
+        deferred = e;
+        $("install").hidden = false;
+        $("other").hidden = true;
+    });
+    $("install").addEventListener("click", async () => {
+        if (!deferred) {
+            return;
+        }
+        deferred.prompt();
+        const choice = await deferred.userChoice.catch(() => null);
+        deferred = null;
+        if (choice && choice.outcome === "accepted") {
+            $("install").hidden = true;
+        }
+    });
+    window.addEventListener("appinstalled", () => {
+        $("install").hidden = true;
+        $("other").hidden = true;
+        $("done").hidden = false;
+    });
+    // la richiesta del browser arriva dopo un attimo, o mai (Firefox, Safari sul Mac, app già
+    // installata): allora le indicazioni per il menu del browser
+    setTimeout(() => {
+        if (!deferred && $("done").hidden) {
+            $("other").hidden = false;
+        }
+    }, 2500);
+})();
+</script>
+</body>
+</html>
