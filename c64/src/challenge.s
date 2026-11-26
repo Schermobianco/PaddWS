@@ -1821,6 +1821,9 @@ HS_FIRST = 3                   ; pagine copiate nel primo frame (hs_load), le al
 
 ; Classifica (ch_hl in evidenza), dall'attract e dopo una partita; poi il titolo.
 .proc enter_scores
+.ifdef ROTATED
+    jsr today_glyphs            ; (campo girato: le racchette della classifica con CH_WALL di oggi)
+.endif
     lda #0
     sta pk_i                    ; prima riga da disegnare
     lda #<hs_load
@@ -2444,7 +2447,11 @@ done:
     pha
     jsr shots_erase
     pla
+.ifdef ROTATED
+    ldy #ROT_LINE_ROW + 1       ; (campo girato: nella fascia, sotto i punti)
+.else
     ldy #24
+.endif
     sty v_row
     cmp #2
     bcs :+
@@ -2476,6 +2483,17 @@ draw:
     sta ch_shown,x
     dex
     bpl :-
+.ifdef ROTATED
+    ldx #ROT_HUD_COL            ; (campo girato: nella fascia, nella riga della mezzeria)
+    ldy #ROT_LINE_ROW
+    jmp print_score
+put_ascii38:
+    ldx #38
+    jmp put_ascii
+put_ascii39:
+    ldx #39
+    jmp put_ascii
+.else
     ldx #30                     ; (cifre 30-36, moltiplicatore 38-39; a sinistra 0-1 e 3-9)
     lda ch_side
     beq :+
@@ -2494,6 +2512,7 @@ put_ascii39:
     beq :+
     ldx #1
 :   jmp put_ascii
+.endif
 .endproc
 
 ; Punti da ridisegnare (schermo della partita nuovo).

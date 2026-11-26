@@ -1,5 +1,6 @@
 //! Parametri della versione C64 come costanti ca65 (`c64/gen/params.inc`, per l'NTSC
-//! `c64/gen/ntsc/params.inc`), da `Params::new` con `Tuning::c64()`: tutto è in Fx (Q16.16) o in
+//! `c64/gen/ntsc/params.inc`; con il campo girato `c64/gen/rotated/...`), da `Params::new` con
+//! `Tuning::c64()` (o `Tuning::c64_rotated()`): tutto è in Fx (Q16.16) o in
 //! tick a 50 Hz (NTSC 60: un tick per frame). Le grandezze che dipendono dalla difficoltà sono
 //! tabelle di 4 valori.
 
@@ -9,11 +10,22 @@ use paddws_core::{CPU_LEVELS, CpuLevel, DIFFICULTY_LEVELS, Params, Tuning};
 
 /// Parametri del C64 alla difficoltà `d` (a 60 tick al secondo con l'NTSC, `crate::ntsc`).
 pub fn c64_params(d: u8) -> Params {
+    let base = c64_tuning();
     Params::new(&Tuning {
         difficulty: d,
-        tick_hz: if crate::ntsc() { 60 } else { Tuning::c64().tick_hz },
-        ..Tuning::c64()
+        tick_hz: if crate::ntsc() { 60 } else { base.tick_hz },
+        ..base
     })
+}
+
+/// Il Tuning della versione scelta: il campo di oggi o quello girato (`crate::rotated`; sull'NTSC
+/// il suo, con le racchette un po' meno veloci).
+fn c64_tuning() -> Tuning {
+    match (crate::rotated(), crate::ntsc()) {
+        (true, true) => Tuning::c64_rotated_ntsc(),
+        (true, false) => Tuning::c64_rotated(),
+        _ => Tuning::c64(),
+    }
 }
 
 fn hex(v: i32) -> String {
@@ -54,7 +66,8 @@ pub fn params_inc() -> String {
     let _ = writeln!(s, "; Generato da paddws-c64 params (rust/c64): non modificare a mano.");
     let _ = writeln!(
         s,
-        "; Parametri del core Rust con Tuning::c64(): Fx Q16.16, reciproci Q8.24, tick a {} Hz.",
+        "; Parametri del core Rust con Tuning::{}(): Fx Q16.16, reciproci Q8.24, tick a {} Hz.",
+        if crate::rotated() { "c64_rotated" } else { "c64" },
         p.tick_hz
     );
     let mut c = |name: &str, v: i32, note: &str| {

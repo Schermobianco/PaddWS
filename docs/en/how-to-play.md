@@ -337,7 +337,7 @@ in [mister/README.en.md](../../mister/README.en.md).
 
 A version in 6502 assembly that plays the same match as the Rust core, bit for bit: one tick per
 frame (50 Hz, 60 on NTSC), a 320×200 pixel playfield, music and effects on the real SID. The EasyFlash
-cartridge `paddws.crt`, or `paddws-ntsc.crt` for NTSC machines (C64 Ultimate, a real EasyFlash written with EasyProg, VICE): everything in
+cartridge `paddws-horizontal-pal.crt`, or `paddws-horizontal-ntsc.crt` for NTSC machines (C64 Ultimate, a real EasyFlash written with EasyProg, VICE): everything in
 one file, instant start and the ladder introduction voices without loading; the high-score table is saved in
 the cartridge flash and survives power-off (in VICE with `-easyflashcrtwrite`).
 

@@ -489,10 +489,17 @@ rdst:
     bcc :-
     lda kp_d016,x
     sta $d016
+.ifdef ROTATED
+    cpx #2                      ; (campo girato: sotto i cursori gli sprite delle astronavi)
+    bne :+
+    jsr rp_mid
+    ldx #2                      ; (rp_mid usa X)
+:
+.endif
     lda kp_next,x
     sta $d012
     inx
-    cpx #3
+    cpx #KP_SPLITS + 1
     bcc :+
     ldx #0
 :   stx kp_irq_n
@@ -516,12 +523,24 @@ vbl:
     jmp irq_handler             ; frame_flag, frame_count (in pagina zero; irq_handler sotto $8000)
 .endproc
 kp_irq_n: .byte 0
+.ifdef ROTATED
+KP_SPLITS = 3                   ; (campo girato: alla riga RP_LINE gli sprite delle astronavi)
+kp_line   = * - 1
+    .byte KP_LINE_ON, RP_LINE, KP_LINE_OFF
+kp_d016   = * - 1
+    .byte $c8 | $10, $c8 | $10, $c8
+kp_next   = * - 1
+    .byte RP_LINE - 1, KP_LINE_OFF - 1, RASTER_LINE
+.assert KP_LINE_ON < RP_LINE - 1 .and RP_LINE < KP_LINE_OFF - 1, error, "righe dello split"
+.else
+KP_SPLITS = 2
 kp_line   = * - 1               ; (per kp_irq_n 1 e 2)
     .byte KP_LINE_ON, KP_LINE_OFF
 kp_d016   = * - 1
     .byte $c8 | $10, $c8        ; multicolor, hires
 kp_next   = * - 1
     .byte KP_LINE_OFF - 1, RASTER_LINE
+.endif
 .assert KP_LINE_ON < KP_LINE_OFF - 1 .and KP_LINE_OFF < RASTER_LINE, error, "righe dello split"
 .assert irq_handler < $8000, error, "kp_split: irq_handler sotto la cartuccia"
 
@@ -765,6 +784,42 @@ kp_box_dx:    .byte 2, 32 - 2 - 18, 32 - 2 - 26
 ; Codice nella riga 2 dalla colonna 23 e nella riga 3 fino alla colonna 16, vuote e nere su nero
 ; (segmento KPCODE3): tools/make_crt.py lo mette nello sfondo della cartuccia, quindi c'è solo dopo
 ; la copia dello sfondo. Gira solo con $01 = $35 (sotto c'è la ROM del KERNAL).
+.ifdef ROTATED
+; Campo girato, anteprime (rp_preview di rot_video.s): uno sprite di posa per frame, il primo lato
+; con l'immagine da rifare.
+.proc rp_pose
+    ; uno sprite di posa per frame: il primo lato con l'immagine da rifare
+    ldy #0
+side:
+    lda pk_cursor,y
+    cmp pv_kind,y
+    bne fresh
+    lda rp_part,y
+    cmp #4
+    bcc more
+    iny
+    cpy #2
+    bne side
+    rts
+fresh:
+    sta pv_kind,y
+    lda #0
+    sta rp_part,y
+more:
+    sta ship_part
+    tya
+    pha                         ; (ship_copy usa ship_t)
+    tax                         ; serie = lato
+    lda pv_kind,y
+    jsr ship_copy
+    pla
+    tay
+    lda ship_part
+    sta rp_part,y
+    rts
+.endproc
+.endif
+
 .segment "KPCODE3"
 
 ; Interrupt dal vettore in RAM ($FFFE): come quello del KERNAL, A, X e Y nello stack, poi kp_split.
@@ -849,5 +904,56 @@ next:
     iny
 :   rts
 .endproc
+
+.ifdef ROTATED
+; Campo girato, anteprime (rp_preview di rot_video.s): le astronavi complete nelle ombre, poi nei
+; registri di rp_mid.
+.proc rp_place
+    ldy #1
+ship:
+    lda rp_part,y
+    cmp #4
+    bne skip
+    lda rp_x,y
+    sta ship_x
+    ldx pv_kind,y
+    lda #RP_TOP
+    cpy #0
+    bne :+
+    clc                         ; la posa in basso più giù: nella posa in alto il disegno comincia
+    adc rp_dy,x                 ; più in giù nello sprite
+:   sta ship_y
+    sty ship_t
+    tya
+    asl a
+    asl a
+    tax                         ; sprite da 4 * lato
+    lda pv_kind,y
+    jsr ship_regs               ; (Y = serie = lato)
+    ldy ship_t
+skip:
+    dey
+    bpl ship
+    ldx #7
+:   lda sh_x,x
+    sta rp_regs,x
+    lda sh_y,x
+    sta rp_regs + 8,x
+    lda sh_ptr,x
+    sta rp_regs + 16,x
+    lda sh_col,x
+    sta rp_regs + 24,x
+    dex
+    bpl :-
+    lda sh_mc
+    sta rp_regs + 32
+    lda sh_enable
+    sta rp_regs + 34
+    lda #0                      ; sopra: i cursori
+    sta sh_enable
+    rts
+.endproc
+rp_x: .byte SPR_X0 + RP_CX0 - 24, SPR_X0 + RP_CX1 - 24
+.endif
 
 .segment "CODE"

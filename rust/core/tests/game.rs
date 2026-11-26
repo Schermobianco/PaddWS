@@ -341,6 +341,35 @@ fn c64_preset_scales_time_to_one_tick_per_frame() {
 }
 
 #[test]
+fn c64_rotated_keeps_todays_times_and_ship_sizes() {
+    use paddws_core::PaddleKind;
+    let rot = Params::new(&Tuning::c64_rotated());
+    let c64 = Params::new(&Tuning::c64());
+    assert_eq!((rot.width, rot.height), (fixed::int(200), fixed::int(240)));
+    // racchette lunghe come le astronavi del campo girato (1,2 volte quelle di oggi)
+    let h: Vec<i32> = PaddleKind::ALL.iter().map(|&k| fixed::floor(rot.kinds[k as usize].height)).collect();
+    assert_eq!(h, [32, 48, 40, 40, 44, 34, 32]);
+    // le racchette attraversano i 240 pixel nello stesso tempo in cui oggi attraversano i 200; la
+    // palla ha la scala di oggi per 0,7 (scelta dell'utente)
+    assert!((rot.pad_max_speed * 200 - c64.pad_max_speed * 240).abs() <= 240);
+    // spesse 4 pixel come oggi
+    assert_eq!((rot.pad_width, c64.pad_width), (fixed::int(4), fixed::int(4)));
+    assert!((rot.max_ball_speed_next as i64 * 1000 - c64.max_ball_speed_next as i64 * 700).abs() <= 1000);
+    assert!((rot.serve_unit as i64 * 1000 - c64.serve_unit as i64 * 700).abs() <= 1000);
+    // niente fascia dell'HUD nel campo: capsule e muro del GUARDIAN su tutti i 240 pixel
+    assert_eq!(rot.capsule_margin_top, 0);
+    assert_eq!(rot.guardian_top, fixed::int(240));
+    // STRAIGHT SHOT più lento: x1,5 al livello 2 (shift 1) invece di x2 (shift 0)
+    assert_eq!((rot.super_straight_shift, c64.super_straight_shift), (1, 0));
+    // NTSC: 60 tick al secondo, racchette più veloci del 20% (240/200) di quelle di oggi, come sul
+    // PAL
+    let ntsc = Params::new(&Tuning::c64_rotated_ntsc());
+    let today_ntsc = Params::new(&Tuning { tick_hz: 60, ..Tuning::c64() });
+    assert_eq!(ntsc.tick_hz, 60);
+    assert!((ntsc.pad_max_speed * 200 - today_ntsc.pad_max_speed * 240).abs() <= 240);
+}
+
+#[test]
 fn c64_match_plays_points() {
     let mut m = Match::new(Params::new(&Tuning::c64()), 2, true, 3);
     let events = idle(&mut m, 50 * 60);

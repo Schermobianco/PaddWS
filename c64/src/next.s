@@ -666,7 +666,11 @@ no:
 ZONE_HALF    = 0
 ZONE_BULLET  = 1
 ZONE_NEAR    = 2
+.ifdef ROTATED
+ZONE_NEAR_PX = 112 * 200 / 320  ; (campo girato: gli stessi tick, la palla attraversa i 200 pixel nel tempo dei 320)
+.else
 ZONE_NEAR_PX = 112
+.endif
 .proc ball_in_zone
     jsr ball_toward
     bcc no
@@ -1475,6 +1479,17 @@ out:
 right:
     ; verso destra: cx - metà > W, cioè cx >= W + metà + 1 (x positiva: senza segno; sotto i
     ; 256 pixel il byte alto è 0)
+.ifdef ROTATED
+    ; (campo girato: W + metà + 1 sotto i 256 pixel, e la capsula sparisce prima di arrivarci)
+    .assert P_WIDTH + P_CAP_HALF + 1 < $01000000, error, "capsule: uscita a destra sotto i 256 pixel"
+    lda cap_x,y
+    cmp #<(P_WIDTH + P_CAP_HALF + 1)
+    lda cap_x+1,y
+    sbc #>(P_WIDTH + P_CAP_HALF + 1)
+    lda cap_x+2,y
+    sbc #^(P_WIDTH + P_CAP_HALF + 1)
+    jcc next
+.else
     lda cap_x+3,y
     jeq next
     lda cap_x,y
@@ -1486,6 +1501,7 @@ right:
     lda cap_x+3,y
     sbc #<((P_WIDTH + P_CAP_HALF + 1) >> 24)
     jcc next
+.endif
 gone:
     lda #0
     sta cap_on,x

@@ -333,7 +333,7 @@ spinner e la sua velocità) sono nell'OSD. Dettagli in [mister/README.md](../../
 ### Commodore 64
 
 Versione in assembly 6502 che gioca la stessa partita del core Rust, bit per bit: un tick per
-frame (50 Hz, sull'NTSC 60), campo di 320×200 pixel, musiche ed effetti sul SID vero. La cartuccia EasyFlash `paddws.crt`, o `paddws-ntsc.crt` per i C64 NTSC (C64 Ultimate, EasyFlash vera scritta con EasyProg, VICE):
+frame (50 Hz, sull'NTSC 60), campo di 320×200 pixel, musiche ed effetti sul SID vero. La cartuccia EasyFlash `paddws-horizontal-pal.crt`, o `paddws-horizontal-ntsc.crt` per i C64 NTSC (C64 Ultimate, EasyFlash vera scritta con EasyProg, VICE):
 tutto in un file, avvio immediato e voce delle presentazioni della scalata senza caricamenti; la classifica si salva
 nella flash della cartuccia e resta anche da spenti (in VICE con `-easyflashcrtwrite`).
 

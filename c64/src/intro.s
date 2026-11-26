@@ -110,6 +110,11 @@ first:
     sta in_mode
     rts
 second:
+.ifdef ROTATED
+    lda #0                      ; (campo girato: l'astronave della partita, in_pad la copia)
+    sta ship_part
+    jmp inv_init
+.else
     ; l'immagine della racchetta, dritta (BLASTER con il caricatore pieno)
     ldx in_k
     stx pi_kind
@@ -134,6 +139,7 @@ second:
     lda #$ff                    ; in partita l'immagine si rifà
     sta pd_n,y
     jmp inv_init
+.endif
 .endproc
 .assert INV_RUN = $F000, error, "entrate della presentazione: le tabelle dei quadrati altrove"
 
@@ -347,7 +353,41 @@ next:
 .assert CH_BLANK = 0, error, "in_col: la cella vuota è il carattere 0"
 
 ; La racchetta dell'avversario accesa: A unità dal centro, centro alla y degli sprite Y, colore X.
+; Nel campo girato l'astronave della partita (solo OMEGA, al centro: A non conta), con la posa del
+; lato dell'avversario: prima una parte al frame nella serie 0 (ship_copy, quando la voce lascia
+; spegnere l'I/O), poi accesa.
 .proc in_pad
+.ifdef ROTATED
+    stx in_t
+    sty in_dx
+    lda ship_part
+    cmp #4
+    bcs show
+    lda in_k
+    ldx #0
+    ldy in_opp
+    jmp ship_copy
+show:
+    lda #<(IN_CX - 24)
+    sta ship_x
+    ldx in_k
+    lda in_dx
+    sec
+    sbc #14                     ; (la posa in alto: il disegno finisce alla riga 20)
+    ldy in_opp
+    bne :+
+    clc
+    adc rp_dy,x
+:   sta ship_y
+    ldx #0
+    ldy #0
+    lda in_k
+    jsr ship_regs
+    lda in_t
+    sta sh_col+2
+    sta sh_col+3
+    rts
+.else
     sta in_dx
     stx in_t
     tya
@@ -377,6 +417,7 @@ next:
     tax
     lda in_dx
     ldy #12
+.endif
 .endproc
 ; (prosegue)
 ; Sprite X a A unità (2 pixel, con il segno) dal centro verso la metà campo dell'avversario, con il
@@ -507,6 +548,33 @@ init:
     jsr om_glyphs               ; (i caratteri della rete per la partita)
     lda #TTL_OMEGA
     jmp title_copy
+.ifdef ROTATED
+; Campo girato: i sei caratteri della rete di OMEGA sono la mezzeria (trattini di 4 pixel, due
+; righe) spostata in su di 3, 2, 1 e in giù di 1, 2, 3 righe.
+.proc om_glyphs
+    ldx #5
+:   txa
+    asl a
+    asl a
+    asl a
+    tay
+    lda #0
+    .repeat 8, i
+    sta OM_CHARS + i,y
+    .endrepeat
+    tya
+    clc
+    adc om_gr,x
+    tay
+    lda #$F0
+    sta OM_CHARS,y
+    sta OM_CHARS+1,y
+    dex
+    bpl :-
+    rts
+.endproc
+om_gr:   .byte 0, 1, 2, 4, 5, 6     ; prima riga del trattino: 3 + spostamento
+.else
 ; I sei caratteri della rete di OMEGA: trattini di 2 pixel spostati di -3, -2, -1 (colonna 19) e
 ; +1, +2, +3 (colonna 20) dalla mezzeria, nelle prime 4 righe come quelli di sempre.
 .proc om_glyphs
@@ -531,6 +599,7 @@ init:
     rts
 .endproc
 om_gv:   .byte $0C, $06, $03, $C0, $60, $30
+.endif
 tick:
     lda #CH_BLANK
     sta SCREEN + IN_LADDER * 40 + CH_LEVELS * 5 + 4

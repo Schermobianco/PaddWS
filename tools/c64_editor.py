@@ -7,10 +7,11 @@ incorporate. Ascolta solo su 127.0.0.1; scrive solo file .png dentro il reposito
 l'intestazione X-C64Edit (una pagina di un altro sito non la può mandare senza un preflight, a cui
 il server non risponde).
 
-Uso:  .venv\\Scripts\\python tools\\c64_editor.py [--port 8064] [--no-browser] [--paddle | --paddle-c64]
+Uso:  .venv\\Scripts\\python tools\\c64_editor.py [--port 8064] [--no-browser] [--paddle | --paddle-c64 | --paddle-c64h]
 Poi in VS Code: Ctrl+Maiusc+P, "Simple Browser: Show", http://127.0.0.1:8064/ (oppure il browser
 che si apre da solo). L'editor delle racchette è http://127.0.0.1:8064/paddle_editor.html: con
---paddle si apre quello, con --paddle-c64 sugli sprite del C64 (paddle_editor.html?plat=c64).
+--paddle si apre quello, con --paddle-c64 sugli sprite del C64 (paddle_editor.html?plat=c64), con
+--paddle-c64h su quelli della prova del C64 con il campo girato (sprites/c64hires/).
 """
 
 from __future__ import annotations
@@ -155,9 +156,12 @@ def main() -> None:
     ap.add_argument("--no-browser", action="store_true", help="non aprire il browser")
     ap.add_argument("--paddle", action="store_true", help="apri l'editor delle racchette")
     ap.add_argument("--paddle-c64", action="store_true", help="apri l'editor delle racchette del C64")
+    ap.add_argument("--paddle-c64h", action="store_true",
+                    help="apri l'editor sugli sprite del C64 con il campo girato (prova)")
     args = ap.parse_args()
     srv = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    page = "paddle_editor.html?plat=c64" if args.paddle_c64 else "paddle_editor.html" if args.paddle else ""
+    page = ("paddle_editor.html?plat=c64h" if args.paddle_c64h else "paddle_editor.html?plat=c64" if args.paddle_c64
+            else "paddle_editor.html" if args.paddle else "")
     url = f"http://127.0.0.1:{args.port}/" + page
     print(f"Editor: {url}  (in VS Code: Simple Browser: Show). Ctrl+C per fermarlo.")
     if not args.no_browser:

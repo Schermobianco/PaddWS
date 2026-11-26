@@ -26,6 +26,13 @@
 
   Si apre in Edge o Chrome, o con il server di tools/c64_editor.py (--paddle), che legge e scrive i
   PNG del repository e mostra accanto la racchetta disegnata oggi dal gioco.
+
+  C64 girato (prova, assets/ships/sprites/c64hires/): il campo del C64 girato di 90 gradi, con le
+  racchette in basso e in alto. Si disegna come sul PC (faccia a destra, la riga è un pixel lungo
+  la racchetta) e alla stessa misura (altezza base 40), ma lo sprite è fatto da due strati: il
+  bianco è uno strato hires (1 pixel), gli altri colori uno strato multicolore sotto, con un colore
+  per ogni coppia di righe (0-1, 2-3, ...): in una coppia i pixel non bianchi hanno lo stesso
+  colore. Profondità al più 21 colonne (le righe dello sprite), lunghezza al più 48.
 -->
 <html lang="it">
 <head>
@@ -220,7 +227,8 @@ dialog button.primary { background: var(--accent2); border-color: var(--accent);
     <section>
       <h3>Racchetta</h3>
       <div class="row"><select id="plat" style="flex:1" title="Gli sprite del C64 sono in assets/ships/sprites/c64/">
-        <option value="pc">PC, web e MiSTer</option><option value="c64">C64</option></select></div>
+        <option value="pc">PC, web e MiSTer</option><option value="c64">C64</option>
+        <option value="c64h">C64 girato (hires, prova)</option></select></div>
       <div class="row"><select id="kind" style="flex:1"></select></div>
       <div class="row">
         <label>Altezza base <input id="base" type="number" min="8" max="160" value="40"></label>
@@ -234,10 +242,19 @@ dialog button.primary { background: var(--accent2); border-color: var(--accent);
         <label title="Colonne disegnate oltre la faccia, come le canne del BLASTER: la hitbox finisce prima">Sporgenza davanti <input id="front" type="number" min="0" max="8" value="0"></label>
       </div>
       <div class="row"><button data-cmd="applySize" id="btnSize">Adatta la tela alla racchetta</button></div>
+      <div class="row" id="rowFromPc"><button data-cmd="fromPc" title="Converte lo sprite del PC dello stesso tipo (serve il server)">Parti dallo sprite del PC</button></div>
+      <div class="row" id="rowPairs"><label title="Nel livello multicolore un colore (o la gomma) va anche all'altro pixel della coppia"><input type="checkbox" id="optPairs" checked> Coppie multicolore automatiche</label></div>
       <div class="small" id="kindInfo"></div>
     </section>
     <section>
       <h3>Colori</h3>
+      <div class="row" id="rowLayer"><span>Livello</span>
+        <button id="btnLayerHi" data-cmd="layerHi" title="Il bianco hires, a 1 pixel">Hires (bianco)</button>
+        <button id="btnLayerMc" data-cmd="layerMc" title="Grigi, colore del personaggio e agganci, un colore per coppia di righe">Multicolore</button>
+        <kbd>H</kbd></div>
+      <div class="row" id="rowOther"><label>L'altro livello <select id="layerOther">
+        <option value="veil">velato</option><option value="full">pieno</option><option value="hide">nascosto</option>
+      </select></label></div>
       <div class="cur">
         <div id="swPrim" class="sw big" title="Primario: tasto sinistro"></div>
         <div id="swSec" class="sw big" title="Secondario: tasto destro"></div>
@@ -345,6 +362,13 @@ dialog button.primary { background: var(--accent2); border-color: var(--accent);
     <tr><td>C64</td><td>Sprite multicolore di 12 pixel doppi, ogni riga alta due righe dello schermo:
       grigio (%01, condiviso), colore del personaggio (%10, cambia con lo stato della racchetta),
       bianco (%11, condiviso). La hitbox sono le 2 colonne fino alla faccia; niente agganci e niente ombra</td></tr>
+    <tr><td>C64 girato</td><td>Prova del campo girato: come sul PC (faccia a destra, stessa misura), con
+      due livelli. Hires: il bianco a 1 pixel. Multicolore (sotto): grigio scuro (%01), personaggio
+      (%10), grigio chiaro (%11) e agganci, un colore per coppia di righe (le linee più chiare della
+      griglia). Matita, gomma, riempimento, selezione, specchio e spostamenti valgono solo per il
+      livello attivo (H lo cambia; 1 va all'hires, 2-4 al multicolore); l'altro si vede pieno,
+      velato o nascosto. Al più 21 colonne di profondità (linea tratteggiata). L'anteprima mostra la
+      racchetta come in gioco, in basso e in alto</td></tr>
   </table>
   <p class="small">La faccia che colpisce è a destra (la hitbox vera è quella del core: gli spigoli
   possono essere arrotondati). Il corpo (bianco) e il corpo in ombra cambiano colore con lo stato della racchetta; i tre colori del
@@ -400,8 +424,31 @@ const C64_ACCENT = [[0xEF, 0xF3, 0x47], [0x9F, 0x48, 0x15], [0x96, 0x28, 0x2E], 
 // altezze delle racchette del C64 in righe dello schermo (T_KIND_H di c64/gen/params.inc)
 const C64_LINES = [27, 40, 33, 33, 37, 28, 27];
 const C64_W = 12, C64_FACE = 2;
+// C64 girato (prova): due livelli, come i due strati di sprite. Il livello hires ha solo il bianco
+// (1 pixel); il livello multicolore il grigio scuro (%01), il colore del personaggio (%10), il
+// grigio chiaro (%11) e gli agganci, un colore per coppia di righe. Si disegna su un livello alla
+// volta (doc.layers.hi e doc.layers.mc; doc.px è quello attivo). Nel PNG un indice dice tutti e due:
+// 0 niente, 1 bianco sopra niente, 2-4 solo multicolore, 5-7 bianco sopra 2-4 (quasi bianchi, per
+// distinguerli), 16 aggancio.
+const H_WHITE = 1, H_DGRAY = 2, H_MARK = 3, H_LGRAY = 4, H_W_DGRAY = 5, H_W_MARK = 6, H_W_LGRAY = 7;
+const hiOf = v => v === H_WHITE || (v >= H_W_DGRAY && v <= H_W_LGRAY);
+const mcOf = v => v >= H_DGRAY && v <= H_LGRAY ? v : v >= H_W_DGRAY && v <= H_W_LGRAY ? v - 3 : NONE;
+const H_STORED = [H_WHITE, H_DGRAY, H_MARK, H_LGRAY, H_W_DGRAY, H_W_MARK, H_W_LGRAY, ENGINE];
+const ROLES_HI = [[NONE, 'trasparente', '0'], [H_WHITE, 'bianco (hires)', '1']];
+const ROLES_MC = [[NONE, 'trasparente', '0'], [H_DGRAY, 'grigio scuro (%01)', '2'],
+                  [H_MARK, 'personaggio (%10)', '3'], [H_LGRAY, 'grigio chiaro (%11)', '4'],
+                  [ENGINE, 'aggancio motore', '']];
+let layer = 'mc';                                  // livello attivo del C64 girato
+const layerColors = { hi: [H_WHITE, NONE], mc: [H_MARK, NONE] };   // primario e secondario per livello
+const H_DEPTH = 21, H_LEN = 48, H_FACE = 5, H_PCBASE = 40;
+// ruoli del PC -> colori del C64 girato (Parti dallo sprite del PC)
+const PC_TO_H = { [BODY]: H_WHITE, [GRAY_LIGHT]: H_WHITE, [SHADE]: H_LGRAY, [GRAY]: H_LGRAY,
+                  [MARK]: H_MARK, [MARK_LIGHT]: H_MARK, [SIGNAL]: H_MARK, [DARK]: H_DGRAY,
+                  [MARK_DARK]: H_DGRAY, [ENGINE]: ENGINE };
 let plat = 'pc', ROLES = ROLES_PC;
 const isC64 = () => plat === 'c64';
+const isC64H = () => plat === 'c64h';
+const SPRITE_DIR = { pc: '', c64: 'c64/', c64h: 'c64hires/' };
 const ROLE_NAME = c => (ROLES.find(r => r[0] === c) || [0, '?'])[1];
 // agganci attesi per tipo: [motore, arma, speciale] (gruppi in colonna)
 const ANCHORS = [[2, 0, 0], [2, 0, 0], [1, 0, 0], [1, 0, 2], [2, 2, 0], [1, 0, 2], [2, 0, 0]];
@@ -434,9 +481,16 @@ function ramp(c) {
 // il corpo in ombra: il colore del corpo per (212, 214, 224) / 255, come body_shade
 const bodyShade = c => [Math.round(c[0] * 212 / 255), Math.round(c[1] * 214 / 255), Math.round(c[2] * 224 / 255)];
 function colorsFor(kind, body) {
+  if (isC64H())
+    return { [H_WHITE]: [255, 255, 255], [H_DGRAY]: [0x62, 0x62, 0x62], [H_MARK]: body || C64_ACCENT[kind],
+             [H_LGRAY]: [0xAD, 0xAD, 0xAD], [H_W_DGRAY]: [254, 254, 254], [H_W_MARK]: [253, 253, 253],
+             [H_W_LGRAY]: [252, 252, 252], [ENGINE]: FIXED[ENGINE], [SHADOW]: [0, 0, 0] };
   if (isC64())
     return { [C64_GRAY]: [0xAE, 0xAE, 0xAE], [C64_MARK]: body || C64_ACCENT[kind], [C64_WHITE]: [255, 255, 255],
              [ENGINE]: FIXED[ENGINE], [SHADOW]: [0, 0, 0] };
+  return colorsPc(kind, body);
+}
+function colorsPc(kind, body) {
   body = body || [255, 255, 255];
   return { ...FIXED, ...ramp(KINDS[kind].accent), [BODY]: body, [SHADE]: bodyShade(body),
            [SHADOW]: kind === 1 ? SHADOW_TITAN : SHADOW_RGB };
@@ -464,15 +518,19 @@ const opt = {
   get grid() { return $('#showGrid').checked; },
 };
 // sul C64 righe dello sprite (ognuna alta due righe dello schermo), come pad_sprite in video.s
-const kindH = k => isC64() ? ((C64_LINES[k] - 1) >> 1) + 1 : Math.round(+$('#base').value * KINDS[k].mult);
-const spritePath = k => `assets/ships/sprites/${isC64() ? 'c64/' : ''}${KINDS[k].id}.png`;
+// (sul C64 girato la misura del PC con altezza base 40: 1,2 volte le racchette del C64 di oggi)
+const kindH = k => isC64() ? ((C64_LINES[k] - 1) >> 1) + 1
+  : Math.round((isC64H() ? H_PCBASE : +$('#base').value) * KINDS[k].mult);
+const spritePath = k => `assets/ships/sprites/${SPRITE_DIR[plat]}${KINDS[k].id}.png`;
 // colonna della faccia (dopo, solo le canne che sporgono)
 const faceX = () => doc.w - 1 - (doc.front || 0);
 const COL = () => colorsFor(doc.kind);
 
 function blankDoc(kind, w, h) {
-  return { kind, w, h, front: 0, px: new Uint8Array(w * h), name: KINDS[kind].id + '.png',
-           path: spritePath(kind), dirty: false };
+  const d = { kind, w, h, front: 0, px: new Uint8Array(w * h), name: KINDS[kind].id + '.png',
+              path: spritePath(kind), dirty: false };
+  if (isC64H()) { d.layers = { hi: new Uint8Array(w * h), mc: d.px }; d.px = d.layers[layer]; }
+  return d;
 }
 
 // ---------------------------------------------------------------- disegno
@@ -481,8 +539,88 @@ const inside = (x, y) => x >= 0 && y >= 0 && x < doc.w && y < doc.h;
 const get = (x, y) => inside(x, y) ? doc.px[y * doc.w + x] : NONE;
 function put(x, y, c) {
   if (!inside(x, y)) return;
+  putPair(x, y, c);
+  if (opt.sym) putPair(x, doc.h - 1 - y, c);
+}
+// sul C64 girato, nel livello multicolore e con le coppie automatiche, un colore (o il
+// trasparente) va anche all'altro pixel della coppia
+function putPair(x, y, c) {
   doc.px[y * doc.w + x] = c;
-  if (opt.sym) doc.px[(doc.h - 1 - y) * doc.w + x] = c;
+  const y2 = y ^ 1;
+  if (!isC64H() || layer !== 'mc' || !$('#optPairs').checked || isAnchor(c) || y2 >= doc.h) return;
+  if (!isAnchor(doc.px[y2 * doc.w + x])) doc.px[y2 * doc.w + x] = c;
+}
+
+// ---------------------------------------------------------------- C64 girato: i due livelli
+
+// il livello attivo torna nel documento (le operazioni a volte rifanno doc.px)
+function syncLayer() { if (isC64H() && doc && doc.layers) doc.layers[layer] = doc.px; }
+// l'immagine con tutti e due i livelli, con gli indici del PNG (per i controlli, l'anteprima e il
+// salvataggio); sugli altri formati il disegno
+function comp() {
+  if (!isC64H()) return doc.px;
+  syncLayer();
+  const { hi, mc } = doc.layers, out = new Uint8Array(doc.w * doc.h);
+  for (let i = 0; i < out.length; i++) {
+    const m = mc[i];
+    out[i] = hi[i] ? (m && !isAnchor(m) ? m + 3 : H_WHITE) : m;
+  }
+  return out;
+}
+// i due livelli da un'immagine con gli indici del PNG. Negli sprite della versione 1 (e da "Parti
+// dallo sprite del PC") sotto il bianco non c'è niente: prende il colore dell'altro pixel della
+// coppia, se non è bianco
+function splitLayers(px, w, h, legacy) {
+  const hi = new Uint8Array(w * h), mc = new Uint8Array(w * h);
+  for (let i = 0; i < px.length; i++) {
+    hi[i] = hiOf(px[i]) ? H_WHITE : NONE;
+    mc[i] = px[i] === ENGINE ? ENGINE : mcOf(px[i]);
+  }
+  if (legacy)
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x, j = (y ^ 1) * w + x;
+        if (px[i] === H_WHITE && (y ^ 1) < h && !hi[j] && !isAnchor(mc[j])) mc[i] = mc[j];
+      }
+  return { hi, mc };
+}
+function setLayers(L) {
+  doc.layers = L;
+  doc.px = L[layer];
+}
+// colore della coppia di righe di y, colonna x, nel livello multicolore (gli agganci contano come
+// trasparenti); null se i due pixel hanno colori diversi
+function cellColor(mc, w, h, x, y) {
+  const y0 = y & ~1, a = mc[y0 * w + x], b = y0 + 1 < h ? mc[(y0 + 1) * w + x] : a;
+  const ca = isAnchor(a) ? NONE : a, cb = isAnchor(b) ? NONE : b;
+  return ca === cb ? ca : null;
+}
+// coppie con due colori diversi nel livello multicolore: vince il più forte (personaggio, grigio
+// chiaro, grigio scuro, trasparente), come nelle bozze
+function resolvePairs(mc, w, h) {
+  const rank = [NONE, H_DGRAY, H_LGRAY, H_MARK];
+  for (let y = 0; y < h; y += 2)
+    for (let x = 0; x < w; x++) {
+      if (cellColor(mc, w, h, x, y) !== null) continue;
+      let best = NONE;
+      for (const yy of [y, y + 1])
+        if (yy < h && rank.indexOf(mc[yy * w + x]) > rank.indexOf(best)) best = mc[yy * w + x];
+      for (const yy of [y, y + 1])
+        if (yy < h && !isAnchor(mc[yy * w + x])) mc[yy * w + x] = best;
+    }
+}
+// quello che il C64 mostra (dall'immagine con gli indici del PNG): il bianco sopra, sotto il colore
+// della coppia (con una coppia sbagliata, quello della prima riga)
+function hiresShown(px, w, h) {
+  const out = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const c = px[y * w + x];
+      if (hiOf(c)) { out[y * w + x] = H_WHITE; continue; }
+      const top = px[(y & ~1) * w + x];
+      out[y * w + x] = top === ENGINE ? NONE : mcOf(top);
+    }
+  return out;
 }
 function line(x0, y0, x1, y1, fn) {
   const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
@@ -517,13 +655,20 @@ function fillAt(x, y, c, mirror = true) {
 
 // ---------------------------------------------------------------- annulla
 
-const snapshot = () => ({ w: doc.w, h: doc.h, px: doc.px.slice(), kind: doc.kind, front: doc.front });
+// (sul C64 girato con tutti e due i livelli)
+function snapshot() {
+  syncLayer();
+  const s = { w: doc.w, h: doc.h, px: doc.px.slice(), kind: doc.kind, front: doc.front };
+  if (doc.layers) s.layers = { hi: doc.layers.hi.slice(), mc: doc.layers.mc.slice() };
+  return s;
+}
 function restore(s) {
   Object.assign(doc, { w: s.w, h: s.h, px: s.px.slice(), kind: s.kind, front: s.front });
+  if (s.layers && isC64H()) setLayers({ hi: s.layers.hi.slice(), mc: s.layers.mc.slice() });
   syncKind(); layout();
 }
 function pushUndo() { undoStack.push(snapshot()); if (undoStack.length > 300) undoStack.shift(); redoStack = []; }
-function changed() { doc.dirty = true; updateTitle(); render(); }
+function changed() { syncLayer(); doc.dirty = true; updateTitle(); render(); }
 function undo() {
   if (!undoStack.length) return;
   floating = null;
@@ -543,14 +688,22 @@ function redo() {
 // ---------------------------------------------------------------- operazioni sull'immagine
 
 function resizeTo(w, h) {
-  // la faccia resta a destra, il disegno resta centrato in altezza
-  const out = new Uint8Array(w * h), dx = w - doc.w, dy = Math.floor((h - doc.h) / 2);
-  for (let y = 0; y < doc.h; y++)
-    for (let x = 0; x < doc.w; x++) {
-      const nx = x + dx, ny = y + dy;
-      if (nx >= 0 && ny >= 0 && nx < w && ny < h) out[ny * w + nx] = doc.px[y * doc.w + x];
-    }
-  Object.assign(doc, { w, h, px: out });
+  // la faccia resta a destra, il disegno resta centrato in altezza (sul C64 girato tutti e due i
+  // livelli)
+  const dx = w - doc.w, dy = Math.floor((h - doc.h) / 2);
+  const resized = src => {
+    const out = new Uint8Array(w * h);
+    for (let y = 0; y < doc.h; y++)
+      for (let x = 0; x < doc.w; x++) {
+        const nx = x + dx, ny = y + dy;
+        if (nx >= 0 && ny >= 0 && nx < w && ny < h) out[ny * w + nx] = src[y * doc.w + x];
+      }
+    return out;
+  };
+  syncLayer();
+  const L = isC64H() && doc.layers ? { hi: resized(doc.layers.hi), mc: resized(doc.layers.mc) } : null;
+  Object.assign(doc, { w, h, px: resized(doc.px) });
+  if (L) setLayers(L);
 }
 function shift(dx, dy) {
   pushUndo();
@@ -649,7 +802,8 @@ function commitFloating() {
 function copySel() {
   const r = floating || sel;
   if (!r) { msg('Niente da copiare: prima seleziona (A)', true); return false; }
-  clip = { x: r.x, y: r.y, w: r.w, h: r.h, data: floating ? floating.data.slice() : grab(r) };
+  clip = { x: r.x, y: r.y, w: r.w, h: r.h, data: floating ? floating.data.slice() : grab(r),
+           layer: isC64H() ? layer : null };
   msg(`Copiato ${r.w}×${r.h}`);
   return true;
 }
@@ -662,6 +816,7 @@ function cutSel() {
 }
 function pasteClip() {
   if (!clip) { msg('Gli appunti sono vuoti', true); return; }
+  if (isC64H() && clip.layer && clip.layer !== layer) setLayer(clip.layer);
   commitFloating();
   pushUndo();
   // dove c'è il mouse, se è sulla tela; se no dove era il pezzo copiato
@@ -705,21 +860,39 @@ function flipSel(horiz) {
 
 function checks() {
   const out = [], bad = new Set(), k = KINDS[doc.kind], want = kindH(doc.kind);
+  // sul C64 girato tutti e due i livelli
+  const P = comp(), at = (x, y) => P[y * doc.w + x];
   if (doc.h !== want) out.push([`Alta ${doc.h} righe: la racchetta ${k.name} ne ha ${want}`, true]);
   // profondità della nave: dalla prima colonna disegnata (gli agganci dietro non contano) alla faccia
   let x0 = 0;
-  while (x0 < doc.w && ![...Array(doc.h).keys()].some(y => get(x0, y) && !isAnchor(get(x0, y)))) x0++;
+  while (x0 < doc.w && ![...Array(doc.h).keys()].some(y => at(x0, y) && !isAnchor(at(x0, y)))) x0++;
   if (isC64() && doc.w !== C64_W) out.push([`Larga ${doc.w}: lo sprite del C64 ha ${C64_W} colonne`, true]);
-  if (!isC64() && faceX() + 1 - x0 > k.maxW) out.push([`Profonda ${faceX() + 1 - x0} fino alla faccia: dietro la racchetta ${k.name} c'è posto per ${k.maxW}`
+  if (isC64H()) {
+    if (doc.w - x0 > H_DEPTH) {
+      out.push([`Profonda ${doc.w - x0}: lo sprite ha ${H_DEPTH} righe (colonne qui)`, true]);
+      for (let y = 0; y < doc.h; y++) for (let x = x0; x < doc.w - H_DEPTH; x++) if (at(x, y)) bad.add(y * doc.w + x);
+    }
+    if (doc.h > H_LEN) out.push([`Lunga ${doc.h}: due sprite affiancati fanno ${H_LEN} pixel`, true]);
+    if (doc.h & 1) out.push([`Alta ${doc.h}: con un numero dispari di righe l'ultima coppia è a metà`, true]);
+    let n = 0;
+    for (let y = 0; y < doc.h; y += 2)
+      for (let x = 0; x < doc.w; x++)
+        if (cellColor(doc.layers.mc, doc.w, doc.h, x, y) === null) {
+          n++;
+          bad.add(y * doc.w + x);
+          if (y + 1 < doc.h) bad.add((y + 1) * doc.w + x);
+        }
+    if (n) out.push([`Livello multicolore: ${n} coppie con due colori (o un colore e il trasparente). Sul C64 la coppia ha un colore solo`, true]);
+  } else if (!isC64() && faceX() + 1 - x0 > k.maxW) out.push([`Profonda ${faceX() + 1 - x0} fino alla faccia: dietro la racchetta ${k.name} c'è posto per ${k.maxW}`
                                 + (doc.kind === 6 ? ' (poi c\'è il muro)' : ''), true]);
   if (doc.kind === GUARDIAN) sectorChecks(out, bad);
   const need = ANCHORS[doc.kind], names = ['motore', 'arma', 'speciale'];
-  for (let i = 0; i < (isC64() ? 1 : 3); i++) {
-    const n = anchorGroups(ENGINE + i).length;
+  for (let i = 0; i < (plat === 'pc' ? 3 : 1); i++) {
+    const n = anchorGroups(ENGINE + i, P).length;
     if (n !== need[i]) out.push([`Agganci ${names[i]}: ${n}, per ${k.name} ne servono ${need[i]}`, true]);
   }
-  const used = new Set(doc.px);
-  if (!isC64() && !used.has(BODY) && !used.has(SHADE)) out.push(['Niente corpo: lo sprite non cambierebbe colore con il bonus e con OMEGA', true]);
+  const used = new Set(P);
+  if (plat === 'pc' && !used.has(BODY) && !used.has(SHADE)) out.push(['Niente corpo: lo sprite non cambierebbe colore con il bonus e con OMEGA', true]);
   if (!out.length) out.push(['Tutto a posto', false]);
   return { out, bad };
 }
@@ -728,8 +901,9 @@ function checks() {
 // (sul C64 lo scudo è di 2 colonne e le giunture sono nel colore del personaggio, come in guard)
 const GUARDIAN = 6, SECTORS = 5, plate = () => isC64() ? 2 : 4;
 const plateCols = () => [faceX() - plate() + 1, faceX()];
-const seamColor = c => isC64() ? c === C64_MARK : c === MARK || c === MARK_LIGHT || c === MARK_DARK || c === BLACK;
-function seamRows(px = doc.px) {
+const seamColor = c => isC64() ? c === C64_MARK : isC64H() ? c === H_MARK || c === H_DGRAY   // (senza bianco sopra)
+  : c === MARK || c === MARK_LIGHT || c === MARK_DARK || c === BLACK;
+function seamRows(px = comp()) {
   const [xa, xb] = plateCols(), out = [];
   for (let y = 0; y < doc.h; y++) {
     let n = 0;
@@ -738,7 +912,7 @@ function seamRows(px = doc.px) {
   }
   return out;
 }
-function sectorBands(px = doc.px) {
+function sectorBands(px = comp()) {
   const seams = seamRows(px), out = [];
   let y0 = 0;
   for (const y of [...seams, doc.h]) {
@@ -751,7 +925,7 @@ function sectorChecks(out, bad) {
   const seams = seamRows(), bands = sectorBands();
   if (bands.length !== SECTORS)
     out.push([`Settori: ${bands.length} pezzi tra ${seams.length} giunture, ne servono ${SECTORS}`
-              + ` (righe di piastre tutte ${isC64() ? 'nel colore del personaggio' : 'blu'})`, true]);
+              + ` (righe di piastre tutte ${plat !== 'pc' ? 'nel colore del personaggio' : 'blu'})`, true]);
   const low = isC64() ? 2 : 3;
   for (const b of bands)
     if (b.y1 - b.y0 < low) {
@@ -767,6 +941,17 @@ function wallState(px, spec) {
   const out = px.slice(), [xa, xb] = plateCols(), state = {}, bands = sectorBands(px);
   if (bands.length !== SECTORS) return px;
   for (const t of spec.split(',')) state[+t.slice(1)] = t[0];
+  if (isC64H()) {
+    // C64 girato (bozza): il bianco di un settore rotto diventa grigio scuro, quello colpito del
+    // colore del personaggio
+    for (let i = 0; i < SECTORS; i++) {
+      const { y0, y1 } = bands[i], st = state[i];
+      for (let y = y0; y < y1 && st; y++)
+        for (let x = xa; x <= xb; x++)
+          if (hiOf(px[y * doc.w + x])) out[y * doc.w + x] = st === 'b' ? H_DGRAY : H_MARK;
+    }
+    return out;
+  }
   if (isC64()) {
     // C64: lo scudo bianco di un settore rotto diventa grigio (guard in video.s), quello colpito
     // del colore del personaggio
@@ -804,13 +989,13 @@ function wallState(px, spec) {
 }
 
 // gruppi di pixel di aggancio `c` in colonna: [{x, y, rows}]
-function anchorGroups(c) {
-  const out = [];
+function anchorGroups(c, P = comp()) {
+  const out = [], at = (x, y) => x >= 0 && y >= 0 && x < doc.w && y < doc.h ? P[y * doc.w + x] : NONE;
   for (let x = 0; x < doc.w; x++)
     for (let y = 0; y < doc.h; y++)
-      if (get(x, y) === c && get(x, y - 1) !== c) {
+      if (at(x, y) === c && at(x, y - 1) !== c) {
         let n = 0;
-        while (get(x, y + n) === c) n++;
+        while (at(x, y + n) === c) n++;
         out.push({ x, y, rows: n });
       }
   return out;
@@ -871,13 +1056,25 @@ function draw() {
   const refA = ref && $('#refShow').checked ? Math.min(1, 1.15 - +$('#refAlpha').value / 100) : 1;
   const mir = mirrorSpec(), shown = mir ? mirrored(mir) : doc.px;
   g.save();
-  g.globalAlpha = Math.max(.25, refA);
-  for (let y = 0; y < doc.h; y++)
-    for (let x = 0; x < doc.w; x++) {
-      const c = shown[y * doc.w + x];
-      if (c) { g.fillStyle = css(col[c]); g.fillRect(x * z, y * z, z, z); }
-      if (isAnchor(c)) { g.fillStyle = '#000'; g.fillRect(x * z + z / 3, y * z + z / 3, z / 3, z / 3); }
-    }
+  const drawLayer = (arr, alpha) => {
+    if (!alpha) return;
+    g.globalAlpha = alpha;
+    for (let y = 0; y < doc.h; y++)
+      for (let x = 0; x < doc.w; x++) {
+        const c = arr[y * doc.w + x];
+        if (c) { g.fillStyle = css(col[c]); g.fillRect(x * z, y * z, z, z); }
+        if (isAnchor(c)) { g.fillStyle = '#000'; g.fillRect(x * z + z / 3, y * z + z / 3, z / 3, z / 3); }
+      }
+  };
+  const a = Math.max(.25, refA);
+  if (isC64H()) {
+    // C64 girato: il multicolore sotto, il bianco sopra; il livello non attivo pieno, velato o
+    // nascosto
+    syncLayer();
+    const other = { full: a, veil: a * .3, hide: 0 }[$('#layerOther').value];
+    drawLayer(layer === 'mc' ? shown : doc.layers.mc, layer === 'mc' ? a : other);
+    drawLayer(layer === 'hi' ? shown : doc.layers.hi, layer === 'hi' ? a : other);
+  } else drawLayer(shown, a);
   g.restore();
   if (opt.grid && z >= 6) {
     g.strokeStyle = '#ffffff14'; g.lineWidth = 1;
@@ -888,6 +1085,20 @@ function draw() {
     // righe di metà altezza
     g.strokeStyle = '#ffffff30';
     g.beginPath(); g.moveTo(0, Math.floor(doc.h / 2) * z + .5); g.lineTo(W, Math.floor(doc.h / 2) * z + .5); g.stroke();
+    if (isC64H()) {
+      // C64 girato: le coppie di righe dello strato multicolore
+      g.strokeStyle = '#ffffff2c';
+      g.beginPath();
+      for (let y = 0; y <= doc.h; y += 2) { g.moveTo(0, y * z + .5); g.lineTo(W, y * z + .5); }
+      g.stroke();
+    }
+  }
+  if (isC64H() && doc.w > H_DEPTH) {
+    // C64 girato: oltre questa linea lo sprite non arriva (21 righe)
+    const lx = (doc.w - H_DEPTH) * z;
+    g.strokeStyle = '#ffc34d'; g.lineWidth = 2; g.setLineDash([5, 4]);
+    g.beginPath(); g.moveTo(lx, -8); g.lineTo(lx, H + 8); g.stroke();
+    g.setLineDash([]);
   }
   const { out, bad } = checks();
   showChecks(out);
@@ -983,7 +1194,7 @@ function spriteWithShadow(px, w, h, mirror) {
   for (let y = -1; y <= h; y++)
     for (let x = -1; x <= w; x++) {
       let c = at(x, y);
-      if (c === NONE && !isC64() && at(x + 1, y - 1) !== NONE) c = SHADOW;     // (niente ombra sul C64)
+      if (c === NONE && plat === 'pc' && at(x + 1, y - 1) !== NONE) c = SHADOW;     // (niente ombra sul C64)
       if (c !== NONE) out.set(`${mirror ? w - 1 - x : x},${y}`, c);
     }
   return out;
@@ -999,7 +1210,8 @@ function drawPreview() {
   const pv = $('#pv'), c = pv.getContext('2d'), s = +$('#pvScale').value;
   const v = $('#pvBody').value, body = v ? v.match(/../g).map(h => parseInt(h, 16)) : undefined;
   const col = colorsFor(doc.kind, body);
-  const px = wallState(doc.px, $('#pvWall').value);
+  const px = wallState(comp(), $('#pvWall').value);
+  if (isC64H()) { drawPreviewH(pv, c, s, px, col); return; }
   const left = spriteWithShadow(px, doc.w, doc.h, false), right = spriteWithShadow(px, doc.w, doc.h, true);
   const cur = $('#pvCur').checked && current && current.kind === doc.kind && current.h === doc.h ? current : null;
   const gap = 10;
@@ -1017,6 +1229,26 @@ function drawPreview() {
   c.fillRect(x * s, (1 + Math.floor(doc.h / 2) - ball / 2) * s, ball * s, ball * s);
   x += ball + gap;
   drawPixels(c, right, x * s, s, s, col);
+}
+// C64 girato: come in gioco, quello che mostrano i due strati; la racchetta in basso (faccia in
+// su) e quella in alto (faccia in giù), con la palla in mezzo. La riga y del disegno è la colonna
+// y dello schermo, la colonna x (faccia a destra) la profondità.
+function drawPreviewH(pv, c, s, px, col) {
+  const shown = hiresShown(px, doc.w, doc.h), d = doc.w, gap = 8, ball = 4;
+  pv.width = (doc.h + 4) * s;
+  pv.height = (2 * d + 2 * gap + ball + 2) * s;
+  c.fillStyle = '#000'; c.fillRect(0, 0, pv.width, pv.height);
+  const top = 1, bottom = 1 + d + 2 * gap + ball;
+  for (let y = 0; y < doc.h; y++)
+    for (let x = 0; x < d; x++) {
+      const v = shown[y * doc.w + x];
+      if (!v) continue;
+      c.fillStyle = css(col[v]);
+      c.fillRect((2 + y) * s, (top + x) * s, s, s);                 // in alto: faccia in giù
+      c.fillRect((2 + y) * s, (bottom + d - 1 - x) * s, s, s);      // in basso: faccia in su
+    }
+  c.fillStyle = '#fff';
+  c.fillRect((2 + Math.floor(doc.h / 2) - ball / 2) * s, (top + d + gap) * s, ball * s, ball * s);
 }
 
 // ---------------------------------------------------------------- mouse
@@ -1078,7 +1310,9 @@ cv.addEventListener('pointermove', e => {
   hover = p;
   Object.assign(mods, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey });
   $('#stPos').textContent = inside(p.x, p.y)
-    ? `x ${p.x} (dalla faccia ${faceX() - p.x}), y ${p.y}: ${ROLE_NAME(get(p.x, p.y))}` : '';
+    ? `x ${p.x} (dalla faccia ${faceX() - p.x}), y ${p.y}: ` + (isC64H() && doc.layers
+      ? `hires ${doc.layers.hi[p.y * doc.w + p.x] ? 'bianco' : 'vuoto'}, multicolore ${(ROLES_MC.find(r => r[0] === doc.layers.mc[p.y * doc.w + p.x]) || [0, '?'])[1]}`
+      : ROLE_NAME(get(p.x, p.y))) : '';
   if (drag && drag.mode) {
     if (drag.mode === 'sel') sel = rectOf(drag.start, p);
     else if (floating) {
@@ -1195,6 +1429,15 @@ function syncKind() {
 function sizeInfo() {
   $('#pvWall').hidden = doc.kind !== GUARDIAN;
   const k = KINDS[doc.kind], h = kindH(doc.kind);
+  if (isC64H()) {
+    $('#sizeInfo').textContent = `lunga ${h} (${k.mult}× di 40), profonda al più ${H_DEPTH}`;
+    $('#btnSize').textContent = doc.h === h && doc.w === +$('#width').value ? 'La tela è già della misura giusta'
+      : `Adatta la tela a ${$('#width').value}×${h}`;
+    $('#kindInfo').textContent = `Hitbox: le ${H_FACE} colonne fino alla faccia`
+      + (doc.front ? `, poi ${doc.front} di sporgenza` : ', l\'ultima a destra')
+      + `. Bianco hires a 1 pixel, gli altri colori uno per coppia di righe.`;
+    return;
+  }
   if (isC64()) {
     $('#sizeInfo').textContent = `altezza ${h} righe doppie (${C64_LINES[doc.kind]} dello schermo)`;
     $('#btnSize').textContent = doc.h === h && doc.w === C64_W ? 'La tela è già della misura giusta' : `Adatta la tela a ${C64_W}×${h}`;
@@ -1217,7 +1460,7 @@ function setKind(k) {
   if (doc.h !== kindH(k)) msg(`${KINDS[k].name} è alta ${kindH(k)}: "Adatta la tela" per cambiare la misura`, true);
 }
 function applySize() {
-  const w = isC64() ? C64_W : clamp(+$('#width').value | 0, FACE, 64), h = kindH(doc.kind);
+  const w = isC64() ? C64_W : clamp(+$('#width').value | 0, FACE, isC64H() ? H_DEPTH + 3 : 64), h = kindH(doc.kind);
   if (w === doc.w && h === doc.h) return;
   pushUndo();
   resizeTo(w, h);
@@ -1229,21 +1472,29 @@ function applySize() {
 const PV_BODY = {
   pc: [['ffffff', 'corpo bianco'], ['ffd225', 'bonus armato'], ['e62828', 'OMEGA'], ['a040e0', 'OMEGA (easter egg)']],
   c64: [['', 'colore del personaggio'], ['aeaeae', 'grigio (bonus armato)'], ['eff347', 'giallo (colpo)'], ['9f2dad', 'OMEGA']],
+  c64h: [['', 'colore del personaggio'], ['eff347', 'giallo (colpo)'], ['9f2dad', 'OMEGA']],
 };
 function applyPlat(p) {
   plat = p;
-  ROLES = isC64() ? ROLES_C64 : ROLES_PC;
-  FACE = isC64() ? C64_FACE : FACE_PC;
+  ROLES = isC64() ? ROLES_C64 : isC64H() ? (layer === 'hi' ? ROLES_HI : ROLES_MC) : ROLES_PC;
+  FACE = isC64() ? C64_FACE : isC64H() ? H_FACE : FACE_PC;
+  // l'indice 1 è il bianco su tutte e tre
+  prim = ROLES.some(r => r[0] === prim) && prim ? prim : isC64() ? C64_WHITE : BODY;
+  if (isC64H()) [prim, sec] = layerColors[layer];
+  for (const id of ['#rowLayer', '#rowOther']) $(id).style.display = isC64H() ? '' : 'none';
+  layerButtons();
   $('#plat').value = p;
-  $('#hitLbl').textContent = isC64() ? `Hitbox C64 (${C64_FACE})` : `Hitbox PC (${FACE_PC})`;
-  for (const id of ['#showMister', '#pvCur']) $(id).parentElement.style.display = isC64() ? 'none' : '';
+  $('#hitLbl').textContent = isC64() ? `Hitbox C64 (${C64_FACE})` : isC64H() ? `Hitbox (${H_FACE})` : `Hitbox PC (${FACE_PC})`;
+  for (const id of ['#showMister', '#pvCur']) $(id).parentElement.style.display = plat === 'pc' ? '' : 'none';
+  for (const id of ['#rowFromPc', '#rowPairs']) $(id).style.display = isC64H() ? '' : 'none';
   $('#pvNote').textContent = isC64() ? 'Su nero (sul C64 niente ombra): sinistra, destra.'
+    : isC64H() ? 'Come sul C64 con il campo girato: la racchetta in alto e quella in basso.'
     : "Su nero con l'ombra portata del gioco: attuale, sinistra, destra.";
-  $('#base').disabled = $('#width').disabled = isC64();
+  $('#base').disabled = plat !== 'pc';
+  $('#width').disabled = isC64();
   const pv = $('#pvBody');
   pv.textContent = '';
   for (const [v, t] of PV_BODY[p]) pv.add(new Option(t, v));
-  if (!ROLES.some(r => r[0] === prim)) prim = isC64() ? C64_WHITE : BODY;
   if (!ROLES.some(r => r[0] === sec)) sec = NONE;
   convOff.clear();
 }
@@ -1256,12 +1507,59 @@ async function setPlat(p) {
   undoStack = []; redoStack = []; current = null;
   syncKind(); fit(); updateTitle(); renderFiles();
   if (server && fileEntries.includes(doc.path)) await openPath(doc.path);
-  else msg(`Nuovo sprite ${isC64() ? 'del C64' : 'del PC'} per ${KINDS[k].name}: ${doc.w}×${doc.h}`);
+  else msg(`Nuovo sprite ${isC64() ? 'del C64' : isC64H() ? 'del C64 girato' : 'del PC'} per ${KINDS[k].name}: ${doc.w}×${doc.h}`);
+}
+
+// C64 girato: il livello attivo (con i suoi colori primario e secondario)
+function setLayer(l) {
+  if (!isC64H() || l === layer) return;
+  commitFloating();
+  syncLayer();
+  layerColors[layer] = [prim, sec];
+  layer = l;
+  if (doc.layers) doc.px = doc.layers[l];
+  [prim, sec] = layerColors[l];
+  ROLES = l === 'hi' ? ROLES_HI : ROLES_MC;
+  sel = null;
+  buildPalette(); layerButtons(); render();
+  msg(`Livello ${l === 'hi' ? 'hires (bianco)' : 'multicolore'}: matita, gomma, riempimento, selezione e spostamenti valgono solo qui`);
+}
+function layerButtons() {
+  $('#btnLayerHi').classList.toggle('on', isC64H() && layer === 'hi');
+  $('#btnLayerMc').classList.toggle('on', isC64H() && layer === 'mc');
+}
+
+// C64 girato: lo sprite del PC dello stesso tipo, con i colori del C64 (PC_TO_H), le coppie
+// sistemate e senza le colonne vuote dietro
+async function fromPc() {
+  if (!isC64H()) return;
+  if (!server) { msg('Serve il server (tools/c64_editor.py --paddle-c64h)', true); return; }
+  const k = doc.kind, path = `assets/ships/sprites/${KINDS[k].id}.png`;
+  let img;
+  try { img = await decodeSprite(await fetchBlob(path), k, ROLES_PC.map(r => r[0]), colorsPc(k)); }
+  catch (e) { msg(`Non riesco ad aprire ${path}: ${e.message}`, true); return; }
+  const px = img.px.map(c => PC_TO_H[c] || NONE);
+  const L = splitLayers(px, img.w, img.h, true);
+  resolvePairs(L.mc, img.w, img.h);
+  let x0 = 0;
+  while (x0 < img.w - 1 && [...Array(img.h).keys()].every(y => !L.hi[y * img.w + x0] && !L.mc[y * img.w + x0])) x0++;
+  const w = img.w - x0, crop = a => {
+    const out = new Uint8Array(w * img.h);
+    for (let y = 0; y < img.h; y++) out.set(a.subarray(y * img.w + x0, (y + 1) * img.w), y * w);
+    return out;
+  };
+  let meta = null;
+  try { meta = JSON.parse(pngText(new Uint8Array(await (await fetchBlob(path)).arrayBuffer())).paddedit || 'null'); } catch (_) { meta = null; }
+  pushUndo();
+  Object.assign(doc, { w, h: img.h, front: (meta && meta.front) || 0 });
+  setLayers({ hi: crop(L.hi), mc: crop(L.mc) });
+  syncKind(); fit(); changed();
+  msg(`Convertito ${path}: ${w}×${img.h}` + (w > H_DEPTH ? ` (più di ${H_DEPTH} colonne: controlla la linea gialla)` : ''), w > H_DEPTH);
 }
 
 // racchetta disegnata oggi dal gioco (tools/paddle_shapes.py, dal server)
 async function loadCurrent() {
-  if (!server || isC64()) { current = null; return; }
+  if (!server || plat !== 'pc') { current = null; return; }
   const kind = doc.kind, h = doc.h;
   if (current && current.kind === kind && current.h === h) return;
   try {
@@ -1354,6 +1652,7 @@ function convert() {
       for (const [v, k] of votes) if (k > n) { n = k; best = v; }
       doc.px[r * doc.w + x] = best;
     }
+  if (isC64H() && layer === 'mc') resolvePairs(doc.px, doc.w, doc.h);
   changed();
   msg(`Convertito ${ref.name}: ${cols} colonne` + (ox < 0 ? `, ${-ox} tagliate a sinistra (allarga la tela)` : ''), ox < 0);
 }
@@ -1391,14 +1690,14 @@ function pngChunk(type, data) {
 }
 // PNG a palette, 8 bit, indice = ruolo (0 trasparente, magenta), colori del tipo, blocco "paddedit"
 async function encodePng() {
-  const { w, h, px } = doc, col = COL();
+  const { w, h } = doc, px = comp(), col = COL();
   const ihdr = new Uint8Array(13), dv = new DataView(ihdr.buffer);
   dv.setUint32(0, w); dv.setUint32(4, h); ihdr[8] = 8; ihdr[9] = 3;
-  const n = isC64() ? ENGINE + 1 : SPECIAL + 1, plte = new Uint8Array(n * 3);
+  const n = plat !== 'pc' ? ENGINE + 1 : SPECIAL + 1, plte = new Uint8Array(n * 3);
   plte.set([255, 0, 255], 0);
   for (let i = 1; i < n; i++) plte.set(col[i] || [0, 0, 0], i * 3);
   const trns = new Uint8Array([0]);
-  const meta = JSON.stringify(isC64() ? { v: 1, plat: 'c64', kind: KINDS[doc.kind].id, front: doc.front || 0 }
+  const meta = JSON.stringify(plat !== 'pc' ? { v: isC64H() ? 2 : 1, plat, kind: KINDS[doc.kind].id, front: doc.front || 0 }
     : { v: 1, kind: KINDS[doc.kind].id, base: +$('#base').value, front: doc.front || 0 });
   const raw = new Uint8Array((w + 1) * h);
   for (let y = 0; y < h; y++) raw.set(px.subarray(y * w, (y + 1) * w), y * (w + 1) + 1);
@@ -1423,20 +1722,20 @@ function pngText(buf) {
 }
 // i PNG si leggono attraverso il browser: ogni pixel va al ruolo del colore più vicino (esatto per
 // gli sprite salvati qui e da tools/paddle_shapes.py), il magenta e il trasparente a 0
-async function decodeSprite(blob, kind) {
+// (sul C64 girato gli indici del PNG, con tutti e due i livelli)
+async function decodeSprite(blob, kind, codes = isC64H() ? H_STORED : ROLES.map(r => r[0]), col = colorsFor(kind)) {
   const bm = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
   const c = document.createElement('canvas');
   c.width = bm.width; c.height = bm.height;
   const cx = c.getContext('2d');
   cx.drawImage(bm, 0, 0);
   const d = cx.getImageData(0, 0, c.width, c.height).data, px = new Uint8Array(c.width * c.height);
-  const col = colorsFor(kind);
   let off = 0;
   for (let i = 0; i < px.length; i++) {
     const r = d[i * 4], gg = d[i * 4 + 1], b = d[i * 4 + 2];
     if (d[i * 4 + 3] < 128 || (r > 240 && gg < 16 && b > 240)) continue;
     let best = BODY, e = Infinity;
-    for (const k of [...ROLES.slice(1).map(r => r[0])]) {
+    for (const k of codes.filter(v => v !== NONE)) {
       const [cr, cg, cb] = col[k], v = (r - cr) ** 2 + (gg - cg) ** 2 + (b - cb) ** 2;
       if (v < e) { e = v; best = k; }
     }
@@ -1501,7 +1800,7 @@ function renderFiles() {
     ul.appendChild(li);
   }
 }
-const isSpritePath = p => /\/sprites\/(c64\/)?[^/]+\.png$/i.test(p);
+const isSpritePath = p => /\/sprites\/(c64\/|c64hires\/)?[^/]+\.png$/i.test(p);
 const kindOfName = n => { const i = KINDS.findIndex(k => n.toLowerCase().includes(k.id)); return i < 0 ? doc.kind : i; };
 async function fetchBlob(path) {
   const r = await fetch('/api/file?path=' + encodeURIComponent(path));
@@ -1515,12 +1814,16 @@ async function openBlob(blob, name, path) {
   const mk = meta ? KINDS.findIndex(k => k.id === meta.kind) : -1;
   const kind = mk >= 0 ? mk : kindOfName(name);
   // la piattaforma prima di leggere i colori: dal blocco paddedit o dalla cartella
-  applyPlat((meta && meta.plat) === 'c64' || /\/sprites\/c64\//i.test(path || '') ? 'c64' : 'pc');
+  const mp = meta && meta.plat;
+  applyPlat(mp === 'c64' || mp === 'c64h' ? mp : /\/sprites\/c64hires\//i.test(path || '') ? 'c64h'
+    : /\/sprites\/c64\//i.test(path || '') ? 'c64' : 'pc');
   if (meta && meta.base) $('#base').value = meta.base;
   const img = await decodeSprite(blob, kind);
   if (img.w > 64 || img.h > 200) { msg(`${name} è ${img.w}×${img.h}: troppo grande per uno sprite, lo uso come riferimento`, true); setRef(await createImageBitmap(blob), name); return; }
-  doc = { kind, w: img.w, h: img.h, front: (meta && meta.front) || 0, px: img.px, name,
-          path: path || `assets/ships/sprites/${isC64() ? 'c64/' : ''}${name}`, dirty: false };
+  // C64 girato: i due livelli (gli sprite della versione 1 non hanno niente sotto il bianco)
+  const L = isC64H() ? splitLayers(img.px, img.w, img.h, !meta || (meta.v || 1) < 2) : null;
+  doc = { kind, w: img.w, h: img.h, front: (meta && meta.front) || 0, px: L ? L[layer] : img.px, layers: L, name,
+          path: path || `assets/ships/sprites/${SPRITE_DIR[plat]}${name}`, dirty: false };
   undoStack = []; redoStack = [];
   current = null;
   syncKind(); fit(); updateTitle(); renderFiles();
@@ -1562,12 +1865,12 @@ async function save(as) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   doc.dirty = false; updateTitle();
-  msg(`Scaricato ${a.download}: va messo in assets/ships/sprites/${isC64() ? 'c64/' : ''}`);
+  msg(`Scaricato ${a.download}: va messo in assets/ships/sprites/${SPRITE_DIR[plat]}`);
 }
 async function newSprite() {
   if (!(await confirmDiscard())) return;
   const k = +$('#kind').value;
-  doc = blankDoc(k, isC64() ? C64_W : Math.min(KINDS[k].maxW, Math.max(FACE, +$('#width').value || 16)), kindH(k));
+  doc = blankDoc(k, isC64() ? C64_W : Math.min(isC64H() ? H_DEPTH : KINDS[k].maxW, Math.max(FACE, +$('#width').value || 16)), kindH(k));
   undoStack = []; redoStack = []; current = null;
   syncKind(); fit(); updateTitle(); renderFiles();
   msg(`Nuovo sprite ${KINDS[k].name} ${doc.w}×${doc.h}`);
@@ -1591,7 +1894,8 @@ const CMDS = {
   toggleGrid: () => { $('#showGrid').checked = !$('#showGrid').checked; render(); },
   toggleRef: () => { $('#refShow').checked = !$('#refShow').checked; render(); },
   help: () => $('#dlgHelp').showModal(),
-  applySize,
+  applySize, fromPc,
+  layerHi: () => setLayer('hi'), layerMc: () => setLayer('mc'),
   loadRef: () => $('#refInput').click(),
 };
 document.addEventListener('click', e => {
@@ -1636,6 +1940,8 @@ document.addEventListener('keydown', e => {
     if (k.toLowerCase() === 'x') cmd = 'swap';
     else if (k.toLowerCase() === 'g') cmd = 'toggleGrid';
     else if (k.toLowerCase() === 'm') { $('#optSym').checked = !$('#optSym').checked; render(); e.preventDefault(); return; }
+    else if (isC64H() && k.toLowerCase() === 'h') { setLayer(layer === 'hi' ? 'mc' : 'hi'); e.preventDefault(); return; }
+    else if (isC64H() && /^[1-4]$/.test(k)) { setLayer(k === '1' ? 'hi' : 'mc'); prim = +k; updateColors(); return; }
     else if (/^[0-9]$/.test(k)) { if (ROLES.some(r => r[0] === +k)) { prim = +k; updateColors(); } return; }
   }
   if (cmd) { e.preventDefault(); CMDS[cmd](); }
@@ -1660,14 +1966,14 @@ $('#front').oninput = () => {
   doc.front = clamp(+$('#front').value | 0, 0, Math.max(0, doc.w - FACE));
   doc.dirty = true; updateTitle(); sizeInfo(); render();
 };
-for (const id of ['#showGrid', '#showHit', '#showMister', '#showErr', '#showSect', '#bgSel', '#optSym', '#refShow', '#refAlpha', '#pvScale', '#pvBody', '#pvCur', '#pvWall'])
+for (const id of ['#layerOther', '#showGrid', '#showHit', '#showMister', '#showErr', '#showSect', '#bgSel', '#optSym', '#refShow', '#refAlpha', '#pvScale', '#pvBody', '#pvCur', '#pvWall'])
   $(id).addEventListener('input', render);
 $('#bgTol').oninput = () => { if (ref) { findBox(); render(); } };
 $('#fileFilter').oninput = renderFiles;
 $('#fileInput').onchange = async e => {
   const f = e.target.files[0];
   e.target.value = '';
-  if (f) await openBlob(f, f.name, `assets/ships/sprites/${isC64() ? 'c64/' : ''}${f.name}`);
+  if (f) await openBlob(f, f.name, `assets/ships/sprites/${SPRITE_DIR[plat]}${f.name}`);
 };
 $('#refInput').onchange = async e => {
   const f = e.target.files[0];
@@ -1686,7 +1992,8 @@ window.addEventListener('beforeunload', e => { if (doc.dirty) { e.preventDefault
 window.addEventListener('resize', render);
 
 (async () => {
-  applyPlat(new URLSearchParams(location.search).get('plat') === 'c64' ? 'c64' : 'pc');
+  const qp = new URLSearchParams(location.search).get('plat');
+  applyPlat(qp === 'c64' || qp === 'c64h' ? qp : 'pc');
   doc = blankDoc(0, isC64() ? C64_W : 16, kindH(0));
   setTool('pencil');
   syncKind(); fit(); updateTitle();

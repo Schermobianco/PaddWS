@@ -13,13 +13,15 @@ use std::process::ExitCode;
 
 use paddws_c64::params_inc::{c64_params, params_inc};
 use paddws_c64::cpu6502::{EF_HALF, EF_OFF, EasyFlash};
-use paddws_c64::{IRQ_LEAD, Machine, c64_dir, default_build_dir, frame_budget, frame_cycles, ntsc, set_ntsc};
+use paddws_c64::{
+    IRQ_LEAD, Machine, c64_dir, default_build_dir, frame_budget, frame_cycles, ntsc, rotated, set_ntsc, set_rotated,
+};
 use paddws_core::fixed::{self, mul, mul_recip};
 use paddws_core::challenge::{OMEGA, OMEGA_LEVEL, RUNGS, Score, TABLE_SIZE, Table};
 use paddws_core::{Bonus, Cpu, Input, Match, PaddleKind, PlayerInput, Rng, Side, Special};
 
 const USAGE: &str =
-    "Uso: paddws-c64 [--ntsc] [--build DIR] [--prg NOME] math [PROVE] | game [--ticks N] | sid | ui | frames | ending | profile | paddles | params [--check] | vice FILE";
+    "Uso: paddws-c64 [--ntsc] [--rotated] [--build DIR] [--prg NOME] math [PROVE] | game [--ticks N] | sid | ui | frames | ending | profile | paddles | params [--check] | vice FILE";
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
@@ -33,6 +35,8 @@ fn main() -> ExitCode {
             "--prg" => prg = args.next().unwrap_or_default(),
             // la versione NTSC: parametri a 60 Hz, c64/build/ntsc, budget e raster NTSC
             "--ntsc" => set_ntsc(true),
+            // il campo girato: Tuning::c64_rotated, c64/build/rotated
+            "--rotated" => set_rotated(true),
             "-h" | "--help" => {
                 println!("{USAGE}");
                 return ExitCode::SUCCESS;
@@ -86,7 +90,27 @@ fn main() -> ExitCode {
 
 fn with_machine(build: &std::path::Path, f: impl FnOnce(&mut Machine) -> bool) -> bool {
     match Machine::load(build) {
-        Ok(mut m) => f(&mut m),
+        Ok(mut m) => {
+            // PADDWS_C64_TOUCH=FILE: gli indirizzi letti o eseguiti dal 6502 in questa prova, sommati
+            // a quelli già nel file (un byte per indirizzo), per cercare codice e tabelle mai usati
+            let touch = std::env::var_os("PADDWS_C64_TOUCH");
+            if touch.is_some() {
+                *m.cpu.touched.borrow_mut() = vec![0; 0x10000];
+            }
+            let ok = f(&mut m);
+            if let Some(file) = touch {
+                let mut all = m.cpu.touched.borrow().clone();
+                if let Ok(old) = std::fs::read(&file) {
+                    for (a, o) in all.iter_mut().zip(old) {
+                        *a |= o;
+                    }
+                }
+                if let Err(e) = std::fs::write(&file, all) {
+                    eprintln!("{}: {e}", file.to_string_lossy());
+                }
+            }
+            ok
+        }
         Err(e) => {
             eprintln!("{e}");
             false
@@ -385,38 +409,48 @@ fn ui(m: &mut Machine) -> bool {
             m.cpu.mem[at..at + PAD_SLOTS * 64] == pad_block(m, kinds[usize::from(side)], side)[..]
         })
     };
-    for kind in 0..7u8 {
-        for side in 0..2u16 {
-            m.write_u8("nx_kind", side * 4, kind);
-            m.write_u8("pp_n", side, 0xFF);
-            m.write_u8("pp_ready", side, 0);
+    if rotated() {
+        // campo girato (rot_video.s): per lato le pagine del tipo (TWIST e BLASTER 3, gli altri 1)
+        // da $E100 + lato * $400, come in gen/rotated/paddles.bin (blocco (tipo * 2 + lato) * $400)
+        if let Err(e) = prep_rotated(m, &screens, &prep) {
+            println!("FAIL: pad_prep: {e}");
+            return false;
         }
+        println!("  pad_prep: le pose di tutti i tipi dalla cartuccia al loro posto, un lato che cambia tipo ricopiato da solo");
+    } else {
+        for kind in 0..7u8 {
+            for side in 0..2u16 {
+                m.write_u8("nx_kind", side * 4, kind);
+                m.write_u8("pp_n", side, 0xFF);
+                m.write_u8("pp_ready", side, 0);
+            }
+            m.write_u8("pp_side", 0, 0);
+            m.write_u8("pp_var", 0, 0);
+            m.cpu.mem[first..first + 2 * PAD_SLOTS * 64].fill(0);
+            let calls = prep(m);
+            if m.read_u8("pp_side", 0) < 2 || calls != 5 {
+                println!("FAIL: pad_prep con il tipo {kind}: lato {} dopo {calls} frame (4 pagine, poi la fine)", m.read_u8("pp_side", 0));
+                return false;
+            }
+            if m.cpu.mem[0xC000..0xC800] != screens[..] {
+                println!("FAIL: pad_prep con il tipo {kind} scrive negli schermi");
+                return false;
+            }
+            if !blocks_ok(m, [kind, kind]) {
+                println!("FAIL: pad_prep con il tipo {kind}: immagini diverse da quelle della cartuccia");
+                return false;
+            }
+        }
+        m.write_u8("nx_kind", 4, 2);
+        m.write_u8("pp_ready", 1, 0); // (come next_morph)
         m.write_u8("pp_side", 0, 0);
-        m.write_u8("pp_var", 0, 0);
-        m.cpu.mem[first..first + 2 * PAD_SLOTS * 64].fill(0);
         let calls = prep(m);
-        if m.read_u8("pp_side", 0) < 2 || calls != 5 {
-            println!("FAIL: pad_prep con il tipo {kind}: lato {} dopo {calls} frame (4 pagine, poi la fine)", m.read_u8("pp_side", 0));
+        if m.read_u8("pp_side", 0) < 2 || calls != 3 || !blocks_ok(m, [6, 2]) || m.cpu.mem[0xC000..0xC800] != screens[..] {
+            println!("FAIL: pad_prep dopo il cambio di tipo di un lato: {calls} frame, immagini o schermi sbagliati");
             return false;
         }
-        if m.cpu.mem[0xC000..0xC800] != screens[..] {
-            println!("FAIL: pad_prep con il tipo {kind} scrive negli schermi");
-            return false;
-        }
-        if !blocks_ok(m, [kind, kind]) {
-            println!("FAIL: pad_prep con il tipo {kind}: immagini diverse da quelle della cartuccia");
-            return false;
-        }
+        println!("  pad_prep: le immagini di tutti i tipi dalla cartuccia al loro posto (4 frame), un lato che cambia tipo ricopiato da solo (2 frame)");
     }
-    m.write_u8("nx_kind", 4, 2);
-    m.write_u8("pp_ready", 1, 0); // (come next_morph)
-    m.write_u8("pp_side", 0, 0);
-    let calls = prep(m);
-    if m.read_u8("pp_side", 0) < 2 || calls != 3 || !blocks_ok(m, [6, 2]) || m.cpu.mem[0xC000..0xC800] != screens[..] {
-        println!("FAIL: pad_prep dopo il cambio di tipo di un lato: {calls} frame, immagini o schermi sbagliati");
-        return false;
-    }
-    println!("  pad_prep: le immagini di tutti i tipi dalla cartuccia al loro posto (4 frame), un lato che cambia tipo ricopiato da solo (2 frame)");
     match voice(m) {
         Ok(n) => println!("  voci di CHALLENGE: senza file niente; una scala con i 7 file: {n} campioni in $D418 nell'ordine (nomi, READY al primo frame del conto, GO al via; al 50% del VOLUME scalati, a 0 nessuna voce), tema a $F800"),
         Err(e) => {
@@ -601,7 +635,7 @@ fn supers_ui(m: &mut Machine) -> Result<String, String> {
         }
         let mut got = 0;
         for &bits in seq.iter().chain([0u8; 30].iter()) {
-            let port = !bits;
+            let port = !gesture_bits(bits, side, matches!(m.read_u8("state", 0), 6 | 7));
             if side == 0 {
                 m.cpu.joy_port2 = port;
             } else {
@@ -677,24 +711,29 @@ fn supers_ui(m: &mut Machine) -> Result<String, String> {
         m.write_u8(name, o, v);
     }
     m.write_i32("ball_vx", 0, 0x0002_0000);
-    m.write_i32("ball_x", 0, 160 << 16);
+    // (campo girato: P2 in alto, righe 5 e 6, P1 in basso, righe 18 e 19, centrate nelle 30 colonne
+    // dalla 6; trattini da sinistra per tutti e due)
+    let rot = rotated();
+    m.write_i32("ball_x", 0, if rot { 100 << 16 } else { 160 << 16 });
     let title = "MAX RISING STRIKE";
-    let (r4, r5) = (0xC000 + 4 * 40 + 21, 0xC000 + 5 * 40 + 21);
+    let (p2_row, p2_col, p1_row, p1_col) = if rot { (5, 6, 18, 8) } else { (4, 21, 4, 4) };
+    let (r4, r5) = (0xC000 + p2_row * 40 + p2_col, 0xC000 + (p2_row + 1) * 40 + p2_col);
     frames(m, 3);
     let drawn = |m: &Machine| (0..title.len()).filter(|&i| m.cpu.mem[r5 + i] == bar_c0).count();
     let first = drawn(m);
-    if first == 0 || first > 3 || m.cpu.mem[r5 + title.len() - 1] != bar_c0 {
-        return Err(format!("mossa armata: dopo 3 frame {first} trattini, non dal lato destro"));
+    let from_side = if rot { m.cpu.mem[r5] } else { m.cpu.mem[r5 + title.len() - 1] };
+    if first == 0 || first > 3 || from_side != bar_c0 {
+        return Err(format!("mossa armata: dopo 3 frame {first} trattini, non dal lato giusto"));
     }
     frames(m, 40);
-    let yellow = (0..title.len()).filter(|&i| m.cpu.read((0xD800 + 5 * 40 + 21 + i) as u16) & 15 == 7).count();
+    let yellow = (0..title.len()).filter(|&i| m.cpu.read((0xD800 + (p2_row + 1) * 40 + p2_col + i) as u16) & 15 == 7).count();
     let gaps_ok = title.bytes().enumerate().all(|(i, c)| (c == b' ') == (m.cpu.mem[r5 + i] != bar_c0));
     if drawn(m) != 15 || !gaps_ok || !(6..=8).contains(&yellow) || m.cpu.mem[r4..r4 + title.len()].iter().any(|&c| c != 0) {
         return Err(format!(
             "mossa armata: {} trattini, {yellow} gialli (con la palla a metà campo): riga 5 {:?}, colori {:?}",
             drawn(m),
             &m.cpu.mem[r5..r5 + title.len()],
-            (0..title.len()).map(|i| m.cpu.read((0xD800 + 5 * 40 + 21 + i) as u16) & 15).collect::<Vec<_>>()
+            (0..title.len()).map(|i| m.cpu.read((0xD800 + (p2_row + 1) * 40 + p2_col + i) as u16) & 15).collect::<Vec<_>>()
         ));
     }
     // il colpo: la mossa in volo, la palla che va verso P1
@@ -708,7 +747,7 @@ fn supers_ui(m: &mut Machine) -> Result<String, String> {
     }
     frames(m, 5);
     let want: Vec<u8> = title.bytes().map(|c| ch(m, c)).collect();
-    if m.cpu.mem[r4..r4 + title.len()] != want[..] || letters.iter().any(|&i| m.cpu.read((0xD800 + 4 * 40 + 21 + i) as u16) & 15 != 7) {
+    if m.cpu.mem[r4..r4 + title.len()] != want[..] || letters.iter().any(|&i| m.cpu.read((0xD800 + p2_row * 40 + p2_col + i) as u16) & 15 != 7) {
         return Err("colpo della mossa: la scritta non è \"MAX RISING STRIKE\" gialla a destra".into());
     }
     frames(m, tv_frames(50));
@@ -718,7 +757,7 @@ fn supers_ui(m: &mut Machine) -> Result<String, String> {
     m.write_u8("sm_arm", 0, 1);
     m.write_u8("sm_fl", 0, 0);
     frames(m, 30);
-    let l5 = 0xC000 + 5 * 40 + 4;
+    let l5 = 0xC000 + (p1_row + 1) * 40 + p1_col;
     if m.cpu.mem[l5..l5 + 13].iter().filter(|&&c| c as usize == ch_grid_t()).count() != 12 {
         return Err("STRAIGHT SHOT di P1 armata: non 12 trattini a sinistra".into());
     }
@@ -734,7 +773,7 @@ fn supers_ui(m: &mut Machine) -> Result<String, String> {
     m.write_u8("events", 1, 0x10);
     frames(m, 1);
     m.write_u8("events", 1, 0);
-    let l4 = 0xC000 + 4 * 40 + 4;
+    let l4 = 0xC000 + p1_row * 40 + p1_col;
     if m.read_u8("mv_st", 0) != 2 || m.read_u8("mv_kind", 0) != 1 || m.cpu.mem[l4..l4 + 13].iter().filter(|&&c| c == solid).count() != 12 {
         return Err("colpo con la mossa nello stesso tick dell'armata: niente scritta STRAIGHT SHOT di P1".into());
     }
@@ -747,8 +786,10 @@ fn supers_ui(m: &mut Machine) -> Result<String, String> {
     m.cpu.frame_start = Some(m.cpu.cycles);
     m.call("bar");
     m.cpu.frame_start = None;
-    let cells: Vec<u8> = (0..4).map(|k| m.cpu.mem[0xC000 + 40 + 30 + k]).collect();
-    let colors: Vec<u8> = (0..4).map(|k| m.cpu.read((0xD800 + 40 + 30 + k) as u16) & 15).collect();
+    // (campo girato: la barra di chi gioca in alto nella fascia, riga 10 dalla colonna 31)
+    let bar_at = if rot { 10 * 40 + 31 } else { 40 + 30 };
+    let cells: Vec<u8> = (0..4).map(|k| m.cpu.mem[0xC000 + bar_at + k]).collect();
+    let colors: Vec<u8> = (0..4).map(|k| m.cpu.read((0xD800 + bar_at + k) as u16) & 15).collect();
     if cells != [c0 + 4, c0 + 4, c0 + 2, c0] || colors != [7, 7, 15, 15] {
         return Err(format!("barra a 40: caratteri {cells:?}, colori {colors:?}"));
     }
@@ -2668,6 +2709,11 @@ const STACK_MARGIN: u16 = 24;
 
 /// Parti dell'impronta di un frame nel golden test (`golden_file`).
 const GOLD_PARTS: usize = 7;
+/// Campo girato: cicli che il banco non vede in un frame di partita (interrupt della mezzeria,
+/// circa 170, e lettura degli sprite 1-5 della metà in basso, circa 250), aggiunti alla misura.
+const ROT_SPLIT_CYCLES: u64 = 450;
+/// Campo girato: primo sprite delle pose della racchetta in alto ($E500, rot_video.s)
+const ROT_PTR_TOP: u8 = ((0xE500 - 0xC000) / 64) as u8;
 
 /// Golden test: `spec` record:FILE scrive le impronte (riferimento PWG2), check:FILE le confronta.
 /// Riferimento PWG2 (registrato da questo banco): registri del VIC, immagini degli sprite, SID e il
@@ -2806,6 +2852,9 @@ impl PadCheck {
 /// luce) e alla fine della ricomposizione (wp_out da 30: tutte piene) la sua immagine ha dei pixel.
 /// Prima il disegno aspettava un frame che non arrivava mai (frame_late era sempre vero a quel
 /// punto del frame) e la racchetta spariva.
+/// Nel campo girato il salto è una maschera a caratteri sopra l'astronave (rot_video.s, warp_fx e
+/// warp_place): i quattro caratteri sono quelli del passo e del tremolio, e fuori dal salto nessuna
+/// cella della maschera resta a schermo.
 #[derive(Default)]
 struct WarpCheck {
     frames: u32,
@@ -2815,6 +2864,9 @@ struct WarpCheck {
     bad: Vec<String>,
 }
 
+/// Campo girato: primo dei quattro caratteri della maschera del salto (WM_CH di rot_video.s).
+const WM_CH: usize = 102;
+
 impl WarpCheck {
     const SPN_PAD: u16 = 3;
     const SPN_ICON: u16 = 1;
@@ -2822,6 +2874,9 @@ impl WarpCheck {
     fn check(&mut self, m: &Machine) {
         if m.read_u8("wp_on", 0) == 0 {
             self.active = false;
+            if rotated() && m.read_u8("sh_bg", 0) == 0 && Self::mask_cells(m) > 0 {
+                self.bad.push("maschera rimasta a schermo dopo il salto".into());
+            }
             return;
         }
         if m.read_u8("sh_bg", 0) != 0 {
@@ -2832,6 +2887,10 @@ impl WarpCheck {
             self.jumps += 1;
         }
         self.frames += 1;
+        if rotated() {
+            self.check_rotated(m);
+            return;
+        }
         let side = m.read_u8("wp_side", 0) as u16;
         let enable = m.read_u8("sh_enable", 0);
         let drawn = |bytes: &[u8]| bytes.iter().any(|&b| b != 0);
@@ -2865,10 +2924,74 @@ impl WarpCheck {
         self.shown += any as u32;
     }
 
+    /// Celle del campo (colonne 0-29) con un carattere della maschera.
+    fn mask_cells(m: &Machine) -> usize {
+        (0..25)
+            .flat_map(|r| (0..30).map(move |c| 0xC000 + r * 40 + c))
+            .filter(|&a| (WM_CH..WM_CH + 4).contains(&(m.cpu.mem[a] as usize)))
+            .count()
+    }
+
+    fn check_rotated(&mut self, m: &Machine) {
+        // i quattro caratteri del passo: le soglie e le classi di gen_c64_rotated.py (warp_tables)
+        let step = m.read_u8("wp_en", 0) as i32;
+        let tb = m.read_u8("wp_src", 0) as usize & 1;
+        let (arrive, a) = (step >= 33, step % 33);
+        let state = |c: usize| {
+            let t = ((c * 11) >> 2) as i32;
+            match arrive {
+                true if t < 22 - a => 0,
+                true if t < 30 - a => 1,
+                true => 2,
+                false if t <= a - 8 => 0,
+                false if t <= a => 1,
+                false => 2,
+            }
+        };
+        for par in 0..2 {
+            let (mut black, mut lit) = (0u8, 0u8);
+            for j in 0..4 {
+                let st = state((4 * par + 5 * j) & 7);
+                black |= u8::from(st != 2) * (3 << (6 - 2 * j));
+                lit |= u8::from(st == 1) * (3 << (6 - 2 * j));
+            }
+            for y in 0..8 {
+                let dots = ((y >> 1) ^ tb) & 1 == 0;
+                let got_black = m.cpu.mem[0xC800 + 8 * (WM_CH + par) + y];
+                let got_lit = m.cpu.mem[0xC800 + 8 * (WM_CH + 2 + par) + y];
+                if got_black != black || got_lit != if dots { lit } else { 0 } {
+                    self.bad.push(format!(
+                        "passo {step}, tremolio {tb}: caratteri della maschera {par} riga {y}: {got_black:02X} {got_lit:02X} invece di {black:02X} {:02X}",
+                        if dots { lit } else { 0 }
+                    ));
+                    return;
+                }
+            }
+        }
+        self.shown += (Self::mask_cells(m) > 0) as u32;
+    }
+
     fn ok(&self) -> bool {
         if self.frames == 0 {
             println!("FAIL: NEXT: il salto del TELEPORT non capita mai");
             return false;
+        }
+        if rotated() {
+            if let Some(b) = self.bad.first() {
+                println!("FAIL: NEXT: salto del TELEPORT: {b} ({} frame)", self.bad.len());
+                return false;
+            }
+            // (sull'NTSC i frame del salto, con il tick del TELEPORT e la CPU, spesso non hanno il
+            // tempo per le celle: la maschera aspetta, e con lo scatto il salto può finire prima)
+            if self.shown == 0 && !ntsc() {
+                println!("FAIL: NEXT: salto del TELEPORT mai con la maschera a schermo ({} frame)", self.frames);
+                return false;
+            }
+            println!(
+                "  salto del TELEPORT: {} salti, {} frame, {} con la maschera a schermo",
+                self.jumps, self.frames, self.shown
+            );
+            return true;
         }
         // i frame troppo carichi tengono l'immagine di prima: al massimo il primo frame di ogni
         // salto resta senza pezzi (con il salto in dash accelerato un salto dura circa 6 frame)
@@ -2915,9 +3038,11 @@ struct CometCheck {
 /// L'angolo della palla nello sprite della coda (trail_dir di video.s): bit 7 il segno di vx, bit
 /// 0-1 vy (0 sale, 1 orizzontale, 2 scende).
 fn trail_dir(m: &Machine) -> u8 {
-    let vy = (0..4).fold(0u32, |v, i| v | (m.read_u8("ball_vy", i) as u32) << (8 * i)) as i32;
+    // (nel campo girato il moto verticale a schermo è la x del core, l'orizzontale la y)
+    let (vert, horiz) = if rotated() { ("ball_vx", "ball_vy") } else { ("ball_vy", "ball_vx") };
+    let vy = (0..4).fold(0u32, |v, i| v | (m.read_u8(vert, i) as u32) << (8 * i)) as i32;
     let y = if vy < 0 { 2 } else if vy == 0 { 1 } else { 0 };
-    y | (m.read_u8("ball_vx", 3) & 0x80)
+    y | (m.read_u8(horiz, 3) & 0x80)
 }
 
 impl CometCheck {
@@ -3016,6 +3141,23 @@ impl CometCheck {
     }
 }
 
+/// Bit del joystick (a 1 = premuto) di un passo del gesto di una mossa speciale del giocatore
+/// `side`, scritto come oggi (avanti verso l'avversario). Nel campo girato i gesti si fanno sul
+/// joystick com'è, per tutti e due come il giocatore sinistro di oggi (sm_joy legge joy_raw): a
+/// destra si scambiano sinistra e destra; con `mapped` (conto alla rovescia e partita, dove
+/// `rotated_joy` applica l'inversa di rot_joy) i bit passano per la mappa di rot_joy, così il
+/// programma li legge sul joystick proprio così.
+fn gesture_bits(bits: u8, side: usize, mapped: bool) -> u8 {
+    if !rotated() {
+        return bits;
+    }
+    let b = if side == 1 { (bits & !0x0C) | (bits & 0x04) << 1 | (bits & 0x08) >> 1 } else { bits };
+    if !mapped {
+        return b;
+    }
+    (b & 0xF0) | (b & 0x08) >> 3 | (b & 0x04) >> 1 | (b & 0x01) << 3 | (b & 0x02) << 1
+}
+
 /// Gesto del joystick per il giocatore sinistro nel banco frames: con la palla in arrivo, ogni
 /// tanto una delle due mezzelune (come `JoySim`), poi tutto rilasciato. Bit a 1 = premuto; None
 /// fuori da un gesto.
@@ -3036,7 +3178,7 @@ fn gesture_joy(m: &Machine, rng: &mut Rng, queue: &mut std::collections::VecDequ
     for (k, dir) in steps.into_iter().enumerate() {
         let n = 1 + rng.below(3) as usize;
         for f in 0..n {
-            queue.push_back(if k == 2 && f == n - 1 { dir | fire } else { dir });
+            queue.push_back(gesture_bits(if k == 2 && f == n - 1 { dir | fire } else { dir }, 0, true));
         }
     }
     queue.push_back(0);
@@ -3088,6 +3230,8 @@ struct SuperFrames {
 impl SuperFrames {
     /// BAR_ROW, BAR_COL_L e BAR_COL_R di supers.s
     const BAR: [u16; 2] = [0xC000 + 40 + 6, 0xC000 + 40 + 30];
+    /// nel campo girato: nella fascia, riga 14 chi gioca in basso e 10 chi gioca in alto, colonna 31
+    const BAR_ROTATED: [u16; 2] = [0xC000 + 14 * 40 + 31, 0xC000 + 10 * 40 + 31];
 
     fn check(&mut self, m: &Machine, cycles: u64) {
         if m.read_u8("state", 0) != ST_PLAY || m.read_u8("m_next", 0) == 0 || m.read_u8("sm_on", 0) == 0 {
@@ -3103,7 +3247,8 @@ impl SuperFrames {
         }
         let (c0, icons) = assets_supers();
         let c0 = *c0;
-        let bars = Self::BAR
+        let bar = if rotated() { Self::BAR_ROTATED } else { Self::BAR };
+        let bars = bar
             .iter()
             .all(|&a| (0..4).all(|k| (c0..c0 + 5).contains(&m.cpu.mem[a as usize + k])));
         self.bars += bars as u32;
@@ -3116,16 +3261,22 @@ impl SuperFrames {
             self.last_arm[side] = arm;
             // l'icona della mossa (righe 0-7 della prima colonna dello sprite dell'icona), per
             // mossa e lato
-            let sprite = 1 + side as u16;
-            let img = 0xC000 + m.read_u8("sh_ptr", sprite) as usize * 64;
+            // (campo girato: lo sprite 1 della metà del giocatore, i registri di quella in basso in
+            // sh_img; il colore della racchetta nel multicolore, sprite 4)
+            let (sprite, ptr, enable, pad_col) = if !rotated() {
+                let sprite = 1 + side as u16;
+                (sprite, m.read_u8("sh_ptr", sprite), m.read_u8("sh_enable", 0), m.read_u8("sh_col", 3 + side as u16))
+            } else if side == 1 {
+                (1, m.read_u8("sh_ptr", 1), m.read_u8("sh_enable", 0), m.read_u8("sh_col", 4))
+            } else {
+                (1, m.read_u8("sh_img", 16 + 1), m.read_u8("sh_img", 33), m.read_u8("sh_img", 24 + 4))
+            };
+            let img = 0xC000 + ptr as usize * 64;
             let want = &icons[((arm >= 3) as usize * 2 + side) * 8..][..8];
-            if arm != 0
-                && m.read_u8("sh_enable", 0) & (1 << sprite) != 0
-                && (0..8).all(|r| m.cpu.mem[img + 3 * r] == want[r])
-            {
+            if arm != 0 && enable & (1 << sprite) != 0 && (0..8).all(|r| m.cpu.mem[img + 3 * r] == want[r]) {
                 self.icons += 1;
             }
-            if arm != 0 && arm & 1 == 0 && m.read_u8("sh_col", 3 + side as u16) & 15 == 7 {
+            if arm != 0 && arm & 1 == 0 && pad_col & 15 == 7 {
                 self.yellow_pad += 1;
             }
         }
@@ -3269,6 +3420,23 @@ fn print_heavy(m: &mut Machine) {
             println!("  chiamata più lunga di {l}: {long} cicli");
         }
     }
+    // PADDWS_C64_COVER=FILE (con PADDWS_C64_HEAVY=0): un byte per indirizzo, 1 se lì è stata
+    // eseguita un'istruzione in un frame profilato; per cercare il codice che una build non usa
+    if let Some(file) = std::env::var_os("PADDWS_C64_COVER") {
+        let mut cover = vec![0u8; 0x10000];
+        HEAVY.with_borrow(|heavy| {
+            for (_, _, p, _, _) in heavy {
+                for (a, &c) in p.iter().enumerate() {
+                    if c > 0 {
+                        cover[a] = 1;
+                    }
+                }
+            }
+        });
+        if let Err(e) = std::fs::write(&file, cover) {
+            println!("  {}: {e}", file.to_string_lossy());
+        }
+    }
     let labels: Vec<(u16, String)> = m.sorted_labels().to_vec();
     let routine = |pc: usize| match labels.binary_search_by_key(&(pc as u16), |l| l.0) {
         Ok(i) => i,
@@ -3337,6 +3505,46 @@ fn print_heavy(m: &mut Machine) {
 /// classifica), poi una partita contro la CPU; per ogni scena cicli per frame (massimo e media) e frame
 /// oltre il budget, che non ce ne devono essere (i lavori lunghi si dividono su più frame).
 /// Nessun comando: joystick e tastiera a riposo.
+/// Campo girato: pad_prep per ogni tipo, poi un lato che cambia tipo (OMEGA).
+fn prep_rotated(m: &mut Machine, screens: &[u8], prep: &dyn Fn(&mut Machine) -> i32) -> Result<(), String> {
+    // (TWIST e BLASTER le inclinazioni e il caricatore, GUARDIAN la posa intera da cui partono i
+    // corsi persi)
+    const PAGES: [usize; 7] = [1, 1, 1, 3, 3, 1, 4];
+    const AT: usize = 0xE100;
+    let pads = std::fs::read(c64_dir().join("gen/rotated/paddles.bin")).map_err(|e| format!("gen/rotated/paddles.bin: {e}"))?;
+    let block = |kind: usize, side: usize| &pads[(kind * 2 + side) * 0x400..][..PAGES[kind] * 256];
+    let placed = |m: &Machine, kinds: [usize; 2]| {
+        (0..2).all(|side| m.cpu.mem[AT + side * 0x400..][..PAGES[kinds[side]] * 256] == *block(kinds[side], side))
+    };
+    for (kind, &pages) in PAGES.iter().enumerate() {
+        for side in 0..2u16 {
+            m.write_u8("nx_kind", side * 4, kind as u8);
+            m.write_u8("pp_ready", side, 0);
+        }
+        m.write_u8("pp_side", 0, 0);
+        m.write_u8("pp_var", 0, 0);
+        m.cpu.mem[AT..AT + 0x800].fill(0);
+        let calls = prep(m) as usize;
+        if m.read_u8("pp_side", 0) < 2 || calls != 2 * pages + 1 {
+            return Err(format!("tipo {kind}: lato {} dopo {calls} frame", m.read_u8("pp_side", 0)));
+        }
+        if m.cpu.mem[0xC000..0xC800] != *screens {
+            return Err(format!("tipo {kind}: scrive negli schermi"));
+        }
+        if !placed(m, [kind, kind]) {
+            return Err(format!("tipo {kind}: pose diverse da quelle della cartuccia"));
+        }
+    }
+    m.write_u8("nx_kind", 4, 2);
+    m.write_u8("pp_ready", 1, 0);
+    m.write_u8("pp_side", 0, 0);
+    let calls = prep(m);
+    if m.read_u8("pp_side", 0) < 2 || calls != 2 || !placed(m, [6, 2]) {
+        return Err(format!("dopo il cambio di tipo di un lato: {calls} frame, o pose sbagliate"));
+    }
+    Ok(())
+}
+
 fn frames(m: &mut Machine) -> bool {
     const NAMES: [&str; 12] = SCENES;
     // Golden test, PADDWS_C64_GOLDEN=record:FILE o check:FILE: lo stato visibile di ogni frame
@@ -3391,7 +3599,8 @@ fn frames(m: &mut Machine) -> bool {
     // racchette GUARDIAN: immagine dei settori persi in ritardo (vedi guardian_image)
     let guardian = std::cell::Cell::new(GuardianLag::default());
     // immagini delle racchette a schermo contro quelle giuste per tipo e stato (paddle_shown)
-    let expected = paddle_images(m);
+    // (nel campo girato pad_image non c'è: le pose vengono dalla cartuccia e il controllo è spento)
+    let expected = if rotated() { HashMap::new() } else { paddle_images(m) };
     let shown = std::cell::RefCell::new(ShownLag::default());
     // tabelle dei quadrati dopo math_init: in partita devono essere quelle (presentazioni, YOU WIN,
     // HOW TO PLAY e finale ci scrivono sopra e le fanno rifare prima)
@@ -3565,6 +3774,15 @@ fn frames(m: &mut Machine) -> bool {
                     }
                 }
                 println!("  stato {}, m_next {}, schermo ${screen:04X}", mem[m.addr("state") as usize], m.read_u8("m_next", 0));
+                // PADDWS_C64_GOLDEN_PEEK=etichetta:byte,...: quelle variabili in questo frame
+                if let Ok(list) = std::env::var("PADDWS_C64_GOLDEN_PEEK") {
+                    for item in list.split(',') {
+                        let (label, n) = item.split_once(':').unwrap_or((item, "1"));
+                        let at = m.addr(label) as usize;
+                        let bytes: Vec<String> = mem[at..at + n.parse().unwrap_or(1)].iter().map(|b| format!("{b:02X}")).collect();
+                        println!("    {label} (${at:04X}): {}", bytes.join(" "));
+                    }
+                }
                 // con PADDWS_C64_GOLDEN_BYTES anche le 25 righe dello schermo di testo (codici) e
                 // dei colori (un nibble per cella)
                 if std::env::var_os("PADDWS_C64_GOLDEN_BYTES").is_some() {
@@ -3588,6 +3806,24 @@ fn frames(m: &mut Machine) -> bool {
                     f.write_all(&mem[0xC000..0xC3E8])?;
                     f.write_all(&colors)
                 });
+                if let Err(e) = done {
+                    return Err(format!("{}: {e}", file.display()));
+                }
+            }
+            // PADDWS_C64_GOLDEN_PIX=FILE: per ogni frame, in coda a FILE, l'impronta (8 byte) dello
+            // schermo di testo come si vede: per cella gli 8 byte del glifo e il colore. Due versioni
+            // che usano caratteri diversi per lo stesso disegno (i fusi dei fasci) danno lo stesso
+            // file; il primo frame diverso si guarda poi con PADDWS_C64_GOLDEN_AT
+            if let Some(file) = std::env::var_os("PADDWS_C64_GOLDEN_PIX") {
+                use std::io::Write;
+                let mut seen = Vec::with_capacity(9000);
+                for cell in 0..1000 {
+                    let glyph = 0xC800 + 8 * usize::from(mem[0xC000 + cell]);
+                    seen.extend_from_slice(&mem[glyph..glyph + 8]);
+                    seen.push(colors[cell]);
+                }
+                let print = fnv(&[&seen]).to_le_bytes();
+                let done = std::fs::OpenOptions::new().create(true).append(true).open(&file).and_then(|mut f| f.write_all(&print));
                 if let Err(e) = done {
                     return Err(format!("{}: {e}", file.display()));
                 }
@@ -3631,7 +3867,10 @@ fn frames(m: &mut Machine) -> bool {
                 u64::from(lasers),
             ]);
         }
-        let c = m.cpu.cycles - irq;
+        // campo girato: l'interrupt della mezzeria (gli sprite 1-5 della metà in basso) e la lettura
+        // degli sprite di quella metà, che il banco non esegue (ROT_SPLIT_CYCLES, una stima per eccesso)
+        let split = if rotated() && matches!(state, 6..=8) { ROT_SPLIT_CYCLES } else { 0 };
+        let c = m.cpu.cycles - irq + split;
         let end = m.cpu.cycles;
         // finito dopo l'interrupt del frame dopo: quello parte subito, in ritardo
         let spill = c.saturating_sub(frame_cycles());
@@ -3692,7 +3931,7 @@ fn frames(m: &mut Machine) -> bool {
                 m.read_u8("ch_level", 0)
             ));
         }
-        if matches!(m.read_u8("state", 0), 7 | 8 | 10 | 12) {
+        if matches!(m.read_u8("state", 0), 7 | 8 | 10 | 12) && !rotated() {
             let glyph = |c: usize| &m.cpu.mem[CHARSET + 8 * c..CHARSET + 8 * c + 8];
             if glyph(ch_grid_t()) != [0xFF, 0, 0, 0, 0, 0, 0, 0] || glyph(CH_WALL) != [0x3C; 8] {
                 return Err(format!("caratteri della riga o del muro cambiati (stato {})", m.read_u8("state", 0)));
@@ -3722,7 +3961,8 @@ fn frames(m: &mut Machine) -> bool {
         // colpi del BLASTER a schermo, caratteri presi in prestito e righe 0-3 (LaserCheck); non
         // nel golden test (il riferimento si registra anche dai sorgenti di prima) né con il
         // profilo (il ridisegno delle righe 0-3 gira sulla stessa macchina)
-        if golden.is_none() {
+        // (il campo girato ha i suoi fasci, verticali: rot_shots.s)
+        if golden.is_none() && !rotated() {
             lasers.borrow_mut().check(m, &shots_before, state as u8, heavy_limit.is_none())?;
         }
         if fx_asked {
@@ -3731,7 +3971,7 @@ fn frames(m: &mut Machine) -> bool {
             let early = m.cpu.mark_fx.is_some_and(|at| at - start < 2_000);
             fx_count.set((asked + 1, started + early as u32));
         }
-        if m.read_u8("state", 0) == ST_PLAY && m.read_u8("m_next", 0) != 0 {
+        if m.read_u8("state", 0) == ST_PLAY && m.read_u8("m_next", 0) != 0 && !rotated() {
             guardian_image(m, &guardian);
             paddle_shown(m, &expected, &mut shown.borrow_mut(), m.cpu.read(0xFFFB) & 0x80 != 0);
         }
@@ -3965,6 +4205,10 @@ fn frames(m: &mut Machine) -> bool {
     // cursore e prende a caso
     m.write_u8("opt_mode", 0, 2);
     m.write_u8("opt_players", 0, 3);
+    // (la partita di prima può essere finita in una schermata della scala che si sta ancora
+    // preparando: dal menu ci si arriva solo a schermata disegnata, quindi ch_phase a 0; se no
+    // math_step non rifà le tabelle dei quadrati e la partita NEXT aspetta per sempre)
+    m.write_u8("ch_phase", 0, 0);
     m.call("start_game");
     let mut next_on = false;
     let mut next_pads = PadCheck::default();
@@ -4050,7 +4294,17 @@ fn frames(m: &mut Machine) -> bool {
     }
     m.cpu.joy_port2 = 0xFF;
     if !next_on {
-        println!("FAIL: dopo le scelte la partita NEXT non parte");
+        println!(
+            "FAIL: dopo le scelte la partita NEXT non parte (alla fine stato {}, m_next {}, pk_kind {}, pk_phase {}, hw_pg {}, pk_cursor {:?}, ch_phase {}, math_ready {})",
+            m.read_u8("state", 0),
+            m.read_u8("m_next", 0),
+            m.read_u8("pk_kind", 0),
+            m.read_u8("pk_phase", 0),
+            m.read_u8("hw_pg", 0),
+            [m.read_u8("pk_cursor", 0), m.read_u8("pk_cursor", 1)],
+            m.read_u8("ch_phase", 0),
+            m.read_u8("math_ready", 0)
+        );
         fail!();
     }
     if !next_pads.ok("NEXT") || !warp.ok() || !comet.ok() {
@@ -4339,6 +4593,7 @@ fn frames(m: &mut Machine) -> bool {
         let (mut tilted, mut loaded, mut dynamic, mut low) = (0u32, 0u32, 0u32, 0u32);
         let full_mag = c64_params(1).blaster_shots as u32;
         let mut shot = false;
+        let mut tilt_pushed = false;
         let mut kind = 0u8;
         let mut ended = false;
         for f in 0..50 * 60 * 6 {
@@ -4346,7 +4601,7 @@ fn frames(m: &mut Machine) -> bool {
             seen[state.min(18)] = true;
             m.cpu.joy_port2 = if state == 7 || state == 13 { joy(m, &mut rng) } else { 0xFF };
             if state == 7 && m.read_u8("serve_timer", 0) == 0 && f % 200 == 0 && m.read_u8("score", 0) < 6 {
-                m.write_i32("ball_x", 0, 316 << 16);
+                m.write_i32("ball_x", 0, if rotated() { 196 << 16 } else { 316 << 16 }); // (4 pixel dal bordo destro)
                 m.write_i32("ball_vx", 0, 4 << 16);
             }
             // (la fine dopo la musica dell'ultima forma, e dopo che la forma si è vista: wait)
@@ -4360,9 +4615,14 @@ fn frames(m: &mut Machine) -> bool {
             if m.read_u8("state", 0) == 7 {
                 let k = m.read_u8("nx_kind", 4);
                 morphs += (k != kind) as u32;
-                let ptr = m.read_u8("sh_ptr", 4);
-                let base = m.read_u8("prep_base", 1);
-                let in_block = (base..base + PAD_SLOTS as u8).contains(&ptr) && m.read_u8("pp_ready", 1) != 0;
+                // (campo girato: le pose del lato in alto da $E500, 16 sprite; lo sprite 2 il bianco
+                // sinistro della posa, il 4 il multicolore sinistro)
+                let (ptr, base, slots) = if rotated() {
+                    (m.read_u8("sh_ptr", 2), ROT_PTR_TOP, 16u8)
+                } else {
+                    (m.read_u8("sh_ptr", 4), m.read_u8("prep_base", 1), PAD_SLOTS as u8)
+                };
+                let in_block = (base..base + slots).contains(&ptr) && m.read_u8("pp_ready", 1) != 0;
                 if k != kind {
                     wait = Some(0);
                 }
@@ -4377,8 +4637,23 @@ fn frames(m: &mut Machine) -> bool {
                 }
                 kind = k;
                 let slot = ptr.wrapping_sub(base);
-                tilted += (k == 3 && in_block && slot != 3) as u32;
-                loaded += (k == 4 && in_block && slot < BLASTER_VIS) as u32;
+                if rotated() {
+                    // TWIST: le pose inclinate nelle pagine 1 e 2; BLASTER: il multicolore di un
+                    // livello del caricatore (pagine 1 e 2) al posto di quello della posa
+                    let mc = m.read_u8("sh_ptr", 4).wrapping_sub(base);
+                    tilted += (k == 3 && in_block && slot != 0) as u32;
+                    // (OMEGA TWIST della prova può restare ferma: una volta la sua racchetta a 8
+                    // pixel per tick, sopra la soglia dell'inclinazione, per vederla nel frame dopo)
+                    if k == 3 && in_block && tilted == 0 && !tilt_pushed {
+                        tilt_pushed = true;
+                        m.write_u8("pad_motion", 4 + 2, 8);
+                        m.write_u8("pad_motion", 4 + 3, 0);
+                    }
+                    loaded += (k == 4 && in_block && mc >= 4) as u32;
+                } else {
+                    tilted += (k == 3 && in_block && slot != 3) as u32;
+                    loaded += (k == 4 && in_block && slot < BLASTER_VIS) as u32;
+                }
                 low += (k == 4 && (m.read_u8("nx_ammo", 4) as u32) < full_mag) as u32;
                 // (OMEGA della prova spara poco: due colpi nel caricatore messi dal banco di prova,
                 // una volta, per vedere l'immagine nel frame dopo)
@@ -4386,7 +4661,9 @@ fn frames(m: &mut Machine) -> bool {
                     shot = true;
                     m.write_u8("nx_ammo", 4, 2);
                 }
-                dynamic += ((k == 3 || k == 4) && ptr == m.read_u8("pad_slot", 1) && m.read_u8("wp_on", 0) == 0) as u32;
+                dynamic += ((k == 3 || k == 4)
+                    && m.try_addr("pad_slot").is_some_and(|_| ptr == m.read_u8("pad_slot", 1))
+                    && m.read_u8("wp_on", 0) == 0) as u32;
                 flash += (m.read_u8("om_flash", 0) != 0) as u32;
                 red += (m.read_u8("sh_col", 4) == COL_PURPLE) as u32;
                 net += (m.cpu.mem[0xC000 + 12 * 40 + 19] != 1) as u32;
@@ -4577,11 +4854,11 @@ fn frames(m: &mut Machine) -> bool {
         let (n, bad, worst) = sh.per_kind[k];
         println!("    {name:<9} {n:>6} {bad:>5} {worst:>5}");
     }
-    if sh.per_kind.iter().any(|&(_, _, worst)| worst > GUARDIAN_LAG_MAX) {
+    if sh.per_kind.iter().any(|&(_, _, worst)| worst > GUARDIAN_LAG_MAX) && !rotated() {
         println!("FAIL: racchetta a schermo diversa dall'immagine giusta per oltre {GUARDIAN_LAG_MAX} frame di fila");
         fail!();
     }
-    if (g.frames == 0 && !ntsc() && !pick_raw) || g.worst > GUARDIAN_LAG_MAX || g.warp_left > 0 {
+    if ((g.frames == 0 && !ntsc() && !pick_raw) || g.worst > GUARDIAN_LAG_MAX || g.warp_left > 0) && !rotated() {
         println!(
             "FAIL: racchetta GUARDIAN non provata, immagine dei settori persi oltre {GUARDIAN_LAG_MAX} frame in ritardo o pezzo del TELEPORT rimasto nello sprite"
         );
@@ -4649,32 +4926,40 @@ fn frames(m: &mut Machine) -> bool {
             return false;
         }
     }
-    match prep_images(m) {
-        Ok(s) => println!("  {s}"),
-        Err(e) => {
-            println!("FAIL: {e}");
-            fail!();
+    if !rotated() {
+        match prep_images(m) {
+            Ok(s) => println!("  {s}"),
+            Err(e) => {
+                println!("FAIL: {e}");
+                fail!();
+            }
         }
     }
-    match guardian_fast(m) {
-        Ok(s) => println!("  {s}"),
-        Err(e) => {
-            println!("FAIL: {e}");
-            fail!();
+    if !rotated() {
+        match guardian_fast(m) {
+            Ok(s) => println!("  {s}"),
+            Err(e) => {
+                println!("FAIL: {e}");
+                fail!();
+            }
         }
     }
-    match warp_fast(m) {
-        Ok(s) => println!("  {s}"),
-        Err(e) => {
-            println!("FAIL: {e}");
-            fail!();
+    if !rotated() {
+        match warp_fast(m) {
+            Ok(s) => println!("  {s}"),
+            Err(e) => {
+                println!("FAIL: {e}");
+                fail!();
+            }
         }
     }
-    match lasers.borrow().result() {
-        Ok(s) => println!("  {s}"),
-        Err(e) => {
-            println!("FAIL: colpi del BLASTER: {e}");
-            fail!();
+    if !rotated() {
+        match lasers.borrow().result() {
+            Ok(s) => println!("  {s}"),
+            Err(e) => {
+                println!("FAIL: colpi del BLASTER: {e}");
+                fail!();
+            }
         }
     }
     // Fuori dalla partita nessun frame oltre il suo tempo. In partita l'obiettivo è il 90% del
@@ -4688,9 +4973,13 @@ fn frames(m: &mut Machine) -> bool {
     let over_play = stats[ST_PLAY as usize].3;
     let over_other = over - over_play;
     let strict = std::env::var_os("PADDWS_C64_STRICT").is_some();
+    // Campo girato NTSC: lo 0,5% oltre il 90% (con le racchette più veloci del 10% gli scambi sono
+    // più lunghi: misurati 165-197 su circa 47.500 il 2026-11-25, il conteggio oscilla con le
+    // partite simulate), oltre il frame come l'altra
     let (allow_90, allow_100) = match (strict, ntsc()) {
         (true, _) => (0, 0),
         (false, false) => (play_frames / 5000, 0),
+        (false, true) if rotated() => (play_frames / 200, play_frames / 3000),
         (false, true) => (play_frames / 300, play_frames / 3000),
     };
     println!(
@@ -5848,10 +6137,16 @@ fn ending_song(m: &mut Machine, rom: &[u8], vh: &str, egg: bool) -> Result<Strin
 /// Parametri del core per il C64: `c64/gen/params.inc` (PAL, 50 Hz) e `c64/gen/ntsc/params.inc` (NTSC, 60
 /// Hz), che la build NTSC trova prima (`c64/build.ps1 -Ntsc`). Con `check` solo il confronto.
 fn params(check: bool) -> bool {
-    let was = ntsc();
+    let (was, was_rotated) = (ntsc(), rotated());
     let mut ok = true;
-    for (tv_ntsc, file) in [(false, "gen/params.inc"), (true, "gen/ntsc/params.inc")] {
+    for (tv_ntsc, turned, file) in [
+        (false, false, "gen/params.inc"),
+        (true, false, "gen/ntsc/params.inc"),
+        (false, true, "gen/rotated/params.inc"),
+        (true, true, "gen/rotated/ntsc/params.inc"),
+    ] {
         set_ntsc(tv_ntsc);
+        set_rotated(turned);
         let path = c64_dir().join(file);
         let text = params_inc();
         if check {
@@ -5872,6 +6167,7 @@ fn params(check: bool) -> bool {
         }
     }
     set_ntsc(was);
+    set_rotated(was_rotated);
     ok
 }
 
@@ -6227,9 +6523,9 @@ const SCENARIOS: [Scenario; 36] = [
         [Some(PaddleKind::Titan), Some(PaddleKind::Arcade)],
     ),
     // OMEGA: la racchetta che cambia forma a ogni punto subito, da tutti e due i lati
-    omega("omega", 81, Side::Right, [10, 11], PaddleKind::Rush),
-    omega("omega_left", 82, Side::Left, [11, 10], PaddleKind::Blaster),
-    omega("omega_g", 84, Side::Right, [11, 11], PaddleKind::Guardian),
+    omega("omega", 181, Side::Right, [10, 11], PaddleKind::Rush),
+    omega("omega_left", 182, Side::Left, [11, 10], PaddleKind::Blaster),
+    omega("omega_g", 184, Side::Right, [11, 11], PaddleKind::Guardian),
 ];
 
 /// Giocatori simulati come quelli di paddws-trace: inseguono la palla con un errore che cambia
@@ -6309,6 +6605,8 @@ struct JoySim {
     queue: [std::collections::VecDeque<u8>; 2],
     /// gesti finiti con il fuoco: (giocatore, frame da cui è premuto)
     fired: Vec<usize>,
+    /// campo girato: i passi dei gesti per `gesture_bits` (con la mappa di rot_joy)
+    mapped: bool,
 }
 
 impl JoySim {
@@ -6323,6 +6621,7 @@ impl JoySim {
             rng: Rng::new(seed ^ 0x0607_7E57),
             queue: Default::default(),
             fired: Vec::new(),
+            mapped: false,
         }
     }
 
@@ -6354,7 +6653,8 @@ impl JoySim {
                 let n = 1 + self.rng.below(4) as usize;
                 for f in 0..n {
                     let last = k == 2 && f == n - 1;
-                    self.queue[side].push_back(if last { dir | Self::FIRE } else { dir });
+                    let bits = if last { dir | Self::FIRE } else { dir };
+                    self.queue[side].push_back(gesture_bits(bits, side, self.mapped));
                 }
                 if slow && k == 1 {
                     for _ in 0..17 + self.rng.below(4) {
@@ -6800,6 +7100,7 @@ fn game(m: &mut Machine, ticks: u32) -> bool {
                 Drive::Joy | Drive::Joy2 => {
                     // il 6502 legge i joystick (read_input, build_input con next_keys e il gesto);
                     // il core riceve i comandi così come li ha letti
+                    joys.mapped = matches!(m.read_u8("state", 0), 6 | 7);
                     let left = joys.frame(&g, 0);
                     let right = if matches!(s.drive, Drive::Joy2) {
                         joys.frame(&g, 1)
@@ -7430,7 +7731,10 @@ fn ending_run(m: &mut Machine, score: u32, fire_at: Option<u32>) -> Result<Endin
             }
         }
         let d025_ok = m.cpu.mem[0xD025] & 15 == if now == 6 { COL_GRAY } else { yel };
-        if on & m.cpu.mem[0xD01C] != 0 && (!d025_ok || m.cpu.mem[0xD026] & 15 != 1) {
+        // (nel campo girato l'astronave della partita, sprite 4-7, vuole il grigio scuro)
+        let d026 = m.cpu.mem[0xD026] & 15;
+        let d026_ok = d026 == 1 || (rotated() && d026 == COL_DGRAY && on & 0xF0 != 0);
+        if on & m.cpu.mem[0xD01C] != 0 && (!d025_ok || !d026_ok) {
             r.bad_colors += 1;
         }
         if m.cpu.mem[0xD016] & 0x10 != 0 && (m.cpu.mem[0xD022] & 15 != 1 || m.cpu.mem[0xD023] & 15 != yel) {
@@ -7560,11 +7864,12 @@ fn ending_run(m: &mut Machine, score: u32, fire_at: Option<u32>) -> Result<Endin
     // rifà) e il titolo dell'attract: la bitmap della sfilata li copre, il finale li rimette
     let sprites = &m.image[0xC000 - 0x0801..0xC800 - 0x0801];
     let title = std::fs::read(c64_dir().join("gen/title.bin")).unwrap_or_default();
-    if (0..0x800).any(|i| !(128..256).contains(&i) && m.cpu.under_io[i] != sprites[i])
-        || title.is_empty()
-        || m.cpu.under_io[0x800..0x800 + title.len()] != title[..]
-    {
-        wrong.push("sprite o titolo dell'attract sotto l'I/O non rimessi".into());
+    let first = (0..0x800).find(|&i| !(128..256).contains(&i) && m.cpu.under_io[i] != sprites[i]);
+    if first.is_some() || title.is_empty() || m.cpu.under_io[0x800..0x800 + title.len()] != title[..] {
+        wrong.push(format!(
+            "sprite o titolo dell'attract sotto l'I/O non rimessi (primo byte degli sprite diverso: {})",
+            first.map_or("nessuno".into(), |i| format!("${:04X}", 0xD000 + i))
+        ));
     }
     if !wrong.is_empty() {
         return Err(format!("uscita dal finale: {}", wrong.join(", ")));
@@ -7724,7 +8029,7 @@ impl OverWatch {
 }
 
 /// Le scritte grandi `labels` del GAME OVER, la prima dalla riga `top` e la seconda tre righe sotto,
-/// centrate (colonna (40 - larghezza) / 2); con una sola, nelle righe 13-14 nessuna.
+/// centrate (colonna (ov_cols() - larghezza) / 2); con una sola, nelle righe 13-14 nessuna.
 fn over_labels_at(m: &Machine, labels: &[u8], top: u16) -> Result<(), String> {
     let label_at = |k: u8, row: u16| -> Result<bool, String> {
         if k == OV_PERFECT {
@@ -7732,7 +8037,7 @@ fn over_labels_at(m: &Machine, labels: &[u8], top: u16) -> Result<(), String> {
             return Ok(row == 10 && perfect_at(m, false));
         }
         let w = m.image_u8("over_w", k as u16) as u16;
-        let col = (40 - w) / 2;
+        let col = (ov_cols() as u16 - w) / 2;
         if m.image_u8("over_col", k as u16) as u16 != col {
             return Err(format!("scritta {k} non centrata"));
         }
@@ -7938,7 +8243,13 @@ fn perfect_at(m: &Machine, colors: bool) -> bool {
     let (map, rows) = (assets_list("TP_MAP"), assets_list("TP_ROWC"));
     let w = inc_const(&inc, "TP_W").unwrap_or(1);
     let k: Vec<u8> = (0..map.len()).map(|i| rows.get(i / w).copied().unwrap_or(0)).collect();
-    !map.is_empty() && title_at(m, &map, colors.then_some(&k[..]), w, 9, (40 - w) / 2)
+    !map.is_empty() && title_at(m, &map, colors.then_some(&k[..]), w, 9, (ov_cols() - w) / 2)
+}
+
+/// Colonne su cui si centrano le scritte del GAME OVER (OV_W di play.s): lo schermo, o il campo
+/// girato (30 colonne).
+fn ov_cols() -> usize {
+    if rotated() { 30 } else { 40 }
 }
 const OV_P1_WINS: u8 = 2;
 /// win_pg a voce finita, con le tabelle dei quadrati da rifare (WIN_SAID di play.s).
@@ -8021,8 +8332,14 @@ fn pick_chars_ui(m: &mut Machine) -> Result<String, String> {
     else {
         return Err("assets.inc: manca PICK_FIRST, FONT_FIRST o FONT_CHARS".into());
     };
+    // (campo girato: dopo una partita i caratteri 1-3 restano quelli del campo finché pick_chars,
+    // la scelta dei bonus o la classifica non rimettono quelli di oggi: qui si parte da quelli)
+    let boot = program_charset(m);
+    if rotated() {
+        m.cpu.mem[CHARSET + 8..CHARSET + 32].copy_from_slice(&boot[8..32]);
+    }
     let before: Vec<u8> = m.cpu.mem[CHARSET..CHARSET + 0x800].to_vec();
-    if before != program_charset(m) {
+    if before != boot {
         return Err("set di caratteri diverso da quello dell'avvio".into());
     }
     let mut want = before.clone();

@@ -1099,7 +1099,12 @@ Y_LOW  = ((ONE + BALL_R_MAX) >> 16) + 1
 Y_HIGH = ((P_HEIGHT - ONE - BALL_R_MAX) >> 16) - 1
 X_LOW  = (BALL_R_MAX >> 16) + 1
 X_HIGH = ((P_WIDTH - BALL_R_MAX) >> 16) - 1
+.ifdef ROTATED
+; (campo girato: largo 200, X_HIGH in un byte)
+.assert Y_LOW <= Y_HIGH .and Y_HIGH < 255 .and X_LOW <= X_HIGH .and X_HIGH < 255, error, "ball_tick: soglie"
+.else
 .assert Y_LOW <= Y_HIGH .and Y_HIGH < 255 .and X_LOW < 256 .and X_HIGH >= 256 .and X_HIGH < $7FFF, error, "ball_tick: soglie"
+.endif
 
 ; Parte del tick dopo l'attesa della battuta: movimento, bordi, contatto o punto.
 .proc ball_tick
@@ -1204,6 +1209,14 @@ _miss:
 _points:
     ; palla oltre il bordo sinistro o destro: punto. Prima lo scarto veloce sulla parte intera
     lda ball_x+3
+.ifdef ROTATED
+    bne _edge                   ; (negativa, o oltre 255 pixel: X_HIGH sta in un byte)
+    lda ball_x+2
+    cmp #X_LOW
+    bcc _edge
+    cmp #X_HIGH + 1
+    bcc _none
+.else
     bmi _edge
     bne :+
     lda ball_x+2
@@ -1215,6 +1228,7 @@ _points:
     lda ball_x+3
     sbc #>(X_HIGH + 1)
     bcc _none
+.endif
 _edge:
     sub32 t0, ball_x, ball_r
     lda t0+3

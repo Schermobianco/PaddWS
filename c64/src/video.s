@@ -412,6 +412,11 @@ PK_REST = 8 * (PICK_FIRST + 2 * FONT_CHARS - BIG2_FIRST - 4 * BIG2_N)    ; dopo 
 PK_REST0 = CHARSET + 8 * (BIG2_FIRST + 4 * BIG2_N)
 .assert PK_REST > 256 .and PK_REST <= 512, error, "pick_chars: caratteri dopo le lettere 2x"
 .proc pick_chars
+.ifdef ROTATED
+    pha                         ; (campo girato: anche i caratteri 1-3 di oggi; A e C restano)
+    jsr today_glyphs
+    pla
+.endif
     bcc halves
     ldy #0
     ldx #BIG2_N / 2
@@ -470,6 +475,7 @@ next:
 
 ; Sprite della partita: palla hires bianca, bande grigie hires, racchette multicolore espanse in
 ; verticale.
+.ifndef ROTATED                 ; (campo girato: rot_video.s)
 .proc game_sprites
     lda #COL_WHITE
     sta sh_col
@@ -496,6 +502,7 @@ next:
 .assert MODE_TEXT = 0, error, "game_sprites: A = 0 all'uscita"
 .assert (HALF_PX - 1) & $FFFF00FF = $FF, error, "compute_sprites: HALF_PX - 1 con il byte 0 a $FF e i byte 2-3 a 0"
 
+.endif
 ; Copia X pagine da (ptr2) a (ptr).
 .proc copy_pages
     ldy #0
@@ -528,6 +535,13 @@ next:
     sta SCREEN+$200,x
     sta SCREEN+$2e8,x
     inx
+.ifdef ROTATED                  ; (campo girato: due celle a giro, 640 cicli in meno; il frame della
+    sta SCREEN,x                ; scelta che pulisce schermo e colori sull'NTSC non ci stava)
+    sta SCREEN+$100,x
+    sta SCREEN+$200,x
+    sta SCREEN+$2e8,x
+    inx
+.endif
     bne :-
     rts
 .endproc
@@ -540,6 +554,13 @@ next:
     sta $da00,x
     sta $dae8,x
     inx
+.ifdef ROTATED                  ; (campo girato: come clear_screen)
+    sta $d800,x
+    sta $d900,x
+    sta $da00,x
+    sta $dae8,x
+    inx
+.endif
     bne :-
     rts
 .endproc
@@ -808,6 +829,7 @@ row:
 
 ; Campo: mezzeria e, in singolo, il muro a destra.
 ; Campo sullo schermo già pulito (clear_text).
+.ifndef ROTATED                 ; (campo girato: rot_video.s)
 .proc draw_field
     jsr bullet_chars
     jsr net_setup               ; la rete della partita
@@ -833,6 +855,7 @@ done:
     rts
 .endproc
 
+.endif
 ; Il set di caratteri è pieno: in NEXT la capsula del BULLET della riserva (8 caratteri, normale e
 ; in negativo) prende il posto di caratteri che in NEXT non servono, cioè cursore e reticolo
 ; dell'auto-test (solo all'accensione) e tre caratteri vuoti suoi; non CH_GRID_T né il muro del
@@ -898,6 +921,7 @@ bullet_dst_hi:
     .endrepeat
 .segment "CODE"
 
+.ifndef ROTATED                 ; (campo girato: rot_video.s)
 ; Mezzeria nella riga v_row.
 .proc center_line_row
     ldy v_row
@@ -1092,11 +1116,13 @@ set:
     rts
 .endproc
 
+.endif
 net_kind: .byte K_NONE          ; rete della partita (net_setup)
 net_skip: .byte 0               ; righe di caratteri vuote: bit (riga and 3)
 net_var:  .byte 0               ; animazione a schermo
 net_t:    .byte 0
 ; i due caratteri per tipo (K_*, poi K_NONE): colonna 19 (bit 0 = x 159) e colonna 20 (bit 7 = x 160)
+.ifndef ROTATED                 ; (campo girato: rot_video.s)
 net_l: .byte $00, $00, $07, $04, $04, $04, $04, $07   ; ARCADE: quadratini, ogni 16 righe
        .byte $01, $01, $01, $01, $01, $01, $01, $01   ; TITAN: trattini di 24 righe ogni 32
        .byte $0E, $0E, $0E, $0E, $0E, $0E, $0E, $0E   ; HAMMER: rete doppia, 8 righe ogni 16
@@ -1118,7 +1144,9 @@ tw_l:  .byte $03, $03, $01, $01,  $00, $00, $00, $00,  $0C, $0C, $06, $06
 tw_r:  .byte $00, $00, $80, $80,  $C0, $C0, $60, $60,  $00, $00, $00, $00
 ham_l: .byte $0E, $07, $1C
 ham_r: .byte $70, $38, $E0
+.endif
 
+.ifndef ROTATED                 ; (campo girato: rot_video.s)
 ; Punteggi: in due ai lati della mezzeria; in singolo i colpi a sinistra, record e palle a destra.
 .proc draw_scores
     ldy #0
@@ -1162,6 +1190,7 @@ single:
     jmp draw_score2
 .endproc
 
+.endif
 ; A:X (alto:basso) -> A = valore fino a 99
 .proc clamp99
     cmp #0
@@ -1199,6 +1228,7 @@ big:
 ; ------------------------------------------------------------------------------------ sprite
 
 ; Registri ombra dallo stato della partita.
+.ifndef ROTATED                 ; (campo girato: rot_video.s)
 .proc compute_sprites
     lda #0
     sta pd_made
@@ -1472,6 +1502,7 @@ cap_sprite: .byte SPN_CAP, SPN_CAP + 1, SPN_CAP + 2, 0
 icon_dx_lo: .byte <7, <(-12)
 icon_dx_hi: .byte >7, >(-12)
 
+.endif
 .segment "BSS"
 ns_icons: .res 1                ; sprite delle icone in uso (bit)
 ns_n:     .res 1
@@ -1611,6 +1642,7 @@ done:
 
 ; Racchetta X (0 o 4) del lato Y (0 o 1): posizione dello sprite 1 o 2 e la sua immagine. X = side
 ; alla fine.
+.ifndef ROTATED                 ; (campo girato: rot_video.s)
 PS_K = HALF_PX - 1 - P_PAD_HALF_W  ; colonna della racchetta: x + PS_K, byte 2 e 3
 kind_side: .byte 0, 8           ; pad_dx: la racchetta destra dopo i tipi della sinistra
 
@@ -1687,7 +1719,16 @@ kicked:
     ldx side
     lda nx_kind,x
 :   sta pi_kind
-    ora kind_side,y
+    cmp #K_RUSH                 ; RUSH vibra come su PC e MiSTer: un pixel avanti e indietro ogni
+    bne :++                     ; 8 frame
+    lda frame_count
+    and #8
+    beq :+
+    inc v_n
+    bne :+
+    inc v_col
+:   lda pi_kind
+:   ora kind_side,y
     tax
     lda v_n
     sec
@@ -2119,6 +2160,7 @@ sign:
     jmp prep
 .endproc
 
+.endif
 TILT1 = P_PAD_MAX_SPEED / 6
 TILT2 = P_PAD_MAX_SPEED / 2
 TILT3 = P_PAD_MAX_SPEED * 5 / 6
@@ -2129,7 +2171,9 @@ TILT3 = P_PAD_MAX_SPEED * 5 / 6
 ; mag_setup mappa A colpi in livello visivo e prosegue in mag_vis (usata anche da pad_prep).
 BLASTER_VIS = 4
 bl_vis: .byte 0, 1, 2, 2, 3, 3, 4
+.ifndef ROTATED
 bl_var: .byte 0, 32, 64, 96, 128    ; pi_var del BLASTER: livello visivo * 32 (pad_sprite)
+.endif
 .proc mag_setup
     tay
     lda bl_vis,y
@@ -2140,6 +2184,7 @@ bl_var: .byte 0, 32, 64, 96, 128    ; pi_var del BLASTER: livello visivo * 32 (p
 .endproc
 .assert P_BLASTER_SHOTS = 6, error, "caricatore del BLASTER: bl_vis mappa 0..6 in 0..4"
 
+.ifndef ROTATED                 ; (campo girato: le pose dalla cartuccia, anche fuori dalla partita)
 ; Immagine della racchetta di pi_side in sh_img (63 byte, 3 per riga): pi_n righe dell'astronave del
 ; tipo pi_kind (PAD_IMG_* di gen/assets.inc, dagli sprite di assets/ships/sprites/c64), vista dalla
 ; racchetta sinistra; per la destra ogni riga si specchia. La racchetta senza tipo (K_NONE) è il
@@ -2411,9 +2456,12 @@ pad_img_lo: .lobytes pad_img0, pad_img1, pad_img2, pad_img3, pad_img4, pad_img5,
 pad_img_hi: .hibytes pad_img0, pad_img1, pad_img2, pad_img3, pad_img4, pad_img5, pad_img6
 pad_img_n:  .byte PAD_IMG_N
 pad_bl_thr: .byte PAD_BL_THR
+.endif
 ; pixel tra il bordo sinistro dello sprite e la colonna della racchetta: sinistra per tipo (K_NONE
 ; per ultimo), poi destra
+.ifndef ROTATED
 pad_dx:     .byte PAD_DX_L, PAD_DX_R
+.endif
 .assert K_ARCADE = 0 .and K_TITAN = 1 .and K_HAMMER = 2 .and K_TWIST = 3 .and K_BLASTER = 4 .and K_RUSH = 5 .and K_GUARDIAN = 6 .and K_NONE = 7, error, "astronavi delle racchette nell'ordine dei tipi"
 
 ; colore dedicato di ciascuna astronave (%10 = $D027+i): ARCADE, TITAN, HAMMER, TWIST, BLASTER,
@@ -2428,6 +2476,7 @@ prep_base: .byte SP_PREP0, SP_PREP0 + 8
 
 bit_of: .byte %00000001, %00000010, %00000100, %00001000, %00010000, %00100000, %01000000, %10000000
 
+.ifndef ROTATED                 ; (campo girato: rot_video.s)
 ; Nel vblank: registri ombra nel VIC, immagini delle racchette nella RAM degli sprite. Copie
 ; srotolate: è codice di ogni frame.
 .proc apply_shadows
@@ -2575,6 +2624,7 @@ all:
     warp_rows_of sh_img + IMG_BYTES, SPRITES + 3 * 64
 .endproc
 
+.endif
 ; $D011 e $D018 dei modi video: testo ($C000, caratteri $C800), bitmap ($E000, colori $C400),
 ; schermo spento
 mode_d011: .byte $1b, $3b, $0b, $3b
@@ -2593,8 +2643,13 @@ SP_RING0  = SP_SPIN0 + 16      ; alone di SLOW, palla 4 e 6 (dopo le immagini de
 ; Un'immagine degli effetti per frame, finché non ci sono tutte: gli aloni si disegnano dai
 ; quadrati di FX_SQUARES (x, y, lato in pixel; $FF chiude l'immagine), che fx_sp scorre.
 ; Un'immagine si fa solo se il frame resta nel budget.
+.ifdef ROTATED
+FX_COST = 11000                 ; (campo girato: anche l'interrupt della mezzeria, che cade nel frame)
+.else
 FX_COST = 10500
+.endif
 FX_LATE = (TV_BUDGET - (500 + FX_COST)) / TV_LCYC
+.ifndef ROTATED                 ; (campo girato: rot_video.s)
 .proc fx_copy
     lda fx_wait                 ; i primi frame della partita hanno già molto da fare
     beq :+
@@ -2686,6 +2741,8 @@ end:
 :   inc fx_pages
     rts
 .endproc
+
+.endif
 
 ; Immagine della palla con l'effetto: cometa del SUPER, alone di SLOW (a tratti), coda grigia che
 ; sfuma con boost, curva, STEER, SUPER, SLOW o BULLET. Il SUPER in volo è giallo. Coda e cometa
@@ -2785,6 +2842,7 @@ none:
     rts
 .endproc
 
+.ifndef ROTATED                 ; (campo girato: rot_video.s)
 ; A = angolo dello sprite della coda in cui sta la palla, dal moto (come trail_layout): bit 7 il
 ; segno di vx, bit 0-1 vy (0 sale, 1 orizzontale, 2 scende). Cambia Y.
 .proc trail_dir
@@ -2808,6 +2866,7 @@ vx:
 :   rts
 .endproc
 
+.endif
 ; Sprite della palla per la coda: multicolore, oppure (cometa) hires espanso.
 .proc trail_attr
     lda tr_cm
@@ -3707,7 +3766,9 @@ brow:
 .endproc
 
 .segment "RODATA"
+.ifndef ROTATED                 ; (campo girato: anelli già pronti, ROT_RINGS)
 fx_squares:   .byte FX_SQUARES
+.endif
 trail_dither: .byte TRAIL_DITHER
 trail_x_b0:   .byte TRAIL_X_B0
 trail_x_lm:   .byte TRAIL_X_LM
@@ -3797,6 +3858,7 @@ SP_PREP0 = SP_FX0 + TRAIL_BUFS  ; 8 immagini per lato, i blocchi a inizio pagina
 PP_DST = >($C000 + SP_PREP0 * 64)
 PP_LATE = (TV_BUDGET - 5800) / TV_LCYC  ; come OM_LATE_COPY: la copia di una pagina e quello che resta
 
+.ifndef ROTATED                 ; (campo girato: rot_video.s)
 .proc pad_prep
     ldy pp_side
     cpy #2
@@ -3847,6 +3909,7 @@ quit:
     rts
 .endproc
 
+.endif
 
 .assert BLASTER_VIS + 1 <= 8, error, "immagini delle racchette: al massimo 8 per lato"
 
@@ -3934,6 +3997,7 @@ SP_SPIN0 = SP_PREP0 + 16        ; 8 immagini per lato
 SPIN_CX  = 12
 SPIN_CY  = 10
 
+.ifndef ROTATED                 ; (campo girato: rot_video.s)
 .proc spin_prep
     lda sp_k
     cmp #16
@@ -4075,7 +4139,9 @@ step:
 done:
     rts
 .endproc
+.endif
 
+.ifndef ROTATED                 ; (campo girato: niente rotazione del SUPER)
 ; A (con segno) * 2 in A (basso) e Y (alto).
 .proc sext2
     ldy #0
@@ -4122,6 +4188,7 @@ spin_sin: .byte 0, 24, 45, 59, 64, 59, 45, 24
 spin_cos: .byte 64, 59, 45, 24, 0, <-24, <-45, <-59
 spin_px:  .byte 1, 1, 1, 0, 0, 0, 1, 1
 spin_py:  .byte 0, 0, $ff, 1, 1, 1, 1, 0
+.endif
 
 .segment "NEXTBSS"
 sp_k:  .res 1                   ; immagine in preparazione (16: finito)
@@ -4157,6 +4224,7 @@ WARP_LATE = (TV_BUDGET - (WARP_COST + 200)) / TV_LCYC
 ; Il salto rimasto da disegnare nel frame prima (wp_pend, frame già avanti): all'inizio di questo,
 ; che ha il tempo, sullo stato del tick prima (poi compute_sprites rimette sprite e posizioni). Solo
 ; con il salto in corso: events è ancora quello del tick prima, non deve farne partire un altro.
+.ifndef ROTATED                 ; (campo girato: rot_video.s)
 .proc warp_early
     lda wp_pend
     beq done
@@ -4801,6 +4869,7 @@ wp_g:
 
 pad_slot: .byte SP_PAD0, SP_PAD1
 
+.endif
 .segment "BSS"
 wp_on:     .res 1
 wp_pend:   .res 1               ; disegno del salto rimasto dal frame prima (warp_early)
@@ -4837,3 +4906,7 @@ wp_ex_top: .res 1
 pd_cy:     .res 2               ; riga del centro delle racchette in questo frame
 pd_last:   .res 2               ; e al frame prima
 .segment "CODE"
+
+.ifdef ROTATED
+.include "rot_video.s"
+.endif

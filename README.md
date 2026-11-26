@@ -64,7 +64,7 @@ Regole, bonus, racchette, mosse e comandi: **[Come si gioca](docs/it/come-si-gio
 | **Web** (Rust in WebAssembly) | browser su computer, Android, iPhone e iPad | si gioca [online](https://schermobianco.github.io/PaddWS/), oppure `paddws-X.Y.Z-web.zip` |
 | **Rust** (macroquad), un eseguibile | Windows, Linux x86_64, Raspberry Pi (Linux ARM64 e ARM a 32 bit) | `paddws-X.Y.Z-windows-x86_64.zip`, `-linux-x86_64.tar.gz`, `-linux-aarch64.tar.gz`, `-linux-armv7.tar.gz`: si avvia direttamente |
 | **Core MiSTer** FPGA, 320×240 a 15 kHz | DE10-Nano con MiSTer | `PaddWS_MiSTer_AAAAMMGG.zip`: si scompatta nella radice della SD (`/media/fat`), compare tra i titoli arcade; oppure con update_all ([come](mister/README.md#installazione)) |
-| **Commodore 64** (PAL e NTSC), assembly 6502 | C64, C64 Ultimate, VICE | `paddws-X.Y.Z-c64.zip`: le cartucce EasyFlash `paddws.crt` (PAL) e `paddws-ntsc.crt` |
+| **Commodore 64** (PAL e NTSC), assembly 6502 | C64, C64 Ultimate, VICE | `paddws-X.Y.Z-c64.zip`: le cartucce EasyFlash `paddws-horizontal-pal.crt` e `paddws-horizontal-ntsc.crt`, e quelle con il campo girato, `paddws-vertical-pal.crt` e `paddws-vertical-ntsc.crt` |
 | **Python** (Arcade 3.3), la prima versione | Windows, Linux, macOS, Raspberry Pi | `paddws-X.Y.Z-python.zip`: `pip install -r python/requirements.txt`, poi `python python/main.py` |
 
 Tutto è nelle [release](https://github.com/Schermobianco/PaddWS/releases). La versione Python è

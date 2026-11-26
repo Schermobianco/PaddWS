@@ -1,7 +1,10 @@
 """Crea la cartuccia EasyFlash della versione C64 (.crt, tipo hardware 32), senza dipendenze.
 
 Uso:
-    python tools/make_crt.py OUT.crt BOOT.bin PROGRAMMA.prg PICK.bin FINALE.bin OMEGA.bin VOCE0.prg [... VOCE7.prg]
+    python tools/make_crt.py [--pads FILE] [--name NOME] OUT.crt BOOT.bin PROGRAMMA.prg PICK.bin FINALE.bin OMEGA.bin VOCE0.prg [... VOCE7.prg]
+    (--pads: le immagini delle racchette al posto di c64/gen/paddles.bin, per il campo girato;
+    --name: il nome nell'intestazione del .crt, al posto di "PADD WS": lo mostrano VICE e il
+    C64 Ultimate, e distingue le quattro cartucce)
 
 Banchi e indirizzi in c64/src/ef.inc:
 - BOOT.bin: gli 8 KB della ROMH del banco 0 (c64/src/crt.s), a $E000 nel modo Ultimax
@@ -150,6 +153,19 @@ def win_bank(first: bytes) -> bytes:
 
 
 def main() -> None:
+    global PADS
+    # --pads FILE: le immagini delle racchette di un'altra versione (il campo girato:
+    # c64/gen/rotated/paddles.bin, 16 KB nella ROML e nella ROMH del banco PAD_BANK)
+    # --name NOME: il nome nell'intestazione del .crt (al più 31 caratteri ASCII)
+    name = b"PADD WS"
+    while len(sys.argv) > 2 and sys.argv[1] in ("--pads", "--name"):
+        if sys.argv[1] == "--pads":
+            PADS = Path(sys.argv[2])
+        else:
+            name = sys.argv[2].encode("ascii")
+        del sys.argv[1:3]
+    if not 0 < len(name) < 32:
+        sys.exit(f"--name: {len(name)} caratteri, ne servono da 1 a 31")
     if len(sys.argv) < 7:
         sys.exit(__doc__)
     out, boot, program = Path(sys.argv[1]), Path(sys.argv[2]).read_bytes(), Path(sys.argv[3])
@@ -162,7 +178,6 @@ def main() -> None:
     image = b"\x00" + prg(program, PRG_START + 1)
     if not PRG_END - PRG_START <= len(image) <= BOOT_END - PRG_START:
         sys.exit(f"{program}: non finisce tra ${PRG_END - 1:04X} e ${BOOT_END - 1:04X}")
-    name = b"PADD WS"
     header = (b"C64 CARTRIDGE   " + struct.pack(">IHHBB", 0x40, 0x0100, HW_EASYFLASH, 1, 0)
               + bytes(6) + name + bytes(32 - len(name)))
     chips = [chip(0, 0xA000, boot)]
@@ -264,9 +279,11 @@ def main() -> None:
         chips.append(chip(KP_BANK + i // (2 * HALF), 0x8000 + i // HALF % 2 * HALF, kpick[i:i + HALF]))
     assert VOICE_BANK0 + 7 <= PICK_BANK < WIN_BANK < END_BANK < HI_BANK < HI_BANK + 8 <= HOWTO_BANK < HOWTO_BANK + 2 <= OM_BANK < KP_BANK
     pads = PADS.read_bytes()
-    if len(pads) != 7 * 1024:
-        sys.exit(f"{PADS}: {len(pads)} byte invece di 7168")
-    chips.append(chip(PAD_BANK, 0x8000, pads))
+    if len(pads) not in (7 * 1024, 16 * 1024):
+        sys.exit(f"{PADS}: {len(pads)} byte invece di 7168 (o 16384, il campo girato)")
+    chips.append(chip(PAD_BANK, 0x8000, pads[:HALF]))
+    if len(pads) > HALF:
+        chips.append(chip(PAD_BANK, 0xA000, pads[HALF:]))
     assert KP_BANK + (len(kpick) - 1) // (2 * HALF) < PAD_BANK < 64
     out.write_bytes(header + b"".join(chips))
     print(f"{out}: {len(chips)} pezzi da 8 KB")

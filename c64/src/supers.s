@@ -49,9 +49,17 @@ SM_PAGES = >(__SMCODE_SIZE__ + 255)
 
 MAX_LEVEL  = 2                  ; MAX_SPECIAL_LEVEL
 SM_CELL    = P_SUPER_METER_MAX / 4  ; barra: quattro celle, due per settore
+.ifdef ROTATED
+; campo girato: nella fascia, colonna ROT_HUD_COL, riga 14 chi gioca in basso (sinistro), 10 chi
+; gioca in alto (destro): gli indirizzi dalla riga 10
+BAR_ROW    = 10
+BAR_COL_L  = 4 * 40 + ROT_HUD_COL
+BAR_COL_R  = ROT_HUD_COL
+.else
 BAR_ROW    = 1                  ; barra: riga e prima colonna di ciascun lato, accanto alle riserve
 BAR_COL_L  = 6
 BAR_COL_R  = 30
+.endif
 SM_FLASH   = (12 * TV_HZ + 25) / 50 ; frame del lampo dell'impennata
 SFX_MOVE    = SID_EFFECTS + 1   ; sm_fxp: effetti 6 e 7 del player (sid.s, fx_start)
 SFX_SPECIAL = SID_EFFECTS + 2
@@ -212,9 +220,17 @@ min_tab: .dword T_SM_MIN_STRAIGHT, T_SM_MIN_RISE
 ; la scritta (bianca, poi gialla) con i trattini accesi, poi lampeggia; via dopo un secondo. La mossa
 ; che sparisce senza il colpo (un punto) toglie i trattini. Si ridisegna solo quando cambia quello
 ; che deve esserci (mv_key), e solo se il frame ha tempo.
+.ifdef ROTATED
+; campo girato: nella metà di chi fa la mossa, righe 5-6 in alto e 18-19 in basso, centrate nelle 30
+; colonne; gli indirizzi delle righe li riscrive mv_rows per il lato (MV_ROW 0 è solo la base)
+MV_ROW    = 0
+MV_COL    = (ROT_FIELD_COLS - 17) / 2
+.else
 MV_ROW    = 4                   ; sotto i punteggi (righe 1-3)
 MV_COL    = 2                   ; prima colonna a sinistra, a destra MV_COL + 19: 17 celle
+.endif
 MV_W      = 17                  ; "MAX STRAIGHT SHOT"
+MV_ROAD   = P_WIDTH >> 17          ; strada della palla in pixel doppi (160, nel campo girato 100)
 MV_STEP   = 2                   ; armata: un trattino ogni MV_STEP frame (SPECIAL_DASH_STEP)
 MV_BLOCK  = (2 * TV_HZ + 25) / 50 ; colpo (a 50 Hz): blocchi bianchi (SPECIAL_BLOCK), lettere bianche
 MV_WHITE  = (3 * TV_HZ + 25) / 50 ; fino a MV_WHITE (SPECIAL_WHITE), trattini accesi fino a MV_LIT
@@ -223,7 +239,11 @@ MV_BLINK  = (37 * TV_HZ + 25) / 50 ; spenta e 7 accesa), via a MV_END (SPECIAL_H
 MV_END    = (50 * TV_HZ + 25) / 50
 MV_ALL    = 32                  ; mv_key: armata i trattini disegnati (meno di tutti) o MV_ALL +
 MV_HIT    = 64                  ; quelli accesi; al colpo MV_HIT + la fase (mv_r4m)
+.ifdef ROTATED
+.assert MV_COL + MV_W <= ROT_FIELD_COLS, error, "scritte delle mosse sul muro"
+.else
 .assert MV_COL + 19 + MV_W <= 38 .and MV_COL + MV_W <= 19, error, "scritte delle mosse sul muro o sulla mezzeria"
+.endif
 
 ; (next_fx_scene la chiama solo con sm_on e con qualcosa da fare: un colpo con la mossa, una
 ; scritta o una mossa armata.)
@@ -359,7 +379,7 @@ all:
     bne :+
     eor #$ff                    ; il giocatore sinistro: dal bordo destro
     sec
-    adc #160
+    adc #MV_ROAD
 :   sta mv_tmp
     lda #0
     sta mv_acc
@@ -378,7 +398,7 @@ mul:
 div:
     lda mv_acc
     sec
-    sbc #160
+    sbc #MV_ROAD
     sta mv_acc
     lda mv_acc+1
     sbc #0
@@ -466,10 +486,13 @@ title:
     lsr a
     clc
     adc #MV_COL
+.ifndef ROTATED
     cpx #0
     beq :+
     adc #19 - 1                 ; (C = 1 da cpx)
-:   sta mv_col
+:
+.endif
+    sta mv_col
     rts
 .endproc
 mv_titles: .byte "MAX STRAIGHT SHOT", "MAX RISING STRIKE"
@@ -479,6 +502,9 @@ mv_titles: .byte "MAX STRAIGHT SHOT", "MAX RISING STRIKE"
     stx mv_side
     jsr shots_erase             ; (i colpi del BLASTER rimetterebbero quello che c'era)
     ldx mv_side
+.ifdef ROTATED
+    jsr mv_rows
+.endif
     jsr mv_geometry
     ; come disegnare: lettere (mv_r4: 0 vuote, 1 blocchi, 2 lettere) e trattini (mv_r5: 0 no, 1
     ; sì), colori; per la mossa armata i trattini disegnati (mv_shown) e quelli accesi (mv_lit)
@@ -531,7 +557,9 @@ loop:
     cmp #' '
     bne letter
     lda #CH_BLANK
+mv_l1:
     sta SCREEN + MV_ROW * 40,y
+mv_d1:
     sta SCREEN + (MV_ROW + 1) * 40,y
     jmp next
 letter:
@@ -548,11 +576,15 @@ letter:
     tax
     lda font_map,x
 put:
+mv_l2:
     sta SCREEN + MV_ROW * 40,y
     lda mv_c4
+mv_lc:
     sta $d800 + MV_ROW * 40,y
-    ; il trattino della lettera k, contata dal lato del giocatore
+    ; il trattino della lettera k, contata dal lato del giocatore (campo girato: da sinistra per
+    ; tutti e due, scelta dell'utente)
     lda mv_j
+.ifndef ROTATED
     ldx mv_side
     beq :+
     eor #$ff
@@ -560,7 +592,9 @@ put:
     adc mv_n
     sec
     sbc #1                      ; mv_n - 1 - j
-:   sta mv_k
+:
+.endif
+    sta mv_k
     lda mv_r5
     beq nodash
     lda mv_k
@@ -586,12 +620,14 @@ put:
     bcc color
     lda #COL_MGRAY
 color:
+mv_dc:
     sta $d800 + (MV_ROW + 1) * 40,y
     lda mv_dash
     bne dash
 nodash:
     lda #CH_BLANK
 dash:
+mv_d2:
     sta SCREEN + (MV_ROW + 1) * 40,y
     inc mv_j
 next:
@@ -622,21 +658,62 @@ mv_hcol: .byte COL_WHITE, COL_WHITE, COL_YELLOW, COL_YELLOW, COL_WHITE
     ldx mv_side
     lda #$ff
     sta mv_key,x
+.ifdef ROTATED
+    jsr mv_rows
+    ldy #MV_COL
+.else
     lda #MV_COL
     cpx #0
     beq :+
     lda #MV_COL + 19
 :   tay
+.endif
     lda #MV_W
     sta mv_tmp
     lda #CH_BLANK
+mv_l3:
 :   sta SCREEN + MV_ROW * 40,y
+mv_d3:
     sta SCREEN + (MV_ROW + 1) * 40,y
     iny
     dec mv_tmp
     bne :-
     rts
 .endproc
+
+.ifdef ROTATED
+; Campo girato: negli sta delle due righe della scritta (mv_draw, mv_erase) gli indirizzi delle
+; righe del lato X: lettere nella riga 5 (in alto) o 18 (in basso), trattini nella riga dopo.
+.proc mv_rows
+    lda mv_rl,x
+    sta mv_draw::mv_l1+1
+    sta mv_draw::mv_l2+1
+    sta mv_draw::mv_lc+1
+    sta mv_erase::mv_l3+1
+    lda mv_rh,x
+    sta mv_draw::mv_l1+2
+    sta mv_draw::mv_l2+2
+    sta mv_erase::mv_l3+2
+    clc
+    adc #>($d800 - SCREEN)
+    sta mv_draw::mv_lc+2
+    lda mv_rl+2,x
+    sta mv_draw::mv_d1+1
+    sta mv_draw::mv_d2+1
+    sta mv_draw::mv_dc+1
+    sta mv_erase::mv_d3+1
+    lda mv_rh+2,x
+    sta mv_draw::mv_d1+2
+    sta mv_draw::mv_d2+2
+    sta mv_erase::mv_d3+2
+    clc
+    adc #>($d800 - SCREEN)
+    sta mv_draw::mv_dc+2
+    rts
+.endproc
+mv_rl: .byte <(SCREEN + 18 * 40), <(SCREEN + 5 * 40), <(SCREEN + 19 * 40), <(SCREEN + 6 * 40)
+mv_rh: .byte >(SCREEN + 18 * 40), >(SCREEN + 5 * 40), >(SCREEN + 19 * 40), >(SCREEN + 6 * 40)
+.endif
 
 ; stato delle scritte, per lato (mv_st azzerato da hud_reset), poi le temporanee
 mv_st:    .byte 0, 0            ; 0 nessuna, 1 mossa armata (trattini), 2 colpo
@@ -967,9 +1044,15 @@ half_out:
 ; età delle tre direzioni, poi il fuoco che completa un gesto, se la mossa può partire, diventa la
 ; mossa (e non attiva il bonus). X e Y restano.
 .proc sm_joy
+.ifdef ROTATED
+    lda joy_raw,y               ; (campo girato: per tutti e due i gesti del giocatore sinistro di
+    sta m_lo                    ; oggi, sul joystick com'è: avanti è destra, giù è giù)
+    and #JOY_RIGHT
+.else
     lda joy,y                   ; tenute: bit 0 giù, 1 giù-avanti, 2 avanti, e il bit 3 che
     sta m_lo                    ; ferma il conto delle età
     and toward,y
+.endif
     beq not_fw
     lda m_lo
     and #JOY_DOWN | JOY_UP
@@ -1092,13 +1175,23 @@ pads:
     lsr a
     bcs :+
     lda #COL_YELLOW
+.ifdef ROTATED
+    sta shb_col + SPN_MC        ; (campo girato: il multicolore della metà in basso)
+    sta shb_col + SPN_MC + 1
+.else
     sta sh_col + SPN_PAD
+.endif
 :   lda sm_arm+4
     beq :+
     lsr a
     bcs :+
     lda #COL_YELLOW
+.ifdef ROTATED
+    sta sh_col + SPN_MC         ; (e della metà in alto)
+    sta sh_col + SPN_MC + 1
+.else
     sta sh_col + SPN_PAD + 1
+.endif
 :
     ; il resto solo con il frame indietro: suono, barre e icone guardano il tempo solo se hanno
     ; da fare (un frame avanti lo resta fino alla fine)

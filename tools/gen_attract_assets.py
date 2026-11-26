@@ -26,7 +26,7 @@ VERILOG = ROOT / "mister" / "rtl" / "gen" / "pong_attract.vh"
 
 W, H = 320, 240
 
-BOOT_LINES = ["PADD WS  V4.6", "", "RAM ........ OK", "ROM ........ OK", "VIDEO 240P .. OK", "AUDIO ...... OK"]
+BOOT_LINES = ["PADD WS  V4.7", "", "RAM ........ OK", "ROM ........ OK", "VIDEO 240P .. OK", "AUDIO ...... OK"]
 STRINGS = {
     "insert_coin": "INSERT COIN",
     "press_start": "PRESS START",

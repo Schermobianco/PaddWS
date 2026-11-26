@@ -495,6 +495,11 @@ pad:
     bcc :+
     ldx #K_ARCADE
 :   stx pi_kind
+.ifdef ROTATED
+    txa                         ; (campo girato: le astronavi della partita, posa e serie del lato)
+    ldx pi_side
+    jsr ship_load
+.else
     lda pv_rows,x
     sta pi_n
     lda pv_var,x
@@ -504,6 +509,7 @@ pad:
     lda #P_BLASTER_SHOTS
     jsr mag_setup
 :   jsr pad_image
+.endif
     ldy pi_side
     lda #1
     sta pd_dirty,y
@@ -993,8 +999,39 @@ kv_tag_col:   .byte KP_TAG_COL0, KP_TAG_COL1
 .segment "KVCODE2"
 
 ; Le due racchette nel campo (sprite 3 e 4, immagini fatte nel caricamento): a grandezza reale,
-; con il davanti verso la mezzeria; quella di OMEGA rossa.
+; con il davanti verso la mezzeria; quella di OMEGA rossa. Nel campo girato le astronavi della
+; partita (ship_vs).
 .proc kv_pads
+.ifdef ROTATED
+    ; le due astronavi caricate da ship_load (il giocatore con la posa in basso, l'altro con quella
+    ; in alto, come nella scelta), a metà fra il ritratto e la mezzeria; quella di OMEGA rossa
+    ldy #1
+side:
+    lda sv_x,y
+    sta ship_x
+    ldx kv_kind,y
+    cpx #OMEGA_KIND
+    bcc :+
+    ldx #K_ARCADE               ; (OMEGA: l'immagine di ARCADE)
+:   lda #SHIP_VS_TOP
+    cpy #0
+    bne :+
+    clc
+    adc rp_dy,x
+:   sta ship_y
+    tya
+    pha
+    asl a
+    asl a
+    tax                         ; sprite da 4 * lato
+    lda kv_kind,y               ; (per il colore: OMEGA rosso)
+    jsr ship_regs               ; (Y = serie = lato)
+    pla
+    tay
+    dey
+    bpl side
+    rts
+.else
     ldy #1
 side:
     tya
@@ -1035,7 +1072,15 @@ color:
     dey
     bpl side
     rts
+.endif
 .endproc
+.ifdef ROTATED
+SHIP_VS_TOP = SPR_Y0 + KV_PAD_CY - 14       ; la posa in alto (il disegno finisce alla riga 20)
+SV_CX0 = ((KP_PANEL_COL0 + KP_PANEL_W) * 8 + 160) / 2     ; centri: fra il ritratto e la mezzeria
+SV_CX1 = (KP_PANEL_COL1 * 8 + 160) / 2
+sv_x: .byte SPR_X0 + SV_CX0 - 24, SPR_X0 + SV_CX1 - 24
+.assert SPR_X0 + SV_CX1 + 24 < 256, error, "VS: astronavi senza il nono bit"
+.endif
 
 ; Colore A del trattino della scala ch_level (due celle della riga 0).
 .proc kv_rung

@@ -29,28 +29,45 @@ jobs:
         working-directory: rust
         run: cargo run --release -p paddws-c64 -- params --check
 
-      - name: Assembla (PAL e NTSC)
-        run: sh c64/build.sh && sh c64/build.sh --ntsc
+      - name: Assembla (PAL e NTSC, campo di oggi e girato)
+        run: |
+          sh c64/build.sh && sh c64/build.sh --ntsc
+          sh c64/build.sh --rotated && sh c64/build.sh --rotated --ntsc
 
       - name: Aritmetica contro il core Rust
         working-directory: rust
-        run: cargo run --release -p paddws-c64 -- math && cargo run --release -p paddws-c64 -- --ntsc math
+        run: |
+          for rot in "" --rotated; do
+            cargo run --release -p paddws-c64 -- $rot math && cargo run --release -p paddws-c64 -- $rot --ntsc math
+          done
 
       - name: Partite tick per tick contro il core Rust
         working-directory: rust
-        run: cargo run --release -p paddws-c64 -- game && cargo run --release -p paddws-c64 -- --ntsc game
+        run: |
+          for rot in "" --rotated; do
+            cargo run --release -p paddws-c64 -- $rot game && cargo run --release -p paddws-c64 -- $rot --ntsc game
+          done
 
       - name: Player del SID contro quello Verilog
         working-directory: rust
-        run: cargo run --release -p paddws-c64 -- sid && cargo run --release -p paddws-c64 -- --ntsc sid
+        run: |
+          for rot in "" --rotated; do
+            cargo run --release -p paddws-c64 -- $rot sid && cargo run --release -p paddws-c64 -- $rot --ntsc sid
+          done
 
       - name: Scene e menu senza cicli infiniti
         working-directory: rust
-        run: cargo run --release -p paddws-c64 -- ui && cargo run --release -p paddws-c64 -- --ntsc ui
+        run: |
+          for rot in "" --rotated; do
+            cargo run --release -p paddws-c64 -- $rot ui && cargo run --release -p paddws-c64 -- $rot --ntsc ui
+          done
 
       - name: Cicli per frame
         working-directory: rust
-        run: cargo run --release -p paddws-c64 -- frames && cargo run --release -p paddws-c64 -- --ntsc frames
+        run: |
+          for rot in "" --rotated; do
+            cargo run --release -p paddws-c64 -- $rot frames && cargo run --release -p paddws-c64 -- $rot --ntsc frames
+          done
 
       - name: Pacchetto
         id: package
@@ -58,8 +75,10 @@ jobs:
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' rust/Cargo.toml | head -1)
           dir="paddws-$version-c64"
           mkdir -p "$dir"
-          cp c64/build/paddws.crt "$dir/"
-          cp c64/build/ntsc/paddws.crt "$dir/paddws-ntsc.crt"
+          cp c64/build/paddws.crt "$dir/paddws-horizontal-pal.crt"
+          cp c64/build/ntsc/paddws.crt "$dir/paddws-horizontal-ntsc.crt"
+          cp c64/build/rotated/paddws.crt "$dir/paddws-vertical-pal.crt"
+          cp c64/build/rotated/ntsc/paddws.crt "$dir/paddws-vertical-ntsc.crt"
           cp LICENSE THIRD_PARTY.md "$dir/"
           zip -r -X "$dir.zip" "$dir"
           echo "dir=$dir" >> "$GITHUB_OUTPUT"

@@ -43,7 +43,6 @@ C_DGRAY, C_GRAY, C_LGRAY = 11, 12, 15
 PORTRAIT_COL = (0, 29)          # ritratti grandi 11x13 celle dalla riga 5
 PORTRAIT_ROW = 5
 PANEL_W, PANEL_H = 11, 17       # pannello: il ritratto e sotto il nome (righe 18-21)
-NAME_CY = 160                   # centro del nome (pixel)
 GRID_X, GRID_Y, CELL = 96, 40, 32
 NET_X, COURT_Y, COURT_H = 159, 104, 72
 TITLE_ROW = 0
@@ -99,6 +98,33 @@ def png(name: str) -> Img:
 
 def mirror(img: Img) -> Img:
     return [row[::-1] for row in img]
+
+
+def art_bottom(img: Img) -> int:
+    """Riga dopo l'ultima con il disegno (il resto è nero)."""
+    return max(y for y, row in enumerate(img) if any(row)) + 1
+
+
+# Come gen_portraits.py e paddle_ui.rs (4.6.4): i personaggi finiscono tutti sulla stessa riga, il
+# nome a metà fra quella e la frase. Qui i ritratti scendono a passi di una cella (8 pixel): sono
+# multicolor ritoccati a mano, e uno spostamento che non è un multiplo di 8 cambia i colori delle
+# celle. ART_BASE è il fondo più basso (ARCADE).
+ART_BASE = max(art_bottom(png(k)) for k in NAMES)
+
+
+def art_drop(kind: str, base: int = ART_BASE) -> int:
+    """Di quanto scende il ritratto: il multiplo di 8 che lo porta più vicino a `base` senza superarlo."""
+    return (base - art_bottom(png(kind))) // 8 * 8
+
+
+# centro del nome (pixel dello schermo della scelta): a metà fra il fondo dei personaggi e il
+# primo pixel delle maiuscole della frase (riga TAG_ROW); i nomi alti scendono quanto basta per
+# cominciare a NAME_TOP_MIN: lo split del raster spegne il multicolor nella prima riga delle celle
+# hires (vuota) e, quando arriva tardi (nella scelta del campo girato gli otto sprite delle
+# astronavi sono su quelle righe), anche la riga dopo è ancora multicolor: con il nome lì la sua
+# riga in alto lampeggiava (TITAN, 2026-11-25)
+NAME_CY = (PORTRAIT_ROW * 8 + ART_BASE + TAG_ROW * 8) // 2
+NAME_TOP_MIN = 13 * 8 + 3       # riga del pannello: tre righe vuote dopo l'inizio delle hires
 
 
 def name_art(kind: str) -> Img:
@@ -266,14 +292,14 @@ def panel(kind: str, side: int) -> tuple[bytes, Img]:
     l'immagine resa, per le prove."""
     img = blank(PANEL_W * 8, PANEL_H * 8)
     portrait = png(kind)
-    paste(img, mirror(portrait) if side else portrait, 0, 0)
+    paste(img, mirror(portrait) if side else portrait, 0, art_drop(kind))
     art = name_art(kind)
     w, h = len(art[0]), len(art)
     x0 = PORTRAIT_COL[side] * 8
     mid = x0 + PANEL_W * 4
     half = w / 2 + 2
     cx = min(max(mid, half), 320 - half)
-    ax, ay = round(cx - w / 2) - x0, NAME_CY - round(h / 2) - PORTRAIT_ROW * 8
+    ax, ay = round(cx - w / 2) - x0, max(NAME_CY - round(h / 2) - PORTRAIT_ROW * 8, NAME_TOP_MIN)
     assert 0 <= ax and ax + w <= PANEL_W * 8 and 13 * 8 <= ay and ay + h <= PANEL_H * 8, (kind, ax, ay)
     paste(img, art, ax, ay, transparent=-1)
     out = bytearray()
@@ -369,7 +395,8 @@ def omega_panel(side: int) -> bytes:
     panel() con mc."""
     img = blank(PANEL_W * 8, OMEGA_PANEL_H * 8)
     portrait = png("omega")
-    paste(img, mirror(portrait) if side else portrait, 0, 0)
+    # il pannello parte una riga prima di quelli dei tipi: OMEGA finisce con loro
+    paste(img, mirror(portrait) if side else portrait, 0, art_drop("omega", ART_BASE + 8))
     roles = TITLE_SPEC["palette"]
     art = [[-1 if roles[r] in ("transparent", "dark_red") else TITLE_C64[roles[r]] for r in row]
            for row in title_roles("name_omega")]
@@ -398,7 +425,8 @@ def omega_panel(side: int) -> bytes:
 
 def vs_colors() -> bytes:
     """Colori dello schermo VS (4 pagine da $C000): neri, salvo le celle delle scritte (il livello
-    giallo, i motti bianchi, le icone gialle, FIRST TO grigio, i punti bianchi). Scala, rete, ritratti
+    giallo, i motti bianchi, le icone bianche come su PC e MiSTer dalla 4.6.4, FIRST TO grigio, i
+    punti bianchi). Scala, rete, ritratti
     e nomi li colora il programma."""
     colors = bytearray(1024)
 
@@ -408,7 +436,7 @@ def vs_colors() -> bytes:
     span(VS_LEVEL_ROW, 11, 18, C_YELLOW)
     span(VS_TAG_ROW, 0, 40, C_WHITE)
     for r in (VS_ICON_ROW, VS_ICON_ROW + 1):
-        span(r, 0, 40, C_YELLOW)
+        span(r, 0, 40, C_WHITE)
     span(VS_FIRST_ROW, 0, 40, C_LGRAY)
     span(VS_SCORE_ROW, 0, 40, C_WHITE)
     span(0, 0, 40, C_WHITE)            # P1 e P2 della sfida, i duelli vinti (la scala la colora il programma)

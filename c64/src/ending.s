@@ -539,7 +539,11 @@ e_bcol:  .byte COL_WHITE
     sta sh_yexp
     sta sh_xexp
     sta sh_enable
+.ifdef ROTATED
+    jmp ship_spread              ; (campo girato: l'astronave della partita)
+.else
     rts
+.endif
 .endproc
 
 .proc theend_frame
@@ -556,6 +560,9 @@ e_bcol:  .byte COL_WHITE
     clc
     adc #SPR_Y0 + 66
     sta sh_y+3
+.ifdef ROTATED
+    jsr ship_spread
+.endif
     lda #<E_THEEND
     ldx #>E_THEEND
     jsr at_time
@@ -605,10 +612,20 @@ e_io:    .byte 0                ; fuori dall'overlay dei fuochi: resta 0 dopo la
     lda #$ff
     sta pd_n
     sta pd_n+1
+.ifdef ROTATED
+    lda #SPRITE_BANDS           ; (campo girato: tutte le bande EVO da rifare, una per frame in
+    sta ship_bands              ; close_frame: le astronavi del finale ne hanno preso gli sprite)
+.endif
     rts
 .endproc
 
 .proc close_frame
+.ifdef ROTATED
+    lda ship_bands              ; (campo girato: prima le bande EVO che le astronavi hanno preso,
+    beq :+                      ; una per frame)
+    jmp band_step
+:
+.endif
     lda e_io                    ; prima gli sprite e il titolo, se la sfilata li ha coperti
     beq :+
     jmp e_restore
@@ -759,6 +776,9 @@ e_line:  .byte 0
     lda #D018_B
 :   sta $d018
     jsr fw_frame
+.ifdef ROTATED
+    jsr ship_spread_fw           ; (campo girato: l'astronave della partita)
+.endif
     lda #<E_CHAMP
     ldx #>E_CHAMP
     jsr at_time
@@ -1168,8 +1188,13 @@ rocket_img:                     ; multicolore: testa bianca (%10), scia gialla (
     .byte $00, $20, $00
     .byte $00, $20, $00
     .byte $00, $00, $00
+.ifdef ROTATED                 ; (campo girato: $D026 è il grigio scuro delle astronavi, %10 è
+    .byte $00, $20, $00         ; bianco come oggi)
+    .byte $00, $20, $00
+.else
     .byte $00, $30, $00
     .byte $00, $30, $00
+.endif
     .byte $00, $00, $00
     .byte $00, $10, $00
     .res 64 - 21, 0
@@ -1458,7 +1483,11 @@ next:
     sta sh_enable
     lda #%00001111              ; razzi 0-2 e astronave vincitrice 3 multicolore
     sta sh_mc
+.ifdef ROTATED
+    lda #0                      ; (campo girato: in partita le astronavi non si allungano)
+.else
     lda #%00001000              ; astronave 3 alta 2x come in partita
+.endif
     sta sh_yexp
     lda #0
     sta sh_xexp
@@ -2065,6 +2094,11 @@ out:
     cmp #1
     bne no_build
     ; costruisce in SP_PAD0 lo sprite dell'astronave vincitrice (frame 1: cielo vuoto, budget ampio)
+.ifdef ROTATED
+    lda #0                      ; (campo girato: la copia la fa ship_spread)
+    sta ship_part
+    rts
+.else
     ldx e_win
     stx pi_kind
     lda #0
@@ -2085,6 +2119,7 @@ out:
     lda #1
     sta pd_dirty
     rts
+.endif
 no_build:
     cmp #20
     jcc off
@@ -2330,5 +2365,198 @@ fm3   = m_b                     ; crepitio: (età + i) mod 3
 fslot = fw_slot
 .segment "ENDE"
 fw_slot: .res 1
+
+.ifdef ROTATED
+; Campo girato: l'astronave della partita nei fuochi e in THE END (prima in rot_video.s; qui, a
+; pezzi dove c'è posto, per lasciare spazio nel programma). ENDD ed ENDE arrivano dopo la voce di
+; YOU WIN, prima dei fuochi.
+.segment "ENDC"
+; Finale (fuochi e THE END): lo sprite 3 lo muove il codice di oggi (x, nono bit, espansioni, y,
+; colore dei lampi, acceso), qui diventa l'astronave della partita negli sprite 4-7. In THE END con
+; il centro dove sarebbe il suo (e il suo ingrandimento 2x); nei fuochi (ss_fw) il percorso girato
+; come il campo: l'astronave punta in su, quindi entra dal basso, sale piano e salta in alto, senza
+; allungarsi (la x del modello diventa la y, il suo ondeggiare va di lato); lo sprite 3 punta a uno sprite vuoto (SS_EMPTY, della serie 1, che il finale
+; non usa: azzerato una volta). Non basta spostarlo: i frame dei fuochi sono lunghi e l'interrupt
+; può applicare le ombre fra chi lo muove e questa. Prima la posa del vincitore, una parte al frame
+; (ship_copy: anche dopo la voce di YOU WIN).
+SS_DY    = 10                   ; il disegno della posa sta nelle prime righe dello sprite
+SS_EMPTY = SHIP_SLOT0 + 7
+SS_FW_XC = 165                  ; fuochi: x del modello a metà della crociera (153-177)...
+SS_FW_Y  = SPR_Y0 + 62 + SS_DY  ; ...dove l'astronave ha la y di THE END
+SS_FW_SUM = SS_FW_Y + SS_FW_XC  ; y = SS_FW_SUM - x del modello
+.proc ship_spread
+    lda #SS_EMPTY
+    sta sh_ptr+3
+    lda sh_y+3
+    sta ship_y
+    lda sh_enable               ; 4-7 spenti (0-2 i razzi, 3 il modello)
+    and #%00001111
+    sta sh_enable
+    lda ship_part
+    cmp #4
+    bcc :+
+    jmp ss_ready
+:
+    lda #0                      ; (lo sprite vuoto da rifare: la serie 1 può avere altro)
+    sta ss_clear
+    sta ship_dgray              ; (il grigio scuro solo con l'astronave a schermo)
+    lda e_win
+    ldx #0
+    ldy #0
+    jmp ship_copy
+.endproc
+; Fuochi (champ_frame): come ship_spread, e i puntatori degli sprite 3-7 anche nel secondo schermo
+; (gli schermi si scambiano; apply_shadows scrive solo quelli del primo).
+.proc ship_spread_fw
+    inc ss_fw
+    jsr ship_spread
+    dec ss_fw
+    ldx #4
+:   lda sh_ptr+3,x
+    sta SCREEN + $400 + $3f8 + 3,x
+    dex
+    bpl :-
+    rts
+.endproc
+
+ss_hi:    .res 1
+ss_fw:    .byte 0               ; 1: fuochi (ship_spread_fw)
+ss_clear: .res 1                ; SS_EMPTY azzerato
+
+.segment "ENDD"
+; ship_spread, con la posa già copiata: lo sprite vuoto, poi dove va l'astronave
+.proc ss_ready
+    lda ss_clear
+    bne :+
+    bit $fffb                   ; (con la voce l'I/O resta acceso: al frame dopo)
+    bmi :+
+    sei
+    lda #$34
+    sta $01
+    lda #0
+    ldx #63
+clear:
+    sta $C000 + SS_EMPTY * 64,x
+    dex
+    bpl clear
+    lda #$35
+    sta $01
+    cli
+    inc ss_clear                ; (ship_bands c'è già: la copia della posa viene prima)
+:   lda sh_enable
+    and #$08
+    bne :+
+    sta ship_dgray              ; (A = 0: niente astronave)
+    rts
+:   lda ss_fw
+    beq still
+    ; fuochi: in verticale; il suo ondeggiare (la y del modello) di lato
+    lda ship_y
+    sec
+    sbc #SPR_Y0 + 62
+    clc
+    adc #SPR_X0 + 160 - 24
+    sta ship_x
+    lda #0
+    sta ss_hi
+    lda #24
+    sta ship_t
+    lda sh_msb                  ; y = SS_FW_SUM - x a 9 bit, fra 0 (bordo in alto) e 255 (in basso)
+    and #$08
+    cmp #$08
+    lda #0
+    rol a
+    sta ship_k
+    lda #<SS_FW_SUM
+    sec
+    sbc sh_x+3
+    tax
+    lda #>SS_FW_SUM
+    sbc ship_k
+    bmi top
+    beq :+
+    ldx #255
+    bne :+
+top:
+    ldx #0
+:   stx ship_y
+    jmp ss_place
+still:
+    ldx #24                     ; larghezza di uno sprite
+    lda sh_xexp
+    and #$08
+    beq :+
+    ldx #48
+:   stx ship_t
+    txa
+    lsr a
+    sta ship_k                  ; mezza: l'astronave è larga il doppio dello sprite 3
+    lda sh_msb
+    and #$08
+    cmp #$08                    ; C = nono bit
+    lda #0
+    rol a
+    sta ss_hi
+    lda sh_x+3
+    sec
+    sbc ship_k
+    sta ship_x
+    lda ss_hi
+    sbc #0
+    bcs :+
+    lda #0                      ; (entrata da sinistra: dietro il bordo)
+    sta ship_x
+:   sta ss_hi
+    lda ship_y
+    clc
+    adc #SS_DY
+    sta ship_y
+    jmp ss_place
+.endproc
+
+.segment "ENDE"
+; ship_spread: i quattro sprite, i noni bit, le espansioni e il colore dei lampi
+.proc ss_place
+    ldx #4
+    ldy #0
+    lda e_win
+    jsr ship_regs
+    lda ship_x                  ; gli sprite di destra e i noni bit
+    clc
+    adc ship_t
+    sta sh_x+5
+    sta sh_x+7
+    lda ss_hi
+    adc #0
+    beq :+
+    lda sh_msb
+    ora #%10100000
+    sta sh_msb
+:   lda ss_hi
+    beq :+
+    lda sh_msb
+    ora #%01010000
+    sta sh_msb
+:   lda ss_fw                   ; le espansioni dello sprite 3 (non nei fuochi)
+    bne color
+    lda sh_xexp
+    and #$08
+    beq :+
+    lda sh_xexp
+    ora #%11110000
+    sta sh_xexp
+:   lda sh_yexp
+    and #$08
+    beq :+
+    lda sh_yexp
+    ora #%11110000
+    sta sh_yexp
+color:
+:   lda sh_col+3                ; il colore (e i lampi) nei multicolore
+    sta sh_col+6
+    sta sh_col+7
+    rts
+.endproc
+.endif
 
 .segment "CODE"

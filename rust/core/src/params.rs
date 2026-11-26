@@ -21,6 +21,10 @@ pub const C64_TICK_HZ: u32 = 50;
 /// Campo del C64: tutto lo schermo del VIC-II.
 pub const C64_WIDTH: u32 = 320;
 pub const C64_HEIGHT: u32 = 200;
+/// Campo del C64 girato: 200 pixel da una porta all'altra (lo schermo in verticale) e 240 lungo le
+/// racchette (30 colonne; le altre 10 sono la fascia dell'HUD, fuori dal campo).
+pub const C64_ROTATED_WIDTH: u32 = 200;
+pub const C64_ROTATED_HEIGHT: u32 = 240;
 
 pub const BASE_WIDTH: u32 = 800;
 pub const BASE_HEIGHT: u32 = 480;
@@ -251,6 +255,11 @@ pub struct Tuning {
     pub serve_delay: f64,
     /// frequenza della simulazione (tick al secondo)
     pub tick_hz: u32,
+    /// scala delle velocità della palla (e di colpi e capsule) al posto della media delle scale
+    /// del campo: per un campo con proporzioni diverse da 800x480 (il C64 girato). None: la media
+    pub ball_speed_scale: Option<f64>,
+    /// lo stesso per le racchette
+    pub pad_speed_scale: Option<f64>,
     pub next: NextTuning,
 }
 
@@ -262,6 +271,48 @@ impl Tuning {
             height: C64_HEIGHT,
             tick_hz: C64_TICK_HZ,
             ..Self::default()
+        }
+    }
+
+    /// Valori del C64 girato: campo 200x240, un tick per frame a 50 Hz, niente fascia dell'HUD nel
+    /// campo. Le velocità non seguono la scala media del campo (che le farebbe più alte rispetto alla
+    /// strada tra le porte). La palla: la scala di oggi per 0,7, scelta dell'utente provando 0,605
+    /// (lo stesso tempo da una racchetta all'altra del C64 di oggi in NEXT, misurato: sembrava lenta),
+    /// 0,8 e 1 (gli stessi pixel per tick: troppo veloce). Con 0,7 va da una faccia all'altra nell'86%
+    /// del tempo di oggi (NEXT, dal 1° al 12° colpo, 3,58 -> 1,26 s contro 4,16 -> 1,45). Le racchette attraversano i loro 240 pixel nello stesso tempo in cui oggi
+    /// attraversano i 200 (la scala di oggi per 240/200; agli stessi pixel per tick sembravano lente).
+    /// STRAIGHT SHOT moltiplica la velocità per 1,5 al più (al livello 2), come RISING STRIKE.
+    pub fn c64_rotated() -> Self {
+        // (misurato con le racchette che inseguono la palla, tests/game.rs)
+        const C64_ROTATED_BALL: f64 = 0.7;
+        let today = (C64_WIDTH as f64 / BASE_WIDTH as f64 + C64_HEIGHT as f64 / BASE_HEIGHT as f64) / 2.0;
+        let mut t = Self {
+            width: C64_ROTATED_WIDTH,
+            height: C64_ROTATED_HEIGHT,
+            tick_hz: C64_TICK_HZ,
+            ball_speed_scale: Some(today * C64_ROTATED_BALL),
+            pad_speed_scale: Some(today * C64_ROTATED_HEIGHT as f64 / C64_HEIGHT as f64),
+            // 4 pixel come oggi (con 10 sarebbero 2,5: il C64 vuole metà larghezza intera)
+            pad_width: 16.0,
+            // a 14 pixel dal bordo (12,5 senza): le 15 righe del BLASTER dietro la faccia stanno nello
+            // schermo
+            pad_start_pos: 56.0,
+            ..Self::default()
+        };
+        t.next.hud_band = 0.0;
+        // STRAIGHT SHOT x1,25 e x1,5 (come RISING STRIKE) invece di x1,5 e x2: nel campo corto le
+        // mosse sembravano troppo veloci (l'utente, 2026-11-25)
+        t.next.super_straight_multiplier = 1.5;
+        t
+    }
+
+    /// Il C64 girato NTSC: come `c64_rotated`, a 60 tick al secondo. Le racchette sono più veloci
+    /// del 20% (240/200) come sul PAL: per un po' sono state al 10%, finché i frame dell'NTSC non
+    /// ci stavano (ora ci stanno: i laser del BLASTER e gli sprite costano meno).
+    pub fn c64_rotated_ntsc() -> Self {
+        Self {
+            tick_hz: 60,
+            ..Self::c64_rotated()
         }
     }
 }
@@ -291,6 +342,8 @@ impl Default for Tuning {
             boost_min_area_ratio: 20.0,
             serve_delay: 0.5,
             tick_hz: TICK_HZ,
+            ball_speed_scale: None,
+            pad_speed_scale: None,
             next: NextTuning::default(),
         }
     }
@@ -463,6 +516,8 @@ impl Params {
         let sx = t.width as f64 / BASE_WIDTH as f64;
         let sy = t.height as f64 / BASE_HEIGHT as f64;
         let s = (sx + sy) / 2.0;
+        // velocità della palla e delle racchette (di solito con la scala media)
+        let (bs, ps) = (t.ball_speed_scale.unwrap_or(s), t.pad_speed_scale.unwrap_or(s));
         assert!(t.tick_hz >= 1, "tick_hz must be positive");
         // tick della simulazione per ogni tick di riferimento a 60 Hz
         let substeps = t.tick_hz as f64 / 60.0;
@@ -519,15 +574,15 @@ impl Params {
             PaddleParams {
                 height: h,
                 inv_half_height: fixed::recip(h / 2),
-                max_speed: speed(t.pad_max_speed * pace * s),
-                acceleration: accel(t.pad_acceleration * pace * s),
-                fast_acceleration: accel(t.pad_fast_acceleration * pace * s),
+                max_speed: speed(t.pad_max_speed * pace * ps),
+                acceleration: accel(t.pad_acceleration * pace * ps),
+                fast_acceleration: accel(t.pad_fast_acceleration * pace * ps),
                 fwd_pos: px((t.pad_start_pos + (t.pad_forward_pos - t.pad_start_pos) * dash) * sx),
-                fwd_max_speed: speed(t.pad_max_speed * pace * fwd_pace * s),
-                fwd_acceleration: accel(t.pad_acceleration * pace * fwd_pace * s),
-                fwd_fast_acceleration: accel(t.pad_fast_acceleration * pace * fwd_pace * s),
+                fwd_max_speed: speed(t.pad_max_speed * pace * fwd_pace * ps),
+                fwd_acceleration: accel(t.pad_acceleration * pace * fwd_pace * ps),
+                fwd_fast_acceleration: accel(t.pad_fast_acceleration * pace * fwd_pace * ps),
                 encoder_step: if pace < 1.0 {
-                    speed(k.encoder_max_speed * pace * s)
+                    speed(k.encoder_max_speed * pace * ps)
                 } else {
                     0
                 },
@@ -541,19 +596,19 @@ impl Params {
             ball_radius: px(t.ball_radius * s),
             ball_radius_boost: px(t.ball_radius_boost * s),
             ball_radius_boost_fwd: px(t.ball_radius_boost_fwd * s),
-            max_ball_speed_1p: speed(max1 * s),
-            max_ball_speed_2p: speed(max2 * s),
+            max_ball_speed_1p: speed(max1 * bs),
+            max_ball_speed_2p: speed(max2 * bs),
             kspeed_1p: fixed::from_f64(k1),
             kspeed_2p: fixed::from_f64(k2),
-            serve_unit: speed(s),
+            serve_unit: speed(bs),
             pad_width: px(t.pad_width * sx),
             pad_height,
             pad_start_pos: px(t.pad_start_pos * sx),
             pad_fwd_pos: px(t.pad_forward_pos * sx),
-            pad_max_speed: speed(t.pad_max_speed * s),
-            pad_acceleration: accel(t.pad_acceleration * s),
-            pad_fast_acceleration: accel(t.pad_fast_acceleration * s),
-            pad_deceleration: accel(t.pad_deceleration * s),
+            pad_max_speed: speed(t.pad_max_speed * ps),
+            pad_acceleration: accel(t.pad_acceleration * ps),
+            pad_fast_acceleration: accel(t.pad_fast_acceleration * ps),
+            pad_deceleration: accel(t.pad_deceleration * ps),
             pad_stop_speed: speed(0.1),
             pad_inv_half_height: fixed::recip(pad_height / 2),
             wall_inv_half_height: fixed::recip(fixed::int(t.height as i32) / 2),
@@ -564,10 +619,10 @@ impl Params {
             boost_levels,
             serve_ticks: ticks(t.serve_delay),
             kspeed_next: fixed::from_f64(kn),
-            max_ball_speed_next: speed(maxn * s),
+            max_ball_speed_next: speed(maxn * bs),
             capsule_half: px(n.capsule_size * s / 2.0),
-            capsule_speed: speed(n.capsule_speed * s),
-            capsule_drift: speed(n.capsule_drift * s),
+            capsule_speed: speed(n.capsule_speed * bs),
+            capsule_drift: speed(n.capsule_drift * bs),
             capsule_margin_top: px(n.hud_band * sy),
             spawn_ticks: ticks(n.spawn_seconds).max(1),
             spawn_jitter: ticks(n.spawn_jitter_seconds),
@@ -581,7 +636,7 @@ impl Params {
             bullet_ramp_ticks: ticks(n.bullet_ramp_seconds),
             bullet_shift: speed_shift(n.bullet_speed),
             bullet_ramp_shift: speed_shift(n.bullet_ramp_speed),
-            encoder_hand_step: speed(k.encoder_max_speed * s),
+            encoder_hand_step: speed(k.encoder_max_speed * ps),
             slow_ticks: ticks(n.slow_seconds),
             bonus_cooldown_ticks: ticks(n.cooldown_seconds),
             hitstop_ticks: ticks(n.hitstop_seconds),
@@ -589,8 +644,8 @@ impl Params {
             slow_mul: fixed::from_f64(n.slow_multiplier),
             slow_back: fixed::from_f64(1.0 / n.slow_multiplier.max(0.01)),
             super_mul: fixed::from_f64(n.super_multiplier),
-            curve_accel: accel(n.curve_accel * s),
-            steer_accel: accel(n.steer_accel * s),
+            curve_accel: accel(n.curve_accel * bs),
+            steer_accel: accel(n.steer_accel * bs),
             super_meter_max: n.super_meter_max.clamp(1, 127) as u8,
             super_gain_hit: n.super_gain_hit.min(127) as u8,
             super_gain_dash: n.super_gain_dash.min(127) as u8,
@@ -605,8 +660,8 @@ impl Params {
                 .unwrap_or(0),
             // in virgola fissa dalla velocità massima: nel firmware del MiSTer, che calcola i
             // parametri di ogni difficoltà, la virgola mobile emulata costerebbe centinaia di byte
-            super_min_vx_straight: fixed::mul(speed(maxn * s), fixed::from_f64(n.super_min_speed_straight)),
-            super_min_vx_rise: fixed::mul(speed(maxn * s), fixed::from_f64(n.super_min_speed_rise)),
+            super_min_vx_straight: fixed::mul(speed(maxn * bs), fixed::from_f64(n.super_min_speed_straight)),
+            super_min_vx_rise: fixed::mul(speed(maxn * bs), fixed::from_f64(n.super_min_speed_rise)),
             kinds: PaddleKind::ALL.map(kind),
             arcade_cooldown_ticks: ticks(k.arcade_cooldown_seconds),
             arcade_spawn_ticks: ticks(k.arcade_spawn_seconds).max(1),
@@ -618,7 +673,7 @@ impl Params {
             blaster_shots: k.blaster_shots.clamp(1, 7) as u8,
             blaster_gap_ticks: ticks(k.blaster_gap_seconds),
             blaster_reload_ticks: ticks(k.blaster_reload_seconds).max(1),
-            blaster_shot_speed: speed(k.blaster_shot_speed * s),
+            blaster_shot_speed: speed(k.blaster_shot_speed * bs),
             blaster_band: px(k.blaster_band * sy),
             blaster_slow_ticks: ticks(k.blaster_slow_seconds),
             blaster_dash: k.blaster_dash,

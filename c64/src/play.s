@@ -104,6 +104,7 @@ win_pg:    .res 1               ; YOU WIN o PERFECT nel GAME OVER: 0 no, 1-16 pr
 .endproc
 .segment "CODE"
 
+.ifndef ROTATED                 ; (campo girato: rot_video.s)
 .proc irq_handler
     pha
     inc frame_flag
@@ -116,6 +117,7 @@ win_pg:    .res 1               ; YOU WIN o PERFECT nel GAME OVER: 0 no, 1-16 pr
     rti
 .endproc
 
+.endif
 ; RESTORE: ignorato. Sotto $8000: con il vettore dell'NMI nel file voce (bit 7 del byte alto)
 ; la musica tace (sid_tick, sid_fx).
 .proc nmi_handler
@@ -1667,6 +1669,11 @@ not_volume:
     rts
 .endproc
 
+.ifdef ROTATED
+CD_COL = 14                     ; cifra del conto alla rovescia: al centro del campo girato
+.else
+CD_COL = 19
+.endif
 ; Conto alla rovescia: 3, 2, 1 al centro; la logica è ferma. In CHALLENGE la voce dice "READY?"
 ; al primo frame e "GO!" al via, al posto del bip (voice.s: con il SID della voce sid_fx tace).
 .proc count_scene
@@ -1679,7 +1686,15 @@ not_volume:
     cmp #COUNT_FRAMES / 2
     bne :+
     jsr shot_glyphs
-:   lda timer
+:
+.ifdef ROTATED
+    lda timer                   ; (campo girato: nomi e chi gioca nella fascia, nel secondo frame,
+    cmp #COUNT_FRAMES - 1       ; leggero: il primo prepara la partita)
+    bne :+
+    jsr rot_names
+:
+.endif
+    lda timer
     jsr VOICE_COUNT             ; RTS senza file e fuori da CHALLENGE (start_game)
     ldx #3
     lda timer
@@ -1699,7 +1714,7 @@ not_volume:
     jsr sid_fx
 first:
     lda cd_digit
-    ldx #19
+    ldx #CD_COL
     ldy #11
     jsr draw_digit
 :   dec timer
@@ -1709,11 +1724,24 @@ first:
     ; via: torna la mezzeria
     lda #11
     sta v_row
-:   jsr center_line_row
+:
+.ifdef ROTATED
+    ldy v_row                   ; (campo girato: la cifra nelle colonne 14 e 15, poi la riga 12)
+    ldx #CD_COL
+    lda #CH_BLANK
+    jsr put_char
+    ldy v_row
+    ldx #CD_COL + 1
+    lda #CH_BLANK
+    jsr put_char
+    jsr center_line_row
+.else
+    jsr center_line_row
     ldy v_row
     ldx #21
     lda #CH_BLANK
     jsr put_char
+.endif
     inc v_row
     lda v_row
     cmp #14
@@ -1901,6 +1929,9 @@ OV_PAGES = >(__OVCODE_SIZE__ + 255)
 .assert ((OV_IMG - $0800) .mod $4000) + $0400 <= $2000, error, "GAME OVER oltre la ROML del banco"
 .proc enter_over
     jsr shots_erase             ; le scritte vanno sul campo pulito
+.ifdef ROTATED
+    jsr warp_end                ; (campo girato: via la maschera del salto del TELEPORT)
+.endif
     lda #ST_OVER
     sta state
     lda #SID_SONG_GAME_OVER
@@ -1934,13 +1965,18 @@ OV_PAGES = >(__OVCODE_SIZE__ + 255)
     jmp draw_big
 .endproc
 ; (PERFECT, OV_PERFECT, non è una scritta: è la grafica di ovc, tp_draw)
+.ifdef ROTATED
+OV_W = ROT_FIELD_COLS           ; scritte del GAME OVER centrate nel campo (girato: 30 colonne)
+.else
+OV_W = 40
+.endif
 over_lo:  .lobytes big_game_over, big_you_win, big_p1_wins, big_p2_wins, big_cpu_wins
 over_hi:  .hibytes big_game_over, big_you_win, big_p1_wins, big_p2_wins, big_cpu_wins
 over_w:   .byte BIG_GAME_OVER_W, BIG_YOU_WIN_W, BIG_P1_WINS_W, BIG_P2_WINS_W, BIG_CPU_WINS_W
 ; celle per lettera: 2 le scritte a 2x (GAME OVER, YOU WIN), 1 le altre (la riga sotto vuota)
 over_k:   .byte BIG_GAME_OVER_K, BIG_YOU_WIN_K, BIG_P1_WINS_K, BIG_P2_WINS_K, BIG_CPU_WINS_K
-over_col: .byte (40 - BIG_GAME_OVER_W) / 2, (40 - BIG_YOU_WIN_W) / 2, (40 - BIG_P1_WINS_W) / 2
-          .byte (40 - BIG_P2_WINS_W) / 2, (40 - BIG_CPU_WINS_W) / 2
+over_col: .byte (OV_W - BIG_GAME_OVER_W) / 2, (OV_W - BIG_YOU_WIN_W) / 2, (OV_W - BIG_P1_WINS_W) / 2
+          .byte (OV_W - BIG_P2_WINS_W) / 2, (OV_W - BIG_CPU_WINS_W) / 2
 
 ; Tempi delle animazioni (attract.rs, a 50 Hz), in frame da quando il codice è tutto copiato.
 OA_NET     = 40                 ; mezzeria spenta dall'alto (NET_OFF)
@@ -1968,15 +2004,15 @@ OA_LAST    = OA_FIRST + OA_HOP * (HOP_N - 1)  ; sull'ultima lettera
 OV_ROW   = 10                   ; righe delle scritte: in alto e sotto
 OV_ROW2  = 13
 OV_BOX_W  = BIG_GAME_OVER_W + 2 ; riquadro nero delle scritte, attorno alla più larga
-OV_BOX_C0 = (40 - OV_BOX_W) / 2
+OV_BOX_C0 = (OV_W - OV_BOX_W) / 2
 .assert BIG_GAME_OVER_W >= BIG_CPU_WINS_W .and BIG_GAME_OVER_W >= BIG_YOU_WIN_W .and BIG_GAME_OVER_W + 2 >= TP_W, error, "GAME OVER: il riquadro attorno alla scritta più larga"
 ; PERFECT (gen/assets.inc, TP_*): le sue righe di celle dalla riga sopra quella delle scritte, le
 ; tre fasce e la riga sotto, fino a quella di chi ha vinto (OV_ROW2), dentro il riquadro
 TP_ROW   = OV_ROW - 1
-TP_COL   = (40 - TP_W) / 2
+TP_COL   = (OV_W - TP_W) / 2
 TP_COLOR = $d800 + TP_ROW * 40 + TP_COL
 .assert TP_ROW + TP_H = OV_ROW2 .and TP_ROW = 9, error, "PERFECT: righe fra il riquadro e chi ha vinto"
-HOP_COL  = (40 - BIG_YOU_WIN_W) / 2
+HOP_COL  = (OV_W - BIG_YOU_WIN_W) / 2
 HOP_X    = SPR_X0 + HOP_COL * 8 + 6         ; palla (4x4) sulla prima lettera di YOU WIN
 HOP_Y    = SPR_Y0 + OV_ROW * 8 - 5
 HOP_COLOR = $d800 + OV_ROW * 40 + HOP_COL
@@ -2337,6 +2373,23 @@ field:
     lsr a
     lsr a
     lsr a
+.ifdef ROTATED
+    ; (campo girato: nella riga della mezzeria le colonne k e k + 15, in 15 passi)
+    cmp #15
+    bcs :+
+    tay
+    lda #<(SCREEN + ROT_LINE_ROW * 40)
+    sta ptr
+    lda #>(SCREEN + ROT_LINE_ROW * 40)
+    sta ptr+1
+    jsr dash
+    tya
+    adc #15                     ; (C = 0)
+    tay
+    jsr dash
+:   clc
+    rts
+.else
     tay
     lda row_lo,y
     sta ptr
@@ -2348,6 +2401,7 @@ field:
     jsr dash
     clc
     rts
+.endif
 dash:
     lda (ptr),y
     cmp #CH_LINE_L
@@ -2361,6 +2415,15 @@ pads:
     bne cut
     ; spenta la mezzeria, via la palla e il resto; le racchette a metà altezza (non espanse, al
     ; centro di dov'erano: le immagini cominciano dalla riga in alto)
+.ifdef ROTATED
+    ; (campo girato: le astronavi restano come sono, sprite 2-5 delle due metà)
+    lda sh_enable
+    and #%111100
+    sta sh_enable
+    lda shb_en
+    and #%111100
+    sta shb_en
+.else
     lda sh_enable
     and #%11 << SPN_PAD
     sta sh_enable
@@ -2376,12 +2439,16 @@ half:
     sta sh_y+SPN_PAD,x
     dex
     bpl half
+.endif
     lda ov_f
 cut:
     cmp #OA_NET + OA_PADS / 2   ; poi via anche loro
     bne done
     lda #0
     sta sh_enable
+.ifdef ROTATED
+    sta shb_en
+.endif
 done:
     clc
     rts
@@ -2464,10 +2531,15 @@ dot:
     ldy #12
     jsr ov_fill
     jsr net_plain               ; (dopo la CHALLENGE i caratteri sono della rete dell'avversario)
+.ifdef ROTATED
+    lda #CH_LINE_L              ; (campo girato: un trattino della mezzeria al centro del campo)
+    sta SCREEN + ROT_LINE_ROW * 40 + ROT_FIELD_COLS / 2
+.else
     lda #CH_LINE_L              ; un trattino di 2 pixel al centro
     sta SCREEN + 12 * 40 + 19
     lda #CH_LINE_R
     sta SCREEN + 12 * 40 + 20
+.endif
 :   sec
     rts
 black:
@@ -2687,6 +2759,33 @@ ov_win_tick
     ldx #OV_ROW
     jsr ov_colors
     lda ov_side
+.ifdef ROTATED
+    ; (campo girato: dal centro dell'astronave, sprite 2 della sua metà: in alto sh_*, in basso
+    ; shb_*)
+    beq :+
+    lda sh_y+SPN_HI
+    ldx sh_x+SPN_HI
+    ldy sh_msb
+    jmp :++
+:   lda shb_y+SPN_HI
+    ldx shb_x+SPN_HI
+    ldy shb_msb
+:   clc
+    adc #10
+    sta ov_by
+    tya
+    lsr a                       ; (nono bit dello sprite 2)
+    lsr a
+    and #1
+    sta ov_bx+1
+    txa
+    clc
+    adc #24
+    sta ov_bx
+    bcc :+
+    inc ov_bx+1
+:
+.else
     lsr a
     lsr a
     tax
@@ -2709,7 +2808,9 @@ ov_win_tick
     sta ov_bx
     bcc :+
     inc ov_bx+1
-:   lda #SP_BALL4
+:
+.endif
+    lda #SP_BALL4
     sta sh_ptr
     lda #COL_WHITE
     sta sh_col

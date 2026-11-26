@@ -50,17 +50,22 @@ if [ -z "$NOCHECK" ]; then
     grep -E "test result" /tmp/test.log | awk '{ p += $4; f += $6 } END { print "  test: " p " passati, " f " falliti" }'
     cd ..
 
-    step "controlli C64: banco di prova contro il core Rust (PAL e NTSC)"
-    before=$(md5sum c64/gen/params.inc c64/gen/ntsc/params.inc)
+    step "controlli C64: banco di prova contro il core Rust (PAL e NTSC, campo di oggi e girato)"
+    gens="c64/gen/params.inc c64/gen/ntsc/params.inc c64/gen/rotated/params.inc c64/gen/rotated/ntsc/params.inc"
+    # shellcheck disable=SC2086
+    before=$(md5sum $gens)
     (cd rust && cargo run --release -q -p paddws-c64 -- params --check > /dev/null)
-    [ "$(md5sum c64/gen/params.inc c64/gen/ntsc/params.inc)" = "$before" ] || { echo "c64/gen/params.inc o c64/gen/ntsc/params.inc non aggiornato"; exit 1; }
-    sh c64/build.sh
-    sh c64/build.sh --ntsc
-    for tv in "" --ntsc; do
-        for c in math game sid ui frames; do
-            # shellcheck disable=SC2086
-            (cd rust && cargo run --release -q -p paddws-c64 -- $tv $c) > /tmp/c64.log 2>&1 || { cat /tmp/c64.log; exit 1; }
-            echo "  ${tv:+NTSC }$c: $(tail -1 /tmp/c64.log)"
+    # shellcheck disable=SC2086
+    [ "$(md5sum $gens)" = "$before" ] || { echo "i params.inc di c64/gen non sono aggiornati"; exit 1; }
+    for rot in "" --rotated; do
+        sh c64/build.sh $rot
+        sh c64/build.sh $rot --ntsc
+        for tv in "" --ntsc; do
+            for c in math game sid ui frames; do
+                # shellcheck disable=SC2086
+                (cd rust && cargo run --release -q -p paddws-c64 -- $rot $tv $c) > /tmp/c64.log 2>&1 || { cat /tmp/c64.log; exit 1; }
+                echo "  ${rot:+girato }${tv:+NTSC }$c: $(tail -1 /tmp/c64.log)"
+            done
         done
     done
 
@@ -112,7 +117,13 @@ zipdir "paddws-$version-web"
 step "C64"
 sh c64/build.sh
 sh c64/build.sh --ntsc
-cp c64/build/ntsc/paddws.crt /tmp/paddws-ntsc.crt
-# il C64 scrive con il font della ROM della macchina: nessun font di terzi nella cartuccia
-stage c64 c64/build/paddws.crt /tmp/paddws-ntsc.crt LICENSE THIRD_PARTY.md
+sh c64/build.sh --rotated
+sh c64/build.sh --rotated --ntsc
+cp c64/build/paddws.crt /tmp/paddws-horizontal-pal.crt
+cp c64/build/ntsc/paddws.crt /tmp/paddws-horizontal-ntsc.crt
+cp c64/build/rotated/paddws.crt /tmp/paddws-vertical-pal.crt
+cp c64/build/rotated/ntsc/paddws.crt /tmp/paddws-vertical-ntsc.crt
+# il C64 scrive con il font della ROM della macchina: nessun font di terzi nella cartuccia; due
+# cartucce (campo di oggi, horizontal, e girato, vertical), PAL e NTSC
+stage c64 /tmp/paddws-horizontal-pal.crt /tmp/paddws-horizontal-ntsc.crt /tmp/paddws-vertical-pal.crt /tmp/paddws-vertical-ntsc.crt LICENSE THIRD_PARTY.md
 zipdir "paddws-$version-c64"

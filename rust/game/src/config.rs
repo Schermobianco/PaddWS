@@ -659,6 +659,8 @@ impl Config {
             boost_min_area_ratio: bo.min_area_ratio,
             serve_delay: self.game.serve_delay,
             tick_hz: paddws_core::TICK_HZ,
+            ball_speed_scale: None,
+            pad_speed_scale: None,
             next: self.next.tuning(),
         }
     }

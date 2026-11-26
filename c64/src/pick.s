@@ -756,9 +756,17 @@ duel:
     ldy #0
     jsr color_row
     ; mezzeria sotto il tempo
+.ifdef ROTATED
+    jsr today_glyphs            ; (campo girato: i caratteri della mezzeria di oggi, in verticale)
+.endif
     lda #6
     sta v_row
-:   jsr center_line_row
+:
+.ifdef ROTATED
+    jsr pick_line_row
+.else
+    jsr center_line_row
+.endif
     inc v_row
     lda v_row
     cmp #PICK_HINT
@@ -1175,10 +1183,12 @@ fx_done:
     cmp #2
     bcc :+
 pp_done:
+.ifndef ROTATED                 ; (campo girato: niente rotazione del SUPER, lì le pose del lato in alto)
     lda sp_k
     cmp #16
     bcs :+
     jsr spin_prep               ; poi quelle della rotazione del SUPER
+.endif
 :   ; riserve e selezioni come a schermo (quasi tutti i frame): solo le barriere
     ldx #2
 :   lda nx_res,x
@@ -1281,12 +1291,18 @@ slot:
     lda pk_i
     asl a
     ldx pk_p
+.ifdef ROTATED
+    adc #ROT_HUD_COL            ; (campo girato: nella fascia, colonna 31 + 2 * posto; C = 0)
+    sta v_col
+    lda hud_row,x
+.else
     beq :+
     eor #$ff
     sec
     adc #38
 :   sta v_col
     lda #0
+.endif
     sta v_row
     ; selezionato?
     lda #0
@@ -1337,7 +1353,14 @@ arrow:
     ldx #1
     jsr hud_color
     ; freccetta sotto il selezionato
+.ifdef ROTATED
+    lda v_row
+    clc
+    adc #2
+    tay
+.else
     ldy #2
+.endif
     lda row_lo,y
     sta ptr
     lda row_hi,y
@@ -1362,9 +1385,13 @@ arrow:
 
 empty_tmp = m_p                 ; quattro caratteri del posto vuoto (m_p non serve qui)
 
-; Posto vuoto alla colonna v_col, righe 0-1.
+; Posto vuoto alla colonna v_col, righe 0-1 (campo girato: v_row e la dopo).
 .proc put_empty
+.ifdef ROTATED
+    ldy v_row
+.else
     ldy #0
+.endif
     lda row_lo,y
     sta ptr
     lda row_hi,y
@@ -1391,6 +1418,12 @@ empty_tmp = m_p                 ; quattro caratteri del posto vuoto (m_p non ser
 .proc hud_color
     lda #2
     sta v_n
+.ifdef ROTATED
+    txa                         ; (campo girato: righe da v_row)
+    clc
+    adc v_row
+    tax
+.endif
     ldy v_col
     lda m_b
     jmp color_span
@@ -1612,10 +1645,13 @@ hw_t:   .res 2                  ; frame da quando si vede
 ; e la logica no. Si riscrivono solo le righe dei settori cambiati.
 BAR_ROW0   = 3
 BAR_FLASH  = (15 * TV_HZ + 25) / 50 ; frame del lampeggio (0,3 s)
+.ifndef ROTATED
 .assert P_BARRIER_X = 8 << 16, error, "caratteri della barriera fatti per x = 8 (gen_c64_assets.py)"
 ; (P_GUARDIAN_TOP è la y del core dell'estremo alto del muro: a schermo P_HEIGHT - P_GUARDIAN_TOP)
 .assert (BAR_ROW0 - 1) * 8 < (P_HEIGHT - P_GUARDIAN_TOP) >> 16 .and BAR_ROW0 * 8 >= (P_HEIGHT - P_GUARDIAN_TOP) >> 16, error, "muro del GUARDIAN: prima riga sotto la banda delle riserve"
+.endif
 
+.ifndef ROTATED                 ; (campo girato: rot_video.s)
 .proc draw_barrier
     lda nx_kind                 ; nessun GUARDIAN (quasi sempre): niente da fare
     cmp #K_GUARDIAN
@@ -1723,6 +1759,7 @@ next_side:
 .endproc
 
 bar_cols: .byte 0, 38           ; colonne della barriera (pixel 7-8 e 311-312)
+.endif
 
 ; ------------------------------------------------------------------------------------ BLASTER
 
@@ -1786,6 +1823,7 @@ fz_y    = m_p + 4
 .assert SHOT_P0 + SHOT_PN <= SHOT_B0 .and SHOT_PN = 8 * MAX_SHOTS, error, "colpi: un carattere fuso per cella di fascio"
 .assert SHOT_BOT = SHOT_TOP + 16 .and SHOT_BOT < 256, error, "colpi: fasci a due righe di celle, righe in un byte"
 
+.ifndef ROTATED                 ; (campo girato: rot_shots.s)
 .proc next_shots
     ; fuori dalla partita (anche nel GAME OVER, che ha appena tolto i colpi: enter_over) lo schermo
     ; è già un altro: i colpi si dimenticano. Al primo frame fuori dalla partita, comunque sia
@@ -2095,8 +2133,10 @@ done_cw:
     jmp next
 .endproc
 
+.endif
 shot_chars: .byte SHOT_CHARS
 
+.ifndef ROTATED                 ; (campo girato: rot_shots.s)
 ; Puntatori dei due fasci del colpo X: ptr e ptr2 l'alto, bd_pb e bd_kb il basso; fz_hi negativo
 ; se il fascio alto è nelle righe 0-3 (prima pagina dello schermo, sotto la riga 4: $D8 - $D8 con
 ; il prestito). X e Y restano. Sta sotto lo stack (STKCODE: in MAIN non c'è posto), copiato da
@@ -2295,9 +2335,11 @@ fz_r:   .res 1                  ; riga del tratto nella cella (0, 2, 4, 6) del c
 .segment "CODE"
 .segment "CODE"
 
+.endif
 ; Da bd_cell, con A = carattere sotto (da SH_LO in su): se è un colpo, da capo si continua (al
 ; frame dopo di nuovo da capo); per differenza ci si ferma, si cancella tutto (il colpo in esame
 ; ha a schermo solo le celle bd_k) e si ricomincia da capo. A resta.
+.ifndef ROTATED                 ; (campo girato: rot_shots.s)
 .proc bd_over
     cmp #SH_HI
     bcc shot
@@ -2377,6 +2419,7 @@ done:
 .endproc
 .assert <SCREEN = 0, error, "shots_off_hud: righe 0-3 nella prima pagina dello schermo"
 
+.endif
 ; Nel conto alla rovescia di NEXT (count_scene): i glifi dei fasci alle altezze 0-2 nei caratteri
 ; presi in prestito (da SHOT_B0, 7 per altezza), dal tratto dei caratteri del set (altezza 3, righe
 ; 6-7), circa 2.100 cicli. Fuori dalla partita next_shots li rimette vuoti, e al GAME OVER rifà le
@@ -2388,6 +2431,7 @@ SG_BLANK  = $FE                 ; caratteri dei tratti di nuovo vuoti, lettere 2
 SG_DST = CHARSET + 8 * SHOT_B0
 SG_SRC = CHARSET + 8 * SHOT_OWN + 2 * SHOT_H0
 .assert 8 * SHOT_BN <= 256 .and SHOT_BN = 3 * 7 .and SHOT_H0 = 3, error, "shot_glyphs: tre altezze prese (0-2), 168 byte"
+.ifndef ROTATED                 ; (campo girato: rot_shots.s)
 .proc shot_glyphs
     lda #SG_GLYPHS
     sta sg_on
@@ -2453,6 +2497,7 @@ glyph:
     rts
 .endproc
 
+.endif
 .segment "BSS"                  ; (non NEXTBSS: in fondo alla RAM bassa serve il posto a FZCODE)
 bar_shown: .res 2               ; settori del muro a schermo
 bar_prev:  .res 2               ; settori in piedi al frame prima
@@ -2470,6 +2515,10 @@ sd_cw:     .res 2 * MAX_SHOTS   ; colonna della prima cella, bit 7 due celle; $F
 sd_on:     .res 1               ; colpi con celle a schermo (bit k: colpo k)
 sg_on:     .res 1               ; 0, o SG_GLYPHS e seguenti: caratteri presi in prestito da rimettere
 .segment "CODE"
+
+.ifdef ROTATED
+.include "rot_shots.s"
+.endif
 
 ; ------------------------------------------------------------------------------------ effetti
 
@@ -2525,6 +2574,7 @@ done:
 ; bonus può coprirla). Racchetta avversaria, capsule e coda della palla sono negli sprite. Circa
 ; 1.500 cicli, solo all'inizio e alla fine del BULLET, e con il frame avanti al prossimo. X = 1
 ; con il bullet time, 0 senza, diverso da bl_on (next_fx_scene).
+.ifndef ROTATED                 ; (campo girato: rot_video.s)
 .proc bullet_look
     jsr frame_late
     bcs done
@@ -2583,10 +2633,12 @@ done:
     rts
 .endproc
 
+.endif
 .segment "RODATA"
 look_color: .byte COL_WHITE, COL_GRAY  ; senza e con il bullet time
 .segment "CODE"
 
+.ifndef ROTATED                 ; (campo girato: rot_video.s)
 ; Segni di STEER di st_drawn (1 sinistra, 5 destra): A = 1 disegna, 0 cancella. Chi guida da
 ; sinistra guida fino a x = 240 (colonne 29-30), da destra fino a x = 80 (colonne 9-10).
 .proc steer_marks
@@ -2641,6 +2693,7 @@ erase:
     rts
 .endproc
 
+.endif
 .segment "NEXTBSS"
 st_drawn:  .res 1               ; segni di STEER a schermo: 0, o 1 + lato di chi guida
 bl_on:     .res 1               ; colori del bullet time a schermo
@@ -2654,6 +2707,9 @@ bl_on:     .res 1               ; colori del bullet time a schermo
 PV_CY = 13 * 8 + 36             ; centro del campo (riga in pixel)
 
 .proc pick_preview
+.ifdef ROTATED
+    jmp rp_preview              ; (campo girato: le astronavi della partita)
+.else
     lda #0
     sta sh_enable
     lda hw_pg                   ; nella HOW TO PLAY nessuna anteprima
@@ -2739,6 +2795,7 @@ next:
     jne side
 done:
     jmp KP_RUN + 3
+.endif
 .endproc
 
 .segment "RODATA"
@@ -2747,14 +2804,17 @@ done:
     .byte ((h0 >> 16) + 1) / 2, ((h1 >> 16) + 1) / 2, ((h2 >> 16) + 1) / 2, ((h3 >> 16) + 1) / 2
     .byte ((h4 >> 16) + 1) / 2, ((h5 >> 16) + 1) / 2, ((h6 >> 16) + 1) / 2, ((h7 >> 16) + 1) / 2
 .endmacro
+.ifndef ROTATED                 ; (campo girato: le anteprime sono le astronavi, rp_preview)
 pv_rows: pv_rows_of T_KIND_H
 pv_var:  .byte 0, 0, 0, 3 + 3, BLASTER_VIS * 32, 0, 0, 0
 pv_x:    .byte SPR_X0 + 14 * 8 + 4 - 12, SPR_X0 + 25 * 8 + 4 - 12
+.endif
 .assert SPR_X0 + 25 * 8 + 4 - 12 < 256, error, "anteprime: bit alto della x"
 .segment "NEXTBSS"
 pv_kind: .res 2                 ; tipo nell'immagine dell'anteprima ($ff nessuna)
 .segment "CODE"
 
+.ifndef ROTATED                 ; (campo girato: le anteprime sono le astronavi, rp_preview)
 ; A + 8 - pad_dx del tipo X sul lato Y: la x di uno sprite di racchetta con la faccia dove sarebbe
 ; il corpo della racchetta senza tipo con lo sprite ad A. X e Y restano.
 .proc pad_face_x
@@ -2773,3 +2833,4 @@ pv_kind: .res 2                 ; tipo nell'immagine dell'anteprima ($ff nessuna
     ldx m_lo
     rts
 .endproc
+.endif

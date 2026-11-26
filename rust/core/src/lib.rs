@@ -26,5 +26,8 @@ pub use next::{
     Bonus, Capsule, GUARDIAN_SECTORS, GUARDIAN_WALL, MAX_SPECIAL_LEVEL, Next, NextPlayer, PaddleKind, Shot, Special, SuperAnim,
     bullet_ball_slow, guardian_sector, slowed, slowed_extra,
 };
-pub use params::{C64_TICK_HZ, DIFFICULTY_LEVELS, NextTuning, PaddleParams, PaddleTuning, Params, TICK_HZ, Tuning};
+pub use params::{
+    C64_ROTATED_HEIGHT, C64_ROTATED_WIDTH, C64_TICK_HZ, DIFFICULTY_LEVELS, NextTuning, PaddleParams, PaddleTuning, Params,
+    TICK_HZ, Tuning,
+};
 pub use rng::Rng;

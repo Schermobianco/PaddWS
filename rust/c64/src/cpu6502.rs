@@ -437,6 +437,9 @@ pub struct Cpu {
     /// l'altra)
     pub stamp: bool,
     pub write_cycles: Vec<u64>,
+    /// indirizzi di RAM letti o eseguiti (un byte per indirizzo; vuoto: non si tiene il conto).
+    /// PADDWS_C64_TOUCH del banco: per cercare codice e tabelle che una build non usa
+    pub touched: std::cell::RefCell<Vec<u8>>,
     /// cicli spesi per indirizzo di istruzione, durante `call` (vedi `paddws-c64 profile`)
     pub profile: Option<Vec<u64>>,
     /// profilo inclusivo, durante `call`: cicli per indirizzo di subroutine chiamata con JSR, con
@@ -453,6 +456,10 @@ pub struct Cpu {
     /// (si sommano, in AND, a quello che il programma scrive nel registro)
     pub joy_port2: u8,
     pub joy_port1: u8,
+    /// campo girato: indirizzi di `state` e `ctl_paddle`. Nel conto alla rovescia e in partita, con
+    /// i joystick, il programma rimappa i bit (rot_joy di input.s): qui la mappa inversa, così le
+    /// prove del banco premono su, giù e verso l'avversario come nel campo di oggi
+    pub rot_joy: Option<(u16, u16)>,
     /// ciclo dell'interrupt di raster alla riga 250, se il banco di prova esegue un frame: allora
     /// $D012 (e il bit 7 di $D011) danno la riga a cui sarebbe il VIC, con circa 58 cicli della
     /// CPU per riga (i 18.000 cicli utili del frame PAL sulle sue 312 righe; NTSC 59 su 263:
@@ -501,6 +508,19 @@ impl Default for Cpu {
 }
 
 impl Cpu {
+    /// Linee del joystick lette dal programma: nel campo girato, in partita, i comandi del banco
+    /// (su, giù, destra, sinistra come oggi) diventano quelli del joystick girato: su <- destra,
+    /// giù <- sinistra, destra <- su, sinistra <- giù (l'inversa di rot_joy).
+    fn rotated_joy(&self, v: u8) -> u8 {
+        let Some((state, paddle)) = self.rot_joy else { return v };
+        if !matches!(self.mem[state as usize], 6 | 7) || self.mem[paddle as usize] != 0 {
+            return v;
+        }
+        let p = !v & 0x0F;
+        let phys = (p & 1) << 3 | (p & 2) << 1 | (p & 8) >> 3 | (p & 4) >> 1;
+        (v | 0x0F) & !phys
+    }
+
     pub fn new() -> Self {
         Self {
             a: 0,
@@ -518,6 +538,7 @@ impl Cpu {
             writes: Vec::new(),
             stamp: false,
             write_cycles: Vec::new(),
+            touched: std::cell::RefCell::new(Vec::new()),
             profile: None,
             inclusive: None,
             mark_at: None,
@@ -526,6 +547,7 @@ impl Cpu {
             mark_fx: None,
             joy_port2: 0xFF,
             joy_port1: 0xFF,
+            rot_joy: None,
             frame_start: None,
             frame_flag_at: None,
             vic: Vic::default(),
@@ -663,8 +685,8 @@ impl Cpu {
             return self.char_rom[addr as usize - 0xD000];
         }
         match addr {
-            0xDC00 => self.mem[addr as usize] & self.joy_port2,
-            0xDC01 => self.mem[addr as usize] & self.joy_port1,
+            0xDC00 => self.mem[addr as usize] & self.rotated_joy(self.joy_port2),
+            0xDC01 => self.mem[addr as usize] & self.rotated_joy(self.joy_port1),
             0xDD0D => {
                 let v = self.cia2.flag.get() as u8 | if self.cia2.line.get() { 0x80 } else { 0 };
                 self.cia2.flag.set(false);
@@ -685,7 +707,14 @@ impl Cpu {
                 let irq = self.cycles.saturating_sub(self.frame_start.unwrap_or(0)) >= crate::frame_cycles();
                 self.mem[addr as usize] | irq as u8
             }
-            _ => self.mem[addr as usize],
+            _ => {
+                if let Ok(mut t) = self.touched.try_borrow_mut()
+                    && !t.is_empty()
+                {
+                    t[addr as usize] = 1;
+                }
+                self.mem[addr as usize]
+            }
         }
     }
 

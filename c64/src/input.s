@@ -43,6 +43,10 @@ KEY_PERIOD = 5 * 8 + 4
 ctl_paddle: .res 1              ; 0 joystick, 1 paddle
 joy:        .res 2              ; per giocatore: JOY_*, bit a 1 = premuto
 joy_prev:   .res 2
+.ifdef ROTATED
+joy_raw:    .res 2              ; (campo girato) il joystick com'è, prima di rot_joy: i gesti delle
+                                ; mosse speciali si fanno come oggi dal giocatore sinistro (sm_joy)
+.endif
 fire_edge:  .res 2              ; fuoco (o pulsante del paddle) appena premuto
 joy_edge:   .res 2              ; direzioni e fuoco appena premuti
 dir_prev:   .res 2
@@ -108,6 +112,10 @@ keys_any:   .res 1              ; qualche tasto premuto all'ultima scansione
     lda CIA1_PRA
     eor #$ff
     and #$1f
+.ifdef ROTATED
+    sta joy_raw
+    jsr rot_joy
+.endif
     sta joy
     eor joy_prev
     and joy
@@ -119,6 +127,10 @@ keys_any:   .res 1              ; qualche tasto premuto all'ultima scansione
     lda CIA1_PRB
     eor #$ff
     and #$1f
+.ifdef ROTATED
+    sta joy_raw+1
+    jsr rot_joy
+.endif
     sta joy+1
     eor joy_prev+1
     and joy+1
@@ -206,6 +218,34 @@ done:
 .endproc
 
 row_mask: .byte $fe, $fd, $fb, $f7, $ef, $df, $bf, $7f
+
+.ifdef ROTATED
+; Campo girato: nel conto alla rovescia e in partita (joystick, non paddle) i bit del joystick A
+; diventano quelli del campo di oggi, così comandi, scatti e gesti delle mosse restano uguali: su
+; (y che sale) dalla destra, giù dalla sinistra; verso l'avversario dal su del giocatore in basso
+; (destra di oggi) e dal giù di quello in alto (sinistra di oggi). Cambia Y.
+.proc rot_joy
+    ldy ctl_paddle
+    bne done
+    ldy state
+    cpy #ST_COUNT
+    bcc done
+    cpy #ST_PLAY + 1
+    bcs done
+    pha
+    and #$0f
+    tay
+    pla
+    and #JOY_FIRE
+    ora rot_jmap,y
+done:
+    rts
+.endproc
+rot_jmap:
+    .repeat 16, n
+    .byte ((n & JOY_RIGHT) >> 3) | ((n & JOY_LEFT) >> 1) | ((n & JOY_UP) << 3) | ((n & JOY_DOWN) << 1)
+    .endrepeat
+.endif
 
 ; C = 1 se il tasto A (KEY riga, colonna) è stato appena premuto.
 .proc key_pressed

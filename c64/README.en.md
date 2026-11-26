@@ -13,22 +13,46 @@ menu is not there: MAIN MENU stays.
 There are two cartridges, one for PAL and one for NTSC (with the core parameters at 60 Hz). The
 NTSC one has only been tested in VICE so far.
 
+### Rotated field
+
+A second version, on another cartridge, turns the field by 90 degrees: the paddles are at the
+bottom and at the top, the field is 240 pixels wide (30 columns) and 200 high, and the 10 columns
+on the right hold the band with names, scores, reserves, SUPER bars and points. This way the ships
+are in high resolution: one-pixel white over a multicolor layer, four sprites per paddle, the same
+ones for the top and the bottom paddle (they move at mid-screen). The match is the core's with
+`Tuning::c64_rotated()`: the ball crosses the field in about 86% of the time it takes on the
+other cartridge (the field is shorter: at the same speed in pixels it was too quick, in the same
+time it felt slow), and the paddles cross their 240 pixels in the time they take there to cross 200 (the same
+on NTSC, at 60 ticks per second: `Tuning::c64_rotated_ntsc()`). Menus and the screens outside the match are the
+usual ones, but wherever a paddle shows up (paddle pick, VS, OMEGA's intro, ending) it is the
+match ship. The TELEPORT jump breaks up by columns instead of rows, with a mask of characters
+over the ship. Compared with the other cartridge, the paddle spin with the SUPER armed is missing, and
+the TWIST has three tilts instead of seven, and STRAIGHT SHOT speeds the ball up at most 1.5 times
+(instead of 2), like RISING STRIKE. Build it with `-Rotated` and check it with `--rotated` (below).
+
 ## Running it
 
-`paddws.crt` (PAL) and `paddws-ntsc.crt` are in the release (`paddws-X.Y.Z-c64.zip`); after a
-build they are `c64\build\paddws.crt` and `c64\build\ntsc\paddws.crt`. Mount it
+`paddws-horizontal-pal.crt` and `paddws-horizontal-ntsc.crt` are in the release
+(`paddws-X.Y.Z-c64.zip`), together with the rotated-field ones, `paddws-vertical-pal.crt` and
+`paddws-vertical-ntsc.crt`; after a build they are `c64\build\paddws.crt`,
+`c64\build\ntsc\paddws.crt`, `c64\build\rotated\paddws.crt` and
+`c64\build\rotated\ntsc\paddws.crt`. The name written inside each one (VICE and the C64
+Ultimate show it) says which it is: `PADD WS HORIZONTAL PAL`, `PADD WS VERTICAL NTSC` and so on. Mount it
 in VICE or on the C64 Ultimate, or write it to an EasyFlash with EasyProg; it starts at power-on.
 For the high scores to stick, the `.crt` must be writable; in VICE:
 
 ```
-x64sc -easyflashcrtwrite -cartcrt paddws.crt
+x64sc -easyflashcrtwrite -cartcrt paddws-horizontal-pal.crt
 ```
 
 ## Controls
 
 - Joysticks in port 2 (left player) and port 1 (right), or a pair of paddles in port 1.
 - Up and down move the paddle (double tap: fast). Towards the opponent is the forward dash (and
-  the BLASTER shot), the opposite direction brings the paddle back.
+  the BLASTER shot), the opposite direction brings the paddle back. On the rotated field the
+  paddle moves left and right, and towards the opponent is up for the bottom player and down for
+  the top one; the special moves, instead, are done by both players like the left player on the
+  other cartridge (↓ ↘ → and → ↓ ↘ + fire).
 - Fire: in NEXT it uses the selected power-up, which changes by itself every second; in EVO it
   dashes.
 - NEXT special moves, with forward towards the opponent: ↓ ↘ → + fire STRAIGHT SHOT,
@@ -50,10 +74,12 @@ present) for `tools/make_crt.py`. VICE, in `C:\DEV\@Compiler\vice`, is only need
 ```powershell
 .\c64\build.ps1                 # c64\build\paddws.crt
 .\c64\build.ps1 -Ntsc           # c64\build\ntsc\paddws.crt
+.\c64\build.ps1 -Rotated        # rotated field: c64\build\rotated\paddws.crt (with -Ntsc the NTSC one)
 .\c64\shot.ps1 boot.png         # runs the cartridge in VICE without a window and saves a screenshot
 ```
 
-On Linux: `sh c64/build.sh` (`--ntsc` for the NTSC version; ca65, ld65 and python3 on the PATH).
+On Linux: `sh c64/build.sh` (`--ntsc` for the NTSC version, `--rotated` for the rotated field;
+ca65, ld65 and python3 on the PATH).
 
 Besides the cartridge, `c64\build` holds `paddws.prg` with its labels (`paddws.lbl`) and memory
 map (`paddws.map`), the ladder ending (`paddws.prg.end`), the OMEGA bank (`paddws.prg.omega`) and the voice files
@@ -61,7 +87,11 @@ map (`paddws.map`), the ladder ending (`paddws.prg.end`), the OMEGA bank (`paddw
 The test bench needs them: the `.prg` does not start on its own, it only runs from the cartridge.
 
 The files in `c64/gen/` are generated and committed: `tools/gen_c64_assets.py` makes the graphics,
-music and voices, `paddws-c64 params` makes `params.inc`. Do not edit them by hand.
+music and voices, `paddws-c64 params` makes `params.inc` (the rotated field's too), and
+`tools/gen_c64_rotated.py` makes the other rotated-field files in `c64/gen/rotated` (after
+`gen_c64_assets.py`: it starts from its files). Do not edit them by hand. The rotated-field ships
+are drawn in the paddle editor, platform "C64 girato" (`tools/c64_editor.py --paddle-c64h`), on two
+layers: the hires white and the multicolor underneath.
 
 C64 images can be retouched by hand with `tools/c64_editor.html`, which opens in Edge or Chrome
 with nothing to install: hires and multicolour bitmaps, characters, sprites, a cell grid with a
@@ -111,7 +141,7 @@ cargo run --release -p paddws-c64 -- frames           # cycles of every frame (a
 ```
 
 With `--ntsc` before the command (`paddws-c64 --ntsc frames`) the steps apply to the NTSC
-cartridge, built first with `-Ntsc`. These are the same steps as the `C64` GitHub Action. Also: `ending` plays only the ladder
+cartridge, built first with `-Ntsc`; with `--rotated` to the rotated-field one (also together). These are the same steps as the `C64` GitHub Action. Also: `ending` plays only the ladder
 ending, `profile` gives cycles per routine, `--build DIR` uses another build folder, and
 `game --ticks N` changes the length of the matches (5 minutes by default). To compare the test
 bench cycles with VICE: `tools\c64_vice_frames.py` captures the frames of a test build and
@@ -138,6 +168,9 @@ almost every match is BLASTER (shots on screen).
   opponents' entrances in the introduction, and the ending.
 - `src/play.s` — frame loop, scenes, menu, coins.
 - `src/attract.s`, `src/video.s`, `src/input.s` — attract mode, graphics, controls.
+- `src/rot_video.s`, `src/rot_shots.s` — the rotated field: sprites, mid-screen interrupt, field,
+  HUD band and BLASTER lasers (in place of the routines of `video.s` and `pick.s` with the same
+  names).
 - `src/sid.s` — the SID player, translated from `mister/rtl/pong_sid.v`.
 - `src/voice.s`, `src/voice.inc` — the ladder voice files (assembled separately, one per
   opponent).

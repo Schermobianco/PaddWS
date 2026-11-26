@@ -13,15 +13,37 @@ resta MAIN MENU.
 Ci sono due cartucce, una per il PAL e una per l'NTSC (con i parametri del core a 60 Hz). Quella
 NTSC finora è stata provata solo in VICE.
 
+### Campo girato
+
+Una seconda versione, su un'altra cartuccia, gira il campo di 90 gradi: le racchette stanno in
+basso e in alto, il campo è largo 240 pixel (30 colonne) e alto 200, e nelle 10 colonne a destra
+c'è la fascia con nomi, punteggi, riserve, barre del SUPER e punti. Così le astronavi sono in alta
+risoluzione: il bianco a un pixel sopra uno strato multicolore, quattro sprite per racchetta, gli
+stessi per la racchetta in alto e per quella in basso (si spostano a metà schermo). La partita è
+quella del core con `Tuning::c64_rotated()`: la palla attraversa il campo in circa l'86% del tempo
+dell'altra cartuccia (il campo è più corto: alla stessa velocità in pixel sarebbe stata troppo
+rapida, allo stesso tempo sembrava lenta), e le racchette attraversano i loro 240 pixel nello stesso tempo in cui lì
+attraversano i 200 (sull'NTSC lo stesso, a 60 tick al secondo: `Tuning::c64_rotated_ntsc()`). Menu e schermate
+fuori dalla partita sono quelli di sempre, ma dove compare una racchetta (scelta, VS, presentazione
+di OMEGA, finale) c'è l'astronave della partita. Il salto del TELEPORT si scompone a colonne invece che a righe,
+con una maschera di caratteri sopra l'astronave. Rispetto all'altra cartuccia manca la rotazione della
+racchetta con il SUPER armato, la TWIST ha tre inclinazioni invece di sette e STRAIGHT SHOT accelera la
+palla al più di 1,5 volte (invece di 2), come RISING STRIKE. Si costruisce con `-Rotated` e si verifica con
+`--rotated` (sotto).
+
 ## Avviare
 
-`paddws.crt` (PAL) e `paddws-ntsc.crt` sono nella release (`paddws-X.Y.Z-c64.zip`); dopo la
-compilazione sono `c64\build\paddws.crt` e `c64\build\ntsc\paddws.crt`. Si
+`paddws-horizontal-pal.crt` e `paddws-horizontal-ntsc.crt` sono nella release
+(`paddws-X.Y.Z-c64.zip`), insieme a quelle del campo girato, `paddws-vertical-pal.crt` e
+`paddws-vertical-ntsc.crt`; dopo la compilazione sono `c64\build\paddws.crt`,
+`c64\build\ntsc\paddws.crt`, `c64\build\rotated\paddws.crt` e
+`c64\build\rotated\ntsc\paddws.crt`. Il nome scritto dentro ognuna (lo mostrano VICE e il C64
+Ultimate) dice quale è: `PADD WS HORIZONTAL PAL`, `PADD WS VERTICAL NTSC` e così via. Si
 monta in VICE o sul C64 Ultimate, oppure si scrive in una EasyFlash con EasyProg, e parte
 all'accensione. Perché la classifica resti, il `.crt` deve essere scrivibile; in VICE:
 
 ```
-x64sc -easyflashcrtwrite -cartcrt paddws.crt
+x64sc -easyflashcrtwrite -cartcrt paddws-horizontal-pal.crt
 ```
 
 ## Comandi
@@ -29,7 +51,10 @@ x64sc -easyflashcrtwrite -cartcrt paddws.crt
 - Joystick nella porta 2 (giocatore sinistro) e nella porta 1 (destro), oppure una coppia di
   paddle nella porta 1.
 - Su e giù muovono la racchetta (doppio tocco: rapida). Verso l'avversario si scatta in avanti
-  (e si spara con il BLASTER), dalla parte opposta si rientra.
+  (e si spara con il BLASTER), dalla parte opposta si rientra. Nel campo girato la racchetta va a
+  destra e a sinistra, e verso l'avversario è su per chi gioca in basso, giù per chi gioca in alto;
+  le mosse speciali invece si fanno per tutti e due come il giocatore sinistro dell'altra
+  cartuccia (↓ ↘ → e → ↓ ↘ + fuoco).
 - Fuoco: in NEXT usa il bonus selezionato, che cambia da solo ogni secondo; in EVO scatta.
 - Mosse speciali di NEXT, con avanti verso l'avversario: ↓ ↘ → + fuoco STRAIGHT SHOT,
   → ↓ ↘ + fuoco RISING STRIKE. Con i paddle non ci sono: il pulsante scatta e i bonus si
@@ -50,10 +75,12 @@ Servono cc65 (ca65 e ld65) in `C:\DEV\@Compiler\cc65` e Python (quello di `.venv
 ```powershell
 .\c64\build.ps1                 # c64\build\paddws.crt
 .\c64\build.ps1 -Ntsc           # c64\build\ntsc\paddws.crt
+.\c64\build.ps1 -Rotated        # campo girato: c64\build\rotated\paddws.crt (con -Ntsc l'NTSC)
 .\c64\shot.ps1 boot.png         # avvia la cartuccia in VICE senza finestra e salva la schermata
 ```
 
-Su Linux: `sh c64/build.sh` (con `--ntsc` la versione NTSC; ca65, ld65 e python3 nel PATH).
+Su Linux: `sh c64/build.sh` (con `--ntsc` la versione NTSC, con `--rotated` il campo girato; ca65,
+ld65 e python3 nel PATH).
 
 Oltre alla cartuccia, in `c64\build` restano `paddws.prg` con le etichette (`paddws.lbl`) e la
 mappa (`paddws.map`), il finale della scalata (`paddws.prg.end`), il banco di OMEGA (`paddws.prg.omega`) e i file voce
@@ -61,7 +88,11 @@ mappa (`paddws.map`), il finale della scalata (`paddws.prg.end`), il banco di OM
 Servono al banco di prova: il `.prg` da solo non parte, gira solo dalla cartuccia.
 
 I file di `c64/gen/` sono generati e stanno nel repository: `tools/gen_c64_assets.py` per grafica,
-musica e voci, `paddws-c64 params` per `params.inc`. Non si modificano a mano.
+musica e voci, `paddws-c64 params` per `params.inc` (anche quelli del campo girato),
+`tools/gen_c64_rotated.py` per gli altri file del campo girato in `c64/gen/rotated` (dopo
+`gen_c64_assets.py`: parte dai suoi file). Non si modificano a mano. Le astronavi del campo girato
+si disegnano nell'editor delle racchette, piattaforma "C64 girato"
+(`tools/c64_editor.py --paddle-c64h`), su due livelli: il bianco hires e il multicolore sotto.
 
 Le immagini del C64 si ritoccano a mano con `tools/c64_editor.html`, che si apre in Edge o Chrome
 senza installare nulla: bitmap hires e multicolor, caratteri, sprite, griglia delle celle con
@@ -112,7 +143,7 @@ cargo run --release -p paddws-c64 -- frames           # cicli di ogni frame (att
 ```
 
 Con `--ntsc` prima del comando (`paddws-c64 --ntsc frames`) i passi valgono per la cartuccia
-NTSC, compilata prima con `-Ntsc`. Sono gli stessi passi della GitHub Action `C64`. In più: `ending` gioca solo il finale della
+NTSC, compilata prima con `-Ntsc`; con `--rotated` per quella del campo girato (anche insieme). Sono gli stessi passi della GitHub Action `C64`. In più: `ending` gioca solo il finale della
 scalata, `profile` dà i cicli per routine, `--build DIR` usa un'altra cartella di build e
 `game --ticks N` cambia la durata delle partite (5 minuti di default). Per confrontare i cicli
 del banco di prova con quelli di VICE: `tools\c64_vice_frames.py` cattura i frame di una build
@@ -139,6 +170,9 @@ le partite sono quasi tutte BLASTER (i colpi a schermo).
   degli avversari nella presentazione, e il finale.
 - `src/play.s` — ciclo dei frame, scene, menu, gettoni.
 - `src/attract.s`, `src/video.s`, `src/input.s` — attract, grafica, comandi.
+- `src/rot_video.s`, `src/rot_shots.s` — il campo girato: sprite, interrupt della mezzeria, campo,
+  fascia dell'HUD e laser del BLASTER (al posto delle routine di `video.s` e `pick.s` con lo
+  stesso nome).
 - `src/sid.s` — il player del SID, tradotto da `mister/rtl/pong_sid.v`.
 - `src/voice.s`, `src/voice.inc` — i file voce della scalata (si assemblano a parte, uno per
   avversario).

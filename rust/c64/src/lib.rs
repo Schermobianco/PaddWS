@@ -33,6 +33,18 @@ pub fn ntsc() -> bool {
     NTSC.load(Ordering::Relaxed)
 }
 
+/// Versione del C64 con il campo girato (`Tuning::c64_rotated`, `c64/gen/rotated`,
+/// `c64/build/rotated`). La sceglie il banco di prova (`--rotated`) prima di tutto il resto.
+static ROTATED: AtomicBool = AtomicBool::new(false);
+
+pub fn set_rotated(on: bool) {
+    ROTATED.store(on, Ordering::Relaxed);
+}
+
+pub fn rotated() -> bool {
+    ROTATED.load(Ordering::Relaxed)
+}
+
 /// Righe del frame (`Cpu::frame_start`): PAL 312 da 63 cicli, NTSC 263 da 65.
 pub fn raster_lines() -> u64 {
     if ntsc() { 263 } else { 312 }
@@ -66,7 +78,8 @@ pub const IRQ_LEAD: u64 = 63;
 
 /// Cartella di build della versione C64 (`c64/build`, per l'NTSC `c64/build/ntsc`).
 pub fn default_build_dir() -> PathBuf {
-    if ntsc() { c64_dir().join("build/ntsc") } else { c64_dir().join("build") }
+    let base = if rotated() { c64_dir().join("build/rotated") } else { c64_dir().join("build") };
+    if ntsc() { base.join("ntsc") } else { base }
 }
 
 /// Il programma C64 caricato in memoria, con le sue etichette.
@@ -150,6 +163,11 @@ impl Machine {
                 cpu.load(to as u16, &bytes);
                 images.push((seg.to_string(), to as u16, bytes));
             }
+        }
+        if rotated()
+            && let (Some(&state), Some(&paddle)) = (labels.get("state"), labels.get("ctl_paddle"))
+        {
+            cpu.rot_joy = Some((state, paddle));
         }
         Ok(Self {
             cpu,

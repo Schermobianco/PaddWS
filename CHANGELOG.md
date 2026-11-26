@@ -14,6 +14,44 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+### Aggiunto
+- C64: una seconda cartuccia con il campo girato di 90 gradi (`paddws-vertical-pal.crt`, e
+  `paddws-vertical-ntsc.crt` per l'NTSC, nello stesso pacchetto del C64). Le racchette stanno in
+  basso e in alto e le astronavi sono in alta risoluzione: bianco a un pixel sopra uno strato
+  multicolore. Il campo è largo 240 pixel; a destra c'è una fascia con nomi, punteggi, riserve,
+  barre del SUPER e punti. Le scritte delle mosse speciali stanno nella metà di chi le fa, i laser
+  del BLASTER vanno in verticale. La palla attraversa il campo in circa l'86% del tempo dell'altra
+  cartuccia, le racchette nello stesso tempo (240 pixel invece di 200), sul PAL e sull'NTSC. Nel
+  salto del TELEPORT l'astronave si scompone a colonne dove era e si ricompone
+  dove arriva, con una maschera di caratteri neri e a puntini nel colore del personaggio. Anche
+  nella scelta della racchetta, nel VS, nella presentazione di OMEGA e nel finale si vedono le
+  astronavi della partita. Manca la rotazione della racchetta con il SUPER armato; la TWIST ha
+  tre inclinazioni, che scattano appena la racchetta prende velocità. Le mosse speciali si fanno
+  per tutti e due come il giocatore sinistro dell'altra cartuccia (↓ ↘ → e → ↓ ↘ + fuoco), e
+  STRAIGHT SHOT accelera la palla di 1,25 e 1,5 volte (invece di 1,5 e 2) come RISING STRIKE.
+- Editor delle racchette: la piattaforma "C64 girato", per le astronavi del campo girato, con due
+  livelli (il bianco hires e il multicolore sotto) che si disegnano e si cancellano ognuno per conto
+  suo, e "Parti dallo sprite del PC".
+
+### Cambiato
+- C64: le cartucce cambiano nome. `paddws.crt` diventa `paddws-horizontal-pal.crt` e
+  `paddws-ntsc.crt` diventa `paddws-horizontal-ntsc.crt`; quelle del campo girato sono
+  `paddws-vertical-pal.crt` e `paddws-vertical-ntsc.crt`. Anche il nome scritto dentro il `.crt`,
+  che VICE e il C64 Ultimate mostrano, dice quale è (`PADD WS HORIZONTAL PAL` e così via). Il gioco
+  nelle due cartucce di prima è lo stesso.
+
+### Corretto
+- C64: nella scelta della racchetta e nel VS i personaggi finiscono sulla stessa riga e i nomi stanno
+  più vicini a metà fra i ritratti e la frase, come su PC e MiSTer dalla 4.6.4. I ritratti scendono
+  di una cella (TITAN resta qualche pixel più su: i ritratti multicolor si spostano solo a celle
+  intere).
+- C64: nel VS le icone dei bonus sono bianche, come su PC e MiSTer.
+- C64: RUSH vibra avanti e indietro di un pixel, come su PC e MiSTer.
+- Web, touch: le iniziali di un nuovo record si scrivono toccando una tastiera a schermo, con DEL
+  per togliere l'ultima lettera. Prima un tocco nella metà alta cambiava lettera e uno nella metà
+  bassa la confermava, senza nessuna indicazione: le tre lettere stanno in basso, e chi le toccava
+  per scrivere salvava AAA. Nel browser del computer il primo click apre la tastiera.
+
 ## [4.6.5] - 2026-11-24
 
 ### Aggiunto

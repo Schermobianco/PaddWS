@@ -374,6 +374,18 @@ done:
     sta nm_cw
     lda nm_n,x
     sta nm_cn
+.ifdef ROTATED
+    lda #ROT_FIELD_COLS         ; (campo girato: centrato nel campo, nella metà di OMEGA: in alto
+    sec                         ; dalla riga 7, in basso dalla 16)
+    sbc nm_cw
+    lsr a
+    sta nm_col
+    lda #16
+    ldy nm_k_side
+    beq :+
+    lda #7
+:   sta nm_r
+.else
     lda #20                     ; colonna: centrato nella metà campo di OMEGA
     sec
     sbc nm_cw
@@ -384,6 +396,7 @@ done:
 :   sta nm_col
     lda #NM_ROW
     sta nm_r
+.endif
     ldx #0                      ; cella
 row:
     ldy nm_r                    ; schermo in ptr, colore in m_a (libero: nessuna moltiplicazione)
@@ -515,6 +528,32 @@ sig:
     jsr shots_erase             ; (i colpi del BLASTER rimetterebbero la rete di prima)
     ldx #0
     stx m_t                     ; fase
+.ifdef ROTATED
+    ; (campo girato: per colonna della riga della mezzeria, il trattino spostato in su o in giù)
+col:
+    lda m_t
+    lsr a
+    lsr a
+    lsr a
+    lsr a
+    ora om_amp
+    tay
+    lda #3
+    cpy #16
+    bcc :+
+    lda om_wave - 16,y
+:   tay
+    lda om_rot,y
+    sta SCREEN + ROT_LINE_ROW * 40,x
+    lda m_t
+    clc
+    adc om_step
+    sta m_t
+    inx
+    cpx #ROT_FIELD_COLS
+    bne col
+    rts
+.else
 row:
     lda row_lo,x
     sta ptr
@@ -547,6 +586,7 @@ row:
     inx
     cpx #25
     bne row
+.endif
 done:
     rts
 .endproc
@@ -562,8 +602,13 @@ om_wave: .byte 3, 3, 4, 4, 4, 4, 4, 3, 3, 3, 2, 2, 2, 2, 2, 3
          .byte 3, 4, 4, 5, 5, 5, 4, 4, 3, 2, 2, 1, 1, 1, 2, 2
          .byte 3, 4, 5, 6, 6, 6, 5, 4, 3, 2, 1, 0, 0, 0, 1, 2
 ; caratteri della rete per spostamento + 3 (0-6), a sinistra e a destra della linea
+; caratteri della rete per spostamento + 3 (0-6): nel campo girato uno solo per colonna
+.ifdef ROTATED
+om_rot:  .byte OM_CH, OM_CH + 1, OM_CH + 2, CH_LINE_L, OM_CH + 3, OM_CH + 4, OM_CH + 5
+.else
 om_lch:  .byte OM_CH, OM_CH + 1, OM_CH + 2, CH_LINE_L, CH_BLANK, CH_BLANK, CH_BLANK
 om_rch:  .byte CH_BLANK, CH_BLANK, CH_BLANK, CH_LINE_R, OM_CH + 3, OM_CH + 4, OM_CH + 5
+.endif
 ; i nomi delle forme (om_name): larghezza, celle, mappa
 nm_w:   .byte TN_0_W, TN_1_W, TN_2_W, TN_3_W, TN_4_W, TN_5_W, TN_6_W
 nm_n:   .byte TN_0_W * TN_0_H, TN_1_W * TN_1_H, TN_2_W * TN_2_H, TN_3_W * TN_3_H

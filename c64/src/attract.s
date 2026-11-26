@@ -29,7 +29,7 @@ nx_glyphs:  .byte NX_GLYPHS
 ; titolo non pulisce la bitmap)
 .segment "BOOTCODE"
 boot_lines: .word boot_0, 0, boot_2, boot_3, boot_4, boot_5
-boot_0: .byte "PADD WS  V4.6", 0
+boot_0: .byte "PADD WS  V4.7", 0
 boot_2: .byte "RAM ........ OK", 0
 boot_3: .byte "ROM ........ OK", 0
 .ifdef NTSC

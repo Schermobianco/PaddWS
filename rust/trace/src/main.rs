@@ -28,6 +28,7 @@ const USAGE: &str = "\
 Uso: paddws-trace [--out DIR] [--width 320] [--height 240] [--seed N] [--ticks N] [--players 1|2] [--evo] [--next] [--cpu-play] [--difficulty 0-3]
                     [--tick-hz N]   (frequenza della simulazione, default 240)
                     [--c64]         (versione C64: campo 320x200, un tick per frame a 50 Hz; vale anche per le statistiche)
+                    [--c64-rotated] (C64 girato: campo 200x240, velocità e fascia dell'HUD di Tuning::c64_rotated)
                     [--control spinner|joystick[,...]]   (spinner: il giocatore sinistro, o la CPU, usa l'encoder)
        paddws-trace --next-stats PARTITE [--seed N] [--difficulty 0-3] [--cpu]   (durata degli scambi, Classic e NEXT)
        paddws-trace --bonus-stats PARTITE [--seed N] [--difficulty 0-3]   (efficacia di ogni bonus, CPU contro CPU; BULLET: palle e punti salvati)
@@ -150,6 +151,14 @@ fn parse_args() -> Args {
             "--c64" => {
                 let c = Tuning::c64();
                 (a.width, a.height, a.tick_hz) = (c.width, c.height, c.tick_hz);
+            }
+            "--c64-rotated" => {
+                // il campo girato: anche scale delle velocità e fascia dell'HUD (Tuning::c64_rotated)
+                let c = Tuning::c64_rotated();
+                (a.width, a.height, a.tick_hz) = (c.width, c.height, c.tick_hz);
+                a.set.push(("ball_speed_scale".into(), c.ball_speed_scale.unwrap_or_default()));
+                a.set.push(("pad_speed_scale".into(), c.pad_speed_scale.unwrap_or_default()));
+                a.set.push(("hud_band".into(), c.next.hud_band));
             }
             "--players" => a.players = value().parse().unwrap_or_else(|_| fail("--players non valido")),
             "--evo" => a.evo = true,
@@ -379,6 +388,19 @@ fn tuning(a: &Args, difficulty: u8) -> Tuning {
             }
             "super_min_speed_rise" => {
                 n.super_min_speed_rise = *v;
+                continue;
+            }
+            // scale delle velocità (Tuning): il campo girato del C64
+            "ball_speed_scale" => {
+                t.ball_speed_scale = Some(*v);
+                continue;
+            }
+            "pad_speed_scale" => {
+                t.pad_speed_scale = Some(*v);
+                continue;
+            }
+            "hud_band" => {
+                t.next.hud_band = *v;
                 continue;
             }
             _ => None,

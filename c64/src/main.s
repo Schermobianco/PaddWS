@@ -14,6 +14,9 @@
 .include "sid_music.inc"
 .include "voice.inc"
 .include "ef.inc"
+.ifdef ROTATED
+.include "rotated.inc"          ; campo girato (tools/gen_c64_rotated.py)
+.endif
 
 .segment "LOADADDR"
     .export __LOADADDR__ = *
