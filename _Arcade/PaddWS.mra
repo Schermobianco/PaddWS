@@ -1,0 +1,23 @@
+<!-- PADD WS per MiSTer: va in /media/fat/_Arcade/, il core PaddWS_AAAAMMGG.rbf in
+     /media/fat/_Arcade/cores/ e paddws.zip in /media/fat/games/mame/. Lo zip contiene
+     paddws_gfx.rom, la grafica dei personaggi (ritratti e astronavi) che il core tiene nella DDR3:
+     non è una ROM di un gioco esistente, la produce tools/gen_mister_ui.py. La classifica di NEXT e
+     lo sblocco dell'allenamento si salvano nella NVRAM, come negli altri core arcade. -->
+<misterromdescription>
+    <name>PADD WS</name>
+    <setname>paddws</setname>
+    <rbf>PaddWS</rbf>
+    <year>2026</year>
+    <manufacturer>Schermobianco</manufacturer>
+    <category>Sports</category>
+    <players>2</players>
+    <joystick>2-way vertical</joystick>
+    <rotation>horizontal</rotation>
+    <buttons names="Forward,Fast,Select bonus,Use bonus,Start,Coin" default="A,B,X,Y,Start,Select"/>
+    <!-- classifica di NEXT e allenamento: /media/fat/config/nvram/PaddWS.nvm (rtl/ch_nvram.v) -->
+    <!-- grafica dei personaggi nella DDR3 (rtl/gfx_ddr.v) -->
+    <rom index="0" zip="paddws.zip" md5="none">
+        <part name="paddws_gfx.rom"/>
+    </rom>
+    <nvram index="4" size="192"/>
+</misterromdescription>
