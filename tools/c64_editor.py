@@ -10,8 +10,9 @@ il server non risponde).
 Uso:  .venv\\Scripts\\python tools\\c64_editor.py [--port 8064] [--no-browser] [--paddle | --paddle-c64 | --paddle-c64h]
 Poi in VS Code: Ctrl+Maiusc+P, "Simple Browser: Show", http://127.0.0.1:8064/ (oppure il browser
 che si apre da solo). L'editor delle racchette è http://127.0.0.1:8064/paddle_editor.html: con
---paddle si apre quello, con --paddle-c64 sugli sprite del C64 (paddle_editor.html?plat=c64), con
---paddle-c64h su quelli della prova del C64 con il campo girato (sprites/c64hires/).
+--paddle si apre quello, con --paddle-c64 sugli sprite della cartuccia orizzontale del C64
+(sprites/c64/, paddle_editor.html?plat=c64), con --paddle-c64h su quelli della cartuccia verticale
+(sprites/c64hires/).
 """
 
 from __future__ import annotations
@@ -155,9 +156,10 @@ def main() -> None:
     ap.add_argument("--port", type=int, default=8064)
     ap.add_argument("--no-browser", action="store_true", help="non aprire il browser")
     ap.add_argument("--paddle", action="store_true", help="apri l'editor delle racchette")
-    ap.add_argument("--paddle-c64", action="store_true", help="apri l'editor delle racchette del C64")
+    ap.add_argument("--paddle-c64", action="store_true",
+                    help="apri l'editor sugli sprite del C64 orizzontale (assets/ships/sprites/c64)")
     ap.add_argument("--paddle-c64h", action="store_true",
-                    help="apri l'editor sugli sprite del C64 con il campo girato (prova)")
+                    help="apri l'editor sugli sprite del C64 verticale (assets/ships/sprites/c64hires)")
     args = ap.parse_args()
     srv = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     page = ("paddle_editor.html?plat=c64h" if args.paddle_c64h else "paddle_editor.html?plat=c64" if args.paddle_c64

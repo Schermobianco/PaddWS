@@ -2,7 +2,8 @@
 
 Uso:
     python tools/make_crt.py [--pads FILE] [--name NOME] OUT.crt BOOT.bin PROGRAMMA.prg PICK.bin FINALE.bin OMEGA.bin VOCE0.prg [... VOCE7.prg]
-    (--pads: le immagini delle racchette al posto di c64/gen/paddles.bin, per il campo girato;
+    (--pads: le pose delle racchette del campo girato, c64/gen/rotated/paddles.bin, nel banco
+    PAD_BANK; senza, le astronavi a righe dello schermo di c64/gen/padpairs.bin dal banco PAD2_BANK;
     --name: il nome nell'intestazione del .crt, al posto di "PADD WS": lo mostrano VICE e il
     C64 Ultimate, e distingue le quattro cartucce)
 
@@ -93,7 +94,9 @@ HOWTO_BANK = const("HOWTO_BANK", "ef.inc")
 OM_BANK = const("OM_BANK", "ef.inc")
 KP_BANK = const("KP_BANK", "ef.inc")
 PAD_BANK = const("PAD_BANK", "ef.inc")
-PADS = SRC.parent / "gen" / "paddles.bin"
+PAD2_BANK = const("PAD2_BANK", "ef.inc")
+PAIRS = SRC.parent / "gen" / "padpairs.bin"
+PADS = None           # (--pads: le pose del campo girato)
 KPICK = SRC.parent / "gen" / "kpick.bin"
 HOWTO = SRC.parent / "gen" / "howto.bin"
 WIN_RUN = const("WIN_RUN", "voice.inc")
@@ -278,13 +281,21 @@ def main() -> None:
     for i in range(0, len(kpick), HALF):
         chips.append(chip(KP_BANK + i // (2 * HALF), 0x8000 + i // HALF % 2 * HALF, kpick[i:i + HALF]))
     assert VOICE_BANK0 + 7 <= PICK_BANK < WIN_BANK < END_BANK < HI_BANK < HI_BANK + 8 <= HOWTO_BANK < HOWTO_BANK + 2 <= OM_BANK < KP_BANK
-    pads = PADS.read_bytes()
-    if len(pads) not in (7 * 1024, 16 * 1024):
-        sys.exit(f"{PADS}: {len(pads)} byte invece di 7168 (o 16384, il campo girato)")
-    chips.append(chip(PAD_BANK, 0x8000, pads[:HALF]))
-    if len(pads) > HALF:
-        chips.append(chip(PAD_BANK, 0xA000, pads[HALF:]))
     assert KP_BANK + (len(kpick) - 1) // (2 * HALF) < PAD_BANK < 64
+    if PADS is not None:
+        # campo girato: le sue pose, 16 KB nel banco PAD_BANK
+        pads = PADS.read_bytes()
+        if len(pads) != 16 * 1024:
+            sys.exit(f"{PADS}: {len(pads)} byte invece di 16384")
+        chips.append(chip(PAD_BANK, 0x8000, pads[:HALF]))
+        chips.append(chip(PAD_BANK, 0xA000, pads[HALF:]))
+    else:
+        # campo orizzontale: le astronavi a righe dello schermo (racchette in due metà), dal banco
+        # PAD2_BANK: 8 pagine per coppia di tipi, poi le pose ferme, ROML e poi ROMH
+        pairs = PAIRS.read_bytes()
+        assert PAD_BANK < PAD2_BANK and PAD2_BANK + (len(pairs) - 1) // (2 * HALF) < 64
+        for i in range(0, len(pairs), HALF):
+            chips.append(chip(PAD2_BANK + i // (2 * HALF), 0x8000 + i // HALF % 2 * HALF, pairs[i:i + HALF]))
     out.write_bytes(header + b"".join(chips))
     print(f"{out}: {len(chips)} pezzi da 8 KB")
 

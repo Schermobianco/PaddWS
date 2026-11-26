@@ -2703,8 +2703,13 @@ bl_on:     .res 1               ; colori del bullet time a schermo
 
 ; Scelta della racchetta: la racchetta sotto il cursore a grandezza reale (sprite 3 e 4 come in
 ; partita), nel campo sotto la griglia (paddle_ui.rs, PADDLE_X) e con il davanti verso la
-; mezzeria: TWIST inclinata, BLASTER con il caricatore pieno. Poi i cursori (kpick.s).
+; mezzeria: TWIST dritta, BLASTER con il caricatore pieno. Poi i cursori (kpick.s). Le astronavi
+; sono in due metà come in partita: la metà alta dalla riga PV_TOP, la bassa dalla riga del centro
+; PV_S, dove lo split del raster (kp_split) cambia Y e puntatori (pose_load di video.s).
 PV_CY = 13 * 8 + 36             ; centro del campo (riga in pixel)
+PV_S   = SPR_Y0 + PV_CY         ; riga del cambio di sprite
+PV_TOP = PV_S - PAD_ROWS
+.assert (PV_S & 7) <> 3 .and ((PV_S - 1) & 7) <> 3, error, "anteprima: il cambio di sprite in una badline"
 
 .proc pick_preview
 .ifdef ROTATED
@@ -2730,36 +2735,18 @@ side:
     txa
     cmp pv_kind,y
     beq place
-    jsr frame_late              ; un'immagine costa: con il frame avanti al prossimo
+    jsr pose_load               ; la sua posa dalla cartuccia (A = tipo, Y = lato); se non è il
+    ldy pi_side                 ; momento resta quella di prima, e si riprova al prossimo frame
     bcs place
-    ldy pi_side
     lda pk_cursor,y
     sta pv_kind,y
-    sta pi_kind
-    tax
-    lda pv_rows,x
-    sta pi_n
-    lda pv_var,x
-    sta pi_var
-    cpx #K_BLASTER
-    bne :+
-    lda #P_BLASTER_SHOTS        ; caricatore pieno
-    jsr mag_setup
-:   jsr pad_image
-    ldy pi_side
-    lda #1
-    sta pd_dirty,y
-    lda #$ff                    ; in partita l'immagine si rifà
-    sta pd_n,y
 place:
     ldy pi_side
     lda pv_kind,y
     cmp #$ff
     beq next                    ; immagine non ancora fatta
     tax
-    lda #SP_PAD0
-    clc
-    adc pi_side
+    lda pose_top,y
     sta sh_ptr+SPN_PAD,y
     lda kind_col,x
     sta sh_col+SPN_PAD,y
@@ -2769,11 +2756,12 @@ place:
     lda bit_of+SPN_PAD,y
     ora sh_mc
     sta sh_mc
-    lda bit_of+SPN_PAD,y
-    ora sh_yexp
-    sta sh_yexp
-    lda bit_of+SPN_PAD,y
+    lda bit_of+SPN_PAD,y        ; non espanso
     eor #$ff
+    pha
+    and sh_yexp
+    sta sh_yexp
+    pla
     and sh_xexp
     sta sh_xexp
     ; x: la faccia dell'astronave dove c'era il corpo della racchetta senza tipo
@@ -2784,10 +2772,8 @@ place:
     eor #$ff
     and sh_msb
     sta sh_msb
-    ; y: centrata sulla lista, due righe di pixel per riga dello sprite
-    lda #<(SPR_Y0 + PV_CY)
-    sec
-    sbc pv_rows,x
+    ; y: la metà alta finisce alla riga del centro (la posa è centrata nelle sue 42 righe)
+    lda #PV_TOP
     sta sh_y+SPN_PAD,y
 next:
     iny
@@ -2806,7 +2792,6 @@ done:
 .endmacro
 .ifndef ROTATED                 ; (campo girato: le anteprime sono le astronavi, rp_preview)
 pv_rows: pv_rows_of T_KIND_H
-pv_var:  .byte 0, 0, 0, 3 + 3, BLASTER_VIS * 32, 0, 0, 0
 pv_x:    .byte SPR_X0 + 14 * 8 + 4 - 12, SPR_X0 + 25 * 8 + 4 - 12
 .endif
 .assert SPR_X0 + 25 * 8 + 4 - 12 < 256, error, "anteprime: bit alto della x"

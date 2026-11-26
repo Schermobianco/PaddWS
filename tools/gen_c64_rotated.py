@@ -316,6 +316,18 @@ def guardian_courses() -> tuple[list[int], list[int], int]:
     return hi_m, mc_m, rows
 
 
+def rot_icons(icons: list[int]) -> list[int]:
+    """Le icone 8x8 della mossa armata (SUPER_ICONS di assets.inc, un byte per riga) portate nel
+    campo girato: il pixel (colonna c, riga r) va alla colonna 7 - r e alla riga 7 - c, come il
+    campo (la x del campo, verso l'avversario, diventa la verticale)."""
+    out = []
+    for i in range(0, len(icons), 8):
+        old = [[icons[i + r] >> (7 - c) & 1 for c in range(8)] for r in range(8)]
+        for r in range(8):
+            out.append(sum(old[7 - c][7 - r] << (7 - c) for c in range(8)))
+    return out
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     a = consts(GEN / "assets.inc")
@@ -451,6 +463,9 @@ def main() -> None:
         "; salto del TELEPORT a caratteri (warp_tables): per arrivo * 33 + avanzamento",
         *[f".define {k} " + ", ".join(f"${v:02X}" for v in vals) for k, vals in warp_tables().items()],
         f"ROT_BAND_ROWS = {BAND_ROWS}",
+        "; icone della mossa armata girate con il campo (colonna = y, riga = larghezza - x): le frecce",
+        "; puntano verso l'avversario, in alto per chi sta in basso e in basso per chi sta in alto",
+        ".define ROT_SUPER_ICONS " + ", ".join(f"${v:02X}" for v in rot_icons(define(GEN / "assets.inc", "SUPER_ICONS"))),
         "",
     ]
     (OUT / "rotated.inc").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")

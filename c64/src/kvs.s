@@ -48,6 +48,9 @@ KV_ICON_GAP  = 5
 KV_FIRST_AT  = 83
 KV_END       = 150
 KV_PAD_CY    = 6 * 8 + 36       ; centro del campo (riga in pixel)
+KV_S         = SPR_Y0 + KV_PAD_CY   ; astronavi in due metà: riga del cambio di sprite (kv_split)
+KV_TOP       = KV_S - PAD_ROWS
+.assert (KV_S & 7) <> 3 .and ((KV_S - 1) & 7) <> 3, error, "VS: il cambio di sprite in una badline"
 KV_NET_ROW   = 6
 KV_NET_ROWS  = KV_MC_ROW1 + 1 - KV_NET_ROW     ; (solo nelle righe multicolor)
 ; split del raster: righe di pixel vuote del cambio (prima e dopo le righe multicolor)
@@ -494,27 +497,24 @@ pad:
     cpx #OMEGA_KIND
     bcc :+
     ldx #K_ARCADE
-:   stx pi_kind
+:
 .ifdef ROTATED
+    stx pi_kind
     txa                         ; (campo girato: le astronavi della partita, posa e serie del lato)
     ldx pi_side
     jsr ship_load
-.else
-    lda pv_rows,x
-    sta pi_n
-    lda pv_var,x
-    sta pi_var
-    cpx #K_BLASTER
-    bne :+
-    lda #P_BLASTER_SHOTS
-    jsr mag_setup
-:   jsr pad_image
-.endif
     ldy pi_side
     lda #1
     sta pd_dirty,y
     lda #$ff
     sta pd_n,y
+.else
+    txa                         ; la sua posa dalla cartuccia (pose_load di video.s, Y = lato): se
+    jsr pose_load               ; non è il momento, al prossimo frame
+    bcc :+
+    rts
+:
+.endif
     inc kv_step
     lda kv_step
     cmp #KV_SHOW
@@ -906,17 +906,28 @@ kv_vs_page: .byte KP_MC_PAGE
 :   lda $d012
     cmp kv_line,x
     bcc :-
+.ifndef ROTATED
+    cpx #2                      ; alla riga del centro delle astronavi (KV_S) le loro metà basse,
+    bne :+                      ; come nella scelta (kp_split)
+    lda #KV_S
+    sta $d001 + 2 * SPN_PAD
+    sta $d003 + 2 * SPN_PAD
+    lda #POSE_BOT0
+    sta SPR_PTR + SPN_PAD
+    lda #POSE_BOT1
+    sta SPR_PTR + SPN_PAD + 1
+:
+.endif
     lda kv_d016,x
     sta $d016
     lda kv_next,x
     sta $d012
     inx
-    cpx #3
+    cpx #KV_SPLITS + 1
     bcc :+
     ldx #0
 :   stx kv_irq_n
-    lda #$ff
-    sta $d019
+    asl $d019                   ; (riscrive il registro: interrupt del raster visto; due byte in meno)
     pla
     tay
     pla
@@ -935,12 +946,26 @@ vbl:
     jmp irq_handler             ; frame_flag, frame_count (in pagina zero; irq_handler sotto $8000)
 .endproc
 kv_irq_n: .byte 0
+.ifdef ROTATED
+KV_SPLITS = 2
 kv_line   = * - 1               ; (per kv_irq_n 1 e 2)
     .byte KV_LINE_ON, KV_LINE_OFF
 kv_d016   = * - 1
     .byte $c8 | $10, $c8        ; multicolor, hires
+.else
+KV_SPLITS = 3                   ; (alla riga KV_S le metà basse delle astronavi)
+kv_line   = * - 1               ; (per kv_irq_n 1, 2 e 3)
+    .byte KV_LINE_ON, KV_S, KV_LINE_OFF
+kv_d016   = * - 1
+    .byte $c8 | $10, $c8 | $10, $c8     ; multicolor, multicolor, hires
+.endif
 kv_next   = * - 1
+.ifdef ROTATED
     .byte KV_LINE_OFF - 1, RASTER_LINE
+.else
+    .byte KV_S - 1, KV_LINE_OFF - 1, RASTER_LINE
+.assert KV_LINE_ON < KV_S - 1 .and KV_S < KV_LINE_OFF - 1, error, "VS: righe dello split"
+.endif
 .assert KV_LINE_ON < KV_LINE_OFF - 1 .and KV_LINE_OFF < RASTER_LINE, error, "VS: righe dello split"
 
 ; ------------------------------------------------------------------------------------ scritte
@@ -1034,9 +1059,7 @@ side:
 .else
     ldy #1
 side:
-    tya
-    clc
-    adc #SP_PAD0
+    lda pose_top,y              ; in due metà (pose_load): la metà bassa la mette kv_split
     sta sh_ptr+SPN_PAD,y
     ldx kv_kind,y
     lda kind_col,x
@@ -1048,9 +1071,7 @@ color:
     lda pv_x,y
     jsr pad_face_x
     sta sh_x+SPN_PAD,y
-    lda #<(SPR_Y0 + KV_PAD_CY)
-    sec
-    sbc pv_rows,x
+    lda #KV_TOP
     sta sh_y+SPN_PAD,y
     lda bit_of+SPN_PAD,y
     ora sh_enable
@@ -1058,11 +1079,12 @@ color:
     lda bit_of+SPN_PAD,y
     ora sh_mc
     sta sh_mc
-    lda bit_of+SPN_PAD,y
-    ora sh_yexp
-    sta sh_yexp
-    lda bit_of+SPN_PAD,y
+    lda bit_of+SPN_PAD,y        ; non espanso
     eor #$ff
+    pha
+    and sh_yexp
+    sta sh_yexp
+    pla
     pha
     and sh_xexp
     sta sh_xexp

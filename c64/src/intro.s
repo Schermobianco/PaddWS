@@ -121,16 +121,7 @@ second:
     lda pv_rows,x
     sta pi_n
     sta in_n
-    lda #3                      ; TWIST dritta
-    cpx #K_TWIST
-    beq :+
-    lda pv_var,x
-:   sta pi_var
-    cpx #K_BLASTER
-    bne :+
-    lda #P_BLASTER_SHOTS
-    jsr mag_setup
-:   lda in_opp
+    lda in_opp                  ; (l'astronave com'è: TWIST dritta, BLASTER carico)
     sta pi_side
     jsr pad_image
     ldy in_opp

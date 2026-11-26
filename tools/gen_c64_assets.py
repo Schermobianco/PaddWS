@@ -326,15 +326,16 @@ SHOT_PN = 32
 
 def shot_rows(params: str) -> tuple[int, int]:
     """Righe di schermo delle bocche dei cannoni del BLASTER (la prima delle due righe di pixel di
-    ciascuna), meno ceil(y) della racchetta: le righe dell'immagine (assets/ships/sprites/c64) con
-    il colore del tipo nella colonna più avanti, nello sprite espanso in verticale che pad_sprite
-    mette dalla riga floor(P_HEIGHT - 1/2 - y - h/2) + 1 (h altezza del BLASTER)."""
+    ciascuna), meno ceil(y) della racchetta: le righe del disegno (assets/ships/sprites/c64, a
+    righe dello schermo) con il colore del tipo nella colonna più avanti, nello sprite che
+    pad_sprite mette dalla riga floor(P_HEIGHT - 1/2 - y - h/2) + 1 (h altezza del BLASTER)."""
     im = Image.open(ROOT / "assets" / "ships" / "sprites" / "c64" / "blaster.png")
     w, h = im.size
     px = [[im.getpixel((x, y)) for x in range(w)] for y in range(h)]
-    front = max(x for x in range(w) if any(px[y][x] for y in range(h)))
-    muzzles = [y for y in range(h) if px[y][front] == 2]
-    assert len(muzzles) == 2, f"BLASTER: bocche dei cannoni nella colonna {front}: {muzzles}"
+    front = max(x for x in range(w) if any(0 < px[y][x] < 4 for y in range(h)))
+    lit = [y for y in range(h) if px[y][front] == 2]
+    muzzles = [y for y in lit if y - 1 not in lit]
+    assert len(muzzles) == 2 and len(lit) == 4, f"BLASTER: bocche dei cannoni nella colonna {front}: {lit}"
     kind_h = [int(v, 16) for v in re.search(r"\.define T_KIND_H (.*)", params).group(1).replace("$", "").split(", ")]
     height = int(re.search(r"^P_HEIGHT\s*=\s*\$([0-9A-F]+)", params, re.M).group(1), 16)
     # u - h/2 = P_HEIGHT - 1/2 - h/2 - y in Q16.16: con la parte intera k e senza frazione,
@@ -342,7 +343,7 @@ def shot_rows(params: str) -> tuple[int, int]:
     edge = height - 0x8000 - kind_h[PAD_KINDS.index("blaster")] // 2
     assert edge & 0xFFFF == 0, "BLASTER: bordo della racchetta non intero (altezza dispari)"
     r0 = (edge >> 16) + 1
-    return r0 + 2 * muzzles[0], r0 + 2 * muzzles[1]
+    return r0 + muzzles[0], r0 + muzzles[1]
 
 
 def shot_assets(cs: Charset, lines: list[str], own: list[int], letters: str, pick_range: range) -> None:
@@ -1757,7 +1758,6 @@ PAD_W = 12            # colonne doppie dello sprite multicolore
 PAD_TILT = 3          # colonne di spostamento massimo dell'inclinazione della TWIST (pad_image)
 PAD_ENGINE = 16       # aggancio motore nei PNG (editor delle racchette): non si disegna
 PAD_ENGINES = (2, 2, 1, 1, 2, 1, 2)   # agganci motore per tipo, come sul PC
-PAD_SLOTS = 8         # immagini per lato e tipo nel banco PAD_BANK (2 pagine)
 PAD_ROWS = 21
 
 
@@ -1779,139 +1779,200 @@ def pad_anchors(name: str, px: list[list[int]], want: int) -> list[list[int]]:
     return clean
 
 
-def pad_block(kind: int, data: list[int], n: int, thr: list[int]) -> tuple[bytes, bytes]:
-    """Le immagini in partita NEXT del tipo `kind` per la racchetta sinistra e la destra (PAD_SLOTS da
-    64 byte l'una), byte per byte come pad_image di video.s: per TWIST le 7 inclinazioni (posto =
-    inclinazione + 3, righe spostate di (acc >> 3) colonne doppie), per BLASTER i 5 livelli del
-    caricatore (%10 -> %01 nelle righe sopra la soglia), per gli altri l'immagine sola."""
-    def image(rows: list[int]) -> bytes:
-        return bytes(rows).ljust(3 * PAD_ROWS, b"\0").ljust(64, b"\0")
-
-    def mirror(rows: list[int]) -> list[int]:
-        out = []
-        for y in range(0, len(rows), 3):
-            v = rows[y] << 16 | rows[y + 1] << 8 | rows[y + 2]
-            m = 0
-            for c in range(12):
-                m |= (v >> (2 * c) & 3) << (22 - 2 * c)
-            out += [m >> 16, m >> 8 & 255, m & 255]
-        return out
-
-    variants: list[list[int]] = []
-    if kind == 3:
-        half = n >> 1
-        for var in range(7):
-            sign = var - 3
-            tabs = abs(sign)
-            acc = (tabs * -half) & 255
-            rows = []
-            for k in range(n):
-                v = data[3 * k] << 16 | data[3 * k + 1] << 8 | data[3 * k + 2]
-                sh = (acc - 256 if acc >= 128 else acc) >> 3
-                if sign < 0:
-                    sh = -sh
-                acc = (acc + tabs) & 255
-                v = (v >> 2 * sh if sh >= 0 else v << -2 * sh) & 0xFFFFFF
-                rows += [v >> 16, v >> 8 & 255, v & 255]
-            variants.append(rows)
-    elif kind == 4:
-        for level in range(len(thr)):
-            rows = list(data)
-            for k in range(min(n, thr[level])):
-                for b in range(3):
-                    x = rows[3 * k + b]
-                    t = ((~(x << 1)) & x) & 0xAA
-                    rows[3 * k + b] = x ^ (t | t >> 1)
-            variants.append(rows)
-    else:
-        variants.append(list(data))
-    assert len(variants) <= PAD_SLOTS
-    left = b"".join(image(r) for r in variants).ljust(PAD_SLOTS * 64, b"\0")
-    right = b"".join(image(mirror(r)) for r in variants).ljust(PAD_SLOTS * 64, b"\0")
-    return left, right
-
-
 def paddle_sprites() -> list[str]:
     """Le astronavi delle racchette di NEXT (assets/ships/sprites/c64/<tipo>.png, editor
-    tools/paddle_editor.html): righe dello sprite multicolore viste dalla racchetta sinistra, 3
-    byte per riga (indice della tavolozza = coppia di bit: %01 grigio, %10 colore del tipo, %11
-    bianco). Nell'immagine la faccia sta alla colonna doppia fi (la hitbox sono fi - 1 e fi): il
-    disegno si sposta tutto a sinistra, con almeno 4 colonne dietro la hitbox come la racchetta
-    senza tipo, e la TWIST con PAD_TILT colonne libere per parte. La racchetta destra è lo
-    specchio intero (colonna c -> 11 - c): lo sprite va PAD_DX_L / PAD_DX_R pixel prima della
-    colonna della racchetta."""
-    src = ROOT / "assets" / "ships" / "sprites" / "c64"
+    tools/paddle_editor.html, disegnate a righe dello schermo: pair_image) come le vuole pad_image
+    di video.s, per la presentazione di CHALLENGE e il finale: uno sprite multicolore espanso in
+    verticale, cioè una riga ogni due dello schermo. Ogni riga è la fusione di due righe del
+    disegno (il pixel della prima, o quello della seconda dove la prima è vuota), vista dalla
+    racchetta sinistra, 3 byte per riga (indice della tavolozza = coppia di bit: %01 grigio, %10
+    colore del tipo, %11 bianco). Nell'immagine la faccia sta alla colonna doppia fi (la hitbox
+    sono fi - 1 e fi), con almeno 4 colonne dietro la hitbox come la racchetta senza tipo, e la
+    TWIST con PAD_TILT colonne libere per parte. La racchetta destra è lo specchio intero (colonna
+    c -> 11 - c): lo sprite va PAD_DX_L / PAD_DX_R pixel prima della colonna della racchetta."""
     params = (OUT / "params.inc").read_text(encoding="utf-8")
     kind_h = [int(v, 16) >> 16 for v in re.search(r"\.define T_KIND_H (.*)", params).group(1).replace("$", "").split(", ")]
     dx_l, dx_r, rows_n, out = [], [], [], []
-    datas: list[list[int]] = []
-    thr: list[int] = []
     for k, name in enumerate(PAD_KINDS):
-        im = Image.open(src / f"{name}.png")
-        assert im.mode == "P", f"{name}.png: serve un PNG a palette (editor delle racchette)"
-        w, h = im.size
-        want = ((kind_h[k] - 1) >> 1) + 1
-        assert w == PAD_W and h == want, f"{name}.png: {w}x{h}, la racchetta del C64 è {PAD_W}x{want}"
-        px = [[im.getpixel((x, y)) for x in range(w)] for y in range(h)]
-        # gli agganci motore (indice 16) non si disegnano
-        px = pad_anchors(name, px, PAD_ENGINES[k])
-        assert all(c < 4 for row in px for c in row), f"{name}.png: indici oltre 3 (servono le coppie di bit)"
-        front = json.loads(im.info.get("paddedit", "{}")).get("front", 0)
-        face = PAD_W - 1 - front
-        used = [x for x in range(w) if any(px[y][x] for y in range(h))]
-        margin = PAD_TILT if name == "twist" else 0
-        fi = face - min(used) + margin
-        if name != "twist":
-            fi = max(fi, 5)
-        shift = face - fi
-        assert all(0 <= x - shift - margin and x - shift + margin < PAD_W for x in used), \
-            f"{name}.png: il disegno non sta nelle {PAD_W} colonne dell'immagine"
+        h = ((kind_h[k] - 1) >> 1) + 1
+        rows, fi, _ = pair_image(k, name, 2 * h)
         if name == "guardian":
-            assert fi == 5, "GUARDIAN: lo scudo deve stare nelle colonne 4 e 5 (guard_gray)"
-            seams = [y for y in range(h) if px[y][face - 1] == px[y][face] == 2]
-            assert len(seams) == 4 and all(px[y][face - 1] == px[y][face] == 3 for y in range(h) if y not in seams), \
-                "GUARDIAN: lo scudo vuole 4 giunture nel colore del tipo e il resto bianco"
-        if name == "blaster":
-            # caricatore: le righe con il colore del tipo si spengono dall'alto; al livello L restano
-            # accese le ceil(L * g / 4) più in basso (soglia: la prima riga accesa)
-            green = sorted((y for y in range(h) if 2 in px[y]), reverse=True)
-            for lv in range(5):
-                lit = -(-lv * len(green) // 4)
-                thr.append(h if lit == 0 else 0 if lit == len(green) else green[lit - 1])
+            assert fi == 5, "GUARDIAN: lo scudo deve stare nelle colonne 4 e 5 (guard_apply)"
         dx_l.append(2 * (fi - 1))
         dx_r.append(2 * (PAD_W - 1 - fi))
         rows_n.append(h)
         data = []
-        for row in px:
-            img = [0] * PAD_W
-            for x, c in enumerate(row):
-                if c:
-                    img[x - shift] = c
+        for y in range(h):
+            img = [a or b for a, b in zip(rows[2 * y], rows[2 * y + 1])]
             for b in range(3):
                 data.append((img[4 * b] << 6) | (img[4 * b + 1] << 4) | (img[4 * b + 2] << 2) | img[4 * b + 3])
-        datas.append(data)
         out.append(f".define PAD_IMG_{name.upper()} " + ", ".join(f"${v:02X}" for v in data))
     # la racchetta senza tipo (Classic, EVO, allenamento): corpo bianco nelle colonne 4 e 5
     dx_l.append(8)
     dx_r.append(2 * (PAD_W - 1 - 5))
-    # le immagini della partita NEXT, nella cartuccia (banco PAD_BANK): per tipo la sinistra e la
-    # destra, 2 pagine l'una, copiate da pad_prep invece di farle con pad_image
-    pads = bytearray()
-    for k, data in enumerate(datas):
-        left, right = pad_block(k, data, rows_n[k], thr)
-        pads += left + right
-    assert len(pads) == len(PAD_KINDS) * 4 * 256 <= 0x2000
-    (OUT / "paddles.bin").write_bytes(bytes(pads))
+    pairs = paddle_pairs(rows_n)
     return [
-        "; astronavi delle racchette di NEXT (assets/ships/sprites/c64): righe viste dalla racchetta",
-        "; sinistra, 3 byte per riga; x dello sprite: colonna della racchetta - PAD_DX_L / PAD_DX_R",
-        "; (per tipo, poi la racchetta senza tipo); PAD_BL_THR: prima riga accesa del BLASTER per",
-        "; livello del caricatore (0-4)",
+        "; astronavi delle racchette di NEXT (assets/ships/sprites/c64) per pad_image: righe viste",
+        "; dalla racchetta sinistra, 3 byte per riga; x dello sprite: colonna della racchetta -",
+        "; PAD_DX_L / PAD_DX_R (per tipo, poi la racchetta senza tipo)",
         ".define PAD_DX_L " + ", ".join(map(str, dx_l)),
         ".define PAD_DX_R " + ", ".join(map(str, dx_r)),
         ".define PAD_IMG_N " + ", ".join(map(str, rows_n)),
-        ".define PAD_BL_THR " + ", ".join(map(str, thr)),
         *out,
+        *pairs,
+    ]
+
+
+PAIR_PAGES = 8        # pagine per coppia di tipi (sinistra, destra) in gen/padpairs.bin
+PAIR_MAX = 28         # blocchi in RAM: 16 a $E100-$E4FF, 12 sotto l'I/O a $D100-$D3FF
+
+
+def pair_image(k: int, name: str, rows: int) -> tuple[list[list[int]], int, int]:
+    """L'astronave a righe dello schermo del tipo k (assets/ships/sprites/c64/<tipo>.png, editor
+    delle racchette, piattaforma "C64 orizzontale": 24 colonne dello schermo per `rows` righe, un
+    colore per coppia di colonne): le righe viste dalla racchetta sinistra, 12 colonne doppie già
+    al loro posto nell'immagine come in paddle_sprites, con la colonna doppia della faccia e il
+    margine per l'inclinazione."""
+    path = ROOT / "assets" / "ships" / "sprites" / "c64" / f"{name}.png"
+    im = Image.open(path)
+    assert im.mode == "P", f"{path.name}: serve un PNG a palette (editor delle racchette)"
+    assert im.size == (2 * PAD_W, rows), f"sprites/c64/{path.name}: {im.size[0]}x{im.size[1]}, serve {2 * PAD_W}x{rows}"
+    px = []
+    for y in range(rows):
+        row = []
+        for x in range(0, 2 * PAD_W, 2):
+            a, b = im.getpixel((x, y)), im.getpixel((x + 1, y))
+            if PAD_ENGINE in (a, b):
+                # un aggancio motore sta in una colonna sola della coppia, l'altra è vuota
+                assert {a, b} <= {0, PAD_ENGINE}, f"sprites/c64/{path.name}: aggancio su un colore a ({x}, {y})"
+                row.append(PAD_ENGINE)
+            else:
+                assert a == b, f"sprites/c64/{path.name}: riga {y}, colonne {x} e {x + 1} di colore diverso"
+                row.append(a)
+        px.append(row)
+    px = pad_anchors(f"sprites/c64/{name}", px, PAD_ENGINES[k])
+    assert all(c < 4 for row in px for c in row), f"sprites/c64/{path.name}: indici oltre 3"
+    front = json.loads(im.info.get("paddedit", "{}")).get("front", 0)
+    assert front % 2 == 0, f"sprites/c64/{path.name}: la faccia a metà di una coppia di colonne"
+    face = PAD_W - 1 - front // 2
+    used = [x for x in range(PAD_W) if any(row[x] for row in px)]
+    margin = PAD_TILT if name == "twist" else 0
+    fi = face - min(used) + margin
+    if name != "twist":
+        fi = max(fi, 5)
+    shift = face - fi
+    assert all(0 <= x - shift - margin and x - shift + margin < PAD_W for x in used), \
+        f"sprites/c64/{path.name}: il disegno non sta nelle {PAD_W} colonne dell'immagine"
+    out = []
+    for row in px:
+        img = [0] * PAD_W
+        for x, c in enumerate(row):
+            if c:
+                img[x - shift] = c
+        out.append(img)
+    if name == "guardian":
+        # scudo nelle colonne 4 e 5 (guard_gray: il byte 1 della riga): 4 giunture nel colore del
+        # tipo, anche di più righe, che lo dividono in 5 settori
+        assert fi == 5, "GUARDIAN: lo scudo deve stare nelle colonne 4 e 5 (guard_gray)"
+        seam = [row[4] == row[5] == 2 for row in out]
+        groups = sum(1 for y in range(rows) if seam[y] and (y == 0 or not seam[y - 1]))
+        assert groups == 4 and not seam[0] and not seam[-1], "GUARDIAN: lo scudo vuole 4 giunture nel colore del tipo"
+    return out, fi, margin
+
+
+def pair_blocks(rows: list[list[int]], mirror: bool) -> list[bytes]:
+    """I due blocchi di sprite (metà alta: righe 0-20, metà bassa: 21-41) di un'immagine."""
+    full = rows + [[0] * PAD_W for _ in range(2 * PAD_ROWS - len(rows))]
+    out = []
+    for half in (full[:PAD_ROWS], full[PAD_ROWS:]):
+        data = bytearray()
+        for row in half:
+            r = row[::-1] if mirror else row
+            for b in range(3):
+                data.append((r[4 * b] << 6) | (r[4 * b + 1] << 4) | (r[4 * b + 2] << 2) | r[4 * b + 3])
+        out.append(bytes(data) + b"\0")
+    return out
+
+
+def paddle_pairs(rows_old: list[int]) -> list[str]:
+    """Le astronavi della partita NEXT a righe dello schermo (pixel 2 x 1), per le racchette in due
+    metà: ogni immagine sono due blocchi di sprite non espansi, la metà alta e la metà bassa.
+
+    gen/padpairs.bin (tools/make_crt.py, dal banco PAD2_BANK): per ogni coppia di tipi (sinistra *
+    7 + destra) PAIR_PAGES pagine con i blocchi già al loro posto in RAM, prima quelli di una
+    racchetta poi quelli dell'altra; per racchetta i posti come in pad_block (TWIST le 7
+    inclinazioni, BLASTER i 5 livelli del caricatore, gli altri il posto 0), due blocchi per posto.
+    Nell'ultimo byte del blocco 0, che lo sprite non usa, le pagine da copiare; in quello del
+    blocco 1 il primo blocco della seconda racchetta. Le coppie ci sono due volte: le prime 49
+    con la sinistra per prima, le altre 49 con la destra per prima (contro OMEGA a sinistra: i
+    blocchi di chi non si trasforma restano dove sono quando l'altro cambia forma).
+
+    Dopo le coppie (alla pagina PAIR_POSES * PAIR_PAGES) le pose ferme per la scelta della
+    racchetta e il VS, una pagina per tipo: metà alta e bassa della sinistra, poi della destra,
+    dell'astronave com'è (TWIST dritta, BLASTER carico), centrata nelle 42 righe: così il cambio
+    di sprite è alla riga del centro per tutti i tipi."""
+    names, slots, poses = [], [], bytearray()
+    for k, name in enumerate(PAD_KINDS):
+        n = 2 * rows_old[k]
+        rows, fi, margin = pair_image(k, name, n)
+        variants = []
+        if name == "twist":
+            # inclinazione: ogni riga dello schermo spostata di sign * (j - centro) / 16 colonne
+            # doppie, arrotondato al più vicino. È simmetrico rispetto al centro: in pad_block
+            # (righe a coppie, arrotondato per difetto) la riga in punta restava da sola, spostata
+            # di una colonna in più delle altre
+            for var in range(7):
+                sign = var - 3
+                img = []
+                for j, row in enumerate(rows):
+                    sh = (sign * (2 * j - (n - 1)) + 16) // 32
+                    assert -margin <= sh <= margin
+                    moved = [0] * PAD_W
+                    for x, c in enumerate(row):
+                        if c:
+                            moved[x + sh] = c
+                    img.append(moved)
+                variants.append(img)
+        elif name == "blaster":
+            # caricatore: le righe con il colore del tipo si spengono dall'alto (grigie)
+            green = sorted((y for y in range(n) if 2 in rows[y]), reverse=True)
+            for lv in range(5):
+                lit = -(-lv * len(green) // 4)
+                thr = n if lit == 0 else 0 if lit == len(green) else green[lit - 1]
+                variants.append([[1 if c == 2 and y < thr else c for c in row] for y, row in enumerate(rows)])
+        else:
+            variants.append(rows)
+        slots.append([[b for v in variants for b in pair_blocks(v, side == 1)] for side in (0, 1)])
+        still = variants[{"twist": 3, "blaster": 4}.get(name, 0)]
+        centred = [[0] * PAD_W for _ in range(PAD_ROWS - rows_old[k])] + still
+        poses += b"".join(pair_blocks(centred, False) + pair_blocks(centred, True))
+        names.append(name)
+    out = bytearray()
+    most = 0
+    for right_first in (0, 1):
+        for left in range(len(PAD_KINDS)):
+            for right in range(len(PAD_KINDS)):
+                order = (slots[right][1], slots[left][0]) if right_first else (slots[left][0], slots[right][1])
+                blocks = [bytearray(b) for b in order[0] + order[1]]
+                assert len(blocks) <= PAIR_MAX, f"{names[left]} contro {names[right]}: {len(blocks)} blocchi"
+                pages = -(-len(blocks) // 4)
+                most = max(most, pages)
+                blocks[0][63] = pages
+                blocks[1][63] = len(order[0])
+                out += b"".join(blocks).ljust(PAIR_PAGES * 256, b"\0")
+    assert most < PAIR_PAGES
+    pose_at = len(out) // (PAIR_PAGES * 256)
+    assert len(poses) == len(PAD_KINDS) * 256 and pose_at % 8 + 1 <= 8
+    out += poses
+    (OUT / "padpairs.bin").write_bytes(bytes(out))
+    return [
+        "; le stesse a righe dello schermo, per le racchette in due metà:",
+        "; gen/padpairs.bin, PAIR_PAGES pagine per coppia di tipi (sinistra * 7 + destra, + 49 con",
+        "; la destra per prima); la faccia alla stessa colonna di PAD_IMG_* (PAD_DX_L, PAD_DX_R)",
+        "; poi le pose ferme (scelta e VS), una pagina per tipo, al posto della coppia PAIR_POSES",
+        f"PAIR_PAGES = {PAIR_PAGES}",
+        f"PAIR_POSES = {pose_at}",
+        f"PAIR_MOST = {most}",
     ]
 
 

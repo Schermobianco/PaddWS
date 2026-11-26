@@ -487,6 +487,18 @@ rdst:
 :   lda $d012
     cmp kp_line,x
     bcc :-
+.ifndef ROTATED
+    cpx #2                      ; alla riga del centro delle astronavi (PV_S di pick.s) le loro
+    bne :+                      ; metà basse: lo sprite riparte da lì con l'altro blocco
+    lda #PV_S
+    sta $d001 + 2 * SPN_PAD
+    sta $d003 + 2 * SPN_PAD
+    lda #POSE_BOT0
+    sta SPR_PTR + SPN_PAD
+    lda #POSE_BOT1
+    sta SPR_PTR + SPN_PAD + 1
+:
+.endif
     lda kp_d016,x
     sta $d016
 .ifdef ROTATED
@@ -533,13 +545,14 @@ kp_next   = * - 1
     .byte RP_LINE - 1, KP_LINE_OFF - 1, RASTER_LINE
 .assert KP_LINE_ON < RP_LINE - 1 .and RP_LINE < KP_LINE_OFF - 1, error, "righe dello split"
 .else
-KP_SPLITS = 2
-kp_line   = * - 1               ; (per kp_irq_n 1 e 2)
-    .byte KP_LINE_ON, KP_LINE_OFF
+KP_SPLITS = 3                   ; (alla riga PV_S le metà basse delle astronavi)
+kp_line   = * - 1               ; (per kp_irq_n 1, 2 e 3)
+    .byte KP_LINE_ON, PV_S, KP_LINE_OFF
 kp_d016   = * - 1
-    .byte $c8 | $10, $c8        ; multicolor, hires
+    .byte $c8 | $10, $c8 | $10, $c8     ; multicolor, multicolor, hires
 kp_next   = * - 1
-    .byte KP_LINE_OFF - 1, RASTER_LINE
+    .byte PV_S - 1, KP_LINE_OFF - 1, RASTER_LINE
+.assert KP_LINE_ON < PV_S - 1 .and PV_S < KP_LINE_OFF - 1, error, "righe dello split"
 .endif
 .assert KP_LINE_ON < KP_LINE_OFF - 1 .and KP_LINE_OFF < RASTER_LINE, error, "righe dello split"
 .assert irq_handler < $8000, error, "kp_split: irq_handler sotto la cartuccia"

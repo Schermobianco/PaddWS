@@ -90,9 +90,14 @@ Servono al banco di prova: il `.prg` da solo non parte, gira solo dalla cartucci
 I file di `c64/gen/` sono generati e stanno nel repository: `tools/gen_c64_assets.py` per grafica,
 musica e voci, `paddws-c64 params` per `params.inc` (anche quelli del campo girato),
 `tools/gen_c64_rotated.py` per gli altri file del campo girato in `c64/gen/rotated` (dopo
-`gen_c64_assets.py`: parte dai suoi file). Non si modificano a mano. Le astronavi del campo girato
-si disegnano nell'editor delle racchette, piattaforma "C64 girato"
-(`tools/c64_editor.py --paddle-c64h`), su due livelli: il bianco hires e il multicolore sotto.
+`gen_c64_assets.py`: parte dai suoi file). Non si modificano a mano. Le astronavi si disegnano
+nell'editor delle racchette. Quelle della cartuccia orizzontale con la piattaforma "C64
+orizzontale" (`tools/c64_editor.py --paddle-c64`, in `assets/ships/sprites/c64`): 24 colonne per
+le righe vere della racchetta, con i pixel multicolore larghi due e alti uno. In partita, nella
+scelta e nel VS lo sprite della racchetta non è espanso e si usa due volte nello stesso frame, per
+la metà alta e per la metà bassa, con un interrupt del raster a metà racchetta. Quelle del campo
+girato con la piattaforma "C64 verticale" (`--paddle-c64h`), su due livelli: il bianco hires e il
+multicolore sotto.
 
 Le immagini del C64 si ritoccano a mano con `tools/c64_editor.html`, che si apre in Edge o Chrome
 senza installare nulla: bitmap hires e multicolor, caratteri, sprite, griglia delle celle con

@@ -63,7 +63,9 @@ ef_ram:
     lda ef_src+2
     sta src2+2
     php
-    sei
+sei_op:
+    sei                         ; (pad_mux di video.s: nop con un cambio di sprite da fare a metà
+                                ; racchetta, e gli interrupt passano dal KERNAL: irq_kernal)
     lda #$37
     sta $01
     lda #EF_16K
@@ -91,6 +93,7 @@ loop:
     rts
 .endproc
 ef_src = ef_copy::loop
+ef_sei = ef_copy::sei_op
 dst = ef_copy::loop + 3
 src2 = ef_copy::loop + 7
 dst2 = ef_copy::loop + 10

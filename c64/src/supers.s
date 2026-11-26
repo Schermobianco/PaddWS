@@ -1319,6 +1319,10 @@ sector: .byte P_SUPER_COST, P_SUPER_COST, 2 * P_SUPER_COST, 2 * P_SUPER_COST
     rts
 .endproc
 
+.ifdef ROTATED
+super_icons: .byte ROT_SUPER_ICONS     ; (campo girato: le frecce verso l'avversario, in verticale)
+.else
 super_icons: .byte SUPER_ICONS
+.endif
 
 .segment "CODE"

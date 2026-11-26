@@ -91,6 +91,12 @@ win_pg:    .res 1               ; YOU WIN o PERFECT nel GAME OVER: 0 no, 1-16 pr
     sta $fffa
     lda #>nmi_handler
     sta $fffb
+.ifndef ROTATED
+    lda #<irq_kernal            ; con la ROM del KERNAL accesa (ef_copy in partita) l'interrupt
+    sta $0314                   ; arriva da qui
+    lda #>irq_kernal
+    sta $0315
+.endif
     lda #RASTER_LINE
     sta $d012
     lda $d011
@@ -105,17 +111,147 @@ win_pg:    .res 1               ; YOU WIN o PERFECT nel GAME OVER: 0 no, 1-16 pr
 .segment "CODE"
 
 .ifndef ROTATED                 ; (campo girato: rot_video.s)
-.proc irq_handler
-    pha
+; Interrupt del raster: alla riga RASTER_LINE il frame; in partita NEXT anche il cambio di sprite
+; a metà racchetta (racchette in due metà: pad_sprite e pad_mux di video.s).
+;
+; Una racchetta in due metà è uno sprite multicolore NON espanso usato due volte nello stesso
+; frame: la metà alta (righe 0-20 dell'immagine), poi la metà bassa (righe 21-41), ognuna con il
+; suo blocco. Il VIC-II finisce uno sprite dopo 21 righe e lo fa ripartire nella stessa riga se il
+; suo registro Y vale quella riga: basta scrivere Y = Y + 21 mentre si vede la metà alta. Il
+; puntatore invece si legge a ogni riga: va cambiato dentro la riga s = Y + 21. L'interrupt parte
+; una riga prima (due con una voce: un suo NMI dura quasi una riga), mai da una badline (mux_line),
+; scrive Y e aspetta la riga s guardando $D012; s non è mai una badline (pad_sprite sposta la
+; racchetta di una riga). Per quel tratto il timer A del CIA2 (gli NMI delle voci) resta fermo:
+; un NMI tra l'attesa e il puntatore lo farebbe arrivare tardi.
+;
+; Il vettore è sempre irq_handler; la tappa (frame, cambio della sinistra, cambio della destra) è
+; l'operando di irq_stage. Ogni racchetta ha il suo gestore, con la riga del cambio e il blocco
+; della metà bassa negli operandi, che apply_shadows scrive nel vblank insieme alle metà alte;
+; pad_mux decide solo chi cambia per prima, le righe da cui partono gli interrupt e dove salta il
+; primo gestore: all'interrupt dell'altra se è lontana, dentro il suo gestore se è vicina (scrive
+; la sua Y e aspetta la sua riga), alla fine se non c'è. Con la ROM del KERNAL accesa (le copie
+; dalla cartuccia, ef_copy: in partita a interrupt accesi) l'interrupt arriva da $0314
+; (irq_kernal): per questo il codice sta sotto $8000, dove la cartuccia non copre: sotto lo stack
+; con i puntatori dei laser (STKCODE, in MAIN non c'è posto) e, quello che lì non entra,
+; all'inizio del programma (IRQLOW); nelle build di prova con FRAMETEST, che sotto lo stack hanno
+; la prova dei frame, tutto in IRQLOW.
+.segment "IRQLOW"
+irq_kernal:                     ; il KERNAL ha messo da parte A, X e Y: come dopo il pha di irq_handler
+    pla
+    tay
+    pla
+    tax
+    jmp irq_stage
+irq_plain:                      ; il frame, come sempre
     inc frame_flag
     inc frame_count
     bne :+
     inc frame_count+1
-:   lda #$ff
+:   jmp irq_ack
+.ifndef FRAMETEST
+.segment "STKCODE"
+.endif
+irq_handler:
+    pha
+irq_stage:
+    jmp irq_frame               ; (operando: irq_frame, irq_tl o irq_tr)
+irq_frame:
+ft_gate:
+    jmp irq_plain               ; (pad_mux: bit con un cambio da fare, jmp senza)
+    ; le metà alte per il frame dopo, anche se il programma è in ritardo
+    lda #0
+ft_y0 = * - 1
+    sta $d001 + 2 * SPN_PAD
+    lda #0
+ft_p0 = * - 1
+    sta SPR_PTR + SPN_PAD
+    lda #0
+ft_y1 = * - 1
+    sta $d003 + 2 * SPN_PAD
+    lda #0
+ft_p1 = * - 1
+    sta SPR_PTR + SPN_PAD + 1
+    lda #0
+ft_line = * - 1
+    sta $d012
+    lda #<irq_tl
+ft_stage = * - 1
+    sta irq_stage + 1
+    jmp irq_plain
+irq_tb:                         ; tutte e due alla stessa riga: la Y della destra subito, poi
+    lda hr_yb                   ; la sinistra e, dopo il suo puntatore, quello della destra (irq_rp)
+    sta $d003 + 2 * SPN_PAD
+irq_tl:                         ; la racchetta sinistra, da interrupt: timer delle voci fermo fino
+    lda $dd0e                   ; alla fine (un NMI tra l'attesa e il puntatore lo farebbe tardare)
+    sta s_cra
+    and #$fe
+    sta $dd0e
+irq_l:
+    lda #0
+hl_yb = * - 1
+    sta $d001 + 2 * SPN_PAD
+:   lda $d012                   ; aspetta la riga del cambio (o esce se il raster è oltre la 255)
+    cmp hl_yb
+    bcs :+
+    bit $d011
+    bpl :-
+:   lda #0
+hl_pb = * - 1
+    sta SPR_PTR + SPN_PAD
+    jmp irq_finish              ; (operando: irq_arm_r lontana, irq_r vicina, irq_rp alla stessa
+l_next = * - 2                  ; riga, se no irq_finish)
+irq_tr:                         ; la racchetta destra
+    lda $dd0e
+    sta s_cra
+    and #$fe
+    sta $dd0e
+irq_r:
+    lda #0
+hr_yb = * - 1
+    sta $d003 + 2 * SPN_PAD
+:   lda $d012
+    cmp hr_yb
+    bcs :+
+    bit $d011
+    bpl :-
+:
+irq_rp:
+    lda #0
+hr_pb = * - 1
+    sta SPR_PTR + SPN_PAD + 1
+    jmp irq_finish              ; (operando: irq_arm_l, irq_l o irq_finish)
+r_next = * - 2
+irq_arm_r:                      ; poi l'interrupt della destra
+    lda #0
+ar_line = * - 1
+    sta $d012
+    lda #<irq_tr
+    bne irq_staged              ; (sempre)
+irq_arm_l:
+    lda #0
+al_line = * - 1
+    sta $d012
+    lda #<irq_tl
+    bne irq_staged              ; (sempre)
+irq_finish:
+    lda #RASTER_LINE
+    sta $d012
+    lda #<irq_frame
+irq_staged:
+    sta irq_stage + 1
+    lda #0                      ; il timer delle voci come era
+s_cra = * - 1
+    sta $dd0e
+irq_ack:
+    lda #$ff
     sta $d019
     pla
     rti
-.endproc
+.assert >irq_frame = >irq_tr .and >irq_frame = >irq_tb, error, "interrupt: le tappe in una pagina sola"
+.assert >irq_arm_r = >irq_finish .and >irq_arm_l = >irq_finish .and >irq_l = >irq_finish .and >irq_rp = >irq_finish, error, "interrupt: i salti dei gestori in una pagina sola"
+.assert <irq_tr <> 0 .and <irq_tl <> 0 .and <irq_frame <> 0, error, "interrupt: una tappa con il byte basso a zero"
+.assert * <= $8000, error, "interrupt: sotto la cartuccia"
+.segment "CODE"
 
 .endif
 ; RESTORE: ignorato. Sotto $8000: con il vettore dell'NMI nel file voce (bit 7 del byte alto)
@@ -681,7 +817,14 @@ other:
     cmp #ST_PICK                ; scelta della racchetta: anteprime
     bne :+
     jmp pick_preview
-:   rts
+:
+.ifndef ROTATED
+    cmp #ST_COUNT               ; titolo e menu: gli sprite che la partita NEXT ha coperto con le
+    bcs :+                      ; immagini delle racchette, una pagina per frame (video.s)
+    jmp under_restore
+:
+.endif
+    rts
 .endproc
 
 ; La musica del frame, chiamata da frame subito dopo i registri del VIC e i comandi: prima gli
@@ -1680,7 +1823,17 @@ CD_COL = 19
     jsr ch_join_match           ; CHALLENGE: può entrare un nuovo sfidante
     bcc :+
     rts
-:   lda m_next                  ; NEXT: i glifi dei fasci del BLASTER a metà conto (un frame
+:
+.ifndef ROTATED
+    lda m_next                  ; NEXT: il conto parte quando le immagini delle racchette sono
+    beq :+                      ; pronte (pad_prep le copia dalla cartuccia: con la voce di READY
+    lda pp_side                 ; non si può, e senza immagini le racchette non si vedono)
+    cmp #2
+    bcs :+
+    rts
+:
+.endif
+    lda m_next                  ; NEXT: i glifi dei fasci del BLASTER a metà conto (un frame
     beq :+                      ; leggero; il primo prepara la partita)
     lda timer
     cmp #COUNT_FRAMES / 2
@@ -2424,6 +2577,7 @@ pads:
     and #%111100
     sta shb_en
 .else
+    jsr over_halves             ; (quelle in due metà: un blocco solo con una riga ogni due)
     lda sh_enable
     and #%11 << SPN_PAD
     sta sh_enable

@@ -30,6 +30,10 @@
 @next:
     .word 0
 
+; SYS 2061 arriva qui: il segmento IRQLOW è il primo del programma (gli interrupt di play.s, che
+; devono stare sotto $8000), quindi comincia con il salto all'avvio
+.segment "IRQLOW"
+    jmp start
 .segment "CODE"
 
 start:

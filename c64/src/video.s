@@ -151,10 +151,10 @@ pi_k:      .res 1
 .segment "BSS"
 pi_out:    .res 1
 .segment "ZEROPAGE"
-pi_half:   .res 1
+pi_half:   .res 1               ; (campo girato: temporanea di rot_video.s)
+mux_mode = pi_half              ; pad_mux: chi cambia per prima, quante racchette, quanto vicine
 .segment "BSS"
-pi_ammo:   .res 1               ; BLASTER: livello del caricatore (0 - BLASTER_VIS)
-pi_full:   .res 1               ; BLASTER: prima riga con il colore del tipo acceso
+pu_dirty:  .res 1               ; sprite sotto l'I/O coperti dai blocchi delle racchette (under_restore)
 .segment "ZEROPAGE"
 pi_row:    .res 3
 .segment "BSS"
@@ -163,7 +163,7 @@ pi_tabs:   .res 1
 pi_acc:    .res 1
 pd_made:   .res 1               ; immagine di racchetta già rifatta in questo frame
 pd_dirty:  .res 2               ; immagine da copiare nella RAM degli sprite
-pd_full:   .res 2               ; GUARDIAN con dei settori persi: sprite del muro intero (0 nessuno)
+pd_bot:    .res 2               ; racchetta in due metà: il blocco della metà bassa (0: sprite intero)
 
 .segment "CODE"
 
@@ -209,6 +209,7 @@ pd_full:   .res 2               ; GUARDIAN con dei settori persi: sprite del mur
     lda #$ff                    ; immagini delle racchette da fare al primo frame
     sta pd_n
     sta pd_n+1
+    sta mux_mode                ; (pad_mux: nessun modo ancora)
     ; colore dei caratteri: bianco
     ldx #0
     lda #COL_WHITE
@@ -489,6 +490,8 @@ next:
     sta sh_yexp
     lda #0
     sta sh_xexp
+    sta pd_bot                  ; nessuna racchetta in due metà (pad_sprite)
+    sta pd_bot+1
     lda #SP_BALL4
     sta sh_ptr
     lda #SP_PAD0
@@ -1915,16 +1918,13 @@ color:
     sta sh_col+SPN_PAD,y
     ; variante dell'immagine in pi_var: TWIST l'inclinazione + 3, BLASTER i colpi nel caricatore
     ; * 32, GUARDIAN i settori persi (un bit per settore: 0 il muro intero); X = il posto
-    ; dell'immagine nel blocco del lato (TWIST pi_var, BLASTER pi_ammo, gli altri 0)
+    ; dell'immagine tra quelle del lato (TWIST pi_var, BLASTER pi_ammo, gli altri 0)
     ldx side
     lda pi_kind
     cmp #K_BLASTER
     bne not_blaster
     ldy nx_ammo,x               ; livello del caricatore (mag_setup)
     ldx bl_vis,y
-    stx pi_ammo
-    lda bl_var,x
-    sta pi_var
     ldy pi_side
     jmp prep
 not_blaster:
@@ -1932,41 +1932,54 @@ not_blaster:
     jeq twist
     cmp #K_GUARDIAN
     bne :+
+    ; GUARDIAN: se i settori persi non sono quelli dell'immagine, lo scudo si rifà sul posto
+    ; (guard_apply, circa 1.500 cicli: con il frame avanti al prossimo)
     lda nx_barrier,x
     eor #(1 << G_SECTORS) - 1
+    cmp pd_var,y
+    beq :+
     sta pi_var
-    beq pose
-    ; GUARDIAN con dei settori persi: l'immagine dinamica, fatta dal muro intero preparato
-    lda #0
-    sta pd_full,y
     lda pp_ready,y
-    jeq dynamic
-    lda pi_n
-    cmp pp_n,y
-    jne dynamic
-    lda prep_base,y
-    sta pd_full,y
-    jmp dynamic
-:   lda #0
-    sta pi_var
-pose:
-    tax                         ; (A = 0)
+    beq :+
+    lda #LATE_GUARD
+    jsr frame_after
+    ldy pi_side
+    bcs :+
+    jsr guard_apply
+    ldy pi_side
+:   ldx #0
 prep:
-    ; l'immagine preparata a inizio partita, se c'è (pad_prep, dalla cartuccia): TWIST per
-    ; inclinazione, BLASTER per colpi nel caricatore, così il caricatore cala nel frame del colpo
-    ; (Y = lato)
-    lda #0                      ; (nessun muro intero del GUARDIAN da cui partire)
-    sta pd_full,y
-    lda pp_ready,y              ; (next_morph lo azzera: il blocco della forma nuova arriva tra poco)
-    jeq dynamic
-    lda pi_n
-    cmp pp_n,y
-    jne dynamic
+    ; NEXT: le immagini vengono tutte dalla cartuccia (pad_prep), in due metà: il posto X del lato
+    ; Y sono due blocchi, la metà alta nello sprite adesso e la metà bassa (pd_bot) dalla riga
+    ; Y + 21 con l'interrupt del cambio (pad_mux). TWIST per inclinazione, BLASTER per colpi nel
+    ; caricatore, così il caricatore cala nel frame del colpo. Senza immagini (i primi frame,
+    ; OMEGA appena trasformato: next_morph azzera pp_ready) la racchetta non si vede.
+    lda pp_ready,y
+    beq hide
     txa
-    clc
-    adc prep_base,y
-put:
+    asl a                       ; (C = 0: il posto è al più 6)
+    adc pp_q0,y                 ; blocco tra quelli della partita: i primi 16 da SP_PREP0, gli
+    cmp #16                     ; altri sotto l'I/O da SP_UNDER
+    bcc :+
+    sbc #SP_PREP0 + 16 - SP_UNDER   ; (C = 1; il risultato è negativo: C = 0)
+:   adc #SP_PREP0
     sta sh_ptr+SPN_PAD,y
+    clc
+    adc #1
+    sta pd_bot,y
+    lda bit_of+SPN_PAD,y        ; non espanso
+    eor #$ff
+    and sh_yexp
+    sta sh_yexp
+    ; la riga del cambio non deve essere una badline (lì il 6502 è fermo per quasi tutta la riga):
+    ; se lo sarebbe, la racchetta una riga più in basso (una posizione su otto)
+    lda sh_y+SPN_PAD,y          ; ((Y + 21) & 7 = 3)
+    and #7
+    cmp #(3 - PAD_ROWS) & 7
+    bne spin
+    lda sh_y+SPN_PAD,y
+    adc #0                      ; (C = 1)
+    sta sh_y+SPN_PAD,y
 spin:
     ; NEXT: SUPER armato con la rotazione (animazione 0): al posto della racchetta l'immagine
     ; dell'angolo del frame, centrata sulla racchetta (sprite hires espanso)
@@ -1983,104 +1996,49 @@ spin:
     jcs spin_on                 ; (prima le immagini pronte)
 no_spin1:
     rts
+hide:
+    lda bit_of+SPN_PAD,y
+    eor #$ff
+    and sh_enable
+    sta sh_enable
+    ldx side
+    rts
 evo:
-    ; le altre partite: racchetta bianca senza tipo, niente immagini preparate
+    ; le altre partite: racchetta bianca senza tipo, immagine dinamica (pad_image), sprite espanso
     lda #COL_WHITE
     sta sh_col+SPN_PAD,y
-    lda #0
-    sta pi_var
-    sta pd_full,y
-dynamic:
     lda pi_n
     cmp pd_n,y
     bne make
     lda pi_kind
     cmp pd_kind,y
-    bne make
-    lda pi_var
-    cmp pd_var,y
     beq done                    ; (game_sprites mette nello sprite l'immagine dinamica)
 make:
     ; una sola immagine per frame (costa qualche migliaio di cicli): l'altra al prossimo; nel
     ; GAME OVER le racchette sono ferme e quel frame ha già le scritte da fare
     lda pd_made
-    bne keep
+    bne done
     lda state
     cmp #ST_OVER
     beq done
-    lda wp_on                   ; durante il salto del TELEPORT l'immagine è quella del salto
-    beq :+
-    lda wp_side
-    cmp pi_side
-    beq done
-:
-    ; frame già avanti: al prossimo. Il GUARDIAN dal muro intero (guard) costa meno di un terzo
-    ; di pad_image e si fa anche più avanti nel frame
-    lda #LATE_BIG
-    ldx pd_full,y
-    beq :+
-    lda #LATE_GUARD
-:   jsr frame_after
-    bcs keep
+    lda #LATE_BIG               ; frame già avanti: al prossimo
+    jsr frame_after
+    bcs done
     inc pd_made
     lda pi_n
     sta pd_n,y
     lda pi_kind
     sta pd_kind,y
-    lda pi_var
-    sta pd_var,y
     lda #1
     sta pd_dirty,y
-    lda pd_full,y
-    bne guard
     jsr pad_image               ; (game_sprites ha messo nello sprite l'immagine dinamica)
-    ldy pi_side
-keep:
-    ; immagine rimandata (o appena fatta: pd_n non è $FF): se nello sprite dinamico non c'è la
-    ; racchetta (pd_n = $FF: c'è il pezzo del salto del TELEPORT) e c'è il muro intero del
-    ; GUARDIAN, intanto quello
-    ldx pd_n,y
-    inx
-    bne done
-    lda pd_full,y
-    jne put
 done:
-    lda m_next
-    jne spin
     ldx side
-no_spin:
     rts
-guard:
-    ; GUARDIAN con dei settori persi (pi_var): in sh_img l'immagine preparata del muro intero (lo
-    ; sprite A), poi lo scudo grigio nei settori persi (guard_gray, come pad_image)
-    ldx #0
-    stx ptr
-    lsr a
-    ror ptr
-    lsr a
-    ror ptr
-    ora #>$C000
-    sta ptr+1                   ; (ptr) = $C000 + A * 64
-    lda img_base,y
-    bne g_right
-    ldy #IMG_BYTES - 1
-:   lda (ptr),y
-    sta sh_img,y
-    dey
-    bpl :-
-    bmi g_gray                  ; (sempre)
-g_right:
-    ldy #IMG_BYTES - 1
-:   lda (ptr),y
-    sta sh_img + IMG_BYTES,y
-    dey
-    bpl :-
-g_gray:
-    lda pi_var
-    jsr guard_gray
-    jmp done
 spin_on:
     ldy pi_side
+    lda #0                      ; un blocco solo, espanso: niente cambio a metà
+    sta pd_bot,y
     tya
     asl a
     asl a
@@ -2154,7 +2112,6 @@ sign:
 :   lda m_t
     clc
     adc #3
-    sta pi_var
     tax
     ldy pi_side
     jmp prep
@@ -2172,33 +2129,20 @@ TILT3 = P_PAD_MAX_SPEED * 5 / 6
 BLASTER_VIS = 4
 bl_vis: .byte 0, 1, 2, 2, 3, 3, 4
 .ifndef ROTATED
-bl_var: .byte 0, 32, 64, 96, 128    ; pi_var del BLASTER: livello visivo * 32 (pad_sprite)
 .endif
-.proc mag_setup
-    tay
-    lda bl_vis,y
-.endproc
-.proc mag_vis
-    sta pi_ammo
-    rts
-.endproc
 .assert P_BLASTER_SHOTS = 6, error, "caricatore del BLASTER: bl_vis mappa 0..6 in 0..4"
 
 .ifndef ROTATED                 ; (campo girato: le pose dalla cartuccia, anche fuori dalla partita)
 ; Immagine della racchetta di pi_side in sh_img (63 byte, 3 per riga): pi_n righe dell'astronave del
 ; tipo pi_kind (PAD_IMG_* di gen/assets.inc, dagli sprite di assets/ships/sprites/c64), vista dalla
 ; racchetta sinistra; per la destra ogni riga si specchia. La racchetta senza tipo (K_NONE) è il
-; corpo bianco nelle colonne doppie 4 e 5. Varianti: TWIST le righe spostate verso il davanti o il
-; retro con l'inclinazione (pi_var - 3, a gradini lungo l'altezza), BLASTER il colore del tipo grigio
-; nelle righe sopra la soglia del livello del caricatore (pi_ammo), GUARDIAN lo scudo grigio nei
-; settori persi (pi_var, guard_gray).
+; corpo bianco nelle colonne doppie 4 e 5. Niente varianti (inclinazione della TWIST, caricatore
+; del BLASTER, settori persi del GUARDIAN): in partita NEXT le immagini vengono dalla cartuccia, in
+; due metà (pad_prep), e le altre schermate mostrano l'astronave com'è.
 .proc pad_image
     ldy pi_side
     lda img_base,y
     sta pi_out
-    lda pi_n
-    lsr a
-    sta pi_half
     ldx pi_kind
     cpx #K_NONE
     bcs :+
@@ -2206,35 +2150,7 @@ bl_var: .byte 0, 32, 64, 96, 128    ; pi_var del BLASTER: livello visivo * 32 (p
     sta ptr
     lda pad_img_hi,x
     sta ptr+1
-:   cpx #K_BLASTER
-    bne :+
-    ldy pi_ammo
-    lda pad_bl_thr,y
-    sta pi_full
-:   cpx #K_TWIST
-    bne rows
-    ; TWIST: |t| e (k - n/2) * |t| alla riga 0, poi + |t| a ogni riga
-    lda pi_var
-    sec
-    sbc #3
-    sta pi_tsign
-    bpl :+
-    eor #$ff
-    clc
-    adc #1
-:   sta pi_tabs
-    tax
-    lda #0
-    sec
-    sbc pi_half
-    sta m_lo
-    lda #0
-:   dex
-    bmi :+
-    clc
-    adc m_lo
-    jmp :-
-:   sta pi_acc
+:
 rows:
     lda #0
     sta pi_k
@@ -2266,70 +2182,6 @@ ship:
     iny
     lda (ptr),y
     sta pi_row+2
-    cpx #K_BLASTER
-    bne tilt
-    lda pi_k
-    cmp pi_full
-    bcs mirror
-    ; riga sopra il caricatore: %10 (colore del tipo) diventa %01 (grigio)
-    ldx #2
-:   lda pi_row,x
-    asl a
-    eor #$ff
-    and pi_row,x
-    and #%10101010
-    sta m_lo
-    lsr a
-    ora m_lo
-    eor pi_row,x
-    sta pi_row,x
-    dex
-    bpl :-
-    bmi mirror                  ; (sempre)
-tilt:
-    cpx #K_TWIST
-    bne mirror
-    ; TWIST: riga spostata di (acc >> 3) colonne doppie verso il davanti, con il segno
-    ; dell'inclinazione (la destra si specchia dopo: lo spostamento è lo stesso)
-    lda pi_acc
-    cmp #$80
-    ror a
-    cmp #$80
-    ror a
-    cmp #$80
-    ror a
-    ldx pi_tsign
-    bpl :+
-    eor #$ff
-    clc
-    adc #1
-:   tax
-    lda pi_acc
-    clc
-    adc pi_tabs
-    sta pi_acc
-    txa
-    beq mirror
-    bmi back
-    asl a                       ; due bit per colonna doppia
-    tax
-:   lsr pi_row
-    ror pi_row+1
-    ror pi_row+2
-    dex
-    bne :-
-    beq mirror                  ; (sempre)
-back:
-    eor #$ff
-    clc
-    adc #1
-    asl a
-    tax
-:   asl pi_row+2
-    rol pi_row+1
-    rol pi_row
-    dex
-    bne :-
 mirror:
     lda pi_side
     beq store
@@ -2365,59 +2217,153 @@ store:
     lda pi_k
     cmp #PAD_ROWS
     jne row
-    lda pi_kind
-    cmp #K_GUARDIAN
-    bne done
-    lda pi_var
-    bne guard_gray
-done:
     rts
 .endproc
 
-; GUARDIAN: nell'immagine del lato pi_side lo scudo (colonne doppie 4 e 5, nella racchetta destra 6 e
-; 7: il byte 1 di ogni riga) grigio nei settori persi A (bit 0 il settore in alto). I settori si
-; contano dalle giunture nel colore del tipo; si fa grigia solo una riga di scudo tutta bianca.
-.proc guard_gray
-    sta pi_k                    ; bit 0: il settore della riga è perso
-    ldx pi_side
-    lda guard_mask,x
+; GUARDIAN del lato Y in due metà: lo scudo (colonne doppie 4 e 5, nella racchetta destra 6 e 7:
+; il byte 1 di ogni riga) grigio nei settori persi pi_var (bit 0 il settore in alto), sul posto nei
+; due blocchi della sua immagine (i primi del lato, uno dopo l'altro: dalla riga 21 l'indice ha un
+; byte in più). I settori si contano dalle giunture nel colore del tipo, anche di più righe. Un
+; settore perso non torna (i blocchi interi si ricopiano a inizio partita e quando OMEGA cambia
+; forma): gli altri restano come sono.
+.proc guard_apply
+    lda pi_var
+    sta pd_var,y
+    sta pi_k
+    lda guard_mask,y
     sta m_t
-    ldy img_base,x
-    ldx #PAD_ROWS
+    lda pp_q0,y                 ; (ptr2) = il primo blocco del lato: sempre nei primi 16
+    clc
+    adc #SP_PREP0
+    jsr blk_ptr2
+    lda #0
+    sta pi_row                  ; bit 7: la riga prima era una giuntura
+    ldy #1
 row:
-    lda sh_img+1,y
+    lda (ptr2),y
     and m_t
     sta m_lo
     lda #COLOR_YELLOW * $55
     and m_t
     cmp m_lo
     bne :+
-    lsr pi_k                    ; giuntura: il settore dopo
-    jmp next
-:   lda m_t                     ; (bianco: %11 in tutte e due le colonne)
-    cmp m_lo
-    bne next
-    lda pi_k
+    lda #$80
+    sta pi_row
+    bne next                    ; (sempre)
+:   asl pi_row                  ; dopo una giuntura: il settore dopo
+    bcc :+
+    lsr pi_k
+:   lda pi_k
     lsr a
-    bcc next
+    bcc next                    ; settore in piedi
+    lda m_lo                    ; perso: ogni pixel acceso dello scudo diventa grigio (%01)
+    lsr a
+    ora m_lo
+    and #COLOR_GRAY * $55
+    and m_t
+    sta m_lo
     lda m_t
     eor #$ff
-    and sh_img+1,y
-    sta m_lo
-    lda #COLOR_GRAY * $55
-    and m_t
+    and (ptr2),y
     ora m_lo
-    sta sh_img+1,y
+    sta (ptr2),y
 next:
     iny
     iny
     iny
-    dex
-    bne row
+    cpy #64
+    bne :+
+    iny
+:   tya
+    bpl row                     ; (l'ultima riga è a 125)
     rts
 .endproc
 guard_mask: .byte $F0, $0F
-.assert COLOR_GRAY = 1 .and COLOR_YELLOW = 2 .and COLOR_WHITE = 3, error, "guard_gray: colori dello scudo del GUARDIAN"
+.assert COLOR_GRAY = 1 .and COLOR_YELLOW = 2 .and COLOR_WHITE = 3, error, "guard_apply: colori dello scudo del GUARDIAN"
+
+; (ptr) = l'immagine dinamica della racchetta X (0, 1) in sh_img.
+.proc img_ptr
+    lda img_base,x
+    clc
+    adc #<sh_img
+    sta ptr
+    lda #>sh_img
+    adc #0
+    sta ptr+1
+    rts
+.endproc
+
+; (ptr2) = $C000 + 64 * A: un blocco di sprite.
+.proc blk_ptr2
+    pha
+    lsr a
+    lsr a
+    ora #$C0
+    sta ptr2+1
+    pla
+    lsr a
+    ror a
+    ror a
+    and #$C0
+    sta ptr2
+    rts
+.endproc
+
+; La racchetta in due metà che comincia al blocco A (metà alta, poi la bassa) a mezza risoluzione
+; in (ptr): 21 righe, una ogni due (0, 2, ... 40), cioè l'immagine di uno sprite espanso con i
+; pixel 2 x 2. Per il salto del TELEPORT e il GAME OVER. Cambia X e Y.
+.proc half_image
+    jsr blk_ptr2
+    ldy #0
+    sty m_t                     ; byte in lettura (dalla riga 21 uno in più: l'altro blocco)
+row:
+    ldx #3
+:   sty m_lo
+    ldy m_t
+    lda (ptr2),y
+    inc m_t
+    ldy m_lo
+    sta (ptr),y
+    iny
+    dex
+    bne :-
+    lda m_t                     ; la riga dopo si salta
+    cpy #33
+    bne :+
+    adc #0                      ; (C = 1) dopo la riga 20: le dispari della metà bassa
+:   clc
+    adc #3
+    sta m_t
+    cpy #IMG_BYTES
+    bne row
+    rts
+.endproc
+
+; GAME OVER (ov_scene di play.s): le racchette in due metà diventano un blocco solo a mezza
+; risoluzione nell'immagine dinamica, che lì si mostra non espansa (racchette a metà altezza).
+.proc over_halves
+    ldx #1
+each:
+    lda pd_bot,x
+    beq next
+    stx side
+    jsr img_ptr
+    lda sh_ptr+SPN_PAD,x
+    jsr half_image
+    ldx side
+    lda #0
+    sta pd_bot,x
+    lda #1
+    sta pd_dirty,x
+    lda #$ff                    ; (l'immagine dinamica non è più quella di una racchetta EVO)
+    sta pd_n,x
+    lda pad_slot,x
+    sta sh_ptr+SPN_PAD,x
+next:
+    dex
+    bpl each
+    rts
+.endproc
 
 ; A con le quattro coppie di bit in ordine inverso (pixel multicolore specchiati). Y cambia.
 .proc mirror_byte
@@ -2455,7 +2401,6 @@ pad_img6: .byte PAD_IMG_GUARDIAN
 pad_img_lo: .lobytes pad_img0, pad_img1, pad_img2, pad_img3, pad_img4, pad_img5, pad_img6
 pad_img_hi: .hibytes pad_img0, pad_img1, pad_img2, pad_img3, pad_img4, pad_img5, pad_img6
 pad_img_n:  .byte PAD_IMG_N
-pad_bl_thr: .byte PAD_BL_THR
 .endif
 ; pixel tra il bordo sinistro dello sprite e la colonna della racchetta: sinistra per tipo (K_NONE
 ; per ultimo), poi destra
@@ -2471,7 +2416,6 @@ kind_col:
 
 
 img_base: .byte 0, IMG_BYTES
-prep_base: .byte SP_PREP0, SP_PREP0 + 8
 
 
 bit_of: .byte %00000001, %00000010, %00000100, %00001000, %00010000, %00100000, %01000000, %10000000
@@ -2485,6 +2429,17 @@ bit_of: .byte %00000001, %00000010, %00000100, %00001000, %00010000, %00100000, 
     sta $d000+2*i
     lda sh_y+i
     sta $d001+2*i
+    .if i = ::SPN_PAD           ; (racchette in due metà: la metà alta, che l'interrupt del frame
+    sta ft_y0                   ; rimette, e la riga del cambio per il suo gestore; play.s)
+    clc
+    adc #PAD_ROWS
+    sta hl_yb
+    .elseif i = ::SPN_PAD + 1
+    sta ft_y1
+    clc
+    adc #PAD_ROWS
+    sta hr_yb
+    .endif
     lda sh_col+i
     sta $d027+i
     .endrepeat
@@ -2527,6 +2482,15 @@ bit_of: .byte %00000001, %00000010, %00000100, %00001000, %00010000, %00100000, 
     .repeat 8, i
     lda sh_ptr+i
     sta SPR_PTR+i
+    .if i = ::SPN_PAD           ; (e il blocco della metà bassa: quello dopo, dispari)
+    sta ft_p0
+    ora #1
+    sta hl_pb
+    .elseif i = ::SPN_PAD + 1
+    sta ft_p1
+    ora #1
+    sta hr_pb
+    .endif
     .endrepeat
     jmp pointers_done
 bitmap:
@@ -2535,6 +2499,7 @@ bitmap:
     sta SCREEN2 + $3f8+i
     .endrepeat
 pointers_done:
+    jsr pad_mux                 ; racchette in due metà: l'interrupt del cambio di sprite
     lda sh_enable
     sta $d015
     ; immagini delle racchette cambiate (di rado: altezza, tipo, inclinazione, caricatore; nel
@@ -3856,56 +3821,319 @@ fx_size:  .res 1
 SP_PREP0 = SP_FX0 + TRAIL_BUFS  ; 8 immagini per lato, i blocchi a inizio pagina
 .assert (SP_PREP0 .mod 4) = 0, error, "immagini delle racchette: i blocchi a inizio pagina"
 PP_DST = >($C000 + SP_PREP0 * 64)
+PP_PAGES = $C000 + SP_PREP0 * 64 + 63       ; pagine della coppia di tipi (ultimo byte del blocco 0)
+PP_Q0    = $C000 + SP_PREP0 * 64 + 127      ; primo blocco del secondo lato (del blocco 1)
+SP_UNDER = (SPRITES + $100 - $C000) / 64    ; i blocchi dal sedicesimo: sotto l'I/O, da SP_LINE24
+SP_HALF  = ($EAC0 - $C000) / 64             ; blocco libero: la racchetta del salto a mezza risoluzione
+.assert SP_HALF * 64 + $C000 + 64 <= VOL_TAB, error, "SP_HALF sulla tabella dei volumi delle voci"
+.assert SP_UNDER = SP_LINE24, error, "blocchi delle racchette sotto l'I/O: da SP_LINE24"
+.assert (SP_PREP0 & 1) = 0 .and (SP_UNDER & 1) = 0, error, "racchette in due metà: la metà alta in un blocco pari (apply_shadows)"
 PP_LATE = (TV_BUDGET - 5800) / TV_LCYC  ; come OM_LATE_COPY: la copia di una pagina e quello che resta
 
 .ifndef ROTATED                 ; (campo girato: rot_video.s)
 .proc pad_prep
-    ldy pp_side
-    cpy #2
-    bcs quit                    ; tutte pronte (next_morph lo rimette a 0)
-    lda pp_ready,y
-    beq load
-    iny
-    sty pp_side
-    bne pad_prep                ; (sempre)
-load:
+    lda pp_side
+    cmp #2
+    bcs out                     ; tutte pronte (next_morph lo rimette a 0)
     lda #PP_LATE                ; una pagina, circa 3.700 cicli: anche in partita (OMEGA trasformato)
     jsr frame_after
-    bcs quit
-    lda pp_side
+    bcc :+
+out:
+    rts
+:
+    ; coppia di tipi: sinistra * 7 + destra, + 49 con OMEGA a sinistra (lì i blocchi della destra
+    ; per primi); 8 coppie per banco, PAIR_PAGES pagine l'una
+    lda nx_kind
+    asl a
+    asl a
+    asl a
+    sec
+    sbc nx_kind
+    clc
+    adc nx_kind+4
+    ldx nx_morph
+    bne :+
+    adc #49                     ; (C = 0)
+:   tax
+    lsr a
+    lsr a
+    lsr a
+    clc
+    adc #PAD2_BANK
+    sta m_lo
+    txa
+    and #7
+    asl a
+    asl a
     asl a
     ora pp_var
-    sta m_lo                    ; lato * 2 + pagina
-    asl a
-    and #%100
-    tax                         ; lato * 4
-    lda nx_kind,x
-    tax
-    asl a
-    asl a                       ; (C = 0)
-    adc m_lo
-    adc #$80                    ; pagina nella ROML: tipo * 4 + lato * 2 + pagina
+    ora #$80
     sta ef_src+2
-    lda pv_rows,x
-    ldy pp_side
-    sta pp_n,y                  ; righe delle immagini
-    lda m_lo
-    clc
-    adc #PP_DST
+    lda pp_var
+    cmp #4
+    bcs under
+    adc #PP_DST                 ; (C = 0) le prime 4 pagine: i blocchi a $E100-$E4FF
     tay
-    lda #PAD_BANK
+    lda m_lo
     ldx #1
     jsr ef_copy
-    ldy pp_side
+    jmp copied
+under:
+    adc #>SPRITES + 1 - 4 - 1   ; (C = 1) le altre sotto l'I/O, da SP_UNDER
+    tay
+    lda #>SPRITES + 1           ; (gli sprite che c'erano vanno rimessi: under_restore)
+    sta pu_dirty
+    lda m_lo
+    jsr pad_under
+copied:
     inc pp_var
     lda pp_var
-    cmp #2
+    cmp PP_PAGES
     bcc quit
+ready:
+    ; pronte: il primo blocco di ogni lato (pp_q0; il lato i cui blocchi vengono dopo è quello di
+    ; OMEGA se è a sinistra, se no il destro), e lo scudo del GUARDIAN appena copiato è intero
+    ldy #1
+    lda nx_morph
+    bne :+
+    dey
+:   lda PP_Q0
+    sta pp_q0,y
+    tya
+    eor #1
+    tay
     lda #0
-    sta pp_var
+    sta pp_q0,y
+    sta pd_var
+    sta pd_var+1
     lda #1
-    sta pp_ready,y
+    sta pp_ready
+    sta pp_ready+1
+    asl a
+    sta pp_side
 quit:
+    rts
+.endproc
+
+; Una pagina dalla cartuccia (banco A, pagina ef_src+2) nella RAM sotto l'I/O alla pagina Y: con
+; $01 = $33 si leggono le ROM della cartuccia e a $D000 quella dei caratteri, e lì le scritture
+; vanno nella RAM. A interrupt spenti (circa 2.900 cicli); gira sotto $8000, come gli interrupt.
+.segment "IRQLOW"
+.proc pad_under
+    sta EF_BANK
+    lda #EF_16K
+    sta EF_MODE
+    sty dst+2
+    lda ef_src+2
+    sta src+2
+    php
+    sei
+    lda #$33
+    sta $01
+    ldy #0
+src:
+    lda $8000,y
+dst:
+    sta SPRITES,y
+    iny
+    bne src
+    lda #$35
+    sta $01
+    lda #EF_OFF
+    sta EF_MODE
+    plp
+    rts
+.endproc
+.segment "CODE"
+
+; Scelta della racchetta e VS: l'astronave ferma del tipo A per il lato Y, dalla cartuccia (le pose
+; di gen/padpairs.bin: una pagina per tipo, metà alta e bassa della sinistra e poi della destra)
+; sotto l'I/O, la sinistra nella pagina di SP_UNDER e la destra in quella dopo (pose_top: la metà
+; alta; la bassa è il blocco dopo). L'astronave è centrata nelle 42 righe: il cambio di sprite è
+; alla riga del centro per tutti i tipi, una tappa dello split del raster di quelle schermate.
+; pad_under tiene spenti gli interrupt per circa 2.900 cicli: solo con il raster tra la riga
+; dell'interrupt e la 42, lontano dalle righe dello split; se no C = 1 (al prossimo frame).
+POSE_BANK = PAD2_BANK + PAIR_POSES / 8
+POSE_PAGE = $80 + (PAIR_POSES .mod 8) * PAIR_PAGES
+.proc pose_load
+    ldx $d011
+    bmi :+
+    ldx $d012
+    cpx #RASTER_LINE
+    bcs :+
+    cpx #42
+    bcs out
+:   clc
+    adc #POSE_PAGE
+    sta ef_src+2
+    tya
+    adc #>SPRITES + 1           ; (C = 0)
+    tay
+    lda #>SPRITES + 1           ; (gli sprite che c'erano vanno rimessi: under_restore)
+    sta pu_dirty
+    lda #POSE_BANK
+    jsr pad_under
+    clc
+out:
+    rts
+.endproc
+pose_top: .byte SP_UNDER, SP_UNDER + 6
+POSE_BOT0 = SP_UNDER + 1        ; le metà basse, che lo split del raster mette negli sprite
+POSE_BOT1 = SP_UNDER + 7
+
+; Gli sprite che la partita NEXT ha coperto con i blocchi delle racchette (SP_LINE24, SP_LINE8,
+; bande EVO: tre pagine) di nuovo dall'immagine del programma nella cartuccia, una pagina per
+; chiamata (pu_dirty: la prossima, 0 nessuna). A fine frame nel titolo e nel menu (scene_done di
+; play.s), prima che servano, se il frame ha ancora il tempo della copia (circa 2.900 cicli a
+; interrupt spenti); mai con una voce (gli NMI troverebbero le ROM accese).
+UR_LATE = (TV_BUDGET - 3400) / TV_LCYC
+SPR_BANK = PRG_BANK + (SCREEN - $0800) / $4000          ; sprite_data: caricati a SCREEN
+SPR_PAGE = $80 + >((SCREEN - $0800) .mod $4000)         ; (la pagina di SPRITES)
+.proc under_restore
+    lda pu_dirty
+    beq done
+    bit $fffb
+    bmi done
+    lda #UR_LATE
+    jsr frame_after
+    bcs done
+    lda pu_dirty
+    clc
+    adc #<(SPR_PAGE - >SPRITES)
+    sta ef_src+2
+    ldy pu_dirty
+    lda #SPR_BANK
+    jsr pad_under
+    ldy pu_dirty
+    iny
+    cpy #>SPRITES + 4
+    bcc :+
+    ldy #0
+:   sty pu_dirty
+done:
+    rts
+.endproc
+
+; Interrupt del cambio di sprite a metà racchetta (play.s) per le racchette in due metà di questo
+; frame (pd_bot, da pad_sprite): chi cambia per prima e le righe da cui partono gli interrupt.
+; Nel vblank, da apply_shadows, che ha già scritto nel VIC le metà alte e negli operandi dei
+; gestori le metà alte, le righe del cambio e i blocchi delle metà basse. Solo in partita; fuori
+; si spegne. Da chi parte e dove saltano i gestori si rifanno solo quando cambia il modo
+; (mux_mode). Gli interrupt restano accesi: nel vblank quelli del cambio non arrivano, e quello
+; del frame legge solo le metà alte, già a posto.
+NEAR_LINES = 4                  ; righe del cambio distanti al più tanto: un interrupt solo
+.proc pad_mux
+    lda state
+    cmp #ST_COUNT
+    bcc off
+    cmp #ST_OVER + 1
+    bcc on
+off:
+    lda ft_gate                 ; nessun cambio: se c'era, l'interrupt torna quello del frame
+    cmp #$2c
+    bne :+
+    lda #$4c                    ; jmp
+    sta ft_gate
+    lda #<irq_frame
+    sta irq_stage + 1
+    lda #RASTER_LINE
+    sta $d012
+    lda #$78                    ; sei
+    sta ef_sei
+    sta mux_mode                ; (nessun modo: alla prossima accensione si riscrive tutto)
+:   rts
+on:
+    ; A = il modo: 0-1 una racchetta sola, 2-3 due lontane (un interrupt ciascuna), 4-5 due vicine
+    ; (un interrupt solo, che aspetta anche la riga della seconda), 6 due alla stessa riga (un
+    ; interrupt solo, i due puntatori di seguito); il bit 0 è chi cambia per prima (X)
+    ldx #0
+    lda pd_bot
+    beq right
+    lda pd_bot+1
+    beq mode                    ; solo la sinistra (A = 0)
+    lda sh_y+SPN_PAD+1
+    sec
+    sbc sh_y+SPN_PAD
+    beq same
+    bcs :+                      ; la sinistra è più in alto
+    inx
+    eor #$ff
+    adc #1                      ; (C = 0) distanza tra le righe del cambio
+:   cmp #NEAR_LINES + 1
+    txa
+    bcs :+
+    ora #4
+    bne mode                    ; (sempre)
+:   ora #2
+    bne mode                    ; (sempre)
+same:
+    lda #6
+    bne mode                    ; (sempre)
+right:
+    lda pd_bot+1
+    beq off
+    inx
+    txa
+mode:
+    cmp mux_mode
+    beq :+
+    sta mux_mode                ; modo cambiato (di rado): da chi parte e dove saltano i gestori
+    tay
+    lda mux_stage,y
+    sta ft_stage                ; (per l'interrupt del frame, e subito per questo frame: quello
+    sta irq_stage + 1           ; della riga 250 è già passato, con la tappa di prima)
+    lda mux_lnext,y
+    sta l_next
+    lda mux_rnext,y
+    sta r_next
+:   lda sh_y+SPN_PAD,x          ; l'interrupt della prima
+    jsr mux_line
+    sta ft_line
+    sta $d012
+    lda mux_mode                ; e, se è lontana, quello della seconda (dai due gestori)
+    and #6
+    cmp #2
+    bne :+
+    txa
+    eor #1
+    tax
+    lda sh_y+SPN_PAD,x
+    jsr mux_line
+    sta ar_line
+    sta al_line
+:   lda ft_gate
+    cmp #$2c
+    beq :+
+    lda #$2c                    ; da spento: l'interrupt del frame rimette le metà alte e arma il
+    sta ft_gate                 ; cambio (bit al posto del jmp), ef_copy a interrupt accesi (nop);
+    lda #$ea                    ; (la tappa di questo frame l'ha già messa il cambio di modo)
+    sta ef_sei
+:   rts
+.endproc
+mux_stage: .byte <irq_tl, <irq_tr, <irq_tl, <irq_tr, <irq_tl, <irq_tr, <irq_tb
+mux_lnext: .byte <irq_finish, <irq_finish, <irq_arm_r, <irq_finish, <irq_r, <irq_finish, <irq_rp
+mux_rnext: .byte <irq_finish, <irq_finish, <irq_finish, <irq_arm_l, <irq_finish, <irq_l, <irq_finish
+
+; A = Y di una racchetta in due metà: la riga da cui parte l'interrupt del suo cambio (alla riga
+; Y + 21), cioè una riga prima, due con una voce (un suo NMI, 57 cicli, può ritardarlo di quasi una
+; riga), senza contare le badline (riga & 7 = 3, lo YSCROLL del modo testo), da cui l'interrupt non
+; parte; il cambio non è mai a una riga con & 7 = 3 (pad_sprite). Cambia Y.
+.proc mux_line
+    clc
+    adc #PAD_ROWS - 1
+    tay
+    and #7
+    cmp #3
+    bne :+
+    dey                         ; la riga prima è una badline: una in più
+:   bit $fffb
+    bpl done
+    cmp #4                      ; con una voce una riga in più; due se quella prima è la badline
+    bne :+                      ; (riga & 7 = 4; con 3 la badline è già saltata)
+    dey
+:   dey
+done:
+    tya
     rts
 .endproc
 
@@ -3917,6 +4145,7 @@ quit:
 pp_side:  .res 1                ; lato da preparare (2: tutti pronti)
 pp_var:   .res 1                ; pagina del blocco in copia
 pp_ready: .res 2                ; immagini pronte per il lato
+pp_q0:    .res 2                ; primo blocco del lato tra quelli della partita
 pp_n:     .res 2                ; righe delle immagini del lato
 .segment "CODE"
 
@@ -4266,11 +4495,10 @@ done:
 :   stx wp_side
     lda pd_last,x
     sta wp_from
-    lda sh_ptr+SPN_PAD,x        ; immagine della racchetta, da cui vengono le righe del salto: se
-    cmp pad_slot,x              ; è quella rifatta, il muro intero del GUARDIAN o nessuna (la
-    bne :+                      ; racchetta sparisce e ricompare)
-    lda pd_full,x
-:   sta wp_src
+    lda pd_bot,x                ; immagine da cui vengono le righe del salto: la racchetta in due
+    beq :+                      ; metà a mezza risoluzione (wp_src = $FF: da preparare, sotto,
+    lda #$ff                    ; quando il frame ha tempo); se no nessuna (la racchetta sparisce
+:   sta wp_src                  ; e ricompare)
     lda #$ff                    ; nessuna immagine ancora fatta
     sta wp_ls
     sta wp_lo
@@ -4299,17 +4527,32 @@ stop:
     lda #0
     sta wp_on
     ldx wp_side
-    lda #$ff                    ; l'immagine della racchetta si rifà (con le immagini preparate
-    sta pd_n,x                  ; torna subito una di quelle)
-    lda pd_full,x               ; GUARDIAN con dei settori persi: nello sprite dinamico c'è il
-    beq :+                      ; pezzo del salto, intanto il muro intero (pad_sprite)
-    sta sh_ptr+SPN_PAD,x
-:   jmp remember
+    lda #$ff                    ; l'immagine dinamica si rifà (in NEXT torna subito quella in due
+    sta pd_n,x                  ; metà, pad_sprite)
+    jmp remember
 going:
     sta wp_d
     lda #WARP_LATE              ; frame già avanti: resta l'immagine di prima, e il disegno si fa
     jsr frame_after             ; all'inizio del frame dopo (warp_early)
-    bcc :+
+    ldx wp_src
+    inx
+    bne :++
+    ; la racchetta in due metà a mezza risoluzione in SP_HALF (pixel 2 x 2, come lo sprite espanso
+    ; del salto), una volta per salto: costa quanto un'immagine, che si fa da un frame dopo. Solo
+    ; a fine frame e con il tempo (niente wp_pend: all'inizio del frame dopo peserebbe su un frame
+    ; di cui non si sa ancora niente)
+    bcs :+
+    ldx wp_side
+    lda #<(SP_HALF * 64 + $C000)
+    sta ptr
+    lda #>(SP_HALF * 64 + $C000)
+    sta ptr+1
+    lda sh_ptr+SPN_PAD,x
+    jsr half_image
+    lda #SP_HALF
+    sta wp_src
+:   jmp place
+:   bcc :+
     inc wp_pend
     jmp place
 :
@@ -4364,13 +4607,7 @@ going:
     sty wp_prev
     sta wp_ls
     ; partenza nell'immagine dinamica della racchetta
-    lda img_base,x
-    clc
-    adc #<sh_img
-    sta ptr
-    lda #>sh_img
-    adc #0
-    sta ptr+1
+    jsr img_ptr
     lda wp_sunk
     ldx #0
     jsr warp_image
@@ -4423,17 +4660,18 @@ place:
     sta sh_enable
     lda pad_slot,y
     sta sh_ptr+SPN_PAD,y
+    lda #0                      ; un blocco solo, espanso: niente cambio a metà
+    sta pd_bot,y
+    lda bit_of+SPN_PAD,y
+    ora sh_yexp
+    sta sh_yexp
     lda wp_en_top
     clc
     adc #SPR_Y0
     sta sh_y+SPN_PAD,y
     lda m_t
     sta sh_col+SPN_PAD,y
-    jmp icon
-:   lda bit_of+SPN_PAD,y        ; affondata: niente racchetta
-    eor #$ff
-    and sh_enable
-    sta sh_enable
+:                               ; (nessun pezzo ancora: la racchetta resta com'è)
 icon:
     lda wp_ex
     beq no_icon
@@ -4566,17 +4804,8 @@ wp_i    = m_lo                  ; riga nella lista (le righe in luce usano X)
 .proc warp_image
     sta wp_lvl
     stx wp_arr
-    lda wp_src                  ; (ptr2) = $C000 + 64 * wp_src
-    lsr a
-    lsr a
-    ora #$C0
-    sta ptr2+1
-    lda wp_src                  ; byte basso: (wp_src & 3) << 6
-    lsr a
-    ror a
-    ror a
-    and #$C0
-    sta ptr2
+    lda wp_src
+    jsr blk_ptr2                ; (ptr2) = $C000 + 64 * wp_src
     lda wp_src
     bne :++
     tay                         ; nessuna immagine: tutto vuoto

@@ -7,7 +7,6 @@
 //!       paddws-c64 [--build DIR] frames             cicli di ogni frame (attract, partita)
 //!       paddws-c64 params [--check]                 scrive (o controlla) c64/gen/params.inc
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -384,12 +383,11 @@ fn ui(m: &mut Machine) -> bool {
     }
     m.write_i32("pad_x", 0, home);
     println!("  joystick: scatto verso l'avversario, rientro dalla parte opposta");
-    // immagini delle racchette di NEXT (pad_prep): per ogni tipo e tutti e due i lati i blocchi del
-    // banco PAD_BANK della cartuccia al loro posto, una pagina per frame, senza toccare
-    // i due schermi ($C000-$C7FF); poi un lato che cambia tipo (OMEGA): si ricopia solo il suo
+    // immagini delle racchette di NEXT (pad_prep): i blocchi della coppia di tipi dalla cartuccia
+    // al loro posto, una pagina per frame, senza toccare i due schermi ($C000-$C7FF); poi un lato
+    // che cambia tipo (OMEGA): i blocchi dell'altro restano dove sono
     let screens: Vec<u8> = m.cpu.mem[0xC000..0xC800].to_vec();
     m.write_u8("nx_morph", 0, 0xFF); // (nessun OMEGA)
-    let first = 0xC000 + m.read_u8("prep_base", 0) as usize * 64;
     let prep = |m: &mut Machine| {
         let mut calls = 0;
         for _ in 0..40 {
@@ -403,12 +401,6 @@ fn ui(m: &mut Machine) -> bool {
         }
         calls
     };
-    let blocks_ok = |m: &Machine, kinds: [u8; 2]| {
-        (0..2u8).all(|side| {
-            let at = first + usize::from(side) * PAD_SLOTS * 64;
-            m.cpu.mem[at..at + PAD_SLOTS * 64] == pad_block(m, kinds[usize::from(side)], side)[..]
-        })
-    };
     if rotated() {
         // campo girato (rot_video.s): per lato le pagine del tipo (TWIST e BLASTER 3, gli altri 1)
         // da $E100 + lato * $400, come in gen/rotated/paddles.bin (blocco (tipo * 2 + lato) * $400)
@@ -418,37 +410,57 @@ fn ui(m: &mut Machine) -> bool {
         }
         println!("  pad_prep: le pose di tutti i tipi dalla cartuccia al loro posto, un lato che cambia tipo ricopiato da solo");
     } else {
-        for kind in 0..7u8 {
-            for side in 0..2u16 {
-                m.write_u8("nx_kind", side * 4, kind);
-                m.write_u8("pp_n", side, 0xFF);
-                m.write_u8("pp_ready", side, 0);
-            }
+        // (anche le coppie con più di 16 blocchi: quelli in più vanno sotto l'I/O da $D100)
+        let start = |m: &mut Machine, left: u8, right: u8| {
+            m.write_u8("nx_kind", 0, left);
+            m.write_u8("nx_kind", 4, right);
+            m.write_u8("pp_ready", 0, 0);
+            m.write_u8("pp_ready", 1, 0);
             m.write_u8("pp_side", 0, 0);
             m.write_u8("pp_var", 0, 0);
-            m.cpu.mem[first..first + 2 * PAD_SLOTS * 64].fill(0);
+        };
+        let mut most = 0;
+        for (left, right) in (0..7u8).map(|k| (k, k)).chain([(3, 4), (4, 3), (6, 2), (3, 0)]) {
+            start(m, left, right);
+            m.cpu.mem[0xE100..0xE500].fill(0);
+            m.cpu.under_io[0x100..0x400].fill(0);
             let calls = prep(m);
-            if m.read_u8("pp_side", 0) < 2 || calls != 5 {
-                println!("FAIL: pad_prep con il tipo {kind}: lato {} dopo {calls} frame (4 pagine, poi la fine)", m.read_u8("pp_side", 0));
+            let pages = usize::from(pair_combo(left, right, false)[63]);
+            most = most.max(pages);
+            if m.read_u8("pp_side", 0) < 2 || calls as usize != pages {
+                println!("FAIL: pad_prep con i tipi {left} e {right}: {calls} frame per {pages} pagine");
                 return false;
             }
             if m.cpu.mem[0xC000..0xC800] != screens[..] {
-                println!("FAIL: pad_prep con il tipo {kind} scrive negli schermi");
+                println!("FAIL: pad_prep con i tipi {left} e {right} scrive negli schermi");
                 return false;
             }
-            if !blocks_ok(m, [kind, kind]) {
-                println!("FAIL: pad_prep con il tipo {kind}: immagini diverse da quelle della cartuccia");
+            if let Err(e) = pair_placed(m, left, right, false) {
+                println!("FAIL: pad_prep con i tipi {left} e {right}: {e}");
                 return false;
             }
         }
-        m.write_u8("nx_kind", 4, 2);
-        m.write_u8("pp_ready", 1, 0); // (come next_morph)
+        // OMEGA a sinistra: i blocchi della destra per primi, e restano lì quando OMEGA cambia forma
+        m.write_u8("nx_morph", 0, 0);
+        start(m, 3, 6);
+        prep(m);
+        let first = pair_placed(m, 3, 6, true);
+        m.write_u8("nx_kind", 0, 4);
+        m.write_u8("pp_ready", 0, 0); // (come next_morph)
         m.write_u8("pp_side", 0, 0);
+        m.write_u8("pp_var", 0, 0);
         let calls = prep(m);
-        if m.read_u8("pp_side", 0) < 2 || calls != 3 || !blocks_ok(m, [6, 2]) || m.cpu.mem[0xC000..0xC800] != screens[..] {
-            println!("FAIL: pad_prep dopo il cambio di tipo di un lato: {calls} frame, immagini o schermi sbagliati");
+        let second = pair_placed(m, 4, 6, true);
+        m.write_u8("nx_morph", 0, 0xFF);
+        if let Err(e) = first.and(second) {
+            println!("FAIL: pad_prep con OMEGA a sinistra: {e}");
             return false;
         }
+        if calls as usize != usize::from(pair_combo(4, 6, true)[63]) || m.cpu.mem[0xC000..0xC800] != screens[..] {
+            println!("FAIL: pad_prep dopo il cambio di forma di OMEGA: {calls} frame, o schermi toccati");
+            return false;
+        }
+        println!("  pad_prep: i blocchi di 11 coppie di tipi dalla cartuccia al loro posto (una pagina per frame, al più {most}), OMEGA a sinistra con i blocchi della destra per primi");
         println!("  pad_prep: le immagini di tutti i tipi dalla cartuccia al loro posto (4 frame), un lato che cambia tipo ricopiato da solo (2 frame)");
     }
     match voice(m) {
@@ -2712,7 +2724,39 @@ const GOLD_PARTS: usize = 7;
 /// Campo girato: cicli che il banco non vede in un frame di partita (interrupt della mezzeria,
 /// circa 170, e lettura degli sprite 1-5 della metà in basso, circa 250), aggiunti alla misura.
 const ROT_SPLIT_CYCLES: u64 = 450;
-/// Campo girato: primo sprite delle pose della racchetta in alto ($E500, rot_video.s)
+/// Racchette in due metà (play.s, pad_mux di video.s): cicli del frame presi dagli interrupt del
+/// cambio di sprite, che il banco non esegue. Un modello dei gestori: l'interrupt del frame rimette
+/// le metà alte e arma il cambio (37 cicli in più); ogni interrupt del cambio parte una riga prima
+/// della riga del cambio (due con una voce, una in più se cadrebbe in una badline: mux_line), ferma
+/// il timer delle voci, aspetta quella riga e ci mette altri 56 cicli; due racchette con le righe
+/// del cambio distanti al più NEAR_LINES si fanno nello stesso interrupt, che aspetta anche la
+/// seconda (26 cicli in più). Nel prototipo in VICE, con gestori più lunghi di circa 10 cicli e
+/// senza il timer delle voci, la media era 259 cicli a frame e il massimo 357.
+fn half_split_cycles(m: &Machine) -> u64 {
+    const NEAR_LINES: u8 = 4;
+    let line = if ntsc() { 65 } else { 63 };
+    let voice = m.cpu.read(0xFFFB) & 0x80 != 0;
+    let mut s: Vec<u8> =
+        (0..2u16).filter(|&i| m.read_u8("pd_bot", i) != 0).map(|i| m.read_u8("sh_y", 3 + i).wrapping_add(21)).collect();
+    s.sort_unstable();
+    // righe prima di quella del cambio da cui parte l'interrupt
+    let lead = |s: u8| {
+        let before = s.wrapping_sub(1) & 7;
+        line * match (voice, before) {
+            (false, 3) => 2,
+            (false, _) => 1,
+            (true, 3 | 4) => 3,
+            (true, _) => 2,
+        }
+    };
+    match s[..] {
+        [] => 0,
+        [a] => 37 + lead(a) + 56,
+        [a, b] if b - a <= NEAR_LINES => 37 + lead(a) + 56 + u64::from(b - a) * line + 26,
+        [a, b] => 37 + lead(a) + 56 + lead(b) + 56,
+        _ => unreachable!(),
+    }
+}
 const ROT_PTR_TOP: u8 = ((0xE500 - 0xC000) / 64) as u8;
 
 /// Golden test: `spec` record:FILE scrive le impronte (riferimento PWG2), check:FILE le confronta.
@@ -3186,15 +3230,18 @@ fn gesture_joy(m: &Machine, rng: &mut Rng, queue: &mut std::collections::VecDequ
 }
 
 /// Barra e icone delle mosse speciali da c64/gen/assets.inc: primo carattere della barra
-/// (BAR_C0) e le quattro icone (SUPER_ICONS, 8 righe ciascuna).
+/// (BAR_C0) e le quattro icone (SUPER_ICONS, 8 righe ciascuna; nel campo girato quelle girate con
+/// il campo, ROT_SUPER_ICONS di gen/rotated/rotated.inc: le frecce verso l'avversario).
 fn assets_supers() -> &'static (u8, Vec<u8>) {
     static ASSETS: std::sync::OnceLock<(u8, Vec<u8>)> = std::sync::OnceLock::new();
     ASSETS.get_or_init(|| {
         let inc = std::fs::read_to_string(c64_dir().join("gen/assets.inc")).unwrap_or_default();
         let c0 = inc_const(&inc, "BAR_C0").unwrap_or(0) as u8;
-        let icons = inc
+        let (file, name) = if rotated() { ("gen/rotated/rotated.inc", ".define ROT_SUPER_ICONS ") } else { ("gen/assets.inc", ".define SUPER_ICONS ") };
+        let icons = std::fs::read_to_string(c64_dir().join(file))
+            .unwrap_or_default()
             .lines()
-            .find_map(|l| l.strip_prefix(".define SUPER_ICONS "))
+            .find_map(|l| l.strip_prefix(name))
             .map(|l| {
                 l.split(',')
                     .filter_map(|v| u8::from_str_radix(v.trim().trim_start_matches('$'), 16).ok())
@@ -3598,9 +3645,8 @@ fn frames(m: &mut Machine) -> bool {
     let fx_count = std::cell::Cell::new((0u32, 0u32));
     // racchette GUARDIAN: immagine dei settori persi in ritardo (vedi guardian_image)
     let guardian = std::cell::Cell::new(GuardianLag::default());
-    // immagini delle racchette a schermo contro quelle giuste per tipo e stato (paddle_shown)
-    // (nel campo girato pad_image non c'è: le pose vengono dalla cartuccia e il controllo è spento)
-    let expected = if rotated() { HashMap::new() } else { paddle_images(m) };
+    // immagini delle racchette a schermo contro quelle giuste per tipo e stato (paddle_shown; nel
+    // campo girato il controllo è spento)
     let shown = std::cell::RefCell::new(ShownLag::default());
     // tabelle dei quadrati dopo math_init: in partita devono essere quelle (presentazioni, YOU WIN,
     // HOW TO PLAY e finale ci scrivono sopra e le fanno rifare prima)
@@ -3869,11 +3915,25 @@ fn frames(m: &mut Machine) -> bool {
         }
         // campo girato: l'interrupt della mezzeria (gli sprite 1-5 della metà in basso) e la lettura
         // degli sprite di quella metà, che il banco non esegue (ROT_SPLIT_CYCLES, una stima per eccesso)
-        let split = if rotated() && matches!(state, 6..=8) { ROT_SPLIT_CYCLES } else { 0 };
+        // l'altro campo, in NEXT: gli interrupt del cambio di sprite a metà racchetta (half_split_cycles)
+        let split = if !matches!(state, 6..=8) {
+            0
+        } else if rotated() {
+            ROT_SPLIT_CYCLES
+        } else if m.read_u8("m_next", 0) != 0 {
+            half_split_cycles(m)
+        } else {
+            0
+        };
         let c = m.cpu.cycles - irq + split;
         let end = m.cpu.cycles;
         // finito dopo l'interrupt del frame dopo: quello parte subito, in ritardo
         let spill = c.saturating_sub(frame_cycles());
+        // PADDWS_C64_SPILL: l'elenco dei frame di partita finiti dopo l'interrupt (cicli oltre, e
+        // quanti sono degli interrupt del cambio di sprite)
+        if spill > 0 && state == ST_PLAY as usize && std::env::var_os("PADDWS_C64_SPILL").is_some() {
+            eprintln!("oltre il frame di {spill} cicli ({split} degli interrupt del cambio)");
+        }
         // nel profilo, i frame della partita con la cometa del SUPER in volo a parte (scena 4)
         let scene = if state == 7 && m.read_u8("nx_super", 0) != 0 && m.read_u8("nx_super_a", 0) == 2 {
             4
@@ -3973,7 +4033,9 @@ fn frames(m: &mut Machine) -> bool {
         }
         if m.read_u8("state", 0) == ST_PLAY && m.read_u8("m_next", 0) != 0 && !rotated() {
             guardian_image(m, &guardian);
-            paddle_shown(m, &expected, &mut shown.borrow_mut(), m.cpu.read(0xFFFB) & 0x80 != 0);
+            if !rotated() {
+                paddle_shown(m, &mut shown.borrow_mut());
+            }
         }
         m.cpu.frame_start = None;
         // presentazione nuova, o la sfida dopo le scelte dello sfidante (il tema di un avversario a
@@ -4120,8 +4182,10 @@ fn frames(m: &mut Machine) -> bool {
         border.set(b);
         // READY al primo frame del conto alla rovescia di CHALLENGE, GO al via
         let (mut n, mut ready, mut vias, mut go) = counts.get();
-        // (sull'NTSC non il frame senza scena: il conto comincia in quello dopo)
-        if ch && first_count && now == ST_COUNT && !scene_skipped(m) {
+        // (sull'NTSC non il frame senza scena: il conto comincia in quello dopo; con le racchette
+        // in due metà il conto aspetta le loro immagini dalla cartuccia, pad_prep: il primo frame è
+        // quello in cui il timer si muove)
+        if ch && first_count && now == ST_COUNT && !scene_skipped(m) && m.read_u8("timer", 0) != count_frames() {
             n += 1;
             ready += (m.cpu.read(0xFFFB) & 0x80 != 0) as u32;
         }
@@ -4620,9 +4684,13 @@ fn frames(m: &mut Machine) -> bool {
                 let (ptr, base, slots) = if rotated() {
                     (m.read_u8("sh_ptr", 2), ROT_PTR_TOP, 16u8)
                 } else {
-                    (m.read_u8("sh_ptr", 4), m.read_u8("prep_base", 1), PAD_SLOTS as u8)
+                    // (il blocco tra quelli della partita, dal primo del lato: due per posto)
+                    let ptr = m.read_u8("sh_ptr", 4);
+                    let q = if ptr >= SP_PREP0 { ptr - SP_PREP0 } else { ptr.wrapping_sub(SP_UNDER).wrapping_add(16) };
+                    (q.wrapping_sub(m.read_u8("pp_q0", 1)) / 2, 0, 8u8)
                 };
-                let in_block = (base..base + slots).contains(&ptr) && m.read_u8("pp_ready", 1) != 0;
+                let placed = if rotated() { (base..base + slots).contains(&ptr) } else { m.read_u8("pd_bot", 1) != 0 };
+                let in_block = placed && m.read_u8("pp_ready", 1) != 0;
                 if k != kind {
                     wait = Some(0);
                 }
@@ -5153,92 +5221,103 @@ fn border_logic(m: &mut Machine) -> Result<String, String> {
 
 const KIND_NAMES: [&str; 7] = ["ARCADE", "TITAN", "HAMMER", "TWIST", "BLASTER", "RUSH", "GUARDIAN"];
 
-/// Immagini giuste delle racchette (pad_image), per lato, tipo e variante come pad_variant: BLASTER
-/// livello del caricatore * 32 (0-4), GUARDIAN settori persi (0-31), TWIST inclinazione + 3 (0-6),
-/// gli altri 0. Fatte su una copia dello stato della CPU, che poi torna com'era.
-fn paddle_images(m: &mut Machine) -> HashMap<(u8, u8, u8), Vec<u8>> {
-    let saved = m.cpu.clone();
-    let rows = m.addr("pv_rows");
-    let base = m.addr("sh_img");
-    let mut out = HashMap::new();
-    for side in 0..2u8 {
-        for kind in 0..7u8 {
-            let n = m.cpu.read(rows + u16::from(kind));
-            let vars: Vec<u8> = match kind {
-                3 => (0..7).collect(),
-                4 => (0..=4).collect(),
-                6 => (0..32).collect(),
-                _ => vec![0],
-            };
-            for var in vars {
-                m.write_u8("pi_side", 0, side);
-                m.write_u8("pi_kind", 0, kind);
-                m.write_u8("pi_n", 0, n);
-                m.write_u8("pi_var", 0, if kind == 4 { var * 32 } else { var });
-                if kind == 4 {
-                    m.cpu.a = var;
-                    m.call("mag_vis");
-                }
-                m.call("pad_image");
-                let img = base + 63 * u16::from(side);
-                let key = (side, kind, if kind == 4 { var * 32 } else { var });
-                out.insert(key, (0..63).map(|i| m.cpu.read(img + i)).collect());
-            }
-        }
-    }
-    m.cpu = saved;
-    out
-}
-
-/// Immagini delle racchette in partita NEXT nella cartuccia (gen/paddles.bin di
-/// tools/gen_c64_assets.py, banco PAD_BANK): per tipo e lato un blocco di PAD_SLOTS immagini da 64
-/// byte, che pad_prep di video.s copia nei posti del lato. Nel posto k l'inclinazione k - 3 della
-/// TWIST, il livello k del caricatore del BLASTER, per gli altri tipi il posto 0.
-const PAD_SLOTS: usize = 8;
 /// video.s: livelli visivi del caricatore del BLASTER (0-BLASTER_VIS)
 const BLASTER_VIS: u8 = 4;
-/// Frame al più dalla trasformazione di OMEGA alle immagini della forma nuova dal suo blocco
-/// (pad_prep: 2 pagine, una per frame con il tempo, nella pausa dopo il punto; intanto l'immagine
-/// dinamica, sotto il lampo bianco).
+/// Frame al più dalla trasformazione di OMEGA alle immagini della forma nuova (pad_prep: una pagina
+/// per frame con il tempo, nella pausa dopo il punto; intanto la racchetta non si vede, sotto il
+/// lampo bianco).
 const MORPH_WAIT_MAX: u32 = 10;
+/// video.s: primo blocco delle racchette in partita NEXT ($E100) e primo di quelli sotto l'I/O ($D100)
+const SP_PREP0: u8 = 132;
+const SP_UNDER: u8 = 68;
+/// gen_c64_assets.py: pagine per coppia di tipi in gen/padpairs.bin
+const PAIR_PAGES: usize = 8;
 
-/// Il blocco del tipo `kind` per il lato `side` nella flash della cartuccia.
-fn pad_block(m: &Machine, kind: u8, side: u8) -> Vec<u8> {
-    static BANK: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-    let bank = *BANK.get_or_init(|| {
-        let inc = std::fs::read_to_string(c64_dir().join("src/ef.inc")).unwrap_or_default();
-        inc_const(&inc, "PAD_BANK").expect("PAD_BANK in c64/src/ef.inc")
-    });
-    let ef = m.cpu.ef.as_ref().expect("cartuccia");
-    let at = bank * EF_HALF + usize::from(kind) * 4 * 256 + usize::from(side) * PAD_SLOTS * 64;
-    ef.roml[at..at + PAD_SLOTS * 64].to_vec()
+/// Le astronavi a righe dello schermo delle racchette in due metà (gen/padpairs.bin di
+/// tools/gen_c64_assets.py): per coppia di tipi (sinistra * 7 + destra, + 49 con i blocchi della
+/// destra per primi) PAIR_PAGES pagine con i blocchi al loro posto, due per posa (metà alta e
+/// bassa); nel posto k l'inclinazione k - 3 della TWIST, il livello k del caricatore del BLASTER,
+/// per gli altri tipi il posto 0. Nel byte 63 del blocco 0 le pagine da copiare, in quello del
+/// blocco 1 il primo blocco del secondo lato.
+fn pairs_file() -> &'static [u8] {
+    static FILE: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    FILE.get_or_init(|| std::fs::read(c64_dir().join("gen/padpairs.bin")).expect("c64/gen/padpairs.bin"))
 }
 
-/// Le immagini della cartuccia uguali byte per byte a quelle di pad_image, per ogni tipo, lato e
-/// variante (TWIST 7 inclinazioni, BLASTER 5 livelli del caricatore, gli altri una).
-fn prep_images(m: &mut Machine) -> Result<String, String> {
-    let pads = paddle_images(m);
-    let mut images = 0;
-    for side in 0..2u8 {
-        for kind in 0..7u8 {
-            let block = pad_block(m, kind, side);
-            let pairs: Vec<(usize, u8)> = match kind {
-                3 => (0..7).map(|v| (usize::from(v), v)).collect(),
-                4 => (0..=BLASTER_VIS).map(|l| (usize::from(l), l * 32)).collect(),
-                _ => vec![(0, 0)],
-            };
-            for (slot, var) in pairs {
-                if block[slot * 64..slot * 64 + 63] != pads[&(side, kind, var)][..] {
-                    return Err(format!(
-                        "immagine della cartuccia di {} lato {side} posto {slot} diversa da pad_image",
-                        KIND_NAMES[usize::from(kind)]
-                    ));
-                }
-                images += 1;
+fn pair_combo(left: u8, right: u8, right_first: bool) -> &'static [u8] {
+    let combo = usize::from(right_first) * 49 + usize::from(left) * 7 + usize::from(right);
+    &pairs_file()[combo * PAIR_PAGES * 256..][..PAIR_PAGES * 256]
+}
+
+/// Il blocco `q` tra quelli della partita com'è in memoria: i primi 16 da $E100, gli altri nella
+/// RAM sotto l'I/O da $D100.
+fn pair_block(m: &Machine, q: usize) -> &[u8] {
+    if q < 16 { &m.cpu.mem[0xE100 + 64 * q..][..64] } else { &m.cpu.under_io[0x100 + 64 * (q - 16)..][..64] }
+}
+
+/// I blocchi della coppia di tipi al loro posto dopo pad_prep, con i due lati pronti e il primo
+/// blocco di ciascuno.
+fn pair_placed(m: &Machine, left: u8, right: u8, right_first: bool) -> Result<(), String> {
+    let combo = pair_combo(left, right, right_first);
+    let (pages, second) = (usize::from(combo[63]), combo[127]);
+    if let Some(q) = (0..pages * 4).find(|&q| pair_block(m, q) != &combo[q * 64..][..64]) {
+        return Err(format!("blocco {q} diverso da quello della cartuccia"));
+    }
+    let q0 = if right_first { [second, 0] } else { [0, second] };
+    if (0..2u16).any(|s| m.read_u8("pp_q0", s) != q0[usize::from(s)] || m.read_u8("pp_ready", s) != 1) {
+        return Err(format!("lati non pronti o primo blocco sbagliato (atteso {q0:?})"));
+    }
+    Ok(())
+}
+
+/// Le due metà (63 byte l'una) della posa `slot` del tipo `kind` per il lato `side`.
+fn pair_image(side: u8, kind: u8, slot: usize) -> [Vec<u8>; 2] {
+    let combo = if side == 0 { pair_combo(kind, 0, false) } else { pair_combo(0, kind, true) };
+    [combo[slot * 128..][..63].to_vec(), combo[slot * 128 + 64..][..63].to_vec()]
+}
+
+/// Il GUARDIAN del lato `side` con i settori persi `lost` (bit 0 quello in alto): lo scudo (colonne
+/// doppie 4 e 5 della racchetta sinistra, 6 e 7 della destra: il byte 1 di ogni riga) grigio nei
+/// settori persi, contati dalle giunture nel colore del tipo, anche di più righe. Come guard_apply
+/// di video.s.
+fn guardian_pair(side: u8, lost: u8) -> [Vec<u8>; 2] {
+    let mut halves = pair_image(side, 6, 0);
+    let mask: u8 = if side == 0 { 0xF0 } else { 0x0F };
+    let (mut sector, mut seam) = (0, false);
+    for half in &mut halves {
+        for row in 0..21 {
+            let b = &mut half[3 * row + 1];
+            let shield = *b & mask;
+            if shield == 0xAA & mask {
+                seam = true;
+                continue;
+            }
+            if seam {
+                sector += 1;
+                seam = false;
+            }
+            if lost >> sector & 1 != 0 {
+                *b = *b & !mask | (shield | shield >> 1) & 0x55 & mask;
             }
         }
     }
-    Ok(format!("immagini delle racchette nella cartuccia: le {images} uguali a pad_image byte per byte"))
+    halves
+}
+
+/// Le immagini delle racchette nella flash della cartuccia (tools/make_crt.py, dal banco
+/// PAD2_BANK, ROML e poi ROMH) uguali a gen/padpairs.bin.
+fn prep_images(m: &mut Machine) -> Result<String, String> {
+    let inc = std::fs::read_to_string(c64_dir().join("src/ef.inc")).unwrap_or_default();
+    let bank = inc_const(&inc, "PAD2_BANK").ok_or("PAD2_BANK in c64/src/ef.inc")?;
+    let ef = m.cpu.ef.as_ref().ok_or("cartuccia")?;
+    let file = pairs_file();
+    for (i, chunk) in file.chunks(EF_HALF).enumerate() {
+        let rom = if i % 2 == 0 { &ef.roml } else { &ef.romh };
+        if rom[(bank + i / 2) * EF_HALF..][..chunk.len()] != *chunk {
+            return Err(format!("immagini delle racchette nella cartuccia diverse da gen/padpairs.bin (banco {})", bank + i / 2));
+        }
+    }
+    Ok(format!("immagini delle racchette nella cartuccia: le {} pagine di gen/padpairs.bin dal banco {bank}", file.len() / 256))
 }
 
 /// Racchette a schermo in partita NEXT, frame per frame: per tipo frame provati, frame con lo
@@ -5249,24 +5328,31 @@ struct ShownLag {
     run: [u32; 2],
 }
 
-/// Lo sprite di ogni racchetta come si vedrà al prossimo vblank (l'immagine dinamica: sh_img se da
-/// copiare, se no la RAM degli sprite sotto l'I/O; le preparate a $E000) contro paddle_images.
-/// Non contano: il salto del TELEPORT, la rotazione del SUPER, la racchetta spenta, i frame che
-/// tengono gli sprite di prima, altezze diverse da quella del tipo (OMEGA appena trasformato vicino
-/// al bordo). Il lato di OMEGA sì, con la forma del momento (stesse immagini, colore a parte).
-fn paddle_shown(m: &Machine, expected: &HashMap<(u8, u8, u8), Vec<u8>>, s: &mut ShownLag, voice: bool) {
+/// Le due metà di ogni racchetta come si vedranno al prossimo vblank (il blocco dello sprite e
+/// quello di pd_bot, che l'interrupt del cambio mette a metà racchetta) contro le pose della
+/// cartuccia per tipo e stato: TWIST una delle 7 inclinazioni, BLASTER il livello del caricatore,
+/// GUARDIAN lo scudo dei settori persi. Non contano: il salto del TELEPORT, la rotazione del SUPER,
+/// la racchetta spenta (senza immagini pronte) o espansa, altezze diverse da quella del tipo (OMEGA
+/// appena trasformato vicino al bordo). Il lato di OMEGA sì, con la forma del momento.
+fn paddle_shown(m: &Machine, s: &mut ShownLag) {
     const SPN_PAD: u16 = 3;
     if m.read_u8("pd_made", 0) == 0xAA {
         return;
     }
     let (wp_on, wp_side) = (m.read_u8("wp_on", 0) != 0, m.read_u8("wp_side", 0));
-    let enable = m.read_u8("sh_enable", 0);
+    let (enable, yexp) = (m.read_u8("sh_enable", 0), m.read_u8("sh_yexp", 0));
+    let block = |ptr: u8| -> Vec<u8> {
+        let at = 0xC000 + usize::from(ptr) * 64;
+        if (0xD000..0xE000).contains(&at) { m.cpu.under_io[at - 0xD000..][..63].to_vec() } else { m.cpu.mem[at..][..63].to_vec() }
+    };
     for side in 0..2u8 {
         let x = u16::from(side) * 4;
         let i = usize::from(side);
+        let bit = 1 << (SPN_PAD + u16::from(side));
         let kind = m.read_u8("nx_kind", x);
         let skip = kind > 6
-            || enable & (1 << (SPN_PAD + u16::from(side))) == 0
+            || enable & bit == 0
+            || yexp & bit != 0
             || (wp_on && wp_side == side)
             || (m.read_u8("nx_armed", x) == 5 && m.read_u8("nx_anim", x) == 0)
             || m.read_u8("pd_cur_n", u16::from(side)) != m.cpu.read(m.addr("pv_rows") + u16::from(kind));
@@ -5275,21 +5361,15 @@ fn paddle_shown(m: &Machine, expected: &HashMap<(u8, u8, u8), Vec<u8>>, s: &mut 
             continue;
         }
         let ptr = m.read_u8("sh_ptr", SPN_PAD + u16::from(side));
-        let at = 0xC000 + u16::from(ptr) * 64;
-        let img: Vec<u8> = if ptr == m.read_u8("pad_slot", u16::from(side)) && m.read_u8("pd_dirty", u16::from(side)) != 0 && !voice {
-            let b = m.addr("sh_img") + 63 * u16::from(side);
-            (0..63).map(|k| m.cpu.read(b + k)).collect()
-        } else if (0xD000..0xE000).contains(&at) {
-            m.cpu.under_io[usize::from(at - 0xD000)..usize::from(at - 0xD000) + 63].to_vec()
-        } else {
-            (0..63).map(|k| m.cpu.read(at + k)).collect()
-        };
-        let ok = match kind {
-            3 => (0..7).any(|v| expected[&(side, 3, v)] == img),
-            4 => expected[&(side, 4, m.read_u8("bl_vis", u16::from(m.read_u8("nx_ammo", x))) * 32)] == img,
-            6 => expected[&(side, 6, !m.read_u8("nx_barrier", x) & 0x1F)] == img,
-            _ => expected[&(side, kind, 0)] == img,
-        };
+        let bot = m.read_u8("pd_bot", u16::from(side));
+        let img = [block(ptr), block(bot)];
+        let ok = bot == ptr.wrapping_add(1)
+            && match kind {
+                3 => (0..7).any(|v| pair_image(side, 3, v) == img),
+                4 => pair_image(side, 4, usize::from(m.read_u8("bl_vis", u16::from(m.read_u8("nx_ammo", x))))) == img,
+                6 => guardian_pair(side, !m.read_u8("nx_barrier", x) & 0x1F) == img,
+                _ => pair_image(side, kind, 0) == img,
+            };
         let e = &mut s.per_kind[usize::from(kind)];
         e.0 += 1;
         if ok {
@@ -5307,9 +5387,9 @@ fn paddle_shown(m: &Machine, expected: &HashMap<(u8, u8, u8), Vec<u8>>, s: &mut 
 const GUARDIAN_LAG_MAX: u32 = 3;
 
 /// Racchette GUARDIAN in partita NEXT (pad_sprite di video.s): frame con dei settori persi, frame
-/// con l'immagine in ritardo (lo sprite non è l'immagine dinamica fatta con quei settori), il
-/// ritardo più lungo di fila; per ogni tipo, frame con lo sprite dinamico della racchetta a schermo
-/// che dopo il salto del TELEPORT ha ancora il pezzo del salto (pd_n = $FF: immagine da rifare).
+/// con l'immagine in ritardo (lo scudo dei blocchi non è ancora quello di quei settori: pd_var), il
+/// ritardo più lungo di fila; per ogni tipo, frame con la racchetta a schermo ancora espansa
+/// (l'immagine dinamica, con il pezzo del salto) fuori dal salto del TELEPORT e dalla rotazione.
 #[derive(Clone, Copy, Default)]
 struct GuardianLag {
     frames: u32,
@@ -5330,11 +5410,10 @@ fn guardian_image(m: &Machine, g: &std::cell::Cell<GuardianLag>) {
         let x = side * 4;
         let shown = enable & (1 << (SPN_PAD + side)) != 0;
         let warping = wp_on && u16::from(wp_side) == side;
-        let ptr = m.read_u8("sh_ptr", SPN_PAD + side);
-        let dynamic = ptr == m.read_u8("pad_slot", side);
+        let dynamic = m.read_u8("sh_yexp", 0) & (1 << (SPN_PAD + side)) != 0;
         // (con il SUPER armato e la rotazione la racchetta è l'immagine dell'angolo)
         let spin = m.read_u8("nx_armed", x) == B_SUPER && m.read_u8("nx_anim", x) == 0;
-        if shown && !warping && dynamic && m.read_u8("pd_n", side) == 0xFF {
+        if shown && !warping && !spin && dynamic {
             s.warp_left += 1;
         }
         let lost = !m.read_u8("nx_barrier", x) & 0x1F;
@@ -5343,10 +5422,7 @@ fn guardian_image(m: &Machine, g: &std::cell::Cell<GuardianLag>) {
             continue;
         }
         s.frames += 1;
-        let ok = dynamic
-            && m.read_u8("pd_kind", side) == K_GUARDIAN
-            && m.read_u8("pd_var", side) == lost
-            && m.read_u8("pd_n", side) == m.read_u8("pd_cur_n", side);
+        let ok = !dynamic && m.read_u8("pd_var", side) == lost;
         let run = &mut s.run[side as usize];
         if ok {
             *run = 0;
@@ -5359,60 +5435,37 @@ fn guardian_image(m: &Machine, g: &std::cell::Cell<GuardianLag>) {
     g.set(s);
 }
 
-/// L'immagine del GUARDIAN con dei settori persi fatta dal muro intero preparato (pad_sprite::guard):
-/// per ogni lato e ogni combinazione di settori persi uguale byte per byte a quella di pad_image.
+/// Lo scudo del GUARDIAN con dei settori persi fatto sul posto nei due blocchi della sua immagine
+/// (guard_apply di video.s): per ogni lato e ogni combinazione di settori persi uguale al modello
+/// (guardian_pair). Usa i primi due blocchi delle racchette (li rimette).
 fn guardian_fast(m: &mut Machine) -> Result<String, String> {
-    const K_GUARDIAN: u8 = 6;
-    const IMG_BYTES: u16 = 63;
-    let n = m.cpu.read(m.addr("pv_rows") + u16::from(K_GUARDIAN));
-    let base = m.addr("sh_img");
-    // il muro intero nel primo posto delle immagini preparate (a $E000, sotto il KERNAL spento)
-    let slot = m.read_u8("prep_base", 0);
-    let at = 0xC000 + usize::from(slot) * 64;
-    let saved = m.cpu.mem[at..at + 64].to_vec();
-    let next = m.read_u8("m_next", 0);
-    m.write_u8("m_next", 0, 0); // (guard finisce in pad_spin: fuori da NEXT non fa niente)
-    let mut worst = (0, 0);
+    const AT: usize = 0xE100;
+    let saved = m.cpu.mem[AT..AT + 128].to_vec();
+    let saved_vars: Vec<(&str, u16, u8)> =
+        [("pp_q0", 0), ("pp_q0", 1), ("pd_var", 0), ("pd_var", 1), ("pi_var", 0)].into_iter().map(|(n, i)| (n, i, m.read_u8(n, i))).collect();
+    let mut worst = 0;
     let mut result = Ok(());
     'sides: for side in 0..2u8 {
-        let img = base + IMG_BYTES * u16::from(side);
-        let read = |m: &Machine| (0..IMG_BYTES).map(|i| m.cpu.read(img + i)).collect::<Vec<u8>>();
-        let image = |m: &mut Machine, var: u8| {
-            m.write_u8("pi_side", 0, side);
-            m.write_u8("pi_kind", 0, K_GUARDIAN);
-            m.write_u8("pi_n", 0, n);
-            m.write_u8("pi_var", 0, var);
-            m.call("pad_image")
-        };
-        image(m, 0);
-        let wall = read(m);
-        m.cpu.mem[at..at + wall.len()].copy_from_slice(&wall);
+        let whole = pair_image(side, 6, 0);
+        m.write_u8("pp_q0", u16::from(side), 0);
         for lost in 1..32u8 {
-            let slow = image(m, lost);
-            let want = read(m);
-            for i in 0..IMG_BYTES {
-                m.cpu.write(img + i, 0x55);
-            }
-            m.write_u8("pi_side", 0, side);
+            m.cpu.mem[AT..AT + 63].copy_from_slice(&whole[0]);
+            m.cpu.mem[AT + 64..AT + 127].copy_from_slice(&whole[1]);
             m.write_u8("pi_var", 0, lost);
-            m.cpu.a = slot;
             m.cpu.y = side;
-            let fast = m.call("guard");
-            if read(m) != want {
-                result = Err(format!("GUARDIAN lato {side}, settori persi {lost:05b}: l'immagine dal muro intero non è quella di pad_image"));
+            worst = worst.max(m.call("guard_apply"));
+            let want = guardian_pair(side, lost);
+            if m.cpu.mem[AT..AT + 63] != want[0][..] || m.cpu.mem[AT + 64..AT + 127] != want[1][..] || m.read_u8("pd_var", u16::from(side)) != lost {
+                result = Err(format!("GUARDIAN lato {side}, settori persi {lost:05b}: lo scudo fatto sul posto non è quello giusto"));
                 break 'sides;
             }
-            worst = (worst.0.max(fast), worst.1.max(slow));
         }
     }
-    m.cpu.mem[at..at + 64].copy_from_slice(&saved);
-    m.write_u8("m_next", 0, next);
-    result.map(|()| {
-        format!(
-            "GUARDIAN con dei settori persi: le 31 immagini per lato dal muro intero come pad_image, al più {} cicli (pad_image {})",
-            worst.0, worst.1
-        )
-    })
+    m.cpu.mem[AT..AT + 128].copy_from_slice(&saved);
+    for (n, i, v) in saved_vars {
+        m.write_u8(n, i, v);
+    }
+    result.map(|()| format!("GUARDIAN con dei settori persi: i 31 scudi per lato fatti sul posto, al più {worst} cicli"))
 }
 
 /// Salto del TELEPORT (warp_image di video.s): l'immagine rifatta solo nelle righe cambiate da
@@ -5479,27 +5532,18 @@ fn warp_fast(m: &mut Machine) -> Result<String, String> {
     ))
 }
 
-/// Le immagini delle racchette dei tipi (pad_image) come le prepara la scelta, a caratteri: una
-/// cella dello sprite multicolore per carattere ("." niente, "-" grigio $D025, "o" colore dedicato
-/// $D027+i, "#" bianco $D026); in più TWIST inclinata nei due versi e il GUARDIAN con due settori persi.
+/// Le immagini delle racchette dei tipi (pad_image: il disegno di prima, che resta nella
+/// presentazione di CHALLENGE e nel finale), a caratteri: una cella dello sprite multicolore per
+/// carattere ("." niente, "-" grigio $D025, "o" colore dedicato $D027+i, "#" bianco $D026).
 fn paddles(m: &mut Machine) -> bool {
     const NAMES: [&str; 7] = ["ARCADE", "TITAN", "HAMMER", "TWIST", "BLASTER", "RUSH", "GUARDIAN"];
-    let (rows, vars) = (m.addr("pv_rows"), m.addr("pv_var"));
+    let rows = m.addr("pv_rows");
     let mut images = Vec::new();
-    let mut cases: Vec<(String, u8, u8)> = (0..7u8).map(|k| (NAMES[k as usize].to_string(), k, m.cpu.read(vars + u16::from(k)))).collect();
-    cases.push(("TWIST giù".into(), 3, 0));
-    cases.push(("TWIST su".into(), 3, 6));
-    cases.push(("GUARDIAN 1, 3".into(), 6, 0b01010));
-    for (name, kind, var) in cases {
+    for (kind, name) in (0..7u8).zip(NAMES) {
         let n = m.cpu.read(rows + u16::from(kind));
         m.write_u8("pi_side", 0, 0);
         m.write_u8("pi_kind", 0, kind);
         m.write_u8("pi_n", 0, n);
-        m.write_u8("pi_var", 0, var);
-        if kind == 4 {
-            m.cpu.a = 4;
-            m.call("mag_setup");
-        }
         let c = m.call("pad_image");
         let base = m.addr("sh_img");
         let img: Vec<String> = (0..21u16)

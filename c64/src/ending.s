@@ -2105,17 +2105,7 @@ out:
     sta pi_side
     lda pv_rows,x
     sta pi_n
-    lda #0
-    cpx #K_TWIST
-    bne :+
-    lda #3                      ; TWIST dritta
-:   cpx #K_BLASTER
-    bne :+
-    lda #128                    ; BLASTER carico
-:   sta pi_var
-    lda #BLASTER_VIS
-    sta pi_ammo
-    jsr pad_image
+    jsr pad_image               ; (l'astronave com'è: TWIST dritta, BLASTER carico)
     lda #1
     sta pd_dirty
     rts

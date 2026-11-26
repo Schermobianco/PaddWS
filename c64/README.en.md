@@ -89,9 +89,14 @@ The test bench needs them: the `.prg` does not start on its own, it only runs fr
 The files in `c64/gen/` are generated and committed: `tools/gen_c64_assets.py` makes the graphics,
 music and voices, `paddws-c64 params` makes `params.inc` (the rotated field's too), and
 `tools/gen_c64_rotated.py` makes the other rotated-field files in `c64/gen/rotated` (after
-`gen_c64_assets.py`: it starts from its files). Do not edit them by hand. The rotated-field ships
-are drawn in the paddle editor, platform "C64 girato" (`tools/c64_editor.py --paddle-c64h`), on two
-layers: the hires white and the multicolor underneath.
+`gen_c64_assets.py`: it starts from its files). Do not edit them by hand. The ships are drawn in
+the paddle editor. The horizontal cartridge's use the platform "C64 orizzontale"
+(`tools/c64_editor.py --paddle-c64`, in `assets/ships/sprites/c64`): 24 columns by the paddle's
+real rows, with multicolour pixels two wide and one high. In the match, the paddle pick and the VS
+screen the paddle sprite is not expanded and is used twice in the same frame, for the top half and
+the bottom half, with a raster interrupt in the middle of the paddle. The rotated-field ships use
+the platform "C64 verticale" (`--paddle-c64h`), on two layers: the hires white and the multicolour
+underneath.
 
 C64 images can be retouched by hand with `tools/c64_editor.html`, which opens in Edge or Chrome
 with nothing to install: hires and multicolour bitmaps, characters, sprites, a cell grid with a
