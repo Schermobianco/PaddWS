@@ -14,6 +14,8 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+## [4.7.0] - 2026-11-26
+
 ### Aggiunto
 - C64: una seconda cartuccia con il campo girato di 90 gradi (`paddws-vertical-pal.crt`, e
   `paddws-vertical-ntsc.crt` per l'NTSC, nello stesso pacchetto del C64). Le racchette stanno in
@@ -1527,7 +1529,8 @@ Ricostruite dalle cartelle di backup in `archive/` (date indicative).
 - **1.5** (2020-08) – versione per Raspberry Pi con encoder rotativi.
 - **1.1 – 1.4** (2020-08) – prime versioni pygame: menu, modalità CLASSIC ed EVO, suoni, splash.
 
-[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.6.5...HEAD
+[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.7.0...HEAD
+[4.7.0]: https://github.com/Schermobianco/PaddWS/compare/v4.6.5...v4.7.0
 [4.6.5]: https://github.com/Schermobianco/PaddWS/compare/v4.6.4...v4.6.5
 [4.6.4]: https://github.com/Schermobianco/PaddWS/compare/v4.6.3...v4.6.4
 [4.6.3]: https://github.com/Schermobianco/PaddWS/compare/v4.6.2...v4.6.3
