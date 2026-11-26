@@ -305,6 +305,8 @@ la CPU tutto lo schermo è del giocatore; in due ognuno ha la sua metà.
 - scelta dei bonus: si toccano i tre bonus (un altro tocco li toglie), poi OK in cima alla colonna;
 - scelta della racchetta: un tocco sulla riga la mostra, poi OK in cima alla colonna la sceglie;
 - nell'attract un tocco vale come Start;
+- nuovo record: le iniziali si scrivono toccando le lettere della tastiera a schermo, DEL toglie
+  l'ultima;
 - pausa: un tocco sul simbolo ❚❚ in cima alla linea centrale; in pausa si tocca per riprendere o
   su MENU (nel menu RESUME riprende la partita);
 - NEXT: lo sfidante entra tenendo il dito per un secondo dietro la racchetta della CPU (P2

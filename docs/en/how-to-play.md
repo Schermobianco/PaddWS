@@ -308,6 +308,8 @@ CPU the whole screen belongs to the player; with two players each has their own 
   column;
 - paddle pick: a tap on the row shows it, then OK at the top of the column picks it;
 - in the attract mode a tap counts as Start;
+- new record: type your initials by tapping the letters of the on-screen keyboard, DEL removes
+  the last one;
 - pause: a tap on the ❚❚ symbol at the top of the centre line; in pause tap to resume or tap MENU
   (in the menu RESUME picks up the match);
 - NEXT: the challenger joins by holding a finger for a second behind the CPU's paddle (P2 HOLD

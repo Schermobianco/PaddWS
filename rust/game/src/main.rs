@@ -643,7 +643,7 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         app.set_egg(true);
         scene
     }
-    let shots: [(&str, MakeScene); 138] = [
+    let shots: [(&str, MakeScene); 139] = [
         ("1_demo_classic", |app| demo_at(app, DemoMode::Classic)),
         ("1_demo_evo", |app| demo_at(app, DemoMode::Evo)),
         ("1_demo_next", |app| demo_at(app, DemoMode::Next)),
@@ -771,6 +771,10 @@ async fn screenshot_tour(app: &mut App, dir: &std::path::Path) {
         }),
         ("8_challenge_initials", |_| {
             Scene::Initials(challenge_ui::Initials::new((25_000, 6)))
+        }),
+        // touch: la tastiera a schermo
+        ("8_challenge_initials_touch", |_| {
+            Scene::Initials(challenge_ui::Initials::new((25_000, 6)).with_keys())
         }),
         ("9_ending_1_congrats", |app| ending(app, E::Congrats, 1.5)),
         ("9_ending_2_parade", |app| ending(app, E::Parade, 7.0)),

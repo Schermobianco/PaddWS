@@ -1431,7 +1431,53 @@ impl Continue {
 
 // --------------------------------------------------------------------- iniziali
 
-/// Nuovo record: tre lettere scelte con su/giù e confermate con lo scatto (o Invio).
+/// Tastiera a schermo delle iniziali (touch e mouse nel browser), in unità a 480 righe: le
+/// lettere di `LETTERS` in righe da `KEY_COLS`, poi DEL nelle caselle che restano. La prima riga
+/// comincia a `KEY_TOP`; le caselle sono `KEY_W` x `KEY_H`, più strette se il campo è stretto.
+const KEY_COLS: usize = 10;
+const KEY_ROWS: usize = 4;
+const KEY_TOP: f32 = 200.0;
+const KEY_W: f32 = 60.0;
+const KEY_H: f32 = 60.0;
+const _: () = assert!(LETTERS.len() < KEY_COLS * KEY_ROWS, "serve almeno una casella per DEL");
+
+/// Un tasto della tastiera a schermo: una lettera (indice in `LETTERS`) o DEL.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Key {
+    Letter(usize),
+    Delete,
+}
+
+/// Larghezza e altezza di una casella della tastiera, in coordinate di disegno (`sc`: la scala
+/// delle schermate, `scale`).
+fn key_size(world_w: f32, sc: f32) -> Vec2 {
+    vec2((KEY_W * sc).min(world_w / (KEY_COLS as f32 + 0.5)), KEY_H * sc)
+}
+
+/// Centro della casella `cell` (per righe, da in alto a sinistra).
+fn key_centre(world_w: f32, sc: f32, cell: usize) -> Vec2 {
+    let size = key_size(world_w, sc);
+    let (row, col) = (cell / KEY_COLS, cell % KEY_COLS);
+    vec2(
+        world_w / 2.0 + (col as f32 - (KEY_COLS as f32 - 1.0) / 2.0) * size.x,
+        KEY_TOP * sc + (row as f32 + 0.5) * size.y,
+    )
+}
+
+/// Il tasto sotto il punto `p`, se ce n'è uno.
+fn key_at(world_w: f32, sc: f32, p: Vec2) -> Option<Key> {
+    let size = key_size(world_w, sc);
+    let col = ((p.x - world_w / 2.0) / size.x + KEY_COLS as f32 / 2.0).floor();
+    let row = ((p.y - KEY_TOP * sc) / size.y).floor();
+    if !(0.0..KEY_COLS as f32).contains(&col) || !(0.0..KEY_ROWS as f32).contains(&row) {
+        return None;
+    }
+    let cell = row as usize * KEY_COLS + col as usize;
+    Some(if cell < LETTERS.len() { Key::Letter(cell) } else { Key::Delete })
+}
+
+/// Nuovo record: tre lettere scelte con su/giù e confermate con lo scatto (o Invio); sul touch
+/// si scrivono toccando la tastiera a schermo.
 pub struct Initials {
     best: (u32, u8),
     /// dopo una sfida: lato del perdente (valgono solo i suoi comandi), poi il vincitore riprende
@@ -1442,6 +1488,12 @@ pub struct Initials {
     letter: usize,
     left: f64,
     knobs_ready: bool,
+    /// la tastiera a schermo è aperta: si gioca con il touch, o è arrivato un tocco (anche del
+    /// mouse, nel browser)
+    keys: bool,
+    /// la lettera sotto il cursore è stata scelta con su/giù o con la manopola: con la tastiera
+    /// aperta si vede solo allora
+    picked: bool,
 }
 
 /// Tasti delle iniziali per lato: (su, giù, avanti = conferma la lettera).
@@ -1475,7 +1527,15 @@ impl Initials {
             letter: 0,
             left: INITIALS_SECONDS,
             knobs_ready: false,
+            keys: false,
+            picked: false,
         }
+    }
+
+    /// Con la tastiera a schermo già aperta (giro delle schermate).
+    pub fn with_keys(mut self) -> Self {
+        self.keys = true;
+        self
     }
 
     /// Iniziali del perdente di una sfida, che gioca dal lato `side`.
@@ -1486,10 +1546,15 @@ impl Initials {
         }
     }
 
-    /// Conferma la lettera sotto il cursore; dopo la terza salva e mostra la classifica (dopo
-    /// una sfida invece il vincitore riprende il livello).
+    /// Conferma la lettera sotto il cursore (`put`).
     fn confirm(&mut self, app: &mut App) -> Option<Scene> {
-        self.name[self.pos] = LETTERS[self.letter];
+        self.put(app, self.letter)
+    }
+
+    /// Scrive la lettera `letter` (indice in `LETTERS`) nel posto in corso; dopo la terza salva e
+    /// mostra la classifica (dopo una sfida invece il vincitore riprende il livello).
+    fn put(&mut self, app: &mut App, letter: usize) -> Option<Scene> {
+        self.name[self.pos] = LETTERS[letter];
         app.play(Event::Hit);
         self.pos += 1;
         if self.pos < 3 {
@@ -1517,11 +1582,16 @@ impl Initials {
 
     pub fn update(&mut self, app: &mut App, dt: f64) -> Option<Scene> {
         let n = LETTERS.len();
+        self.keys |= app.touch;
         self.left -= dt;
         if self.left <= 0.0 {
-            // tempo scaduto: valgono le lettere scelte fin qui
+            // tempo scaduto: valgono le lettere scelte fin qui. Con la tastiera a schermo i posti
+            // non scritti restano vuoti (il cursore non mostra nessuna lettera); senza nemmeno
+            // una lettera scritta, AAA come con i tasti
+            let space = LETTERS.iter().position(|&c| c == b' ').unwrap_or(self.letter);
+            let fill = if self.keys && !self.picked && self.pos > 0 { space } else { self.letter };
             while self.pos < 3 {
-                if let Some(scene) = self.confirm(app) {
+                if let Some(scene) = self.put(app, fill) {
                     return Some(scene);
                 }
             }
@@ -1538,7 +1608,10 @@ impl Initials {
                 continue;
             }
             match e.action {
-                Action::Rotate(v) => self.letter = (v.max(0) as usize).min(n - 1),
+                Action::Rotate(v) => {
+                    self.letter = (v.max(0) as usize).min(n - 1);
+                    self.picked = true;
+                }
                 Action::Click | Action::Activate => confirm = true,
                 _ => {}
             }
@@ -1550,18 +1623,34 @@ impl Initials {
             }
             if input::pressed(up) {
                 self.letter = (self.letter + n - 1) % n;
+                self.picked = true;
             }
             if input::pressed(down) {
                 self.letter = (self.letter + 1) % n;
+                self.picked = true;
             }
             confirm |= input::pressed(forward);
         }
-        // touch: un tocco in alto cambia lettera, in basso la conferma
+        // touch: un tocco su un tasto della tastiera a schermo scrive quella lettera, DEL toglie
+        // l'ultima. Se la tastiera non c'è ancora (mouse nel browser), il primo tocco la apre.
+        // (Prima un tocco in alto cambiava lettera e uno in basso la confermava: le tre lettere
+        // stanno in basso, e chi le toccava per scrivere salvava AAA.)
+        let (world_w, sc) = (app.renderer.world_w, scale(app));
         for p in touch::taps() {
-            if p.y < app.renderer.world_h / 2.0 {
-                self.letter = (self.letter + 1) % n;
-            } else {
-                confirm = true;
+            if !std::mem::replace(&mut self.keys, true) {
+                continue;
+            }
+            match key_at(world_w, sc, p) {
+                Some(Key::Letter(k)) => {
+                    if let Some(scene) = self.put(app, k) {
+                        return Some(scene);
+                    }
+                }
+                Some(Key::Delete) if self.pos > 0 => {
+                    self.pos -= 1;
+                    app.play(Event::Wall);
+                }
+                _ => {}
             }
         }
         // dopo una sfida niente Spazio: lo usa il vincitore per saltare le schermate
@@ -1585,19 +1674,28 @@ impl Initials {
             App::color(colors.accent),
         );
         app.renderer.fill(BLACK);
-        text(app, "NEW RECORD!", T1, 120.0, accent);
-        text(app, &format!("SCORE {}", pad(self.best.0)), T1, 160.0, white);
+        // con la tastiera a schermo le scritte salgono, per farle posto
+        let [title_y, score_y, prompt_y, name_y] = if self.keys {
+            [40.0, 70.0, 105.0, 150.0]
+        } else {
+            [120.0, 160.0, 215.0, 290.0]
+        };
+        text(app, "NEW RECORD!", T1, title_y, accent);
+        text(app, &format!("SCORE {}", pad(self.best.0)), T1, score_y, white);
         let prompt = match self.loser {
             Some(side) => format!("P{} ENTER YOUR INITIALS", side as usize + 1),
             None => "ENTER YOUR INITIALS".to_string(),
         };
-        text(app, &prompt, T1, 215.0, gray);
+        text(app, &prompt, T1, prompt_y, gray);
         let sc = scale(app);
         let r = &app.renderer;
         let blink = (get_time() * 4.0) as i64 % 2 == 0;
         for i in 0..3 {
             let c = match i.cmp(&self.pos) {
                 std::cmp::Ordering::Less => self.name[i],
+                // con la tastiera a schermo il posto in corso resta vuoto finché non si sceglie
+                // una lettera con su/giù
+                std::cmp::Ordering::Equal if self.keys && !self.picked => b' ',
                 std::cmp::Ordering::Equal => LETTERS[self.letter],
                 std::cmp::Ordering::Greater => b' ',
             };
@@ -1605,22 +1703,51 @@ impl Initials {
             let color = if i == self.pos { accent } else { white };
             // una lineetta sotto ogni posto: a 1x i puntini dei posti vuoti quasi non si vedevano
             let (lw, u) = (r.text_1x(), unit(app));
-            draw_rectangle(x - lw / 2.0, 290.0 * sc + lw * 0.75, lw, u, if i == self.pos { accent } else { gray });
+            draw_rectangle(x - lw / 2.0, name_y * sc + lw * 0.75, lw, u, if i == self.pos { accent } else { gray });
             if i != self.pos || blink {
                 r.text_centered(
                     &(c as char).to_string(),
                     &app.assets.font_text,
                     T1 * sc,
                     x,
-                    290.0 * sc,
+                    name_y * sc,
                     0.0,
                     color,
                 );
             }
         }
-        if !app.touch {
+        if self.keys {
+            self.draw_keys(app);
+        } else if !app.touch {
             text(app, "UP DOWN TO CHOOSE, FORWARD TO CONFIRM", T1, 420.0, gray);
         }
+    }
+
+    /// La tastiera a schermo: una casella per lettera (lo spazio è una lineetta), DEL in fondo.
+    fn draw_keys(&self, app: &App) {
+        let colors = &app.cfg.colors;
+        let (white, gray) = (App::color(colors.white), App::color(colors.lgray));
+        let frame = Color::from_rgba(0x3A, 0x3A, 0x3A, 255);
+        let (r, sc, u) = (&app.renderer, scale(app), unit(app));
+        let font = &app.assets.font_text;
+        let size = key_size(r.world_w, sc);
+        let lw = r.text_1x();
+        let cells = KEY_COLS * KEY_ROWS;
+        for (cell, &c) in LETTERS.iter().enumerate() {
+            let at = key_centre(r.world_w, sc, cell);
+            draw_rectangle_lines(at.x - size.x / 2.0 + u, at.y - size.y / 2.0 + u, size.x - 2.0 * u, size.y - 2.0 * u, 2.0 * u, frame);
+            if c == b' ' {
+                draw_rectangle(at.x - lw / 2.0, at.y + lw * 0.5, lw, u, white);
+            } else {
+                r.text_centered(&(c as char).to_string(), font, T1 * sc, at.x, at.y, 0.0, white);
+            }
+        }
+        // DEL: tutte le caselle dopo le lettere, un tasto solo
+        let (first, last) = (key_centre(r.world_w, sc, LETTERS.len()), key_centre(r.world_w, sc, cells - 1));
+        let w = last.x - first.x + size.x;
+        draw_rectangle_lines(first.x - size.x / 2.0 + u, first.y - size.y / 2.0 + u, w - 2.0 * u, size.y - 2.0 * u, 2.0 * u, frame);
+        let color = if self.pos > 0 { white } else { gray };
+        r.text_centered("DEL", font, T1 * sc, (first.x + last.x) / 2.0, first.y, 0.0, color);
     }
 }
 
@@ -1964,6 +2091,26 @@ mod tests {
         assert_eq!((run.level, run.score, run.wins, run.side), (3, 0, 0, Side::Left));
         assert_eq!(Run::training(99).level, LEVELS - 1);
         assert!(!Run::new().training);
+    }
+
+    #[test]
+    fn every_key_of_the_touch_keyboard_is_under_its_own_centre() {
+        // campo 4:3 e campo largo del browser, a due scale
+        for (world_w, sc) in [(640.0, 1.0), (1056.0, 1.0), (427.0, 0.5), (320.0, 0.5)] {
+            for cell in 0..KEY_COLS * KEY_ROWS {
+                let key = if cell < LETTERS.len() { Key::Letter(cell) } else { Key::Delete };
+                assert_eq!(key_at(world_w, sc, key_centre(world_w, sc, cell)), Some(key), "casella {cell}");
+            }
+            // la tastiera sta nel campo, e fuori non c'è nessun tasto
+            let (first, last) = (key_centre(world_w, sc, 0), key_centre(world_w, sc, KEY_COLS * KEY_ROWS - 1));
+            let size = key_size(world_w, sc);
+            assert!(first.x - size.x / 2.0 >= 0.0 && last.x + size.x / 2.0 <= world_w);
+            assert!(last.y + size.y / 2.0 <= 480.0 * sc);
+            assert_eq!(key_at(world_w, sc, vec2(first.x, first.y - size.y)), None);
+            assert_eq!(key_at(world_w, sc, vec2(first.x - size.x, first.y)), None);
+            assert_eq!(key_at(world_w, sc, vec2(last.x + size.x, last.y)), None);
+            assert_eq!(key_at(world_w, sc, vec2(last.x, last.y + size.y)), None);
+        }
     }
 
     #[test]
