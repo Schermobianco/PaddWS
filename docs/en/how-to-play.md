@@ -384,14 +384,18 @@ used with `F` / `C` (left) and `.` / `-` (right). Key **5** coin, fire or **RETU
 | NEXT: the VS screen before the last opponent, GUARDIAN | NEXT: a second player joins in |
 | ![Ending: the parade of the beaten opponents](../screenshots/ending-parade.png) | ![Ending: the champion's spaceship jumps into hyperspace](../screenshots/ending-warp.png) |
 | Ladder ending: the beaten opponents, stamped DEFEATED | Ending: among the fireworks the champion's spaceship jumps into hyperspace |
-| ![Ending: THE END with the champion's spaceship](../screenshots/ending-the-end.png) | ![Commodore 64: paddle pick](../screenshots/c64-paddles.png) |
-| Ending: THE END with the spaceship's illustration | Commodore 64: paddle pick, with the characters |
-| ![MiSTer core: title](../screenshots/mister-title.png) | ![MiSTer core: paddle pick](../screenshots/mister-pick.png) |
-| MiSTer core at 320×240: title after the coin | MiSTer core: paddle pick, with the characters |
-| ![Commodore 64: title](../screenshots/c64-title.png) | ![Commodore 64: NEXT match](../screenshots/c64-next.png) |
-| Commodore 64: title in Free Play | Commodore 64: NEXT, ARCADE against ARCADE |
+| ![Ending: THE END with the champion's spaceship](../screenshots/ending-the-end.png) | ![MiSTer core: title](../screenshots/mister-title.png) |
+| Ending: THE END with the spaceship's illustration | MiSTer core at 320×240: title after the coin |
+| ![MiSTer core: paddle pick](../screenshots/mister-pick.png) | ![Commodore 64: title](../screenshots/c64-title.png) |
+| MiSTer core: paddle pick, with the characters | Commodore 64: title in Free Play (the same on both cartridges) |
+| ![Commodore 64, vertical cartridge: paddle pick](../screenshots/c64-vertical-paddles.png) | ![Commodore 64, horizontal cartridge: paddle pick](../screenshots/c64-paddles.png) |
+| Commodore 64, vertical cartridge (rotated field): paddle pick, with the match spaceships | Commodore 64, horizontal cartridge: paddle pick, with the characters |
+| ![Commodore 64, vertical cartridge: the VS screen](../screenshots/c64-vertical-challenge.png) | ![Commodore 64, horizontal cartridge: the VS screen](../screenshots/c64-challenge.png) |
+| Commodore 64, vertical cartridge (rotated field): the ladder's VS screen | Commodore 64, horizontal cartridge: the ladder's VS screen |
+| ![Commodore 64, vertical cartridge: NEXT match](../screenshots/c64-vertical-next.png) | ![Commodore 64, horizontal cartridge: NEXT match](../screenshots/c64-next.png) |
+| Commodore 64, vertical: NEXT, high-resolution spaceships and the HUD on the right | Commodore 64, horizontal: NEXT, ARCADE against ARCADE |
 | ![Commodore 64: power-up pick](../screenshots/c64-pick.png) | |
-| Commodore 64: power-up pick (the CPU has already picked) | |
+| Commodore 64: power-up pick (the CPU has already picked; the same on both cartridges) | |
 
 The PC screenshots come from `paddws --screenshot-tour DIR` (Rust version), the MiSTer ones from the
 simulation of the core with Verilator (`mister/sim/frames`), the C64 ones from VICE

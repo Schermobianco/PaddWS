@@ -32,8 +32,12 @@ gamepad o mouse.
 | Titolo dell'attract, con il filtro CRT | NEXT: scelta della racchetta, con i personaggi |
 | ![NEXT: lo schermo VS della scalata](docs/screenshots/challenge-intro.png) | ![NEXT: BLASTER contro GUARDIAN](docs/screenshots/next-kinds.png) |
 | La scalata: lo schermo VS prima di ogni avversario | Le racchette dei personaggi: BLASTER contro GUARDIAN |
-| ![Core MiSTer: scelta della racchetta](docs/screenshots/mister-pick.png) | ![Commodore 64: lo schermo VS](docs/screenshots/c64-challenge.png) |
-| Core MiSTer a 320×240 | Commodore 64: lo schermo VS della scalata |
+| ![Core MiSTer: titolo](docs/screenshots/mister-title.png) | ![Core MiSTer: scelta della racchetta](docs/screenshots/mister-pick.png) |
+| Core MiSTer a 320×240: titolo dopo il gettone | Core MiSTer: scelta della racchetta, con i personaggi |
+| ![Commodore 64, cartuccia verticale: lo schermo VS](docs/screenshots/c64-vertical-challenge.png) | ![Commodore 64, cartuccia orizzontale: lo schermo VS](docs/screenshots/c64-challenge.png) |
+| Commodore 64, cartuccia verticale (campo girato): lo schermo VS della scalata | Commodore 64, cartuccia orizzontale: lo schermo VS della scalata |
+| ![Commodore 64, cartuccia verticale: partita NEXT](docs/screenshots/c64-vertical-next.png) | ![Commodore 64, cartuccia orizzontale: partita NEXT](docs/screenshots/c64-next.png) |
+| Commodore 64, verticale: NEXT, astronavi in alta risoluzione e HUD a destra | Commodore 64, orizzontale: NEXT, ARCADE contro ARCADE |
 
 Altre schermate in [Come si gioca](docs/it/come-si-gioca.md#schermate).
 

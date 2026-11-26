@@ -379,14 +379,18 @@ menu. Solo PAL; finora provata in VICE. Dettagli in [c64/README.md](../../c64/RE
 | NEXT: lo schermo VS prima dell'ultimo avversario, GUARDIAN | NEXT: entra un secondo giocatore |
 | ![Finale: la sfilata degli avversari battuti](../screenshots/ending-parade.png) | ![Finale: l'astronave del campione salta nell'iperspazio](../screenshots/ending-warp.png) |
 | Finale della scalata: gli avversari battuti, timbrati DEFEATED | Finale: tra i fuochi l'astronave del campione salta nell'iperspazio |
-| ![Finale: THE END con l'astronave del campione](../screenshots/ending-the-end.png) | ![Commodore 64: scelta della racchetta](../screenshots/c64-paddles.png) |
-| Finale: THE END con l'illustrazione dell'astronave | Commodore 64: scelta della racchetta, con i personaggi |
-| ![Core MiSTer: titolo](../screenshots/mister-title.png) | ![Core MiSTer: scelta della racchetta](../screenshots/mister-pick.png) |
-| Core MiSTer a 320×240: titolo dopo il gettone | Core MiSTer: scelta della racchetta, con i personaggi |
-| ![Commodore 64: titolo](../screenshots/c64-title.png) | ![Commodore 64: partita NEXT](../screenshots/c64-next.png) |
-| Commodore 64: titolo in Free Play | Commodore 64: NEXT, ARCADE contro ARCADE |
+| ![Finale: THE END con l'astronave del campione](../screenshots/ending-the-end.png) | ![Core MiSTer: titolo](../screenshots/mister-title.png) |
+| Finale: THE END con l'illustrazione dell'astronave | Core MiSTer a 320×240: titolo dopo il gettone |
+| ![Core MiSTer: scelta della racchetta](../screenshots/mister-pick.png) | ![Commodore 64: titolo](../screenshots/c64-title.png) |
+| Core MiSTer: scelta della racchetta, con i personaggi | Commodore 64: titolo in Free Play (uguale nelle due cartucce) |
+| ![Commodore 64, cartuccia verticale: scelta della racchetta](../screenshots/c64-vertical-paddles.png) | ![Commodore 64, cartuccia orizzontale: scelta della racchetta](../screenshots/c64-paddles.png) |
+| Commodore 64, cartuccia verticale (campo girato): scelta della racchetta, con le astronavi della partita | Commodore 64, cartuccia orizzontale: scelta della racchetta, con i personaggi |
+| ![Commodore 64, cartuccia verticale: lo schermo VS](../screenshots/c64-vertical-challenge.png) | ![Commodore 64, cartuccia orizzontale: lo schermo VS](../screenshots/c64-challenge.png) |
+| Commodore 64, cartuccia verticale (campo girato): lo schermo VS della scalata | Commodore 64, cartuccia orizzontale: lo schermo VS della scalata |
+| ![Commodore 64, cartuccia verticale: partita NEXT](../screenshots/c64-vertical-next.png) | ![Commodore 64, cartuccia orizzontale: partita NEXT](../screenshots/c64-next.png) |
+| Commodore 64, verticale: NEXT, astronavi in alta risoluzione e HUD a destra | Commodore 64, orizzontale: NEXT, ARCADE contro ARCADE |
 | ![Commodore 64: scelta dei bonus](../screenshots/c64-pick.png) | |
-| Commodore 64: scelta dei bonus (la CPU ha già scelto) | |
+| Commodore 64: scelta dei bonus (la CPU ha già scelto; uguale nelle due cartucce) | |
 
 Le schermate PC vengono da `paddws --screenshot-tour DIR` (versione Rust), quelle MiSTer dalla
 simulazione del core con Verilator (`mister/sim/frames`), quelle C64 da VICE (`c64/shot.ps1`).

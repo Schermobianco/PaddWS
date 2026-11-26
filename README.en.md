@@ -32,8 +32,12 @@ keyboard, a gamepad or the mouse.
 | Attract mode title, with the CRT filter | NEXT: paddle pick, with the characters |
 | ![NEXT: the ladder's VS screen](docs/screenshots/challenge-intro.png) | ![NEXT: BLASTER against GUARDIAN](docs/screenshots/next-kinds.png) |
 | The ladder: the VS screen before each opponent | The characters' paddles: BLASTER against GUARDIAN |
-| ![MiSTer core: paddle pick](docs/screenshots/mister-pick.png) | ![Commodore 64: the VS screen](docs/screenshots/c64-challenge.png) |
-| MiSTer core at 320×240 | Commodore 64: the ladder's VS screen |
+| ![MiSTer core: title](docs/screenshots/mister-title.png) | ![MiSTer core: paddle pick](docs/screenshots/mister-pick.png) |
+| MiSTer core at 320×240: title after the coin | MiSTer core: paddle pick, with the characters |
+| ![Commodore 64, vertical cartridge: the VS screen](docs/screenshots/c64-vertical-challenge.png) | ![Commodore 64, horizontal cartridge: the VS screen](docs/screenshots/c64-challenge.png) |
+| Commodore 64, vertical cartridge (rotated field): the ladder's VS screen | Commodore 64, horizontal cartridge: the ladder's VS screen |
+| ![Commodore 64, vertical cartridge: NEXT match](docs/screenshots/c64-vertical-next.png) | ![Commodore 64, horizontal cartridge: NEXT match](docs/screenshots/c64-next.png) |
+| Commodore 64, vertical: NEXT, high-resolution spaceships and the HUD on the right | Commodore 64, horizontal: NEXT, ARCADE against ARCADE |
 
 More screenshots in [How to play](docs/en/how-to-play.md#screenshots).
 
