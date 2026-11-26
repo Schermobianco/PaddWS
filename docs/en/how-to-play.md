@@ -316,7 +316,11 @@ CPU the whole screen belongs to the player; with two players each has their own 
   HERE).
 
 The first tap goes full screen (Android, iPad) and the screen stays on; on iPhone, full screen is
-obtained with *Share → Add to Home Screen* (on Android also with *Install app*). Audio starts at
+obtained by installing the game as an app. The
+[install.html](https://schermobianco.github.io/PaddWS/install.html) page has an **INSTALL** button
+(Chrome, Edge, Android) and explains the steps on iPhone and iPad (*Share → Add to Home Screen*);
+the browser menu works too (*Install app*). Once opened, the game also starts offline. When online
+it always gets the latest version. Audio starts at
 the first tap. In a desktop browser the mouse acts as a finger (or as a spinner) and keyboard and
 gamepad work as on PC. Menu preferences and the high-score table are kept in the browser
 (`localStorage`).

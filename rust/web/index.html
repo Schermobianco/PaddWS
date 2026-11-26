@@ -6,7 +6,8 @@
      audio si gioca muti. Gli errori compaiono in un riquadro rosso in basso.
      La musica del SID la suona il gioco in tempo reale: sid_audio.js. I gamepad li legge
      gamepad.js; preferenze e classifica restano nel localStorage: storage.js. Sui
-     dispositivi touch il primo tocco porta a schermo intero e lo schermo resta acceso: fullscreen.js. -->
+     dispositivi touch il primo tocco porta a schermo intero e lo schermo resta acceso: fullscreen.js.
+     Il gioco parte anche senza rete e si installa come app: sw.js (service worker). -->
 <html lang="it">
 <head>
 <meta charset="utf-8">
@@ -104,6 +105,14 @@
     document.addEventListener("contextmenu", (e) => e.preventDefault());
     // mouse come spinner: il tasto centrale usa il bonus, non fa scorrere la pagina
     document.addEventListener("mousedown", (e) => { if (e.button === 1) e.preventDefault(); });
+    // service worker (sw.js): gioco senza rete e installabile come app. Il browser lo accetta solo
+    // in https o su localhost. Si registra qualche secondo dopo il caricamento, così le sue copie
+    // dei file arrivano dalla cache del browser invece di scaricare il wasm una seconda volta.
+    if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+            setTimeout(() => navigator.serviceWorker.register("sw.js").catch(() => {}), 5000);
+        });
+    }
 </script>
 </body>
 </html>

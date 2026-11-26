@@ -313,7 +313,11 @@ la CPU tutto lo schermo è del giocatore; in due ognuno ha la sua metà.
   HOLD HERE).
 
 Il primo tocco porta a schermo intero (Android, iPad) e lo schermo resta acceso; su iPhone lo
-schermo intero si ottiene con *Condividi → Aggiungi a Home* (su Android anche con *Installa app*).
+schermo intero si ottiene installando il gioco come app. La pagina
+[install.html](https://schermobianco.github.io/PaddWS/install.html) ha il pulsante **INSTALLA**
+(Chrome, Edge, Android) e spiega i passaggi su iPhone e iPad (*Condividi → Aggiungi alla schermata
+Home*); si può fare anche dal menu del browser (*Installa app*). Una volta aperto, il gioco parte
+anche senza rete. Con la rete prende sempre l'ultima versione.
 L'audio parte al primo tocco. Nel browser del computer il mouse fa da dito (o da spinner) e
 tastiera e gamepad funzionano come su PC. Le preferenze del menu e la classifica restano nel
 browser (`localStorage`).

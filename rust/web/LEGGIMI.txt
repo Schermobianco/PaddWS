@@ -12,6 +12,10 @@ Per fermare il server: Ctrl+C.
 La cartella si può anche caricare così com'è su un qualunque hosting di siti statici (GitHub
 Pages, Netlify, il proprio spazio web): non serve nient'altro.
 
+Da un sito in https (o da http://localhost) il gioco si installa come app e parte anche senza
+rete: install.html ha il pulsante per installarlo e spiega come fare su iPhone e iPad. Dalla rete
+locale in http (http://<indirizzo del PC>:8080) il browser non lo permette: lì si gioca e basta.
+
 Sul telefono si gioca in orizzontale: la racchetta segue il dito, un secondo dito fa lo scatto
 in avanti, in NEXT un tocco su una capsula della riserva usa il bonus, al centro in alto la
 pausa (il simbolo in cima alla linea), in CHALLENGE un dito tenuto dietro la racchetta della CPU

@@ -91,7 +91,10 @@ Release executables are built by the [forge](../tools/forge/README.en.md) VM (`b
 ```
 
 The first time: `rustup target add wasm32-unknown-unknown`. It must be opened from a web server,
-not by double-clicking `index.html` (see `web/LEGGIMI.txt`, in Italian).
+not by double-clicking `index.html` (see `web/LEGGIMI.txt`, in Italian). The `web/sw.js` service
+worker makes it installable and lets it start offline; when online, files always come from the
+site. The build writes the version and the wasm fingerprint into it, so after each build the
+browser picks up the new one. `web/install.html` is the page with the install button.
 
 ## Checks before a push
 

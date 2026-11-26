@@ -22,7 +22,8 @@ quello del core C64 sul MiSTer e un SID scritto in Rust su PC, Raspberry e web.
 
 **<https://schermobianco.github.io/PaddWS/>**: nel browser, dal computer, dal telefono o dal tablet
 (in orizzontale). Sul telefono la racchetta segue il dito; sul computer si gioca con tastiera,
-gamepad o mouse.
+gamepad o mouse. Si può anche installare come app, che parte a schermo intero e funziona senza
+rete: **<https://schermobianco.github.io/PaddWS/install.html>**.
 
 ## Schermate
 

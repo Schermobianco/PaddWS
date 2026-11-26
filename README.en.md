@@ -22,7 +22,8 @@ C64, the one from the C64 core on the MiSTer and a SID written in Rust on PC, Ra
 
 **<https://schermobianco.github.io/PaddWS/>**: in the browser, on a computer, a phone or a tablet
 (in landscape). On the phone the paddle follows your finger; on the computer you play with the
-keyboard, a gamepad or the mouse.
+keyboard, a gamepad or the mouse. You can also install it as an app, which starts full screen and
+works offline: **<https://schermobianco.github.io/PaddWS/install.html>**.
 
 ## Screenshots
 

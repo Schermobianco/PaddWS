@@ -50,6 +50,7 @@ nomi degli avversari, nuovo sfidante, PERFECT) sono disegnate partendo dalle let
   in `rust/vendor/miniquad/` con tre piccole modifiche (avvio e formato della superficie sotto Wayland, orologio monotono)
   ([testo MIT](rust/vendor/miniquad/LICENSE-MIT), modifiche in testa al suo `Cargo.toml`).
 - Versione web: il JavaScript di miniquad e quad-snd, MIT o Apache-2.0; i plugin di `rust/web/`
-  (`sid_audio.js`, `gamepad.js`, `storage.js`, `fullscreen.js`) sono di PADD WS (GPL v3 o successiva).
+  (`sid_audio.js`, `gamepad.js`, `storage.js`, `fullscreen.js`, `sw.js`) e `install.html` sono di
+  PADD WS (GPL v3 o successiva).
 - Versione Python: [Arcade](https://github.com/pythonarcade/arcade) (MIT) e, sul Raspberry Pi,
   [pigpio](https://github.com/joan2937/pigpio) (Unlicense).

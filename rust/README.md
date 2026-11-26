@@ -91,7 +91,10 @@ Gli eseguibili delle release li costruisce la VM [forge](../tools/forge/README.m
 ```
 
 La prima volta: `rustup target add wasm32-unknown-unknown`. Va aperta da un server web, non con un
-doppio clic su `index.html` (vedi `web/LEGGIMI.txt`).
+doppio clic su `index.html` (vedi `web/LEGGIMI.txt`). Il service worker `web/sw.js` la rende
+installabile e la fa partire senza rete; con la rete i file arrivano sempre dal sito. Il build gli
+scrive dentro versione e impronta del wasm, così a ogni build il browser prende quello nuovo.
+`web/install.html` è la pagina con il pulsante per installarla.
 
 ## Controlli prima di un push
 

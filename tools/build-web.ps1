@@ -27,6 +27,13 @@ try {
     Set-Content "$out/mq_js_bundle.js" ($js -join "`n") -Encoding utf8 -NoNewline
     Copy-Item "$root/rust/target/wasm32-unknown-unknown/release/paddws.wasm" $out
     foreach ($n in 64, 180, 192, 512) { Copy-Item "$root/assets/icons/paddws_$n.png" "$out/icon-$n.png" }
+    # service worker: versione del gioco e impronta del wasm, che cambiano a ogni build; il browser
+    # vede un sw.js diverso, lo installa e butta le copie vecchie. Letto e scritto in UTF-8 senza BOM
+    # (Get-Content di PowerShell 5.1 senza -Encoding rovinerebbe le lettere accentate dei commenti)
+    $version = (Select-String -Path "$root/rust/Cargo.toml" -Pattern '^version = "(.*)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+    $hash = (Get-FileHash "$out/paddws.wasm" -Algorithm SHA256).Hash.Substring(0, 12).ToLower()
+    $sw = (Get-Content "$out/sw.js" -Raw -Encoding utf8).Replace("__PADDWS_VERSION__", "$version-$hash")
+    [System.IO.File]::WriteAllText("$out/sw.js", $sw, (New-Object System.Text.UTF8Encoding $false))
     Write-Host "Versione web in $out"
 } finally {
     Pop-Location

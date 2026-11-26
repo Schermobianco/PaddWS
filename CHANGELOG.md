@@ -14,6 +14,14 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+### Aggiunto
+- Web, **installabile come app** (PWA): con il service worker `rust/web/sw.js` il gioco parte
+  anche senza rete e Chrome, Edge e Android lo offrono da installare. Con la rete i file arrivano
+  sempre dal sito, quindi dopo una release non si gioca con la versione vecchia. La pagina
+  `install.html` (<https://schermobianco.github.io/PaddWS/install.html>) ha il pulsante INSTALLA e
+  su iPhone e iPad spiega *Condividi → Aggiungi alla schermata Home*. Il manifest ha `id`, lingua e
+  categoria.
+
 ## [4.7.0] - 2026-11-26
 
 ### Aggiunto
