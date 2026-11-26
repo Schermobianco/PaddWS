@@ -67,7 +67,6 @@ tn_map    = TN_HDR + 4
 in_f:    .byte 0                ; frame dall'inizio
 in_k:    .byte 0                ; tipo dell'avversario (K_*)
 in_opp:  .byte 0                ; lato dell'avversario: 0 sinistra, 1 destra
-in_n:    .byte 0                ; righe dell'immagine della racchetta
 in_dx:   .byte 0                ; temporanee
 in_y:    .byte 0
 in_t:    .byte 0
@@ -83,9 +82,8 @@ in_step: .byte 0                ; in_draw: frame del disegno (0-2)
 ; Disegno (ch_draw), sullo schermo pulito, in tre frame (ch_more; insieme non ci stanno nel frame
 ; NTSC). Il primo è vuoto: è il terzo della presentazione, in cui il file voce del primo livello
 ; copia GO (VOICE_TICK, circa 12.900 cicli). Poi i caratteri del nome dalla cartuccia (prima della
-; voce, come le copie), punteggio, record e duelli vinti (intro_hud, non nell'allenamento); poi
-; l'immagine della racchetta dell'avversario (prima della voce: dopo l'I/O resta acceso) e
-; l'entrata.
+; voce, come le copie), punteggio, record e duelli vinti (intro_hud, non nell'allenamento); poi,
+; per OMEGA, la posa della sua astronave (prima della voce: dopo l'I/O resta acceso) e l'entrata.
 .proc in_draw
     lda in_step
     inc in_step
@@ -115,21 +113,15 @@ second:
     sta ship_part
     jmp inv_init
 .else
-    ; l'immagine della racchetta, dritta (BLASTER con il caricatore pieno)
-    ldx in_k
-    stx pi_kind
-    lda pv_rows,x
-    sta pi_n
-    sta in_n
-    lda in_opp                  ; (l'astronave com'è: TWIST dritta, BLASTER carico)
-    sta pi_side
-    jsr pad_image
+    ; la racchetta si vede solo nell'entrata di OMEGA (in_pad): la posa della sua prima forma
+    ; (l'astronave dell'ARCADE) dalla cartuccia, per il suo lato
+    ldx ch_level
+    cpx #CH_OMEGA
+    bcc :+
+    lda in_k
     ldy in_opp
-    lda #1
-    sta pd_dirty,y
-    lda #$ff                    ; in partita l'immagine si rifà
-    sta pd_n,y
-    jmp inv_init
+    jsr pose_now
+:   jmp inv_init
 .endif
 .endproc
 .assert INV_RUN = $F000, error, "entrate della presentazione: le tabelle dei quadrati altrove"
@@ -344,6 +336,8 @@ next:
 .assert CH_BLANK = 0, error, "in_col: la cella vuota è il carattere 0"
 
 ; La racchetta dell'avversario accesa: A unità dal centro, centro alla y degli sprite Y, colore X.
+; È l'astronave a righe dello schermo in due sprite, la metà alta nel 3 e la bassa nel 4 (la posa
+; che in_draw ha copiato per il lato dell'avversario; ship_twin di video.s).
 ; Nel campo girato l'astronave della partita (solo OMEGA, al centro: A non conta), con la posa del
 ; lato dell'avversario: prima una parte al frame nella serie 0 (ship_copy, quando la voce lascia
 ; spegnere l'I/O), poi accesa.
@@ -380,37 +374,36 @@ show:
     rts
 .else
     sta in_dx
-    stx in_t
+    stx sh_col+SPN_PAD
     tya
     sec
-    sbc in_n                    ; l'immagine dall'alto, a righe doppie
+    sbc #PAD_ROWS               ; il centro dell'astronave dove finisce la metà alta
+    sta sh_y+SPN_PAD
     ldy in_opp
-    sta sh_y+SPN_PAD,y
-    lda in_t
-    sta sh_col+SPN_PAD,y
-    lda #SP_PAD0
-    clc
-    adc in_opp
-    sta sh_ptr+SPN_PAD,y
-    lda bit_of+SPN_PAD,y
-    tax
+    ldx pose_top,y
+    stx sh_ptr+SPN_PAD
+    inx
+    stx sh_ptr+SPN_PAD+1
+    lda #1 << SPN_PAD
     ora sh_enable
     sta sh_enable
-    txa
+    lda #1 << SPN_PAD
     ora sh_mc
     sta sh_mc
-    txa
-    ora sh_yexp
+    lda #<~(1 << SPN_PAD)       ; larga e alta come in partita
+    and sh_xexp
+    sta sh_xexp
+    lda #<~(1 << SPN_PAD)
+    and sh_yexp
     sta sh_yexp
-    tya
-    clc
-    adc #SPN_PAD
-    tax
+    ldx #SPN_PAD
     lda in_dx
     ldy #12
+    jsr in_x
+    lda #PAD_ROWS               ; e la metà bassa
+    jmp ship_twin
 .endif
 .endproc
-; (prosegue)
 ; Sprite X a A unità (2 pixel, con il segno) dal centro verso la metà campo dell'avversario, con il
 ; centro dell'immagine Y pixel dal suo bordo sinistro. X resta.
 .proc in_x

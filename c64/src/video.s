@@ -2123,102 +2123,40 @@ TILT2 = P_PAD_MAX_SPEED / 2
 TILT3 = P_PAD_MAX_SPEED * 5 / 6
 
 ; Caricatore del BLASTER: i colpi (0..P_BLASTER_SHOTS) si mappano su BLASTER_VIS + 1 livelli
-; visivi (0..4) per stare nei posti degli sprite di OMEGA prima di VOL_TAB; pad_image spegne dall'alto
-; il colore del tipo (pad_bl_thr).
-; mag_setup mappa A colpi in livello visivo e prosegue in mag_vis (usata anche da pad_prep).
+; visivi (0..4): un posto per livello tra le immagini della cartuccia (gen/padpairs.bin), con il
+; colore del tipo spento dall'alto.
 BLASTER_VIS = 4
 bl_vis: .byte 0, 1, 2, 2, 3, 3, 4
-.ifndef ROTATED
-.endif
 .assert P_BLASTER_SHOTS = 6, error, "caricatore del BLASTER: bl_vis mappa 0..6 in 0..4"
 
 .ifndef ROTATED                 ; (campo girato: le pose dalla cartuccia, anche fuori dalla partita)
-; Immagine della racchetta di pi_side in sh_img (63 byte, 3 per riga): pi_n righe dell'astronave del
-; tipo pi_kind (PAD_IMG_* di gen/assets.inc, dagli sprite di assets/ships/sprites/c64), vista dalla
-; racchetta sinistra; per la destra ogni riga si specchia. La racchetta senza tipo (K_NONE) è il
-; corpo bianco nelle colonne doppie 4 e 5. Niente varianti (inclinazione della TWIST, caricatore
-; del BLASTER, settori persi del GUARDIAN): in partita NEXT le immagini vengono dalla cartuccia, in
-; due metà (pad_prep), e le altre schermate mostrano l'astronave com'è.
+; Immagine della racchetta senza tipo (Classic, EVO, allenamento) del lato pi_side in sh_img (63
+; byte, 3 per riga): pi_n righe del corpo bianco, nelle colonne doppie 4 e 5 a sinistra e 6 e 7 a
+; destra (lo specchio). Le astronavi di NEXT non passano di qui: vengono dalla cartuccia, a righe
+; dello schermo e in due metà (pad_prep in partita, pose_load nelle altre schermate).
 .proc pad_image
     ldy pi_side
-    lda img_base,y
-    sta pi_out
-    ldx pi_kind
-    cpx #K_NONE
-    bcs :+
-    lda pad_img_lo,x
-    sta ptr
-    lda pad_img_hi,x
-    sta ptr+1
-:
-rows:
-    lda #0
-    sta pi_k
+    ldx img_base,y
+    lda bar_byte,y
+    sta pi_row
+    ldy #0
 row:
-    lda pi_k
-    cmp pi_n
-    jcs blank
-    ldx pi_kind
-    cpx #K_NONE
-    bcc ship
     lda #0
-    sta pi_row
-    sta pi_row+2
-    lda #(COLOR_WHITE * $55) & $F0
-    sta pi_row+1
-    jmp mirror
-ship:
-    cmp pad_img_n,x
-    jcs blank
-    sta m_lo
-    asl a
-    adc m_lo                    ; * 3 (C = 0)
-    tay
-    lda (ptr),y
-    sta pi_row
-    iny
-    lda (ptr),y
-    sta pi_row+1
-    iny
-    lda (ptr),y
-    sta pi_row+2
-mirror:
-    lda pi_side
-    beq store
-    ldx pi_row
-    lda pi_row+2
-    jsr mirror_byte
-    sta pi_row
-    txa
-    jsr mirror_byte
-    sta pi_row+2
-    lda pi_row+1
-    jsr mirror_byte
-    sta pi_row+1
-    jmp store
-blank:
-    lda #0
-    sta pi_row
-    sta pi_row+1
-    sta pi_row+2
-store:
-    ldy pi_out
+    sta sh_img,x
+    sta sh_img+2,x
+    cpy pi_n
+    bcs :+
     lda pi_row
-    sta sh_img,y
-    lda pi_row+1
-    sta sh_img+1,y
-    lda pi_row+2
-    sta sh_img+2,y
+:   sta sh_img+1,x
+    inx
+    inx
+    inx
     iny
-    iny
-    iny
-    sty pi_out
-    inc pi_k
-    lda pi_k
-    cmp #PAD_ROWS
-    jne row
+    cpy #PAD_ROWS
+    bne row
     rts
 .endproc
+bar_byte: .byte (COLOR_WHITE * $55) & $F0, (COLOR_WHITE * $55) & $0F
 
 ; GUARDIAN del lato Y in due metà: lo scudo (colonne doppie 4 e 5, nella racchetta destra 6 e 7:
 ; il byte 1 di ogni riga) grigio nei settori persi pi_var (bit 0 il settore in alto), sul posto nei
@@ -2365,42 +2303,34 @@ next:
     rts
 .endproc
 
-; A con le quattro coppie di bit in ordine inverso (pixel multicolore specchiati). Y cambia.
-.proc mirror_byte
-    pha
-    and #$0F
-    tay
-    lda mir_hi,y
-    sta m_lo
-    pla
-    lsr a
-    lsr a
-    lsr a
-    lsr a
-    tay
-    lda mir_lo,y
-    ora m_lo
+; L'astronave ferma in due sprite (presentazione di OMEGA, finale: lì gli sprite bastano, niente
+; cambio a metà): la metà alta nello sprite 3, che chi chiama ha già messo, e la bassa nel 4, uguale
+; in tutto e A righe più in basso (21, o 42 se sono alti il doppio). I blocchi sono quelli di una
+; posa (pose_now): il puntatore del 4 lo mette chi chiama.
+.macro twin_bit reg
+    lda reg
+    and #<~(2 << SPN_PAD)
+    sta reg
+    and #1 << SPN_PAD
+    asl a
+    ora reg
+    sta reg
+.endmacro
+.proc ship_twin
+    clc
+    adc sh_y+SPN_PAD
+    sta sh_y+SPN_PAD+1
+    lda sh_x+SPN_PAD
+    sta sh_x+SPN_PAD+1
+    lda sh_col+SPN_PAD
+    sta sh_col+SPN_PAD+1
+    twin_bit sh_enable
+    twin_bit sh_msb
+    twin_bit sh_mc
+    twin_bit sh_xexp
+    twin_bit sh_yexp
     rts
 .endproc
-; due coppie di bit scambiate (ab -> ba), nel nibble basso e in quello alto
-mir_lo: .repeat 16, I
-    .byte ((I & 3) << 2) | (I >> 2)
-.endrepeat
-mir_hi: .repeat 16, I
-    .byte (((I & 3) << 2) | (I >> 2)) << 4
-.endrepeat
-
-; astronavi dei tipi (ARCADE, TITAN, HAMMER, TWIST, BLASTER, RUSH, GUARDIAN), gen/assets.inc
-pad_img0: .byte PAD_IMG_ARCADE
-pad_img1: .byte PAD_IMG_TITAN
-pad_img2: .byte PAD_IMG_HAMMER
-pad_img3: .byte PAD_IMG_TWIST
-pad_img4: .byte PAD_IMG_BLASTER
-pad_img5: .byte PAD_IMG_RUSH
-pad_img6: .byte PAD_IMG_GUARDIAN
-pad_img_lo: .lobytes pad_img0, pad_img1, pad_img2, pad_img3, pad_img4, pad_img5, pad_img6
-pad_img_hi: .hibytes pad_img0, pad_img1, pad_img2, pad_img3, pad_img4, pad_img5, pad_img6
-pad_img_n:  .byte PAD_IMG_N
 .endif
 ; pixel tra il bordo sinistro dello sprite e la colonna della racchetta: sinistra per tipo (K_NONE
 ; per ultimo), poi destra
@@ -3811,13 +3741,13 @@ late_lines: .res 1              ; frame_after: righe concesse
 fx_size:  .res 1
 .segment "CODE"
 
-; NEXT: immagini delle racchette pronte nella cartuccia (gen/paddles.bin di tools/gen_c64_assets.py,
-; byte per byte come pad_image, banco PAD_BANK): per tipo e lato un blocco di 8 posti (2 pagine),
-; copiato nel blocco del lato, una pagina per frame, nei frame con il tempo e senza voci (next_hud;
-; sull'NTSC anche om_early); nel posto k l'inclinazione k - 3 della TWIST, il livello k del
-; caricatore del BLASTER, per gli altri tipi solo il posto 0. In partita si cambia solo il
-; puntatore. Quando OMEGA si trasforma next_morph azzera pp_ready del suo lato e pp_side, e il suo
-; blocco si ricopia nella pausa dopo il punto; intanto l'immagine dinamica.
+; NEXT: immagini delle racchette pronte nella cartuccia (gen/padpairs.bin di
+; tools/gen_c64_assets.py, dal banco PAD2_BANK): per coppia di tipi i blocchi delle due racchette
+; già al loro posto, copiati una pagina per frame, nei frame con il tempo e senza voci (next_hud;
+; sull'NTSC anche om_early); nel posto k di una racchetta l'inclinazione k - 3 della TWIST, il
+; livello k del caricatore del BLASTER, per gli altri tipi solo il posto 0. In partita si cambia
+; solo il puntatore. Quando OMEGA si trasforma next_morph azzera pp_ready e pp_side, e i blocchi
+; si ricopiano nella pausa dopo il punto; intanto la racchetta non si vede.
 SP_PREP0 = SP_FX0 + TRAIL_BUFS  ; 8 immagini per lato, i blocchi a inizio pagina
 .assert (SP_PREP0 .mod 4) = 0, error, "immagini delle racchette: i blocchi a inizio pagina"
 PP_DST = >($C000 + SP_PREP0 * 64)
@@ -3962,8 +3892,14 @@ POSE_PAGE = $80 + (PAIR_POSES .mod 8) * PAIR_PAGES
     cpx #RASTER_LINE
     bcs :+
     cpx #42
-    bcs out
-:   clc
+    bcc :+
+    rts                         ; (C = 1)
+:
+.endproc
+; (prosegue) La stessa senza guardare il raster, dove non c'è uno split: la presentazione di OMEGA e
+; il finale (lì l'astronave sta in due sprite, ship_twin). Mai con una voce (pad_under).
+.proc pose_now
+    clc
     adc #POSE_PAGE
     sta ef_src+2
     tya
@@ -3974,7 +3910,6 @@ POSE_PAGE = $80 + (PAIR_POSES .mod 8) * PAIR_PAGES
     lda #POSE_BANK
     jsr pad_under
     clc
-out:
     rts
 .endproc
 pose_top: .byte SP_UNDER, SP_UNDER + 6

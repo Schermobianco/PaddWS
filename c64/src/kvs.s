@@ -3,7 +3,7 @@
 ; entrate animate dei singoli avversari. Bitmap a $E000 con i colori a $C000 (MODE_HOWTO): in
 ; cima la scala e il livello, i due ritratti ognuno dalla parte in cui gioca (pannelli della scelta
 ; della racchetta, kpick.s; OMEGA svelato dai suoi), VS che si stampa a 4x, 3x e 2x, il campo con la
-; rete e le due racchette vere (sprite 3 e 4, pad_image), i nomi, i motti scritti una lettera per
+; rete e le due racchette vere (sprite 3 e 4, pose_load), i nomi, i motti scritti una lettera per
 ; frame (quello dell'avversario grigio), le icone dei bonus di tutti e due, FIRST TO e i punti.
 ;
 ; Le righe di celle KV_MC_ROW0-KV_MC_ROW1 (ritratti, VS, rete) sono in bitmap multicolor, il resto in

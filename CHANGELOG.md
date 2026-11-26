@@ -29,11 +29,12 @@ crea il commit e il tag `vX.Y.Z`.
   multicolore veri, larghi due e alti uno, invece di quelli quadrati: il doppio delle righe. Lo
   sprite della racchetta non è più espanso e viene usato due volte nello stesso frame, per la metà
   alta e per la metà bassa, con un interrupt del raster a metà racchetta. Vale in partita, nella
-  scelta della racchetta e nel VS. Le racchette compaiono qualche frame dopo il campo e READY si
-  sente poco dopo, perché le immagini arrivano dalla cartuccia prima della voce. Nel salto del
-  TELEPORT, nello spegnimento del GAME OVER, nella presentazione dell'avversario e nel finale
-  l'astronave è la stessa a mezza risoluzione. Le inclinazioni della TWIST sono simmetriche
-  rispetto al centro.
+  scelta della racchetta e nel VS. Nella presentazione di OMEGA e nel finale (i fuochi e THE END,
+  dove l'astronave è grande il doppio) le due metà stanno in due sprite. Le racchette compaiono
+  qualche frame dopo il campo e READY si sente poco dopo, perché le immagini arrivano dalla
+  cartuccia prima della voce. Nel salto del TELEPORT e nello spegnimento del GAME OVER l'astronave
+  è la stessa a mezza risoluzione. Le inclinazioni della TWIST sono simmetriche rispetto al
+  centro. Il vecchio disegno a pixel quadrati non c'è più.
 - Editor delle racchette: per il C64 restano due piattaforme, "C64 orizzontale" (gli sprite di
   `assets/ships/sprites/c64`, ora 24 colonne per le righe vere della racchetta) e "C64 verticale".
 

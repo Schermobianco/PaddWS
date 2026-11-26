@@ -1638,7 +1638,7 @@ hw_t:   .res 2                  ; frame da quando si vede
 ; ------------------------------------------------------------------------------------ GUARDIAN
 
 ; Muro del GUARDIAN dietro la racchetta, sotto le riserve (righe BAR_ROW0-24): non si vede (i settori
-; in piedi sono i corsi della racchetta, pad_image); il settore che rimanda la palla lampeggia per
+; in piedi sono i corsi della racchetta, guard_apply); il settore che rimanda la palla lampeggia per
 ; BAR_FLASH frame, a tratti, nel colore del GUARDIAN (azzurro), e sparisce. I settori non sono allineati ai
 ; caratteri: ogni riga di caratteri prende il settore del suo centro con la regola della logica
 ; (g_sector, sulla y del core che va verso l'alto), quindi il disegno è approssimato al carattere
@@ -2785,13 +2785,7 @@ done:
 .endproc
 
 .segment "RODATA"
-; righe dello sprite per tipo (altezza in pixel / 2, per eccesso), varianti dell'anteprima
-.macro pv_rows_of h0, h1, h2, h3, h4, h5, h6, h7
-    .byte ((h0 >> 16) + 1) / 2, ((h1 >> 16) + 1) / 2, ((h2 >> 16) + 1) / 2, ((h3 >> 16) + 1) / 2
-    .byte ((h4 >> 16) + 1) / 2, ((h5 >> 16) + 1) / 2, ((h6 >> 16) + 1) / 2, ((h7 >> 16) + 1) / 2
-.endmacro
 .ifndef ROTATED                 ; (campo girato: le anteprime sono le astronavi, rp_preview)
-pv_rows: pv_rows_of T_KIND_H
 pv_x:    .byte SPR_X0 + 14 * 8 + 4 - 12, SPR_X0 + 25 * 8 + 4 - 12
 .endif
 .assert SPR_X0 + 25 * 8 + 4 - 12 < 256, error, "anteprime: bit alto della x"

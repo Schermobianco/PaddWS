@@ -1755,7 +1755,7 @@ def title_assets(lines: list[str]) -> tuple[bytes, list[tuple[str, list[list[int
 
 PAD_KINDS = ("arcade", "titan", "hammer", "twist", "blaster", "rush", "guardian")
 PAD_W = 12            # colonne doppie dello sprite multicolore
-PAD_TILT = 3          # colonne di spostamento massimo dell'inclinazione della TWIST (pad_image)
+PAD_TILT = 3          # colonne di spostamento massimo dell'inclinazione della TWIST
 PAD_ENGINE = 16       # aggancio motore nei PNG (editor delle racchette): non si disegna
 PAD_ENGINES = (2, 2, 1, 1, 2, 1, 2)   # agganci motore per tipo, come sul PC
 PAD_ROWS = 21
@@ -1781,44 +1781,33 @@ def pad_anchors(name: str, px: list[list[int]], want: int) -> list[list[int]]:
 
 def paddle_sprites() -> list[str]:
     """Le astronavi delle racchette di NEXT (assets/ships/sprites/c64/<tipo>.png, editor
-    tools/paddle_editor.html, disegnate a righe dello schermo: pair_image) come le vuole pad_image
-    di video.s, per la presentazione di CHALLENGE e il finale: uno sprite multicolore espanso in
-    verticale, cioè una riga ogni due dello schermo. Ogni riga è la fusione di due righe del
-    disegno (il pixel della prima, o quello della seconda dove la prima è vuota), vista dalla
-    racchetta sinistra, 3 byte per riga (indice della tavolozza = coppia di bit: %01 grigio, %10
-    colore del tipo, %11 bianco). Nell'immagine la faccia sta alla colonna doppia fi (la hitbox
-    sono fi - 1 e fi), con almeno 4 colonne dietro la hitbox come la racchetta senza tipo, e la
-    TWIST con PAD_TILT colonne libere per parte. La racchetta destra è lo specchio intero (colonna
-    c -> 11 - c): lo sprite va PAD_DX_L / PAD_DX_R pixel prima della colonna della racchetta."""
+    tools/paddle_editor.html, disegnate a righe dello schermo: pair_image): dove sta lo sprite
+    rispetto alla colonna della racchetta, e le immagini di gen/padpairs.bin (paddle_pairs).
+    Nell'immagine, 12 colonne doppie viste dalla racchetta sinistra, la faccia sta alla colonna
+    fi (la hitbox sono fi - 1 e fi), con almeno 4 colonne dietro la hitbox come la racchetta senza
+    tipo, e la TWIST con PAD_TILT colonne libere per parte. La racchetta destra è lo specchio
+    intero (colonna c -> 11 - c): lo sprite va PAD_DX_L / PAD_DX_R pixel prima della colonna
+    della racchetta."""
     params = (OUT / "params.inc").read_text(encoding="utf-8")
     kind_h = [int(v, 16) >> 16 for v in re.search(r"\.define T_KIND_H (.*)", params).group(1).replace("$", "").split(", ")]
-    dx_l, dx_r, rows_n, out = [], [], [], []
+    dx_l, dx_r, rows_n = [], [], []
     for k, name in enumerate(PAD_KINDS):
         h = ((kind_h[k] - 1) >> 1) + 1
-        rows, fi, _ = pair_image(k, name, 2 * h)
+        _, fi, _ = pair_image(k, name, 2 * h)
         if name == "guardian":
             assert fi == 5, "GUARDIAN: lo scudo deve stare nelle colonne 4 e 5 (guard_apply)"
         dx_l.append(2 * (fi - 1))
         dx_r.append(2 * (PAD_W - 1 - fi))
         rows_n.append(h)
-        data = []
-        for y in range(h):
-            img = [a or b for a, b in zip(rows[2 * y], rows[2 * y + 1])]
-            for b in range(3):
-                data.append((img[4 * b] << 6) | (img[4 * b + 1] << 4) | (img[4 * b + 2] << 2) | img[4 * b + 3])
-        out.append(f".define PAD_IMG_{name.upper()} " + ", ".join(f"${v:02X}" for v in data))
     # la racchetta senza tipo (Classic, EVO, allenamento): corpo bianco nelle colonne 4 e 5
     dx_l.append(8)
     dx_r.append(2 * (PAD_W - 1 - 5))
     pairs = paddle_pairs(rows_n)
     return [
-        "; astronavi delle racchette di NEXT (assets/ships/sprites/c64) per pad_image: righe viste",
-        "; dalla racchetta sinistra, 3 byte per riga; x dello sprite: colonna della racchetta -",
-        "; PAD_DX_L / PAD_DX_R (per tipo, poi la racchetta senza tipo)",
+        "; astronavi delle racchette di NEXT (assets/ships/sprites/c64): x dello sprite = colonna",
+        "; della racchetta - PAD_DX_L / PAD_DX_R (per tipo, poi la racchetta senza tipo)",
         ".define PAD_DX_L " + ", ".join(map(str, dx_l)),
         ".define PAD_DX_R " + ", ".join(map(str, dx_r)),
-        ".define PAD_IMG_N " + ", ".join(map(str, rows_n)),
-        *out,
         *pairs,
     ]
 
@@ -1908,7 +1897,8 @@ def paddle_pairs(rows_old: list[int]) -> list[str]:
     blocchi di chi non si trasforma restano dove sono quando l'altro cambia forma).
 
     Dopo le coppie (alla pagina PAIR_POSES * PAIR_PAGES) le pose ferme per la scelta della
-    racchetta e il VS, una pagina per tipo: metà alta e bassa della sinistra, poi della destra,
+    racchetta, il VS, la presentazione di OMEGA e il finale, una pagina per tipo: metà alta e
+    bassa della sinistra, poi della destra,
     dell'astronave com'è (TWIST dritta, BLASTER carico), centrata nelle 42 righe: così il cambio
     di sprite è alla riga del centro per tutti i tipi."""
     names, slots, poses = [], [], bytearray()
@@ -1966,10 +1956,10 @@ def paddle_pairs(rows_old: list[int]) -> list[str]:
     out += poses
     (OUT / "padpairs.bin").write_bytes(bytes(out))
     return [
-        "; le stesse a righe dello schermo, per le racchette in due metà:",
-        "; gen/padpairs.bin, PAIR_PAGES pagine per coppia di tipi (sinistra * 7 + destra, + 49 con",
-        "; la destra per prima); la faccia alla stessa colonna di PAD_IMG_* (PAD_DX_L, PAD_DX_R)",
-        "; poi le pose ferme (scelta e VS), una pagina per tipo, al posto della coppia PAIR_POSES",
+        "; le immagini, a righe dello schermo e in due metà: gen/padpairs.bin, PAIR_PAGES pagine",
+        "; per coppia di tipi (sinistra * 7 + destra, + 49 con la destra per prima), poi le pose",
+        "; ferme (scelta, VS, presentazione di OMEGA, finale), una pagina per tipo, al posto della",
+        "; coppia PAIR_POSES",
         f"PAIR_PAGES = {PAIR_PAGES}",
         f"PAIR_POSES = {pose_at}",
         f"PAIR_MOST = {most}",

@@ -31,8 +31,8 @@ OM_BANK     = 26                ; OMEGA (ROML e ROMH): il suo file voce (come qu
                                 ; l'entrata di OMEGA nella presentazione (paddws.cfg, %O.omega)
 KP_BANK     = 27                ; dal 27 (ROML e ROMH): la scelta della racchetta con i ritratti, il
                                 ; codice (kpick.s, %O.kpick) e i dati (gen/kpick.bin)
-PAD_BANK     = 32                ; (ROML) le immagini delle racchette in partita NEXT (gen/paddles.bin:
-                                ; per tipo la sinistra e la destra da 2 pagine; src/video.s, pad_prep)
+PAD_BANK     = 32                ; (ROML e ROMH) solo nella cartuccia verticale: le pose delle astronavi
+                                ; (gen/rotated/paddles.bin, tools/make_crt.py --pads)
 PAD2_BANK    = 33                ; dal 33 (ROML e ROMH), 13 banchi: le astronavi a righe dello schermo
                                 ; delle racchette in due metà (gen/padpairs.bin: 8 pagine per coppia
                                 ; di tipi, 8 coppie per banco; src/video.s, pad_prep)

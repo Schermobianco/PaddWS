@@ -2324,8 +2324,8 @@ fn hud_redraw(m: &mut Machine, skip: &dyn Fn(usize, usize) -> bool) -> Vec<([u8;
 /// - per ogni colpo (lo stato prima del frame, quello che next_shots disegna) i pixel accesi dei due
 ///   fasci, presi dallo schermo, dalla RAM del colore e dal set in memoria (`green_pixels`, non dai
 ///   codici), stanno in due righe di fila entro un pixel dalla prima riga della bocca del suo
-///   cannone (le righe dell'immagine del BLASTER, PAD_IMG_BLASTER, con il colore del tipo nella
-///   coppia di pixel più avanti, nello sprite espanso che pad_sprite mette dalla riga
+///   cannone (le righe dell'immagine del BLASTER a righe dello schermo, gen/padpairs.bin, con il
+///   colore del tipo nella coppia di pixel più avanti, nello sprite che pad_sprite mette dalla riga
 ///   floor(P_HEIGHT - 1/2 - y - h/2) + 1) e coprono i 7 pixel da int(x) - 3 a passi di 2 (il pixel
 ///   pari prima), niente di più accanto; salvo i frame senza next_shots (NTSC, tv_late), quelli in
 ///   cui chi ridisegna sotto ha appena tolto i fasci (sv_n a 0: allora niente fasci a schermo), i
@@ -2343,7 +2343,7 @@ fn hud_redraw(m: &mut Machine, skip: &dyn Fn(usize, usize) -> bool) -> Vec<([u8;
 struct LaserCheck {
     /// build con i fasci a quattro altezze (shot_glyphs)
     on: bool,
-    /// righe delle bocche nell'immagine, metà altezza del BLASTER e P_HEIGHT (Q16.16)
+    /// prima riga di ciascuna bocca nell'immagine, metà altezza del BLASTER e P_HEIGHT (Q16.16)
     muzzle: [i32; 2],
     half: i64,
     height: i64,
@@ -2395,9 +2395,11 @@ impl LaserCheck {
             .lines()
             .find_map(|l| hex(l.strip_prefix("P_HEIGHT")?.trim_start().strip_prefix('=')?.split(';').next()?));
         // bocche: le righe con il colore del tipo (%10) nella coppia di pixel più avanti (a destra:
-        // l'immagine è quella della racchetta sinistra)
-        let muzzle: Vec<i32> = assets_list("PAD_IMG_BLASTER")
-            .chunks(3)
+        // l'immagine è quella della racchetta sinistra, con il caricatore pieno), due di fila per
+        // bocca: conta la prima
+        let lit: Vec<i32> = pair_image(0, PaddleKind::Blaster as u8, 4)
+            .iter()
+            .flat_map(|half| half.chunks(3))
             .enumerate()
             .filter(|(_, r)| {
                 let bits = u32::from(r[0]) << 16 | u32::from(r[1]) << 8 | u32::from(r[2]);
@@ -2405,8 +2407,9 @@ impl LaserCheck {
             })
             .map(|(i, _)| i as i32)
             .collect();
-        let (Some(height), &[top, bottom]) = (height, muzzle.as_slice()) else {
-            return Err(format!("bocche dei cannoni in PAD_IMG_BLASTER: {muzzle:?}, P_HEIGHT in params.inc"));
+        let muzzle: Vec<i32> = lit.iter().copied().filter(|y| !lit.contains(&(y - 1))).collect();
+        let (Some(height), &[top, bottom], 4) = (height, muzzle.as_slice(), lit.len()) else {
+            return Err(format!("bocche dei cannoni nell'immagine del BLASTER: righe {lit:?}, P_HEIGHT in params.inc"));
         };
         let Some(&blaster) = kinds.get(PaddleKind::Blaster as usize) else {
             return Err("T_KIND_H in params.inc".into());
@@ -2443,7 +2446,7 @@ impl LaserCheck {
     /// quando ha sparato.
     fn rows(&self, y: i32) -> [i32; 2] {
         let r0 = ((self.height - 0x8000 - i64::from(y) - self.half) >> 16) as i32 + 1;
-        [r0 + 2 * self.muzzle[0], r0 + 2 * self.muzzle[1]]
+        [r0 + self.muzzle[0], r0 + self.muzzle[1]]
     }
 
     /// Dopo un frame: `before` i colpi prima del frame (posto, x in pixel, y), `was` lo stato prima.
@@ -5270,6 +5273,38 @@ fn pair_placed(m: &Machine, left: u8, right: u8, right_first: bool) -> Result<()
     Ok(())
 }
 
+/// gen_c64_assets.py: la coppia al cui posto stanno le pose ferme, una pagina per tipo
+const PAIR_POSES: usize = 98;
+
+/// La pagina della posa ferma del tipo `kind` (scelta, VS, presentazione di OMEGA, finale): metà
+/// alta e bassa della sinistra, poi della destra, con l'astronave centrata nelle 42 righe.
+fn pose_page(kind: u8) -> &'static [u8] {
+    &pairs_file()[(PAIR_POSES * PAIR_PAGES + usize::from(kind)) * 256..][..256]
+}
+
+/// Righe di uno sprite espanso (due dello schermo) alte quanto la racchetta del tipo `kind`:
+/// l'altezza in pixel / 2, per eccesso (T_KIND_H di params.inc).
+fn kind_rows(kind: u8) -> u8 {
+    static ROWS: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    ROWS.get_or_init(|| {
+        let file = if ntsc() { "gen/ntsc/params.inc" } else { "gen/params.inc" };
+        let params = std::fs::read_to_string(c64_dir().join(file)).unwrap_or_default();
+        params
+            .lines()
+            .find_map(|l| l.strip_prefix(".define T_KIND_H "))
+            .map(|l| {
+                l.split(',')
+                    .filter_map(|v| u32::from_str_radix(v.trim().trim_start_matches('$'), 16).ok())
+                    .map(|h| (h >> 16).div_ceil(2) as u8)
+                    .collect()
+            })
+            .unwrap_or_default()
+    })
+    .get(usize::from(kind))
+    .copied()
+    .unwrap_or(0)
+}
+
 /// Le due metà (63 byte l'una) della posa `slot` del tipo `kind` per il lato `side`.
 fn pair_image(side: u8, kind: u8, slot: usize) -> [Vec<u8>; 2] {
     let combo = if side == 0 { pair_combo(kind, 0, false) } else { pair_combo(0, kind, true) };
@@ -5355,7 +5390,7 @@ fn paddle_shown(m: &Machine, s: &mut ShownLag) {
             || yexp & bit != 0
             || (wp_on && wp_side == side)
             || (m.read_u8("nx_armed", x) == 5 && m.read_u8("nx_anim", x) == 0)
-            || m.read_u8("pd_cur_n", u16::from(side)) != m.cpu.read(m.addr("pv_rows") + u16::from(kind));
+            || m.read_u8("pd_cur_n", u16::from(side)) != kind_rows(kind);
         if skip {
             s.run[i] = 0;
             continue;
@@ -5532,36 +5567,27 @@ fn warp_fast(m: &mut Machine) -> Result<String, String> {
     ))
 }
 
-/// Le immagini delle racchette dei tipi (pad_image: il disegno di prima, che resta nella
-/// presentazione di CHALLENGE e nel finale), a caratteri: una cella dello sprite multicolore per
-/// carattere ("." niente, "-" grigio $D025, "o" colore dedicato $D027+i, "#" bianco $D026).
-fn paddles(m: &mut Machine) -> bool {
+/// Le astronavi dei tipi come sono nella cartuccia (le pose ferme di gen/padpairs.bin, viste dalla
+/// racchetta sinistra: 42 righe dello schermo in due metà), a caratteri: una cella dello sprite
+/// multicolore per carattere ("." niente, "-" grigio $D025, "o" colore dedicato $D027+i, "#"
+/// bianco $D026).
+fn paddles(_: &mut Machine) -> bool {
     const NAMES: [&str; 7] = ["ARCADE", "TITAN", "HAMMER", "TWIST", "BLASTER", "RUSH", "GUARDIAN"];
-    let rows = m.addr("pv_rows");
     let mut images = Vec::new();
     for (kind, name) in (0..7u8).zip(NAMES) {
-        let n = m.cpu.read(rows + u16::from(kind));
-        m.write_u8("pi_side", 0, 0);
-        m.write_u8("pi_kind", 0, kind);
-        m.write_u8("pi_n", 0, n);
-        let c = m.call("pad_image");
-        let base = m.addr("sh_img");
-        let img: Vec<String> = (0..21u16)
+        let page = pose_page(kind);
+        let img: Vec<String> = (0..42usize)
             .map(|r| {
-                (0..12u16)
-                    .map(|cell| {
-                        let b = m.cpu.read(base + 3 * r + cell / 4);
-                        [".", "-", "o", "#"][usize::from((b >> (6 - 2 * (cell % 4))) & 3)]
-                    })
-                    .collect()
+                let row = &page[r / 21 * 64 + r % 21 * 3..][..3];
+                (0..12usize).map(|cell| [".", "-", "o", "#"][usize::from((row[cell / 4] >> (6 - 2 * (cell % 4))) & 3)]).collect()
             })
             .collect();
-        images.push((format!("{name} ({n} righe, {c} cicli)"), img));
+        images.push((format!("{name} ({} righe)", img.iter().filter(|r: &&String| r.contains(['-', 'o', '#'])).count()), img));
     }
-    for chunk in images.chunks(5) {
-        println!("{}", chunk.iter().map(|(t, _)| format!("{t:<26}")).collect::<String>());
-        for r in 0..21 {
-            println!("{}", chunk.iter().map(|(_, img)| format!("{:<26}", img[r])).collect::<String>());
+    for chunk in images.chunks(7) {
+        println!("{}", chunk.iter().map(|(t, _)| format!("{t:<20}")).collect::<String>());
+        for r in 0..42 {
+            println!("{}", chunk.iter().map(|(_, img)| format!("{:<20}", img[r])).collect::<String>());
         }
         println!();
     }
@@ -7534,6 +7560,7 @@ const SID_SONG_EGG: u8 = 9;
 const SID_SONG_CHAMPION: u8 = 6;
 const EP_CHAMP: u8 = 4;
 const EP_CREDITS: u8 = 5;
+const EP_THEEND: u8 = 6;
 /// Premi dell'ultimo livello vinto 5 a 0: (CH_WIN + CH_PERFECT) * 7.
 const ENDING_BONUS: u32 = (1000 + 2000) * 7;
 /// Cicli dall'interrupt della riga 250 a quando il raster arriva alla prima riga di caratteri:
@@ -7665,6 +7692,9 @@ struct EndingRun {
     flips: u32,
     late: u32,
     bad_colors: u32,
+    /// astronave vincitrice: il tipo, e i frame in cui si vede nei fuochi e in THE END
+    ship_kind: Option<u8>,
+    ship_frames: [u32; 2],
     /// controlli di contenuto falliti
     errors: Vec<String>,
     /// colori a schermo alla fine di ogni frame (`screen_colors`)
@@ -7790,6 +7820,41 @@ fn ending_run(m: &mut Machine, score: u32, fire_at: Option<u32>) -> Result<Endin
         if m.read_u8("e_new", 0) == 0 && m.read_u8("sid_song_n", 0) != SID_SONG_ENDING {
             r.errors.push(format!("parte {now}: canzone {} invece del finale", m.read_u8("sid_song_n", 0)));
         }
+        // astronave vincitrice (fuochi e THE END): due sprite, la metà alta nel 3 e la bassa nel 4,
+        // con la posa del vincitore dalla cartuccia sotto l'I/O; in THE END larga e alta il doppio
+        if !rotated() && now == EP_CHAMP && (m.read_u8("e_t", 0) >= 2 || m.read_u8("e_t", 1) != 0) {
+            r.ship_kind = Some(m.read_u8("e_win", 0)); // (la posa si copia al frame 1 dei fuochi)
+        }
+        if !rotated() && (now == EP_CHAMP || now == EP_THEEND) && m.read_u8("sh_enable", 0) & 8 != 0 {
+            let win = m.read_u8("e_win", 0);
+            r.ship_frames[usize::from(now == EP_THEEND)] += 1;
+            let sh = |name: &str, i: u16| m.read_u8(name, i);
+            let pair = |name: &str| sh(name, 0) >> 3 & 3;
+            let big = now == EP_THEEND;
+            let mut bad = Vec::new();
+            if pair("sh_enable") != 3 || pair("sh_mc") != 3 {
+                bad.push("sprite 3 e 4 non accesi o non multicolore");
+            }
+            if pair("sh_yexp") != if big { 3 } else { 0 } || !matches!(pair("sh_xexp"), 0 | 3) || (big && pair("sh_xexp") != 3) {
+                bad.push("espansioni diverse tra le due metà, o non quelle della parte");
+            }
+            if sh("sh_x", 3) != sh("sh_x", 4) || !matches!(pair("sh_msb"), 0 | 3) || sh("sh_col", 3) != sh("sh_col", 4) {
+                bad.push("x o colore diversi tra le due metà");
+            }
+            if sh("sh_y", 4) != sh("sh_y", 3) + if big { 42 } else { 21 } {
+                bad.push("metà bassa non sotto la metà alta");
+            }
+            let ptrs = [sh("sh_ptr", 3), sh("sh_ptr", 4)];
+            if ptrs != [SP_UNDER, SP_UNDER + 1] || (now == EP_CHAMP && m.cpu.mem[0xC7FB..0xC7FD] != ptrs) {
+                bad.push("puntatori degli sprite (anche nel secondo schermo) non alla posa");
+            }
+            if win > 6 || m.cpu.under_io[0x100..0x200] != *pose_page(win) {
+                bad.push("la posa sotto l'I/O non è quella del vincitore");
+            }
+            if let Some(b) = bad.first() {
+                r.errors.push(format!("parte {now}, t {}: astronave vincitrice: {b}", m.read_u8("e_t", 0)));
+            }
+        }
         // fuochi: punti nel cielo, razzi, tipi scoppiati
         if now == EP_CHAMP {
             let sky = (0..18 * 40u16).any(|i| (0xC0..0xF0).contains(&m.cpu.mem[(screen + i) as usize]));
@@ -7905,10 +7970,17 @@ fn ending_run(m: &mut Machine, score: u32, fire_at: Option<u32>) -> Result<Endin
         wrong.push("NMI della voce ancora acceso".into());
     }
     // sotto l'I/O gli sprite del programma (salvo i due posti delle racchette, che la partita
-    // rifà) e il titolo dell'attract: la bitmap della sfilata li copre, il finale li rimette
+    // rifà) e il titolo dell'attract: la bitmap della sfilata li copre, il finale li rimette. Dopo
+    // i fuochi nella pagina di SP_UNDER resta la posa dell'astronave vincitrice: le pagine da
+    // pu_dirty a $D3 sono segnate da rifare (under_restore nel titolo, come dopo una partita NEXT)
     let sprites = &m.image[0xC000 - 0x0801..0xC800 - 0x0801];
     let title = std::fs::read(c64_dir().join("gen/title.bin")).unwrap_or_default();
-    let first = (0..0x800).find(|&i| !(128..256).contains(&i) && m.cpu.under_io[i] != sprites[i]);
+    let dirty = usize::from(m.read_u8("pu_dirty", 0));
+    let pending = if dirty == 0 { 0..0 } else { (dirty - 0xD0) * 256..0x400 };
+    if r.ship_kind.is_some() && dirty != 0xD1 {
+        wrong.push("posa dell'astronave vincitrice sotto l'I/O non segnata da rifare (pu_dirty)".into());
+    }
+    let first = (0..0x800).find(|&i| !(128..256).contains(&i) && !pending.contains(&i) && m.cpu.under_io[i] != sprites[i]);
     if first.is_some() || title.is_empty() || m.cpu.under_io[0x800..0x800 + title.len()] != title[..] {
         wrong.push(format!(
             "sprite o titolo dell'attract sotto l'I/O non rimessi (primo byte degli sprite diverso: {})",
@@ -7944,6 +8016,9 @@ fn ending_frames(m: &mut Machine) -> Result<String, String> {
             "fuochi: tipi {:06b}, {} frame con le scintille, {} con i razzi",
             r.kinds, r.fireworks, r.rockets
         ));
+    }
+    if !rotated() && (r.ship_frames[0] < 150 || r.ship_frames[1] < 200) {
+        return Err(format!("astronave vincitrice: a schermo per {:?} frame (fuochi, THE END)", r.ship_frames));
     }
     if r.flips < 70 || r.late > 0 {
         return Err(format!("titoli: {} scambi, {} con i colori in ritardo", r.flips, r.late));

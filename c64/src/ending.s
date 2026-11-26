@@ -62,6 +62,16 @@ E_SCORE     = 450
 E_CHAMP     = FW_CHAMPION
 E_THEEND    = 225
 E_HOLD      = 100               ; titoli: l'ultima riga ferma al centro
+; y dello sprite 3 dell'astronave vincitrice nei fuochi e in THE END (lì larga e alta il doppio). È
+; la sua metà alta: la bassa sta nello sprite 4 (ship_twin di video.s), e il centro del disegno è
+; dove finisce la metà alta. (Campo girato: lo sprite 3 è solo il modello, ship_spread.)
+.ifdef ROTATED
+FW_SHIP_Y   = SPR_Y0 + 62
+TE_SHIP_Y   = SPR_Y0 + 66
+.else
+FW_SHIP_Y   = SPR_Y0 + 58
+TE_SHIP_Y   = SPR_Y0 + 41
+.endif
 E_YOUWIN    = 50                ; YOU WIN! e la voce un secondo dopo CONGRATULATIONS
 E_SKIP      = 25                ; Start salta il finale dopo mezzo secondo
 E_STEP      = 25                ; sfilata: un avversario al secondo, il timbro mezzo secondo dopo
@@ -522,9 +532,17 @@ e_bcol:  .byte COL_WHITE
     lda #COL_RED
     ldy #20
     jsr color_row
-:   ; astronave vincitrice (sprite 3, già costruita in SP_PAD0) sospesa al centro sopra THE END
+:   ; astronave vincitrice sospesa al centro sopra THE END, larga e alta il doppio: la posa che i
+    ; fuochi hanno copiato dalla cartuccia (fw_ship), metà alta nello sprite 3 e bassa nel 4
+.ifdef ROTATED
     lda #SP_PAD0
     sta sh_ptr+3
+.else
+    lda #POSE_BOT0 - 1
+    sta sh_ptr+3
+    lda #POSE_BOT0
+    sta sh_ptr+4
+.endif
     ldx e_win
     lda kind_col,x
     sta sh_col+3
@@ -532,7 +550,7 @@ e_bcol:  .byte COL_WHITE
     sta sh_x+3
     lda #0
     sta sh_msb
-    lda #SPR_Y0 + 66
+    lda #TE_SHIP_Y
     sta sh_y+3
     lda #$08
     sta sh_mc
@@ -542,7 +560,8 @@ e_bcol:  .byte COL_WHITE
 .ifdef ROTATED
     jmp ship_spread              ; (campo girato: l'astronave della partita)
 .else
-    rts
+    lda #2 * PAD_ROWS
+    jmp ship_twin
 .endif
 .endproc
 
@@ -558,10 +577,13 @@ e_bcol:  .byte COL_WHITE
     tax
     lda end_bob,x
     clc
-    adc #SPR_Y0 + 66
+    adc #TE_SHIP_Y
     sta sh_y+3
 .ifdef ROTATED
     jsr ship_spread
+.else
+    lda #2 * PAD_ROWS
+    jsr ship_twin
 .endif
     lda #<E_THEEND
     ldx #>E_THEEND
@@ -755,8 +777,8 @@ e_line:  .byte 0
     sta $d022
     lda #COL_YELLOW
     sta $d023
-    ; salva il tipo di racchetta del vincitore (lo sprite SP_PAD0 si costruisce al frame 1 in fw_ship
-    ; così champ_enter resta ben sotto il budget PAL e NTSC)
+    ; salva il tipo di racchetta del vincitore (la posa della sua astronave arriva dalla cartuccia
+    ; al frame 1, in fw_ship: così champ_enter resta ben sotto il budget PAL e NTSC)
     ldx #0
     lda ch_side
     beq :+
@@ -778,6 +800,9 @@ e_line:  .byte 0
     jsr fw_frame
 .ifdef ROTATED
     jsr ship_spread_fw           ; (campo girato: l'astronave della partita)
+.else
+    lda #PAD_ROWS               ; (la metà bassa dell'astronave, nello sprite 4)
+    jsr ship_twin
 .endif
     lda #<E_CHAMP
     ldx #>E_CHAMP
@@ -1483,13 +1508,8 @@ next:
     sta sh_enable
     lda #%00001111              ; razzi 0-2 e astronave vincitrice 3 multicolore
     sta sh_mc
-.ifdef ROTATED
-    lda #0                      ; (campo girato: in partita le astronavi non si allungano)
-.else
-    lda #%00001000              ; astronave 3 alta 2x come in partita
-.endif
-    sta sh_yexp
-    lda #0
+    lda #0                      ; (l'astronave alta come in partita: le sue due metà negli
+    sta sh_yexp                 ; sprite 3 e 4, ship_twin)
     sta sh_xexp
     sta sh_msb
     sta $d01b
@@ -1501,9 +1521,18 @@ next:
     sta SCREEN + $400 + $3f8,x  ; (il secondo schermo ha i suoi puntatori)
     dex
     bpl :-
+.ifdef ROTATED
     lda #SP_PAD0
     sta sh_ptr+3
     sta SCREEN + $400 + $3f8+3
+.else
+    ldx #POSE_BOT0 - 1          ; la posa del vincitore (fw_ship la copia al frame 1): metà alta
+    stx sh_ptr+3                ; nello sprite 3, bassa nel 4
+    stx SCREEN + $400 + $3f8+3
+    inx
+    stx sh_ptr+4
+    stx SCREEN + $400 + $3f8+4
+.endif
     ldx e_win
     lda kind_col,x
     sta sh_col+3
@@ -2093,22 +2122,17 @@ out:
     lda e_t
     cmp #1
     bne no_build
-    ; costruisce in SP_PAD0 lo sprite dell'astronave vincitrice (frame 1: cielo vuoto, budget ampio)
+    ; la posa dell'astronave vincitrice dalla cartuccia (frame 1: cielo vuoto, budget ampio; la
+    ; voce è finita da prima dei fuochi), vista dalla racchetta sinistra: TWIST dritta, BLASTER
+    ; carico
 .ifdef ROTATED
     lda #0                      ; (campo girato: la copia la fa ship_spread)
     sta ship_part
     rts
 .else
-    ldx e_win
-    stx pi_kind
-    lda #0
-    sta pi_side
-    lda pv_rows,x
-    sta pi_n
-    jsr pad_image               ; (l'astronave com'è: TWIST dritta, BLASTER carico)
-    lda #1
-    sta pd_dirty
-    rts
+    lda e_win
+    ldy #0
+    jmp pose_now
 .endif
 no_build:
     cmp #20
@@ -2162,7 +2186,7 @@ jcol:
     inc fw_svx
 :   lda fw_svx
     jsr ship_add_x
-    lda #SPR_Y0 + 62
+    lda #FW_SHIP_Y
     sta sh_y+3
     ; uscita a destra: x >= 344 ($0158)
     lda fw_sxh
@@ -2186,7 +2210,7 @@ entry:
 :   lda #3
 e_mv:
     jsr ship_add_x
-    lda #SPR_Y0 + 62
+    lda #FW_SHIP_Y
     sta sh_y+3
     jmp place
 cruise:
@@ -2204,7 +2228,7 @@ cruise:
     tax
     lda end_bob,x
     clc
-    adc #SPR_Y0 + 62
+    adc #FW_SHIP_Y
     sta sh_y+3
     ; ultimi 40 frame di carica (135..174): vibrazione e lampi ciano
     lda e_t

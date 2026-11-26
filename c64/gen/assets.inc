@@ -187,23 +187,14 @@ TRAIL_SPAN = 48    ; coda: coordinate dei quadrati nello sprite + 16, da 0 a 47
 ; colori sono già in howto.bin)
 HT_GROUPS = 10
 HT_TEXTS_AT = $E140
-; astronavi delle racchette di NEXT (assets/ships/sprites/c64) per pad_image: righe viste
-; dalla racchetta sinistra, 3 byte per riga; x dello sprite: colonna della racchetta -
-; PAD_DX_L / PAD_DX_R (per tipo, poi la racchetta senza tipo)
+; astronavi delle racchette di NEXT (assets/ships/sprites/c64): x dello sprite = colonna
+; della racchetta - PAD_DX_L / PAD_DX_R (per tipo, poi la racchetta senza tipo)
 .define PAD_DX_L 8, 10, 8, 12, 12, 8, 8, 8
 .define PAD_DX_R 12, 10, 12, 8, 8, 12, 12, 12
-.define PAD_IMG_N 14, 20, 17, 17, 19, 14, 14
-.define PAD_IMG_ARCADE $05, $50, $00, $05, $50, $00, $0F, $F0, $00, $1D, $F0, $00, $7F, $F0, $00, $05, $50, $00, $0A, $20, $00, $0A, $20, $00, $0A, $90, $00, $7F, $F0, $00, $1F, $D0, $00, $0F, $F0, $00, $05, $50, $00, $05, $50, $00
-.define PAD_IMG_TITAN $03, $FC, $00, $03, $DC, $00, $01, $54, $00, $1F, $FC, $00, $45, $FC, $00, $45, $FC, $00, $17, $FC, $00, $03, $FC, $00, $0A, $A8, $00, $09, $18, $00, $09, $18, $00, $0A, $A8, $00, $03, $FC, $00, $1F, $5C, $00, $45, $DC, $00, $45, $FC, $00, $17, $FC, $00, $01, $54, $00, $03, $FC, $00, $03, $FC, $00
-.define PAD_IMG_HAMMER $05, $90, $00, $05, $90, $00, $0A, $90, $00, $0A, $90, $00, $0B, $D0, $00, $0B, $D0, $00, $0B, $D0, $00, $51, $D0, $00, $1A, $D0, $00, $51, $D0, $00, $0B, $D0, $00, $0B, $D0, $00, $0B, $D0, $00, $0B, $D0, $00, $0B, $D0, $00, $05, $50, $00, $05, $50, $00
-.define PAD_IMG_TWIST $00, $0F, $00, $00, $0F, $00, $00, $3F, $00, $00, $BD, $00, $00, $7D, $00, $00, $BD, $00, $00, $3D, $00, $01, $BD, $00, $01, $A9, $00, $01, $AD, $00, $00, $3D, $00, $00, $BD, $00, $00, $BD, $00, $00, $BD, $00, $00, $3F, $00, $00, $0F, $00, $00, $0F, $00
-.define PAD_IMG_BLASTER $00, $F4, $00, $03, $FD, $00, $03, $FD, $00, $03, $FD, $00, $03, $FD, $00, $00, $40, $80, $00, $FD, $00, $53, $FD, $00, $27, $B9, $00, $2B, $ED, $00, $2B, $B9, $00, $53, $FD, $00, $00, $FD, $00, $00, $40, $80, $01, $FD, $00, $03, $FD, $00, $03, $FD, $00, $03, $FD, $00, $00, $F4, $00
-.define PAD_IMG_RUSH $02, $90, $00, $29, $D0, $00, $03, $50, $00, $03, $D0, $00, $03, $D0, $00, $03, $D0, $00, $16, $90, $00, $16, $90, $00, $03, $D0, $00, $03, $D0, $00, $03, $D0, $00, $03, $D0, $00, $2B, $D0, $00, $02, $50, $00
-.define PAD_IMG_GUARDIAN $00, $D0, $00, $00, $F0, $00, $00, $A0, $00, $A0, $F0, $00, $18, $F0, $00, $55, $A0, $00, $45, $F0, $00, $45, $F0, $00, $55, $A0, $00, $18, $F0, $00, $A0, $F0, $00, $00, $A0, $00, $00, $F0, $00, $00, $F0, $00
-; le stesse a righe dello schermo, per le racchette in due metà:
-; gen/padpairs.bin, PAIR_PAGES pagine per coppia di tipi (sinistra * 7 + destra, + 49 con
-; la destra per prima); la faccia alla stessa colonna di PAD_IMG_* (PAD_DX_L, PAD_DX_R)
-; poi le pose ferme (scelta e VS), una pagina per tipo, al posto della coppia PAIR_POSES
+; le immagini, a righe dello schermo e in due metà: gen/padpairs.bin, PAIR_PAGES pagine
+; per coppia di tipi (sinistra * 7 + destra, + 49 con la destra per prima), poi le pose
+; ferme (scelta, VS, presentazione di OMEGA, finale), una pagina per tipo, al posto della
+; coppia PAIR_POSES
 PAIR_PAGES = 8
 PAIR_POSES = 98
 PAIR_MOST = 7
