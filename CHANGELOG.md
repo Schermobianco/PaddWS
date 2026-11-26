@@ -14,6 +14,8 @@ crea il commit e il tag `vX.Y.Z`.
 
 ## [Non rilasciato]
 
+## [4.7.1] - 2026-11-26
+
 ### Aggiunto
 - Web, **installabile come app** (PWA): con il service worker `rust/web/sw.js` il gioco parte
   anche senza rete e Chrome, Edge e Android lo offrono da installare. Con la rete i file arrivano
@@ -1555,7 +1557,8 @@ Ricostruite dalle cartelle di backup in `archive/` (date indicative).
 - **1.5** (2020-08) – versione per Raspberry Pi con encoder rotativi.
 - **1.1 – 1.4** (2020-08) – prime versioni pygame: menu, modalità CLASSIC ed EVO, suoni, splash.
 
-[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.7.0...HEAD
+[Non rilasciato]: https://github.com/Schermobianco/PaddWS/compare/v4.7.1...HEAD
+[4.7.1]: https://github.com/Schermobianco/PaddWS/compare/v4.7.0...v4.7.1
 [4.7.0]: https://github.com/Schermobianco/PaddWS/compare/v4.6.5...v4.7.0
 [4.6.5]: https://github.com/Schermobianco/PaddWS/compare/v4.6.4...v4.6.5
 [4.6.4]: https://github.com/Schermobianco/PaddWS/compare/v4.6.3...v4.6.4
